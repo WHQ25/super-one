@@ -50,7 +50,7 @@ interface CallMedia {
   identity: VoiceIdentity | null
   projectPath: string
   sessionId: string
-  transport: 'codex' | 'doubao'
+  transport: 'codex' | 'doubao' | 'gemini'
   peer: RTCPeerConnection | null
   stream: MediaStream | null
   audio: BufferedVoicePlayback | PcmVoicePlayback | null
@@ -189,7 +189,7 @@ function handleAgentEvent(event: AgentEvent, directed = false): void {
     if (current.identity && (current.identity.callId !== signal.callId || current.identity.hostEpoch !== signal.hostEpoch || current.identity.generation !== signal.generation)) return
     current.identity = signal
     if (signal.kind === 'answer') handleAgentEvent({ ...event, type: 'realtime_sdp', sdp: signal.sdp }, true)
-    else if (signal.kind === 'state' && signal.state === 'active' && current.transport === 'doubao') void markDoubaoReady(current)
+    else if (signal.kind === 'state' && signal.state === 'active' && current.transport !== 'codex') void markDoubaoReady(current)
     else if (signal.kind === 'closed') finishCall(sessionId, projectPath)
     else if (signal.kind === 'error') { reportError(new Error(signal.error)); void stopRealtimeCall() }
     return
@@ -259,13 +259,13 @@ function handleAgentEvent(event: AgentEvent, directed = false): void {
   if (event.type === 'realtime_error') {
     // Codex errors arrive again as a directed signal. Doubao has no second copy,
     // so a failed delegation is reported here without hanging up the call.
-    if (current.transport === 'doubao') reportError(new Error(event.error))
+    if (current.transport !== 'codex') reportError(new Error(event.error))
     return
   }
 }
 
 function markDoubaoReady(current: CallMedia): void {
-  if (media !== current || current.transport !== 'doubao') return
+  if (media !== current || current.transport === 'codex') return
   if (current.negotiationTimer !== null) {
     window.clearTimeout(current.negotiationTimer)
     current.negotiationTimer = null
@@ -479,11 +479,23 @@ export async function startRealtimeCall({
 }
 
 async function stopAdmitted(current: CallMedia): Promise<void> {
-  const stop = current.transport === 'doubao' ? window.agent.stopDoubaoVoice : window.agent.stopRealtimeVoice
+  const stop = current.transport === 'doubao'
+    ? window.agent.stopDoubaoVoice
+    : current.transport === 'gemini'
+      ? window.agent.stopGeminiVoice
+      : window.agent.stopRealtimeVoice
   await stop(current.projectPath, current.sessionId, current.attemptId)
 }
 
-export async function startDoubaoCall({
+export function startDoubaoCall(options: StartRealtimeCallOptions): Promise<void> {
+  return startPcmCall('doubao', options)
+}
+
+export function startGeminiCall(options: StartRealtimeCallOptions): Promise<void> {
+  return startPcmCall('gemini', options)
+}
+
+async function startPcmCall(transport: 'doubao' | 'gemini', {
   projectPath,
   sessionId,
   prepareSession,
@@ -506,7 +518,7 @@ export async function startDoubaoCall({
     attemptId: crypto.randomUUID(), identity: null,
     projectPath,
     sessionId,
-    transport: 'doubao',
+    transport,
     peer: null,
     stream: null,
     audio: null,
@@ -566,7 +578,8 @@ export async function startDoubaoCall({
     await audio.start()
     if (media !== callMedia) return
     if (useRealtimeCallStore.getState().paused) audio.pause()
-    media.playbackUnsub = window.agent.onDoubaoVoicePlayback((frame) => {
+    const onPlayback = transport === 'gemini' ? window.agent.onGeminiVoicePlayback : window.agent.onDoubaoVoicePlayback
+    media.playbackUnsub = onPlayback((frame) => {
       if (media !== callMedia || !(media.audio instanceof PcmVoicePlayback)) return
       if (frame.type === 'drop') media.audio.drop()
       else media.audio.pushPcm(frame.pcm)
@@ -584,10 +597,12 @@ export async function startDoubaoCall({
       const barge = nextPlaybackBarge(callMedia.playbackBargeHits, rms, output)
       callMedia.playbackBargeHits = barge.hits
       if (barge.drop && callMedia.audio instanceof PcmVoicePlayback) callMedia.audio.drop()
-      window.agent.sendDoubaoVoiceAudio(callMedia.sessionId, pcm)
+      const sendAudio = transport === 'gemini' ? window.agent.sendGeminiVoiceAudio : window.agent.sendDoubaoVoiceAudio
+      sendAudio(callMedia.sessionId, pcm)
     })
     if (media !== callMedia) return
-    const receipt = await window.agent.startDoubaoVoice(projectPath, sessionId, callMedia.attemptId)
+    const startVoice = transport === 'gemini' ? window.agent.startGeminiVoice : window.agent.startDoubaoVoice
+    const receipt = await startVoice(projectPath, sessionId, callMedia.attemptId)
     if (media !== callMedia) return
     if (!receipt.call?.owned || receipt.call.attemptId !== callMedia.attemptId) throw new Error('Voice start was not accepted.')
     callMedia.identity = receipt.call

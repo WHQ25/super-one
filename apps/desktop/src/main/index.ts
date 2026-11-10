@@ -4531,7 +4531,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.JEV_API_KEY_SET, async (_e, key: string) => (await import('./jev/jev-api-key')).setJevApiKey(String(key ?? '')))
   ipcMain.handle(AgentIpcChannels.DOUBAO_VOICE_SETTINGS_GET, async () => (await import('./doubao/doubao-speech-settings')).getDoubaoVoiceSettings())
   ipcMain.handle(AgentIpcChannels.DOUBAO_VOICE_SETTINGS_SET, async (_e, patch: unknown) => {
-    const body = patch && typeof patch === 'object' ? patch as { preference?: 'auto' | 'codex' | 'doubao'; speaker?: string; apiKey?: string } : {}
+    const body = patch && typeof patch === 'object' ? patch as { preference?: 'doubao' | 'gemini'; speaker?: string; geminiVoice?: string; apiKey?: string; geminiApiKey?: string } : {}
     return (await import('./doubao/doubao-speech-settings')).setDoubaoVoiceSettings(body)
   })
   ipcMain.handle(AgentIpcChannels.SYNC_ZONE_USAGE_GET, async () => (await import('./environment/session-zone-reclaim')).syncZoneUsage())

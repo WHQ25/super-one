@@ -5,23 +5,22 @@ import type { RealtimeDelegation } from '@superone/shared/realtime-timeline'
 import { cn } from '@superone/ui/lib/utils'
 
 /**
- * Body of a voice-delegation bubble: the instruction the voice agent handed to
- * Codex, with the spoken context it attached folded underneath. Plain text, never
- * the paste chip — a long handoff is still one instruction, not a paste.
+ * Body of a voice-delegation bubble. A separate instruction is the paragraph.
+ * The spoken script folds underneath it. Plain text, never the paste chip.
  *
- * A tail flush (Codex flushing the remaining transcript when the call ends) has a
- * boilerplate instruction, so only its transcript is worth reading; it opens
- * expanded and the instruction stays out.
+ * A tail flush, or a handoff whose only content is the script, opens that
+ * script and leaves the instruction out.
  */
 export function RealtimeDelegationBody({ delegation }: { delegation: RealtimeDelegation }) {
   const { t } = useTranslation()
   const tailFlush = delegation.source === 'transcript_tail_flush'
-  const [open, setOpen] = useState(tailFlush)
+  const showInput = !tailFlush && delegation.input.length > 0
+  const [open, setOpen] = useState(tailFlush || !showInput)
   const { transcript } = delegation
 
   return (
     <div className="flex min-w-0 flex-col gap-1.5">
-      {!tailFlush && (
+      {showInput && (
         <p className="whitespace-pre-wrap break-words">{delegation.input}</p>
       )}
       {transcript.length > 0 && (

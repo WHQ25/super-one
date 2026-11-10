@@ -33,12 +33,12 @@ const TRANSCRIPT = [
 ].join('\n')
 
 /** The exact envelope Codex injects: escaped fields, optional source and transcript. */
-function delegation(text: string, options: { id?: string; transcript?: boolean; tailFlush?: boolean } = {}): ChatMessageType {
+function delegation(text: string, options: { id?: string; transcript?: boolean; tailFlush?: boolean; input?: boolean } = {}): ChatMessageType {
   const escaped = text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
   const body = [
     '<realtime_delegation>',
     ...(options.tailFlush ? ['  <source>transcript_tail_flush</source>'] : []),
-    `  <input>${escaped}</input>`,
+    ...(options.input === false ? [] : [`  <input>${escaped}</input>`]),
     ...(options.transcript || options.tailFlush ? [`  <transcript_delta>${TRANSCRIPT}</transcript_delta>`] : []),
     '</realtime_delegation>',
   ].join('\n')
@@ -98,6 +98,11 @@ type Story = StoryObj<typeof Thread>
 
 export const Delegation: Story = {
   args: { messages: [delegation('Review the last commit and summarize any risky changes in the realtime settings sync.')] },
+}
+
+/** Doubao sends the spoken script once. The bubble opens that script and has no second copy of the user's lines. */
+export const TranscriptOnly: Story = {
+  args: { messages: [delegation('', { transcript: true, input: false })] },
 }
 
 /** A long instruction stays one paragraph — never the paste chip. Escaped `<`/`&` decode. */

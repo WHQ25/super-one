@@ -244,6 +244,24 @@ describe('ChatMessage voice delegation bubble', () => {
       pendingJump: { view: 'realtime', turnId: 'turn-1' },
     })
   })
+
+  it('shows a transcript-only handoff as the script, once', () => {
+    const scriptOnly: ChatMessageType = {
+      ...delegation,
+      content: [{
+        type: 'text',
+        text: '<realtime_delegation>\n  Follow the transcript.\n'
+          + '  <transcript_delta>user: check it\nassistant: on it</transcript_delta>\n</realtime_delegation>',
+      }],
+    }
+    render(<ChatMessage message={scriptOnly} sessionStatus="idle" isLastAssistant={false} />)
+
+    expect(screen.getByText('check it')).toBeInTheDocument()
+    expect(screen.getByText('on it')).toBeInTheDocument()
+    expect(screen.getAllByText('check it')).toHaveLength(1)
+    expect(screen.queryByText('Follow the transcript.')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Transcript (2)' })).toHaveAttribute('aria-expanded', 'true')
+  })
 })
 
 describe('ChatMessage copy affordance', () => {

@@ -51,6 +51,10 @@ interface AgentAPI {
   sendDoubaoVoiceAudio(sessionId: string, pcm: Uint8Array): void
   setDoubaoVoiceMuted(sessionId: string, muted: boolean): Promise<void>
   onDoubaoVoicePlayback(callback: (frame: import('@superone/shared/doubao-call').DoubaoPlaybackFrame) => void): () => void
+  startGeminiVoice(projectPath: string, sessionId: string, attemptId: string): Promise<import('@superone/shared/realtime-voice').VoiceStatus>
+  stopGeminiVoice(projectPath: string, sessionId: string, attemptId: string): Promise<void>
+  sendGeminiVoiceAudio(sessionId: string, pcm: Uint8Array): void
+  onGeminiVoicePlayback(callback: (frame: import('@superone/shared/gemini-realtime').GeminiPlaybackFrame) => void): () => void
   loadRealtimeTimeline(sessionId: string): Promise<RealtimeTimelineResult | null>
   getRealtimeTimeline(projectPath: string, sessionId: string): Promise<RealtimeTimelineResult>
   /** Local sessions only: the agents a pending `session_suggest_task` card can launch on, and its starting pick. */
@@ -569,8 +573,8 @@ interface AppAPI extends WindowLayoutAPI {
   /** Store a Jev API key (empty string clears). Rejects when secure storage refuses. */
   setJevApiKey(key: string): Promise<{ configured: boolean; masked: string }>
   /** Doubao speech key status, speaker, and which voice frontend the composer uses. Never returns the key. */
-  getDoubaoVoiceSettings(): Promise<import('@superone/shared/doubao-call').DoubaoVoiceSettings>
-  setDoubaoVoiceSettings(patch: { preference?: import('@superone/shared/doubao-call').DesktopVoicePreference; speaker?: string; apiKey?: string }): Promise<import('@superone/shared/doubao-call').DoubaoVoiceSettings>
+  getDoubaoVoiceSettings(): Promise<import('@superone/shared/desktop-voice-route').DesktopVoiceSettings>
+  setDoubaoVoiceSettings(patch: { preference?: import('@superone/shared/desktop-voice-route').DesktopVoicePreference; speaker?: string; geminiVoice?: string; apiKey?: string; geminiApiKey?: string }): Promise<import('@superone/shared/desktop-voice-route').DesktopVoiceSettings>
   getSyncZoneUsage(): Promise<SyncZoneUsage>
   reclaimSyncZone(): Promise<SyncZoneReclaimResult>
   retrySyncZoneHandoffs(): Promise<{ retried: number }>

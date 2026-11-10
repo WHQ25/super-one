@@ -1,5 +1,5 @@
 import workletUrl from './realtime-audio-worklet.js?worker&url'
-import { DOUBAO_DOWNLINK_SAMPLE_RATE } from '@superone/shared/doubao-realtime'
+import { VOICE_DOWNLINK_SAMPLE_RATE } from '@superone/shared/voice-delegation'
 import { s16leToFloat } from './pcm-audio'
 import { VoiceResampler } from './voice-resampler'
 
@@ -28,7 +28,7 @@ export class PcmVoicePlayback {
   private paused = false
   private pauseVersion = 0
   private resumeAttempt = 0
-  private resampler = new VoiceResampler(DOUBAO_DOWNLINK_SAMPLE_RATE, 48_000)
+  private resampler = new VoiceResampler(VOICE_DOWNLINK_SAMPLE_RATE, 48_000)
   private readonly context = new AudioContext({ latencyHint: 'interactive', sampleRate: 48_000 })
 
   constructor(
@@ -50,7 +50,7 @@ export class PcmVoicePlayback {
 
   async start(): Promise<void> {
     if (this.closed) return
-    this.resampler = new VoiceResampler(DOUBAO_DOWNLINK_SAMPLE_RATE, this.context.sampleRate)
+    this.resampler = new VoiceResampler(VOICE_DOWNLINK_SAMPLE_RATE, this.context.sampleRate)
     await this.context.audioWorklet.addModule(workletUrl)
     if (this.closed) return
     const node = new AudioWorkletNode(this.context, 'superone-voice-playback', { numberOfInputs: 0, outputChannelCount: [1] })
@@ -73,7 +73,7 @@ export class PcmVoicePlayback {
 
   /** Barge-in: drop audio that has not been played yet. */
   drop(): void {
-    this.resampler = new VoiceResampler(DOUBAO_DOWNLINK_SAMPLE_RATE, this.context.sampleRate)
+    this.resampler = new VoiceResampler(VOICE_DOWNLINK_SAMPLE_RATE, this.context.sampleRate)
     this.node?.port.postMessage({ type: 'clear' })
     this.onLevel(0)
   }

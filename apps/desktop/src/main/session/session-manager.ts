@@ -1,5 +1,6 @@
 import { assertAgentProfileLaunchEnabled } from './agent-profile-feature'
 import { DoubaoVoiceHost } from './doubao-voice-host'
+import { GeminiVoiceHost } from './gemini-voice-host'
 import { RealtimeVoiceHost } from './realtime-voice-host'
 import { randomUUID } from 'crypto'
 import { homedir } from 'os'
@@ -110,6 +111,7 @@ export class SessionManagerImpl implements SessionManagerContract {
    */
   readonly realtimeVoice = new RealtimeVoiceHost()
   readonly doubaoVoice = new DoubaoVoiceHost(this.realtimeVoice)
+  readonly geminiVoice = new GeminiVoiceHost(this.realtimeVoice)
   private foregroundViews = new Map<string, number>()
   private sessionProjects = new Map<string, string>()
   private activeByProject = new Map<string, string>()

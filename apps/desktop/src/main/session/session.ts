@@ -1,5 +1,5 @@
 import { RealtimeVoiceInterest } from './realtime-voice-interest'
-import { extractSpokenSummary, visibleAssistantText } from '@superone/shared/doubao-realtime'
+import { extractSpokenSummary, visibleAssistantText } from '@superone/shared/voice-delegation'
 import { assertVoiceAccount } from '@superone/shared/realtime-voice'
 import { McpAppsError, type McpAppsBinding, type McpAppOrigin, type McpAppsProvider } from '@superone/shared/mcp-apps'
 import { MOD_UI_MUTATING_OPS, MOD_UI_UNAVAILABLE, type ModUiOp, type ModUiRequest, type ModUiResult } from '@superone/shared/mod-ui'

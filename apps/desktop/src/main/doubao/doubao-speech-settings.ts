@@ -1,7 +1,8 @@
 import { DOUBAO_DEFAULT_SPEAKER, DOUBAO_O2_SPEAKERS, isDoubaoO2Speaker } from '@superone/shared/doubao-realtime'
-import { parseDesktopVoicePreference, type DesktopVoicePreference, type DoubaoVoiceSettings } from '@superone/shared/doubao-call'
+import { parseDesktopVoicePreference, type DesktopVoicePreference, type DesktopVoiceSettings } from '@superone/shared/desktop-voice-route'
 import { getDb, maskApiKey } from '../database'
 import { decryptSecret, encryptSecret } from '../crypto/secret-store'
+import { geminiSpeechKeyStatus, getGeminiVoice, setGeminiSpeechKey, setGeminiVoice } from '../gemini/gemini-speech-settings'
 
 const KEY = 'doubao.speechKey'
 const FRONTEND = 'doubao.voiceFrontend'
@@ -28,29 +29,35 @@ export function getDoubaoSpeaker(): string {
   return isDoubaoO2Speaker(stored) ? stored : DOUBAO_DEFAULT_SPEAKER
 }
 
-export function getDoubaoVoiceSettings(): DoubaoVoiceSettings {
+export function getDoubaoVoiceSettings(): DesktopVoiceSettings {
   const key = getDoubaoSpeechKey()
   return {
     preference: parseDesktopVoicePreference(readMeta(FRONTEND)),
     speaker: getDoubaoSpeaker(),
+    geminiVoice: getGeminiVoice(),
     key: { configured: key.length > 0, masked: key ? maskApiKey(key) : '' },
+    geminiKey: geminiSpeechKeyStatus(),
   }
 }
 
 export function setDoubaoVoiceSettings(patch: {
   preference?: DesktopVoicePreference
   speaker?: string
+  geminiVoice?: string
   apiKey?: string
-}): DoubaoVoiceSettings {
+  geminiApiKey?: string
+}): DesktopVoiceSettings {
   if (patch.preference) writeMeta(FRONTEND, parseDesktopVoicePreference(patch.preference))
   if (patch.speaker !== undefined) {
     if (!isDoubaoO2Speaker(patch.speaker)) throw new Error('Doubao speaker is not a Seeduplex voice.')
     writeMeta(SPEAKER, patch.speaker)
   }
+  if (patch.geminiVoice !== undefined) setGeminiVoice(patch.geminiVoice)
   if (patch.apiKey !== undefined) {
     const trimmed = patch.apiKey.trim()
     writeMeta(KEY, trimmed ? encryptSecret(trimmed) : '')
   }
+  if (patch.geminiApiKey !== undefined) setGeminiSpeechKey(patch.geminiApiKey)
   return getDoubaoVoiceSettings()
 }
 

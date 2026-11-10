@@ -668,7 +668,7 @@ export interface PermissionDenialInfo {
 }
 
 /** How a user-role transcript bubble entered the session (omitted = human composer). */
-export type ChatMessageSource = 'user' | 'collaboration' | 'task-notification' | 'doubao-voice'
+export type ChatMessageSource = 'user' | 'collaboration' | 'task-notification' | 'doubao-voice' | 'gemini-voice'
 
 export interface CollaborationMessageMeta {
   /** initial_task = parent-approved launch task; mailbox = session_send content shown in UI. */
@@ -878,7 +878,7 @@ export interface MessageMetadata {
    * Transcript provenance. Omitted / `'user'` = human composer.
    * `'collaboration'` = multi-agent collab (task or mailbox).
    * `'task-notification'` = synthetic host wake (not human).
-   * `'doubao-voice'` = a voice-session delegation. The bubble is the `<realtime_delegation>` envelope.
+   * `'doubao-voice'` and `'gemini-voice'` = a voice-session delegation. The bubble is the `<realtime_delegation>` envelope.
    */
   source?: ChatMessageSource
   /** A host wake carrying text the user wrote; any other host wake is hidden (see `isModelOnlyHostWake`). */
@@ -4505,6 +4505,11 @@ export const AgentIpcChannels = {
   DOUBAO_VOICE_MUTE: 'agent:doubao-voice-mute',
   /** Push: `{ type: 'pcm', pcm: Uint8Array } | { type: 'drop' }`. Not an agent event. */
   DOUBAO_VOICE_PLAYBACK: 'agent:doubao-voice-playback',
+  GEMINI_VOICE_START: 'agent:gemini-voice-start',
+  GEMINI_VOICE_STOP: 'agent:gemini-voice-stop',
+  GEMINI_VOICE_AUDIO: 'agent:gemini-voice-audio',
+  /** Push: `{ type: 'pcm', pcm: Uint8Array } | { type: 'drop' }`. Not an agent event. */
+  GEMINI_VOICE_PLAYBACK: 'agent:gemini-voice-playback',
   LOAD_REALTIME_TIMELINE: 'agent:load-realtime-timeline',
   GET_REALTIME_TIMELINE: 'agent:get-realtime-timeline',
   SUGGESTED_TASK_LAUNCH_OPTIONS: 'agent:suggested-task-launch-options',

@@ -1501,10 +1501,10 @@ export type Messages = {
       voice: string
       doubaoVoice: {
         frontend: { label: string; description: string }
-        frontendAuto: string
-        frontendCodex: string
         frontendDoubao: string
+        frontendGemini: string
         speaker: { label: string; description: string }
+        geminiSpeaker: { label: string; description: string }
         speakers: {
           vv: string
           xiaohe: string
@@ -1514,6 +1514,38 @@ export type Messages = {
           dacey: string
           stokie: string
         }
+        geminiVoices: {
+          Zephyr: string
+          Puck: string
+          Charon: string
+          Kore: string
+          Fenrir: string
+          Leda: string
+          Orus: string
+          Aoede: string
+          Callirrhoe: string
+          Autonoe: string
+          Enceladus: string
+          Iapetus: string
+          Umbriel: string
+          Algieba: string
+          Despina: string
+          Erinome: string
+          Algenib: string
+          Rasalgethi: string
+          Laomedeia: string
+          Achernar: string
+          Alnilam: string
+          Schedar: string
+          Gacrux: string
+          Pulcherrima: string
+          Achird: string
+          Zubenelgenubi: string
+          Vindemiatrix: string
+          Sadachbia: string
+          Sadaltager: string
+          Sulafat: string
+        }
         apiKey: {
           label: string
           description: string
@@ -1522,6 +1554,11 @@ export type Messages = {
           cancel: string
           change: string
           clear: string
+        }
+        geminiApiKey: {
+          label: string
+          description: string
+          placeholder: string
         }
       }
       experimentalAgents: {
@@ -6471,15 +6508,18 @@ export const en: Messages = {
       voice: 'Voice',
       doubaoVoice: {
         frontend: {
-          label: 'Voice Frontend',
-          description: 'Official Codex sessions keep Codex voice. Other sessions that can send a turn use Doubao when a speech key is saved.',
+          label: 'Voice Model',
+          description: 'Codex sessions use Codex Realtime. Other sessions that can send a turn use the model selected here.',
         },
-        frontendAuto: 'Auto',
-        frontendCodex: 'Codex',
         frontendDoubao: 'Doubao',
+        frontendGemini: 'Gemini 3.8',
         speaker: {
           label: 'Doubao Speaker',
           description: 'The voice used for acknowledgements and spoken summaries.',
+        },
+        geminiSpeaker: {
+          label: 'Gemini Voice',
+          description: 'Prebuilt voice used by Gemini 3.8 Live.',
         },
         speakers: {
           vv: 'VV',
@@ -6490,6 +6530,38 @@ export const en: Messages = {
           dacey: 'Dacey',
           stokie: 'Stokie',
         },
+        geminiVoices: {
+          Zephyr: 'Bright',
+          Puck: 'Upbeat',
+          Charon: 'Informative',
+          Kore: 'Firm',
+          Fenrir: 'Excitable',
+          Leda: 'Youthful',
+          Orus: 'Firm',
+          Aoede: 'Breezy',
+          Callirrhoe: 'Easy-going',
+          Autonoe: 'Bright',
+          Enceladus: 'Breathy',
+          Iapetus: 'Clear',
+          Umbriel: 'Easy-going',
+          Algieba: 'Smooth',
+          Despina: 'Smooth',
+          Erinome: 'Clear',
+          Algenib: 'Gravelly',
+          Rasalgethi: 'Informative',
+          Laomedeia: 'Upbeat',
+          Achernar: 'Soft',
+          Alnilam: 'Firm',
+          Schedar: 'Even',
+          Gacrux: 'Mature',
+          Pulcherrima: 'Forward',
+          Achird: 'Friendly',
+          Zubenelgenubi: 'Casual',
+          Vindemiatrix: 'Gentle',
+          Sadachbia: 'Lively',
+          Sadaltager: 'Knowledgeable',
+          Sulafat: 'Warm',
+        },
         apiKey: {
           label: 'Doubao Speech API Key',
           description: 'Stored encrypted on this machine and used only from the main process.',
@@ -6498,6 +6570,11 @@ export const en: Messages = {
           cancel: 'Cancel',
           change: 'Change Key',
           clear: 'Remove Key',
+        },
+        geminiApiKey: {
+          label: 'Gemini Speech API Key',
+          description: 'Stored encrypted on this machine and used only from the main process.',
+          placeholder: 'Gemini API key',
         },
       },
       experimentalAgents: {

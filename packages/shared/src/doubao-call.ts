@@ -1,56 +1,22 @@
-import { HARNESS_CAPABILITIES } from './harness/harness-capabilities'
-import { isCodexAccountProvider } from './codex-accounts'
 import {
-  DOUBAO_DELEGATE_TOOL,
-  DOUBAO_FALLBACK_SPOKEN,
-  DOUBAO_VOICE_ENDED_INPUT,
   buildDoubaoStartSession,
   inputAudioMute,
-  mergeAsrText,
   responseCancel,
   sessionClose,
   historyItemsEvent,
   speechTextCommit,
-  stripVoiceAsides,
   toolResultEvent,
   type DoubaoFunctionCall,
   type DoubaoHistoryLine,
   type DoubaoServerNotice,
 } from './doubao-realtime'
 import type { RealtimeTranscriptLine } from './realtime-timeline'
-
-export type DesktopVoicePreference = 'auto' | 'codex' | 'doubao'
-export type DesktopVoiceRoute = 'codex' | 'doubao'
-
-/** What the renderer may see. The speech key itself stays in the main process. */
-export interface DoubaoVoiceSettings {
-  preference: DesktopVoicePreference
-  speaker: string
-  key: { configured: boolean; masked: string }
-}
-
-export function parseDesktopVoicePreference(value: unknown): DesktopVoicePreference {
-  return value === 'codex' || value === 'doubao' ? value : 'auto'
-}
-
-/** Official Codex keeps WebRTC. Every other sendable session can use Doubao. */
-export function resolveDesktopVoiceRoute(input: {
-  preference: DesktopVoicePreference
-  harnessId: string
-  apiProviderId?: string | null
-  canSend: boolean
-  doubaoConfigured: boolean
-}): DesktopVoiceRoute | null {
-  const caps = HARNESS_CAPABILITIES[input.harnessId as keyof typeof HARNESS_CAPABILITIES]
-  const officialCodex = input.harnessId === 'codex'
-    && caps?.supportsRealtimeVoice === true
-    && (!input.apiProviderId || isCodexAccountProvider(input.apiProviderId))
-  const doubao = input.doubaoConfigured && input.canSend
-  if (input.preference === 'codex') return officialCodex ? 'codex' : null
-  if (input.preference === 'doubao') return doubao ? 'doubao' : null
-  if (officialCodex) return 'codex'
-  return doubao ? 'doubao' : null
-}
+import {
+  VOICE_DELEGATE_TOOL,
+  VOICE_FALLBACK_SPOKEN,
+  mergeAsrText,
+  stripVoiceAsides,
+} from './voice-delegation'
 
 export type DoubaoPlaybackFrame = { type: 'pcm'; pcm: Uint8Array } | { type: 'drop' }
 
@@ -58,7 +24,7 @@ export type DoubaoCallActivity = 'listening' | 'user-speaking' | 'thinking' | 'a
 
 export type DoubaoCallCommand =
   | { type: 'send'; event: Record<string, unknown> }
-  | { type: 'delegate'; kind: 'opening' | 'turn' | 'ended'; utterance: string; continuing: boolean; transcript: RealtimeTranscriptLine[] }
+  | { type: 'delegate'; kind: 'opening' | 'turn'; utterance: string; continuing: boolean; transcript: RealtimeTranscriptLine[] }
   | { type: 'play'; pcm: Uint8Array }
   | { type: 'drop-playback' }
   | { type: 'transcript'; phase: 'started' | 'delta' | 'completed'; role: 'user' | 'assistant'; itemId: string; text: string; replace?: boolean }
@@ -82,8 +48,14 @@ const WORDLESS_MIC_MS = 800
  * then the agent's block may be read.
  */
 const VOICE_QUIET_MS = 800
+/**
+ * The confirmation is generated only after the tool result. The 800 ms readout
+ * gap was cancelling that sentence before it started.
+ */
+const CONFIRM_WAIT_MS = 2_000
 
 const TOOL_SPOKEN = 'Already spoken to the user. Stay silent about the delegated task. If the user speaks again, answer them.'
+const TOOL_CONFIRM = 'The task has started and is still running. It is not finished. Say one short sentence now, in the user\'s language, that it has started. Do not add anything else. Do not say it is finished, done, or already handled. Then stay silent. The host reads the agent reply aloud. If the user speaks again, answer them.'
 const TOOL_SILENT = 'Handed to the backend agent. The work is not done yet. Stay silent now. Do not tell the user it is finished. The host reads the agent reply aloud. If the user speaks again, answer them.'
 const TOOL_REPEAT = 'Already handed to the backend agent. Stay silent. Do not call delegate_task again until the user speaks a new request.'
 const TOOL_INTERRUPTED = 'The user interrupted. Answer what they say. Do not answer the delegated task.'
@@ -91,9 +63,11 @@ const TOOL_UNAVAILABLE = 'This tool is not available.'
 
 /**
  * Seeduplex call decisions with no socket.
- * Doubao talks normally. Before `delegate_task` it says it is starting.
- * The host reads each finished agent text block after that sentence, and after
- * any of its audio still in the speakers. Only the user's voice interrupts.
+ * Doubao talks normally. It calls `delegate_task` without a confirmation.
+ * The tool result asks for one short sentence that the work has started,
+ * then silence. The host reads each finished agent text block after that
+ * sentence, and after any of its audio still in the speakers.
+ * Only the user's voice interrupts.
  */
 export class DoubaoCallController {
   private live = false
@@ -108,6 +82,10 @@ export class DoubaoCallController {
   private suppressFollowup = false
   /** The reply already playing may finish. The next model utterance stays hidden. */
   private suppressAfterAck = false
+  /** The tool result asked for one confirmation. Do not mute or cancel it. */
+  private confirmDue = false
+  /** When that wait is given up so the host can read. */
+  private confirmUntil = 0
   private modelItemOpen = false
   /** Doubao is still saying the handoff. Agent blocks wait behind it. */
   private modelWindow = false
@@ -178,8 +156,6 @@ export class DoubaoCallController {
   private voiceSent = 0
   /** Set once this call has told the coding agent that voice is open. */
   private voiceOpened = false
-  /** The hangup notice is sent once, and only after a voice message was sent. */
-  private voiceEnded = false
   /** Last user words actually handed off. Another call before the user speaks is not a new task. */
   private lastDelegatedTask = ''
   /**
@@ -250,13 +226,11 @@ export class DoubaoCallController {
 
   stop(): DoubaoCallCommand[] {
     if (this.closed) return []
-    const ended = this.endVoice()
     this.closed = true
     this.awaitingSummary = false
-    const close = this.live
-      ? [{ type: 'send', event: sessionClose() } satisfies DoubaoCallCommand]
-      : [{ type: 'hangup', reason: 'stopped' } satisfies DoubaoCallCommand]
-    return [...ended, ...close]
+    return this.live
+      ? [{ type: 'send', event: sessionClose() }]
+      : [{ type: 'hangup', reason: 'stopped' }]
   }
 
   mute(muted: boolean): DoubaoCallCommand[] {
@@ -309,7 +283,7 @@ export class DoubaoCallController {
     }
     this.releaseWordlessMic()
     if (!this.spokeAny && this.pendingSpeech.length === 0 && this.hostTurn !== 'summary' && !this.holdReport) {
-      this.pendingSpeech.push(DOUBAO_FALLBACK_SPOKEN)
+      this.pendingSpeech.push(VOICE_FALLBACK_SPOKEN)
     }
     this.awaitingSummary = false
     // A readout leaves the model muted. Once the watch ends, the next reply must be audible.
@@ -433,7 +407,11 @@ export class DoubaoCallController {
     const utterance = (text || this.userText).trim()
     // Leave the line empty so the next hypothesis cannot grow this one.
     this.userText = ''
+    const lastLine = this.voiceLines[this.voiceLines.length - 1]
+    const echo = !!utterance && lastLine?.role === 'user' && lastLine.text === utterance
     if (utterance) this.rememberVoice('user', utterance)
+    // A new request replaces the confirmation this result asked for.
+    if (utterance && !echo) this.clearConfirmWait()
     if (!this.userItem) this.userItem += 1
     const itemId = this.userId()
     // A real follow-up belongs to Doubao. Reading the report here would cancel that reply.
@@ -474,6 +452,7 @@ export class DoubaoCallController {
     this.cancelSettled = false
     this.replyAudioSeen = false
     this.suppressFollowup = false
+    this.clearConfirmWait()
     this.clearModelHeard()
     this.armVoiceQuiet(true)
     const commands: DoubaoCallCommand[] = [
@@ -586,7 +565,7 @@ export class DoubaoCallController {
   }
 
   private takeFunctionCalls(calls: DoubaoFunctionCall[]): DoubaoCallCommand[] {
-    if (!calls.some(call => call.name === DOUBAO_DELEGATE_TOOL)) {
+    if (!calls.some(call => call.name === VOICE_DELEGATE_TOOL)) {
       return [{ type: 'send', event: toolResultEvent(calls.map(call => ({ callId: call.callId, text: TOOL_UNAVAILABLE }))) }]
     }
     // The tool can fire before end-of-speech. Seal the line so a draft session can keep it.
@@ -607,7 +586,7 @@ export class DoubaoCallController {
     this.toolReleased = false
     return [
       ...sealed,
-      ...this.releaseTools(TOOL_SILENT),
+      ...this.releaseTools(TOOL_CONFIRM),
       ...this.handOff(this.voiceOpened ? 'turn' : 'opening', transcript),
       { type: 'activity', activity: 'thinking' },
     ]
@@ -644,21 +623,6 @@ export class DoubaoCallController {
       this.readoutOpen = false
     }
     return [{ type: 'delegate', kind, utterance, continuing, transcript: [...transcript] }]
-  }
-
-  /** Hangup. Sent only when this call already told the agent that voice was open. */
-  private endVoice(): DoubaoCallCommand[] {
-    if (!this.voiceOpened || this.voiceEnded) return []
-    this.voiceEnded = true
-    const transcript = this.pendingDelegationLines()
-    this.voiceSent = this.voiceLines.length
-    return [{
-      type: 'delegate',
-      kind: 'ended',
-      utterance: DOUBAO_VOICE_ENDED_INPUT,
-      continuing: false,
-      transcript: [...transcript],
-    }]
   }
 
   private rememberVoice(role: 'user' | 'assistant', text: string): void {
@@ -704,6 +668,14 @@ export class DoubaoCallController {
   private beginSpeech(notice: Extract<DoubaoServerNotice, { type: 'tts-start' }>): DoubaoCallCommand[] {
     // A commit's audio is chat_tts_text. If that label is missing, audio that follows our own commit is still the host line.
     const hostSpeech = notice.ttsType === 'chat_tts_text' || (!notice.ttsType && this.hostTurn === 'summary')
+    // This is the sentence the tool result just asked for. Do not hide it.
+    if (!hostSpeech && this.confirmDue) {
+      this.clearConfirmWait()
+      this.suppressFollowup = false
+      this.muteModel = false
+      this.dropModel = false
+      this.suppressAfterAck = true
+    }
     if (!hostSpeech && (this.muteModel || this.dropModel || this.suppressFollowup)) {
       // A host line is in flight. Do not cancel it: a cancel after commit drops that commit.
       if (this.hostTurn !== 'none' || this.playing) return []
@@ -918,23 +890,36 @@ export class DoubaoCallController {
     return commands
   }
 
-  /** Return the tool result. A silent handoff tells Doubao not to announce the task. */
+  /** The confirmation wait is over. A late sentence must not hold the readout. */
+  private clearConfirmWait(): void {
+    this.confirmDue = false
+    this.confirmUntil = 0
+  }
+
+  /** Return the tool result. The confirmation it requests is not muted or cancelled. */
   private releaseTools(spokenText: string): DoubaoCallCommand[] {
     if (this.toolReleased || this.pendingCalls.length === 0) return []
     const calls = this.pendingCalls
     this.pendingCalls = []
     this.toolReleased = true
-    if (
+    if (spokenText === TOOL_CONFIRM && this.hostTurn === 'none') {
+      // Audio already in flight can finish. Otherwise the sentence still has
+      // to be generated, so do not treat the channel as idle.
+      if (this.playing || this.modelUtteranceOpen || this.modelStillAudible() || this.modelWindow) this.suppressAfterAck = true
+      else {
+        this.confirmDue = true
+        this.confirmUntil = this.now() + CONFIRM_WAIT_MS
+      }
+    } else if (
       (spokenText === TOOL_SPOKEN || spokenText === TOOL_SILENT || spokenText === TOOL_REPEAT)
       && this.hostTurn === 'none'
     ) {
-      // A sentence already playing is the reply the model was asked to say first.
       if (this.playing || this.modelWindow) this.suppressAfterAck = true
       else this.suppressFollowup = true
     }
     return [{ type: 'send', event: toolResultEvent(calls.map(call => ({
       callId: call.callId,
-      text: call.name === DOUBAO_DELEGATE_TOOL ? spokenText : TOOL_UNAVAILABLE,
+      text: call.name === VOICE_DELEGATE_TOOL ? spokenText : TOOL_UNAVAILABLE,
     }))) }]
   }
 
@@ -949,6 +934,12 @@ export class DoubaoCallController {
       this.playing || this.hostTurn !== 'none' || this.userSpeaking || this.modelWindow
       || this.modelUtteranceOpen || this.modelStillAudible()
     ) return prelude
+    // The confirmation has not started. Reading now sends response.cancel and drops it.
+    if (this.confirmDue && this.now() < this.confirmUntil) return prelude
+    if (this.confirmDue) {
+      this.clearConfirmWait()
+      this.suppressFollowup = true
+    }
     this.releaseQuietHold()
     if (this.holdReport) return prelude
     const text = this.pendingSpeech.shift()

@@ -33,6 +33,23 @@ describe('parseRealtimeDelegation', () => {
       .toEqual({ source: 'handoff', input: 'Just do it', transcript: [] })
     expect(parseRealtimeDelegation('Just do it')).toBeNull()
   })
+
+  it('leaves the instruction empty when the transcript is the whole handoff', () => {
+    const text = [
+      '<realtime_delegation>',
+      '  Follow the transcript.',
+      '  <transcript_delta>user: 看一下\nassistant: 好</transcript_delta>',
+      '</realtime_delegation>',
+    ].join('\n')
+    expect(parseRealtimeDelegation(text)).toEqual({
+      source: 'handoff',
+      input: '',
+      transcript: [
+        { role: 'user', text: '看一下' },
+        { role: 'assistant', text: '好' },
+      ],
+    })
+  })
 })
 
 describe('formatRealtimeDelegation', () => {
@@ -70,6 +87,20 @@ describe('formatRealtimeDelegation', () => {
     expect(parsed?.transcript.some((line) => line.text.startsWith('older'))).toBe(false)
     const delta = text.match(/<transcript_delta>([\s\S]*?)<\/transcript_delta>/)?.[1] ?? ''
     expect(delta.length).toBeLessThanOrEqual(4096)
+  })
+
+  it('omits an empty instruction so the dialogue appears only in the transcript', () => {
+    const text = formatRealtimeDelegation({
+      preamble: 'Follow the transcript.',
+      instruction: '',
+      transcript: [
+        { role: 'user', text: '看一下' },
+        { role: 'assistant', text: '好' },
+      ],
+    })
+    expect(text).not.toContain('<input>')
+    expect(text.match(/看一下/g)).toEqual(['看一下'])
+    expect(parseRealtimeDelegation(text)?.input).toBe('')
   })
 
   it('marks a tail flush and leaves the instruction as the bubble text', () => {

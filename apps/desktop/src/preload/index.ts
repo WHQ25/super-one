@@ -74,6 +74,22 @@ const agentAPI = {
     return () => ipcRenderer.removeListener(AgentIpcChannels.DOUBAO_VOICE_PLAYBACK, handler)
   },
 
+  startGeminiVoice: (projectPath: string, sessionId: string, attemptId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.GEMINI_VOICE_START, projectPath, sessionId, attemptId) as Promise<import('@superone/shared/realtime-voice').VoiceStatus>,
+
+  stopGeminiVoice: (projectPath: string, sessionId: string, attemptId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.GEMINI_VOICE_STOP, projectPath, sessionId, attemptId) as Promise<void>,
+
+  sendGeminiVoiceAudio: (sessionId: string, pcm: Uint8Array) => {
+    ipcRenderer.send(AgentIpcChannels.GEMINI_VOICE_AUDIO, sessionId, pcm)
+  },
+
+  onGeminiVoicePlayback: (callback: (frame: import('@superone/shared/gemini-realtime').GeminiPlaybackFrame) => void) => {
+    const handler = (_event: unknown, frame: import('@superone/shared/gemini-realtime').GeminiPlaybackFrame): void => callback(frame)
+    ipcRenderer.on(AgentIpcChannels.GEMINI_VOICE_PLAYBACK, handler)
+    return () => ipcRenderer.removeListener(AgentIpcChannels.GEMINI_VOICE_PLAYBACK, handler)
+  },
+
   loadRealtimeTimeline: (sessionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.LOAD_REALTIME_TIMELINE, sessionId) as Promise<RealtimeTimelineResult | null>,
 
@@ -1844,9 +1860,9 @@ const appAPI = {
   setJevApiKey: (key: string) =>
     ipcRenderer.invoke(AgentIpcChannels.JEV_API_KEY_SET, key),
   getDoubaoVoiceSettings: () =>
-    ipcRenderer.invoke(AgentIpcChannels.DOUBAO_VOICE_SETTINGS_GET) as Promise<import('@superone/shared/doubao-call').DoubaoVoiceSettings>,
-  setDoubaoVoiceSettings: (patch: { preference?: import('@superone/shared/doubao-call').DesktopVoicePreference; speaker?: string; apiKey?: string }) =>
-    ipcRenderer.invoke(AgentIpcChannels.DOUBAO_VOICE_SETTINGS_SET, patch) as Promise<import('@superone/shared/doubao-call').DoubaoVoiceSettings>,
+    ipcRenderer.invoke(AgentIpcChannels.DOUBAO_VOICE_SETTINGS_GET) as Promise<import('@superone/shared/desktop-voice-route').DesktopVoiceSettings>,
+  setDoubaoVoiceSettings: (patch: { preference?: import('@superone/shared/desktop-voice-route').DesktopVoicePreference; speaker?: string; geminiVoice?: string; apiKey?: string; geminiApiKey?: string }) =>
+    ipcRenderer.invoke(AgentIpcChannels.DOUBAO_VOICE_SETTINGS_SET, patch) as Promise<import('@superone/shared/desktop-voice-route').DesktopVoiceSettings>,
   getSyncZoneUsage: () =>
     ipcRenderer.invoke(AgentIpcChannels.SYNC_ZONE_USAGE_GET),
   reclaimSyncZone: () =>

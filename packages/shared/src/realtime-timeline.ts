@@ -21,13 +21,15 @@ export interface RealtimeTranscriptLine {
  *
  *   <realtime_delegation>
  *     [<source>transcript_tail_flush</source>]
- *     <input>…what the voice agent asked Codex to do…</input>
+ *     [<input>…what the voice agent asked the backend to do…</input>]
  *     [<transcript_delta>role: text⏎role: text…</transcript_delta>]
  *   </realtime_delegation>
  *
- * `input` is the handoff instruction (or, for a tail flush after the call ends,
- * a fixed "acknowledge the handoff" sentence); `transcript` is the spoken context
- * since the previous handoff. Field text is XML-escaped and capped at 4 KiB.
+ * `input` is a separate handoff instruction when the voice agent wrote one
+ * (or, for a tail flush after the call ends, a fixed notice). A voice session
+ * that already puts the user's words in the transcript omits `<input>`.
+ * `transcript` is the spoken context since the previous handoff. Field text is
+ * XML-escaped and capped at 4 KiB.
  */
 export interface RealtimeDelegation {
   source: RealtimeDelegationSource
@@ -54,7 +56,8 @@ export function parseRealtimeDelegation(text: string): RealtimeDelegation | null
   return {
     source: readTag(body, 'source')?.trim() === 'transcript_tail_flush' ? 'transcript_tail_flush' : 'handoff',
     // An envelope without fields (older builds) is its own instruction.
-    input: unescapeXmlText(input ?? body).trim(),
+    // A transcript with no `<input>` is the whole handoff, not a second copy of the body.
+    input: unescapeXmlText(input ?? (delta === null ? body : '')).trim(),
     transcript: (delta ? unescapeXmlText(delta) : '')
       .split('\n')
       .map((line) => line.trim())
@@ -102,8 +105,9 @@ function capTranscriptDelta(lines: readonly string[]): string {
 
 /**
  * The envelope a voice session injects into the backing thread.
- * `instruction` is the task inside `<input>` (what the bubble shows).
- * `preamble` is a model-only note outside that tag, so the bubble stays the task.
+ * `instruction` is a separate task inside `<input>`. An empty instruction is omitted
+ * so the transcript can be the only copy of the dialogue.
+ * `preamble` is a model-only note outside the tags.
  * `transcript` is the spoken context.
  */
 export function formatRealtimeDelegation(input: {
@@ -125,7 +129,7 @@ export function formatRealtimeDelegation(input: {
   const parts = ['<realtime_delegation>']
   if (input.source === 'transcript_tail_flush') parts.push('  <source>transcript_tail_flush</source>')
   if (preamble) parts.push(`  ${escapeXmlText(preamble)}`)
-  parts.push(`  <input>${escapeXmlText(instruction)}</input>`)
+  if (instruction) parts.push(`  <input>${escapeXmlText(instruction)}</input>`)
   if (delta) parts.push(`  <transcript_delta>${escapeXmlText(delta)}</transcript_delta>`)
   parts.push('</realtime_delegation>')
   return parts.join('\n')

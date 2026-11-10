@@ -149,6 +149,12 @@ export class AgentService {
     if (!bytes) return
     this.sessionManager.doubaoVoice.pushAudio(event.sender.id, sessionId, bytes)
   }
+  private readonly onGeminiAudio = (event: IpcMainEvent, sessionId: unknown, pcm: unknown): void => {
+    if (!this.sessionManager || typeof sessionId !== 'string') return
+    const bytes = pcmBytes(pcm)
+    if (!bytes) return
+    this.sessionManager.geminiVoice.pushAudio(event.sender.id, sessionId, bytes)
+  }
   setCodexListModels(fn: (projectPath: string) => Promise<ModelOption[]>): void {
     this.codexListModels = fn
   }
@@ -1224,6 +1230,24 @@ export class AgentService {
     })
     ipcMain.removeListener(AgentIpcChannels.DOUBAO_VOICE_AUDIO, this.onDoubaoAudio)
     ipcMain.on(AgentIpcChannels.DOUBAO_VOICE_AUDIO, this.onDoubaoAudio)
+    windowIpc.handle(AgentIpcChannels.GEMINI_VOICE_START, async (event, projectPath: string, sessionId: string, attemptId: string) => {
+      if (parseRemoteProjectKey(projectPath)) throw Object.assign(new Error('Gemini voice is only available on this desktop.'), { code: 'failed_precondition' })
+      if (!attemptId) throw new Error('Voice attempt is required.')
+      const mgr = this.requireSessionManager()
+      const session = mgr.getSession(sessionId)
+      if (!session || session.projectPath !== projectPath) throw new Error('Session unavailable.')
+      session.lease.assertMutation()
+      return mgr.geminiVoice.start(session, event.sender, attemptId)
+    })
+    windowIpc.handle(AgentIpcChannels.GEMINI_VOICE_STOP, async (event, projectPath: string, sessionId: string, attemptId: string) => {
+      const mgr = this.requireSessionManager()
+      const session = mgr.getSession(sessionId)
+      if (!session || session.projectPath !== projectPath) return
+      session.lease.assertMutation()
+      return mgr.realtimeVoice.stop(session, windowVoiceEndpoint(event.sender, session), attemptId)
+    })
+    ipcMain.removeListener(AgentIpcChannels.GEMINI_VOICE_AUDIO, this.onGeminiAudio)
+    ipcMain.on(AgentIpcChannels.GEMINI_VOICE_AUDIO, this.onGeminiAudio)
 
     windowIpc.handle(AgentIpcChannels.LOAD_REALTIME_TIMELINE, (_event, sessionId: string) => {
       return loadRealtimeTimeline(sessionId)
@@ -2321,6 +2345,9 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.DOUBAO_VOICE_STOP)
     ipcMain.removeHandler(AgentIpcChannels.DOUBAO_VOICE_MUTE)
     ipcMain.removeListener(AgentIpcChannels.DOUBAO_VOICE_AUDIO, this.onDoubaoAudio)
+    ipcMain.removeHandler(AgentIpcChannels.GEMINI_VOICE_START)
+    ipcMain.removeHandler(AgentIpcChannels.GEMINI_VOICE_STOP)
+    ipcMain.removeListener(AgentIpcChannels.GEMINI_VOICE_AUDIO, this.onGeminiAudio)
     ipcMain.removeHandler(AgentIpcChannels.LOAD_REALTIME_TIMELINE)
     ipcMain.removeHandler(AgentIpcChannels.GET_REALTIME_TIMELINE)
     ipcMain.removeHandler(AgentIpcChannels.LAUNCH_SUGGESTED_TASK)

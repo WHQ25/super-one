@@ -15,7 +15,6 @@ import WebSocket from 'ws'
 import {
   DOUBAO_ACK_TEXT,
   DOUBAO_REALTIME_URL,
-  DOUBAO_UPLINK_FRAME_BYTES,
   DoubaoFrameError,
   type DoubaoServerNotice,
   buildDoubaoStartSession,
@@ -28,9 +27,9 @@ import {
   redactDoubaoText,
   responseCancel,
   sessionClose,
-  slicePcm20ms,
   speechTextCommit,
 } from '@superone/shared/doubao-realtime'
+import { slicePcm20ms, VOICE_UPLINK_FRAME_BYTES } from '@superone/shared/voice-delegation'
 
 const apiKey = process.env.DOUBAO_API_KEY?.trim() ?? ''
 const pcmPath = process.env.DOUBAO_PCM_PATH?.trim() ?? ''
@@ -150,7 +149,7 @@ function delay(ms: number): Promise<void> {
 function pacedFrames(pcm: Uint8Array): Uint8Array[] {
   const { frames, remainder } = slicePcm20ms(pcm)
   if (remainder.length === 0) return frames
-  const padded = new Uint8Array(DOUBAO_UPLINK_FRAME_BYTES)
+  const padded = new Uint8Array(VOICE_UPLINK_FRAME_BYTES)
   padded.set(remainder)
   return [...frames, padded]
 }

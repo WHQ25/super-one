@@ -1,20 +1,23 @@
-import type { DesktopVoicePreference, DoubaoVoiceSettings } from '@superone/shared/doubao-call'
+import type { DesktopVoicePreference, DesktopVoiceSettings } from '@superone/shared/desktop-voice-route'
 import { create } from 'zustand'
 
 interface DoubaoVoicePreferenceState {
   preference: DesktopVoicePreference
   configured: boolean
+  geminiConfigured: boolean
 }
 
 export const useDoubaoVoicePreference = create<DoubaoVoicePreferenceState>(() => ({
-  preference: 'auto',
+  preference: 'doubao',
   configured: false,
+  geminiConfigured: false,
 }))
 
-export function applyDoubaoVoiceSettings(settings: DoubaoVoiceSettings): void {
+export function applyDoubaoVoiceSettings(settings: DesktopVoiceSettings): void {
   useDoubaoVoicePreference.setState({
     preference: settings.preference,
     configured: settings.key.configured,
+    geminiConfigured: settings.geminiKey.configured,
   })
 }
 

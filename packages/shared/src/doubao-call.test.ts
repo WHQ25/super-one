@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { DOUBAO_FALLBACK_SPOKEN } from './doubao-realtime'
-import { DoubaoCallController, type DoubaoCallCommand, resolveDesktopVoiceRoute } from './doubao-call'
+import { DoubaoCallController, type DoubaoCallCommand } from './doubao-call'
+import { VOICE_FALLBACK_SPOKEN } from './voice-delegation'
 
 function sentTypes(commands: Array<{ type: string; event?: Record<string, unknown> }>): string[] {
   return commands.flatMap(command => command.type === 'send' ? [String(command.event?.type)] : [command.type])
@@ -23,35 +23,6 @@ function toolReply(commands: DoubaoCallCommand[]): string {
   const first = items[0] as { content?: Array<{ text?: string }> } | undefined
   return first?.content?.[0]?.text ?? ''
 }
-
-describe('desktop voice route', () => {
-  it('keeps official Codex on WebRTC and other sendable sessions on Doubao', () => {
-    expect(resolveDesktopVoiceRoute({
-      preference: 'auto', harnessId: 'codex', apiProviderId: 'codex-account:cli', canSend: true, doubaoConfigured: true,
-    })).toBe('codex')
-    expect(resolveDesktopVoiceRoute({
-      preference: 'auto', harnessId: 'codex', apiProviderId: null, canSend: true, doubaoConfigured: true,
-    })).toBe('codex')
-    expect(resolveDesktopVoiceRoute({
-      preference: 'auto', harnessId: 'claude', canSend: true, doubaoConfigured: true,
-    })).toBe('doubao')
-    expect(resolveDesktopVoiceRoute({
-      preference: 'auto', harnessId: 'codex', apiProviderId: 'custom-key', canSend: true, doubaoConfigured: true,
-    })).toBe('doubao')
-    expect(resolveDesktopVoiceRoute({
-      preference: 'doubao', harnessId: 'codex', apiProviderId: 'codex-account:cli', canSend: true, doubaoConfigured: true,
-    })).toBe('doubao')
-    expect(resolveDesktopVoiceRoute({
-      preference: 'codex', harnessId: 'claude', canSend: true, doubaoConfigured: true,
-    })).toBeNull()
-    expect(resolveDesktopVoiceRoute({
-      preference: 'auto', harnessId: 'claude', canSend: false, doubaoConfigured: true,
-    })).toBeNull()
-    expect(resolveDesktopVoiceRoute({
-      preference: 'auto', harnessId: 'claude', canSend: true, doubaoConfigured: false,
-    })).toBeNull()
-  })
-})
 
 describe('Doubao call controller', () => {
   function started(): DoubaoCallController {
@@ -176,6 +147,11 @@ describe('Doubao call controller', () => {
       continuing: false,
       transcript: [{ role: 'user', text: '看一下当前目录' }],
     })
+    expect(toolReply(commands)).toContain('The task has started and is still running. It is not finished.')
+    expect(toolReply(commands)).toContain('Say one short sentence now, in the user\'s language, that it has started.')
+    expect(toolReply(commands)).toContain('Do not add anything else.')
+    expect(toolReply(commands)).toContain('Do not say it is finished')
+    expect(toolReply(commands)).not.toContain('Stay silent now')
     expect(toolReply(commands)).not.toContain('Already handed')
     expect(toolReply(commands)).not.toContain('好，我来处理')
     expect(toolReply(commands)).not.toContain('short natural sentence')
@@ -381,7 +357,33 @@ describe('Doubao call controller', () => {
     expect(commitText(waiting)).toBeNull()
     expect(waiting.some(command => command.type === 'send' && command.event.type === 'response.cancel')).toBe(false)
     later = 800
+    expect(commitText(quiet.pump())).toBeNull()
+    expect(quiet.pump().some(command => command.type === 'send' && command.event.type === 'response.cancel')).toBe(false)
+    later = 2_000
     expect(commitText(quiet.pump())).toBe('目录里有三个文件。')
+  })
+
+  it('plays the confirmation that arrives after the tool result', () => {
+    let now = 0
+    const call = clocked(() => now)
+    call.ingest({ type: 'asr-ended', text: '看一下当前目录' })
+    const handed = call.ingest({
+      type: 'function-calls',
+      calls: [{ callId: 'call-1', name: 'delegate_task', arguments: '{}' }],
+    })
+    expect(toolReply(handed)).toContain('Say one short sentence now')
+    call.queueSummary('目录里有三个文件。')
+    now = 1_000
+    expect(commitText(call.pump())).toBeNull()
+    expect(call.pump().some(command => command.type === 'send' && command.event.type === 'response.cancel')).toBe(false)
+    const speech = call.ingest({ type: 'tts-start', text: '我这就开始', ttsType: 'default' })
+    expect(speech.find(command => command.type === 'transcript')).toMatchObject({ text: '我这就开始' })
+    expect(speech.some(command => command.type === 'send' && command.event.type === 'response.cancel')).toBe(false)
+    expect(call.ingest({ type: 'tts-audio', pcm: Uint8Array.from([1, 2, 3, 4]) })).toEqual([
+      { type: 'play', pcm: Uint8Array.from([1, 2, 3, 4]) },
+    ])
+    expect(commitText(call.ingest({ type: 'tts-ended', exitIntent: false }))).toBe('目录里有三个文件。')
+    expect(call.ingest({ type: 'tts-start', text: '我再补一句', ttsType: 'default' })).toEqual([])
   })
 
   it('drops playback when the user talks over the report, and still reports if they only open the mic', () => {
@@ -522,7 +524,7 @@ describe('Doubao call controller', () => {
     expect(again.some(command => command.type === 'delegate')).toBe(false)
     expect(toolReply(again)).toContain('Already handed')
     expect(call.wantsSummary()).toBe(true)
-    expect(commitText(call.noteIdleWithoutSummary())).not.toBe(DOUBAO_FALLBACK_SPOKEN)
+    expect(commitText(call.noteIdleWithoutSummary())).not.toBe(VOICE_FALLBACK_SPOKEN)
   })
 
   it('hands the same words off again after the user speaks', () => {
@@ -544,7 +546,7 @@ describe('Doubao call controller', () => {
     })
   })
 
-  it('tells the coding agent when the call ends, and a resumed call starts again', () => {
+  it('does not send a hangup turn, and a resumed call starts again', () => {
     const quiet = started()
     expect(quiet.stop().some(command => command.type === 'delegate')).toBe(false)
 
@@ -558,11 +560,7 @@ describe('Doubao call controller', () => {
       type: 'function-calls',
       calls: [{ callId: 'call-1', name: 'delegate_task', arguments: '{}' }],
     })
-    const stopped = call.stop()
-    expect(stopped.find(command => command.type === 'delegate')).toMatchObject({
-      kind: 'ended',
-      utterance: '语音会话已结束。',
-    })
+    expect(call.stop()).toEqual([{ type: 'send', event: { type: 'session.close' } }])
     expect(call.stop()).toEqual([])
 
     const resumed = started()
@@ -612,13 +610,13 @@ describe('Doubao call controller', () => {
     expect(call.ingest({ type: 'tts-start', text: '我再看一下', ttsType: 'default' })).toEqual([])
     expect(commitText(call.ingest({ type: 'tts-ended', exitIntent: false }))).toBeNull()
     expect(call.wantsSummary()).toBe(true)
-    expect(commitText(call.noteIdleWithoutSummary())).not.toBe(DOUBAO_FALLBACK_SPOKEN)
+    expect(commitText(call.noteIdleWithoutSummary())).not.toBe(VOICE_FALLBACK_SPOKEN)
   })
 
   it('speaks the fallback when a delegated turn ends with nothing readable', () => {
     const call = started()
     delegated(call)
-    expect(commitText(call.noteIdleWithoutSummary())).toBe(DOUBAO_FALLBACK_SPOKEN)
+    expect(commitText(call.noteIdleWithoutSummary())).toBe(VOICE_FALLBACK_SPOKEN)
 
     const prose = started()
     delegated(prose)

@@ -1,10 +1,10 @@
 import { useContext, useEffect } from 'react'
-import { resolveDesktopVoiceRoute } from '@superone/shared/doubao-call'
+import { resolveDesktopVoiceRoute } from '@superone/shared/desktop-voice-route'
 import type { HarnessId } from '@superone/shared/agent-types'
 import { AudioLines } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
-import { realtimeVoiceAudioLevels, startDoubaoCall, startRealtimeCall, useRealtimeCallStore } from '@/stores/realtime-call'
+import { realtimeVoiceAudioLevels, startDoubaoCall, startGeminiCall, startRealtimeCall, useRealtimeCallStore } from '@/stores/realtime-call'
 import { refreshDoubaoVoicePreference, useDoubaoVoicePreference } from '@/stores/doubao-voice-preference'
 import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { useChatStore } from '@/stores/chat'
@@ -22,10 +22,11 @@ export interface ComposerVoiceEntryProps {
   disabled?: boolean
   /**
    * Codex account id for this session. Omitted means no API provider, so an
-   * official Codex harness keeps WebRTC. A non-account provider id routes to Doubao.
+   * official Codex harness keeps Codex Realtime. A non-account provider id
+   * follows the selected Doubao or Gemini model.
    */
   codexProviderId?: string | null
-  /** Remote sessions cannot open the desktop Doubao socket. */
+  /** Remote sessions cannot open a desktop speech socket (Doubao or Gemini). */
   allowDoubao?: boolean
 }
 
@@ -42,6 +43,7 @@ export function ComposerVoiceEntry({
   const { t } = useTranslation()
   const preference = useDoubaoVoicePreference(state => state.preference)
   const doubaoConfigured = useDoubaoVoicePreference(state => state.configured)
+  const geminiConfigured = useDoubaoVoicePreference(state => state.geminiConfigured)
   const visibleSplit = useContext(VisibleSessionSplitContext)
   useEffect(() => { refreshDoubaoVoicePreference() }, [])
   const callState = useRealtimeCallStore(store => store.state)
@@ -72,6 +74,7 @@ export function ComposerVoiceEntry({
     apiProviderId: codexProviderId,
     canSend: !disabled,
     doubaoConfigured: allowDoubao && doubaoConfigured,
+    geminiConfigured: allowDoubao && geminiConfigured,
   })
   if (disabled || !route) return null
 
@@ -83,7 +86,7 @@ export function ComposerVoiceEntry({
       aria-label={t('chat.realtimeVoice.start')}
       className="rounded-full border border-foreground bg-foreground text-background hover:bg-foreground/90 hover:text-background"
       onClick={() => {
-        const start = route === 'doubao' ? startDoubaoCall : startRealtimeCall
+        const start = route === 'doubao' ? startDoubaoCall : route === 'gemini' ? startGeminiCall : startRealtimeCall
         void start({
           projectPath,
           sessionId,

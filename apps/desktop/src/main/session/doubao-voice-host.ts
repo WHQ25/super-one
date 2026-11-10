@@ -1,20 +1,22 @@
 import type { WebContents } from 'electron'
 import { AgentIpcChannels, type AgentEvent } from '@superone/shared/agent-types'
 import {
-  DOUBAO_UPLINK_FRAME_BYTES,
-  DOUBAO_UPLINK_FRAME_MS,
-  DOUBAO_UPLINK_MAX_QUEUED_FRAMES,
-  closedSpeakableBlocks,
-  delegationIdleOutcome,
-  doubaoDelegationContent,
   encodeSeeduplexEvent,
   inputAudioAppend,
   interpretDoubaoServerEvent,
   parseSeeduplexEvent,
   recoverLeadingVoiceUsers,
   redactDoubaoText,
-  slicePcm20ms,
 } from '@superone/shared/doubao-realtime'
+import {
+  VOICE_UPLINK_FRAME_BYTES,
+  VOICE_UPLINK_FRAME_MS,
+  VOICE_UPLINK_MAX_QUEUED_FRAMES,
+  closedSpeakableBlocks,
+  delegationIdleOutcome,
+  slicePcm20ms,
+  voiceDelegationContent,
+} from '@superone/shared/voice-delegation'
 import { DoubaoCallController, type DoubaoCallCommand, type DoubaoPlaybackFrame } from '@superone/shared/doubao-call'
 import type { VoiceIdentity, VoiceStatus } from '@superone/shared/realtime-voice'
 import type { VoiceLink } from '@superone/shared/realtime-voice-admission'
@@ -40,7 +42,7 @@ const BARGE_FRAMES = 30
  * Healthy capture arrives about every 100 ms, so this only fills a real gap.
  */
 const UPLINK_KEEPALIVE_MS = 400
-const SILENT_UPLINK_FRAME = new Uint8Array(DOUBAO_UPLINK_FRAME_BYTES)
+const SILENT_UPLINK_FRAME = new Uint8Array(VOICE_UPLINK_FRAME_BYTES)
 
 export type DoubaoConnector = (apiKey: string) => Promise<DoubaoConnection>
 
@@ -290,7 +292,7 @@ export class DoubaoVoiceHost {
     for (const command of commands) {
       if (command.type === 'send') this.send(call, command.event)
       else if (command.type === 'delegate') {
-        if (command.kind !== 'ended' && !command.continuing) {
+        if (!command.continuing) {
           // A fresh task starts after the messages already on screen.
           call.replyAfter = call.session.snapshot.messages.length
           call.spokenBlocks = new Set()
@@ -315,7 +317,7 @@ export class DoubaoVoiceHost {
 
   private async delegate(
     call: ActiveCall,
-    kind: 'opening' | 'turn' | 'ended',
+    kind: 'opening' | 'turn',
     utterance: string,
     transcript: Array<{ role: string; text: string }>,
     continuing: boolean,
@@ -325,16 +327,14 @@ export class DoubaoVoiceHost {
       await enqueueSessionQueueOp(call.session.id, async () => {
         // Checked before send. A busy turn parks priority next; an idle turn
         // promotes it to a normal send. Steer only the parked one.
-        // Ending the call must not steer: that would cancel the answer in progress.
         const streaming = call.session.isStreaming()
         await call.session.send({
-          content: doubaoDelegationContent(utterance, transcript, kind),
+          content: voiceDelegationContent(utterance, transcript, kind),
           source: 'doubao-voice',
           clientMessageId,
           priority: 'next',
           codexTimeline: { provenance: 'realtime-delegated', turnId: clientMessageId },
         })
-        if (kind === 'ended') return
         if (!streaming) {
           this.countParkedDelegate(call, continuing)
           return
@@ -445,7 +445,7 @@ export class DoubaoVoiceHost {
         this.keepUplink(call, now)
         return
       }
-      const overflow = call.uplink.length - DOUBAO_UPLINK_MAX_QUEUED_FRAMES
+      const overflow = call.uplink.length - VOICE_UPLINK_MAX_QUEUED_FRAMES
       if (overflow > 0) {
         call.uplink.splice(0, overflow)
         if (now - call.dropLoggedAt > 1000) {
@@ -453,19 +453,19 @@ export class DoubaoVoiceHost {
           log.info('[doubao-voice] uplink behind, dropped %d frames', overflow)
         }
       }
-      const late = Math.max(1, Math.round((now - call.paceDue) / DOUBAO_UPLINK_FRAME_MS))
+      const late = Math.max(1, Math.round((now - call.paceDue) / VOICE_UPLINK_FRAME_MS))
       let budget = Math.min(UPLINK_CATCHUP_FRAMES, late)
       while (budget > 0 && call.uplink.length > 0) {
         const frame = call.uplink.shift()
         budget -= 1
-        call.paceDue += DOUBAO_UPLINK_FRAME_MS
-        if (!frame || frame.byteLength !== DOUBAO_UPLINK_FRAME_BYTES) continue
+        call.paceDue += VOICE_UPLINK_FRAME_MS
+        if (!frame || frame.byteLength !== VOICE_UPLINK_FRAME_BYTES) continue
         this.send(call, inputAudioAppend(frame))
         call.lastUplinkAt = now
         this.noteBarge(call, frame)
       }
-      if (now - call.paceDue > DOUBAO_UPLINK_FRAME_MS * UPLINK_CATCHUP_FRAMES) call.paceDue = now
-    }, DOUBAO_UPLINK_FRAME_MS)
+      if (now - call.paceDue > VOICE_UPLINK_FRAME_MS * UPLINK_CATCHUP_FRAMES) call.paceDue = now
+    }, VOICE_UPLINK_FRAME_MS)
     timer.unref?.()
     call.pace = () => clearInterval(timer)
   }

@@ -1,5 +1,5 @@
 import captureUrl from './doubao-capture-worklet.js?worker&url'
-import { DOUBAO_UPLINK_SAMPLE_RATE } from '@superone/shared/doubao-realtime'
+import { VOICE_UPLINK_SAMPLE_RATE } from '@superone/shared/voice-delegation'
 import { floatToS16le, pcmRms } from './pcm-audio'
 import { VoiceResampler } from './voice-resampler'
 
@@ -17,7 +17,7 @@ export async function startDoubaoMicCapture(
   await context.audioWorklet.addModule(captureUrl)
   const source = context.createMediaStreamSource(stream)
   const node = new AudioWorkletNode(context, 'superone-doubao-capture')
-  const resampler = new VoiceResampler(context.sampleRate, DOUBAO_UPLINK_SAMPLE_RATE)
+  const resampler = new VoiceResampler(context.sampleRate, VOICE_UPLINK_SAMPLE_RATE)
   const silent = context.createGain()
   silent.gain.value = 0
   node.port.onmessage = ({ data }) => {

@@ -25,6 +25,7 @@ import { useSubscriptionAlert } from './use-subscription-alert'
 import type { SubscriptionAlert } from '@superone/shared/subscription-alerts'
 import type { SubscriptionHarness, SubscriptionUsage } from '@superone/shared/environment'
 import { useCodexUsage } from './use-codex-usage'
+import { codexRowMatchesOmittedAccount } from '@/harness-ui/codex/node-account'
 
 const TAB_PANEL_SPRING = { type: 'spring', bounce: 0.15, duration: 0.3 } as const
 const TONE_BAR_CLASS = { success: 'bg-green-500', warning: 'bg-amber-500', error: 'bg-red-500' } as const
@@ -329,10 +330,7 @@ function subscriptionHubKey(row: SubscriptionUsage): string {
  */
 function nodeRowIsCurrentSession(row: SubscriptionUsage, activeAccountKey: string, accounts: readonly SubscriptionUsage[]): boolean {
   if (subscriptionHubKey(row) === activeAccountKey) return true
-  if (row.harness !== 'codex' || activeAccountKey !== codexHubKey(null)) return false
-  if (row.isDefault) return true
-  const codex = accounts.filter((item) => item.harness === 'codex')
-  return codex.length === 1 && row.isDefault == null && codex[0] === row
+  return codexRowMatchesOmittedAccount(row, accounts, activeAccountKey === codexHubKey(null))
 }
 
 function PanelHeight({ open, children }: { open: boolean; children: ReactNode }) {

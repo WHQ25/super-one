@@ -679,7 +679,7 @@ export async function sendMessageImpl(
     const appToolsSuffix = await mcpAppToolsContentForModel(projectPath, resolvedSessionId)
     if (appToolsSuffix) {
       finalContent += appToolsSuffix
-      if (effectiveProvider === 'codex' && resolvedCodexCommand?.kind === 'run') {
+      if (resolvedCodexCommand?.kind === 'run') {
         resolvedCodexCommand = { kind: 'run', prompt: finalContent }
       }
     }

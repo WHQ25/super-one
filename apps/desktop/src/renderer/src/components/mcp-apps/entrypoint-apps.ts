@@ -116,9 +116,7 @@ async function materializeLocalRoute(
   const state = useChatStore.getState()
   const perSession = state.projectSessions[route.projectPath]?._sessions[route.sessionId]
   const resolved = perSession ? resolveProvider(perSession) : null
-  const harnessId: McpAppEntrypointHarness = resolved === 'codex' || resolved === 'claude'
-    ? resolved
-    : (preferredHarness ?? 'claude')
+  const harnessId: McpAppEntrypointHarness = resolveMcpAppEntrypointHarness(resolved) ?? preferredHarness ?? 'claude'
   const hasHostedTurn = Boolean(perSession?.messages.some(message => message.providerId !== 'local'))
   const existing = await window.environment.getSession('local', route.sessionId).catch(() => null) as { harnessId?: string } | null
   if (existing && (!existing.harnessId || existing.harnessId === harnessId || hasHostedTurn)) return route

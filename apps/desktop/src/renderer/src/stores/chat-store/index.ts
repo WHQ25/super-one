@@ -531,7 +531,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
   },
 
   setPreferredProvider: (provider, opts) => setPreferredProviderImpl(set, get, provider, opts),
-  setAcpAgentId: (agentId) => setAcpAgentIdImpl(set, get, agentId),
+  setAcpAgentId: (agentId, opts) => setAcpAgentIdImpl(set, get, agentId, opts),
   ensureAcpSlashCommands: () => ensureAcpSlashCommandsImpl(set, get),
 
   // addAttachment / removeAttachment / clearAttachments now provided by createCoreSlice

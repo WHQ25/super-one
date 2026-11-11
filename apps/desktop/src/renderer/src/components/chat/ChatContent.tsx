@@ -1,36 +1,14 @@
 import { publishComposerOverhang as publishOverhang } from '@/hooks/useChatScroll'
 import { useEnvironmentServes } from '@/hooks/use-environment-serves'
-import { SessionProviderState } from './SessionProviderState'
 import { pendingTurnMessage, sessionFooterTarget } from '@superone/chat-view/presenters/turn-footer-model'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
-import { useRef, useState, useEffect, useLayoutEffect, useMemo, useCallback, lazy, Suspense, memo } from 'react'
+import { useRef, useEffect, useMemo, useCallback } from 'react'
 import { useChatStore, useActiveSession, useSessionScope } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
 import { useShallow } from 'zustand/react/shallow'
-import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
-import { IconButton } from '@superone/ui/components/ui/icon-button'
-import { useTranslation } from 'react-i18next'
-import { ArrowDown, ChevronsUp, GitFork, PenLine, Play, ShipWheel, Trash2 } from 'lucide-react'
-import { AnimatePresence, motion } from 'motion/react'
-import { ChatMessage, CompactingIndicator, CompactIndicator, CompactErrorIndicator, findLastAssistantMessageId, parseCompactMarker, parseTurnMetaMarker, isRedundantTurnSummaryMarker, TurnMetaIndicator, RecappingIndicator } from './ChatMessage'
-import { ModelFallbackRow } from './ModelFallbackRow'
-import { PluginNoticeRow } from './PluginNotice'
-import { SystemNoticeRow } from '@superone/chat-view/presenters/SystemNoticeRow'
+import { findLastAssistantMessageId } from './ChatMessage'
 import { selectClaudeModels } from '@/stores/chat-store/selectors'
-import { ChatSuggestions } from './ChatSuggestions'
-import { SideChatEmptyState } from './SideChatEmptyState'
-import { PlanApprovalPrompt } from './PlanApprovalPrompt'
-import { PlanFullscreenContext } from './plan-fullscreen-context'
-import { CodexPlanFullscreenView } from './CodexPlanFullscreenView'
-import { SubagentNavigationContext, type SubagentViewState } from './subagent-navigation-context'
-import { SubagentFullView } from './SubagentFullView'
-const WorkflowFullView = lazy(() => import('./WorkflowFullView').then((m) => ({ default: m.WorkflowFullView })))
-import { WorkflowNavigationContext, type WorkflowViewState } from './workflow-navigation-context'
-import { SelectionContextMenuZone } from './SelectionContextMenu'
-import { ChatScrollIndicator } from './ChatScrollIndicator'
-import { VirtualTranscriptList, type VirtualTranscriptHandle } from './VirtualTranscriptList'
-import { RemoteTranscriptChrome, RemoteTranscriptEdges } from './RemoteTranscriptChrome'
 import { mergeCodexThreadMessages } from './codex-realtime-messages'
 import { CodexRealtimeTranscript } from './CodexRealtimeTranscript'
 import { useCodexConversationActivation } from './use-codex-conversation-activation'
@@ -49,14 +27,11 @@ import { transcriptView } from '@superone/shared/transcript-segments'
 import { ChatRootContext } from './is-focus-in-chat'
 import { DesktopModUi } from '@/lib/mod-ui/DesktopModUi'
 import { ModPaneDockSync } from './mod/ModSurfaces'
-import type { CodexPlanApprovalState } from '@superone/shared/agent-types'
 import { dateSeparators } from '@superone/chat-view/presenters/message-time'
-import { MessageDateSeparator } from '@superone/chat-view/presenters/MessageTime'
 import { HARNESS_CAPABILITIES, resolveHarnessCapabilities } from '@superone/shared/harness/harness-capabilities'
 import { isAntigravityAcpAgent } from '@superone/shared/acp-brand'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { DetailScopeProvider } from '@superone/chat-view/detail-scope'
-import { TurnDetailStateProvider } from './TurnDetailSection'
 import { desktopDetailClient } from '@/lib/desktop-detail-client'
 import {
   EMPTY_CODEX_REALTIME_SESSION_VIEW,
@@ -66,6 +41,10 @@ import {
 } from '@/stores/codex-realtime-view'
 import { useRealtimeCallStore } from '@/stores/realtime-call'
 import { useMcpAppConsents } from '@/components/mcp-apps/consent-store'
+import { ChatOverlayProviders, renderActiveChatOverlay, useChatOverlays } from './chat-content/chat-overlays'
+import { ChatTranscriptBody, useTranscriptJump } from './chat-content/chat-transcript-body'
+import { useChatDensityScale } from './chat-content/use-chat-density-scale'
+import { useTranscriptFrameKey } from './chat-content/use-transcript-frame-key'
 
 interface ChatContentProps {
   scrollViewportRef: React.RefObject<HTMLDivElement | null>
@@ -74,27 +53,6 @@ interface ChatContentProps {
   stopAutoScroll?: () => void
   foreground?: boolean
 }
-
-// Preserve the old responsive visual scale through native layout tokens. A
-// zoomed or transformed transcript can force Chromium to repaint a giant layer.
-const CHAT_SCALABLE_REM_TOKENS = {
-  '--spacing': 0.25,
-  '--text-2xs': 0.625,
-  '--text-xs': 0.75,
-  '--text-sm': 0.875,
-  '--text-base': 1,
-  '--container-3xl': 48,
-} as const
-
-function createChatDensityStyle(scale: number): React.CSSProperties {
-  return Object.fromEntries(
-    Object.entries(CHAT_SCALABLE_REM_TOKENS).map(([token, rem]) => [
-      token,
-      `${Math.round(rem * scale * 100000) / 100000}rem`,
-    ]),
-  ) as React.CSSProperties
-}
-
 
 interface ChatTranscriptProps {
   scrollViewportRef: React.RefObject<HTMLDivElement | null>
@@ -115,7 +73,6 @@ function ChatTranscript({
   liquidGlass,
 }: ChatTranscriptProps) {
   const scope = useSessionScope()
-  const { t } = useTranslation()
   const activeProject = useChatStore((s) => s.activeProject)
   // Model ids arrive raw on the wire; display names live in the harness catalogs.
   const claudeModels = useChatStore(selectClaudeModels)
@@ -192,6 +149,7 @@ function ChatTranscript({
       : withoutPendingRecapTurn(messages, isRecapping)),
     [hasRealtimeTimeline, isRecapping, messages, queueProvider, realtime, showsBackingThread],
   )
+  const draftMode = !!draftId || (queueProvider === 'codex' && hasRealtimeTimeline)
   const displayLastAssistantMessageId = findLastAssistantMessageId(displayMessages)
     ?? lastAssistantMessageId
   const retryTarget = useMemo(() => apiRetry
@@ -212,8 +170,6 @@ function ChatTranscript({
     }
   }, [displayMessages, scope])
 
-  const transcriptRef = useRef<VirtualTranscriptHandle>(null)
-  const messageTop = useCallback((id: string) => transcriptRef.current?.topOf(id) ?? null, [])
   const messagesLen = displayMessages.length
   const messagesTailId = displayMessages[messagesLen - 1]?.id
   const { segments, rows: messageRows } = useMemo(() => transcriptView(displayMessages), [displayMessages])
@@ -233,178 +189,56 @@ function ChatTranscript({
   const modelCatalog = useMemo(() => [...claudeModels, ...acpModels], [claudeModels, acpModels])
 
   const outline = useTurnOutline(displayMessages, segments)
-  const [jumpNonce, setJumpNonce] = useState(0)
-  const pendingScrollIdRef = useRef<string | null>(null)
-  const jumpToMessage = useCallback((id: string) => {
-    stopAutoScroll?.()
-    pendingScrollIdRef.current = id
-    setJumpNonce((n) => n + 1)
-  }, [stopAutoScroll])
-
-  // A jump from the voice view names the backing Codex turn; land on its first row
-  // (the delegation prompt when the timeline has it, the assistant turn otherwise).
-  const pendingJump = realtime.pendingJump
-  const clearJump = useCodexRealtimeViewStore((state) => state.clearJump)
-  useEffect(() => {
-    if (!pendingJump || pendingJump.view !== 'thread' || !displayedSessionId) return
-    const { turnId, messageId } = pendingJump
-    const target = displayMessages.find((message) => (
-      turnId !== undefined
-      && (message.metadata?.codexTimeline?.turnId ?? message.metadata?.codex?.turnId) === turnId
-    )) ?? displayMessages.find((message) => message.id === messageId)
-    if (!target) return
-    jumpToMessage(target.id)
-    clearJump(displayedSessionId)
-  }, [clearJump, displayMessages, displayedSessionId, jumpToMessage, pendingJump])
-
-  useEffect(() => {
-    const id = pendingScrollIdRef.current
-    if (!id) return
-    transcriptRef.current?.jumpTo(id)
-    pendingScrollIdRef.current = null
-  }, [jumpNonce])
+  const { transcriptRef, messageTop, jumpToMessage } = useTranscriptJump({
+    displayedSessionId,
+    displayMessages,
+    pendingJump: realtime.pendingJump,
+    stopAutoScroll,
+  })
 
   return (
-    <TurnDetailStateProvider scope={displayedSessionId ?? 'default'}>
-    <div className="chat-transcript-layout relative min-w-0 flex-1 overflow-hidden">
-      {displayMessages.length === 0 && !historyHydrated && !hasRealtimeTimeline ? (
-        <p className="py-16 text-center text-sm text-muted-foreground">{t('common.loading')}</p>
-      ) : displayMessages.length === 0 && historyHydrated && sessionStatus !== 'streaming' && sessionStatus !== 'background' && !awaitingAssistantReply && !apiRetry ? (
-        sideChatParentId
-          // A side chat is empty on purpose and must never reach ChatSuggestions:
-          // picking a harness there switches the project's active session, which
-          // would yank the parent chat out from under the panel.
-          ? <SideChatEmptyState />
-          // A voice call negotiating on a session with no timeline yet would
-          // otherwise land on the harness picker; the composer's voice mark is
-          // already saying "connecting", so the transcript just stays quiet.
-          : realtime.starting
-            ? <div data-testid="realtime-connecting-blank" className="flex-1" />
-            : awaitingRealtimeTimeline
-              ? <p className="py-16 text-center text-sm text-muted-foreground">{t('common.loading')}</p>
-              // Draft mode is a prop, not a sibling component: autosave stamps
-              // draftId ~250ms into typing, and a remount here would replay the
-              // landing's entrance animation under the cursor.
-              : <ChatSuggestions draft={!!draftId || (queueProvider === 'codex' && hasRealtimeTimeline)} />
-      ) : (
-        <ScrollArea key={displayedSessionId ?? 'default'} className="chat-scroll-area h-full min-w-0" viewportRef={scrollViewportRef}>
-          <RemoteTranscriptEdges>
-          <SelectionContextMenuZone className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-1 p-3 @lg:gap-1.5 @lg:p-3.5 @2xl:gap-1.5 @2xl:p-4">
-            <RemoteTranscriptChrome edge="top" />
-            <VirtualTranscriptList key={displayedSessionId ?? 'default'} viewportRef={scrollViewportRef} apiRef={transcriptRef} items={rows.map((row) => {
-              const msg = row.message
-              if (msg.metadata?.systemNotice) {
-                return <div key={msg.id} data-message-id={row.id} className="chat-message-wrapper">
-                  <SystemNoticeRow meta={msg.metadata.systemNotice} text={msg.content[0]?.type === 'text' ? msg.content[0].text : ''} />
-                </div>
-              }
-              const fallbackMeta = msg.metadata?.modelFallback
-              if (fallbackMeta) {
-                return (
-                  <div key={msg.id} data-message-id={row.id} className="chat-message-wrapper">
-                    <ModelFallbackRow meta={fallbackMeta} models={modelCatalog} />
-                  </div>
-                )
-              }
-              const pluginNotice = msg.metadata?.pluginNotice
-              if (pluginNotice) {
-                const text = msg.content[0]?.type === 'text' ? msg.content[0].text : ''
-                return (
-                  <div key={msg.id} data-message-id={row.id} className="chat-message-wrapper">
-                    <PluginNoticeRow meta={pluginNotice} text={text} />
-                  </div>
-                )
-              }
-              const compactInfo = parseCompactMarker(msg)
-              if (compactInfo) {
-                return (
-                  <div key={row.id} data-message-id={row.id}>
-                    <CompactIndicator trigger={compactInfo.trigger} preTokens={compactInfo.preTokens}
-                      postTokens={compactInfo.postTokens} durationMs={compactInfo.durationMs} />
-                  </div>
-                )
-              }
-              const turnMeta = parseTurnMetaMarker(msg)
-              if (turnMeta) {
-                // Metadata path already shows this summary above the footer.
-                if (isRedundantTurnSummaryMarker(turnMeta, displayMessages)) return null
-                return (
-                  <div key={msg.id} data-message-id={row.id} className="chat-message-wrapper">
-                    <TurnMetaIndicator meta={turnMeta} />
-                  </div>
-                )
-              }
-              // Only plain turns open a day: every row above is a system row.
-              const separatorAt = (row.id === msg.id ? dateSeparatorAt.get(msg.id) : undefined)
-              return (
-                <div key={msg.id} data-message-id={row.id} className="chat-message-wrapper">
-                  {separatorAt !== undefined && <MessageDateSeparator at={separatorAt} />}
-                  <ChatMessage message={msg} sessionStatus={sessionStatus} isLastAssistant={row.final && (msg.id === pendingMessage?.id || msg.id === displayLastAssistantMessageId)} pendingTurn={msg.id === pendingMessage?.id ? 'sending' : undefined} apiRetry={row.final && row.source.id === retryTarget?.message.id ? apiRetry : undefined} onRetry={row.source.id === retryTarget?.message.id ? retry : undefined} showFooter={row.final} sourceMessage={row.source} followingMessage={row.following} segmentId={row.id} firstSlice={row.first} anchors={row.anchors} />
-                </div>
-              )
-            }).map((content, index) => ({ id: rows[index].id, sourceId: rows[index].source.id, anchors: rows[index].anchors, content })).filter(item => item.content !== null)} />
-            <SessionProviderState />
-            {queuedMessages.map((msg, index) => (
-              <div key={msg.id} className="group/queued chat-message-wrapper relative hover:z-30 focus-within:z-30">
-                <div className="opacity-50">
-                  <ChatMessage message={msg} sessionStatus={sessionStatus} isLastAssistant={false} hideUserActions />
-                </div>
-                <div className="flex justify-end pr-1">
-                  <div className="relative z-30 -mt-0.5 flex items-center gap-1 opacity-0 transition-opacity group-hover/queued:opacity-50 group-focus-within/queued:opacity-50">
-                    {index === 0 && canStartCodexQueue && (
-                      <IconButton size="xs" variant="nested" tooltip={t('chat.queuedActions.start')} onClick={() => void startQueuedMessages(queueTarget)}>
-                        <Play className="size-3" />
-                      </IconButton>
-                    )}
-                    {canSteerQueueSoon && (
-                      <IconButton size="xs" variant="nested" tooltip={t('chat.queuedActions.steerSoon')} onClick={() => void steerQueuedMessage(msg.id, queueTarget, 'next')}>
-                        <ChevronsUp />
-                      </IconButton>
-                    )}
-                    {canSteerQueue && (
-                      <IconButton size="xs" variant="nested" tooltip={t('chat.queuedActions.steer')} onClick={() => void steerQueuedMessage(msg.id, queueTarget, 'now')}>
-                        <ShipWheel />
-                      </IconButton>
-                    )}
-                    <IconButton size="xs" variant="nested" tooltip={t('chat.queuedActions.edit')} onClick={() => editQueuedMessage(msg.id, queueTarget)}>
-                      <PenLine className="size-3" />
-                    </IconButton>
-                    <IconButton size="xs" variant="nested" tooltip={t('chat.queuedActions.delete')} onClick={() => deleteQueuedMessage(msg.id, queueTarget)}>
-                      <Trash2 className="size-3" />
-                    </IconButton>
-                  </div>
-                </div>
-              </div>
-            ))}
-            {isCompacting && <CompactingIndicator startedAt={compactingStartedAt} />}
-            {!isCompacting && compactError && <CompactErrorIndicator error={compactError} onDismiss={dismissCompactError} />}
-            {isRecapping && <RecappingIndicator />}
-            <RemoteTranscriptChrome edge="bottom" />
-          </SelectionContextMenuZone>
-          </RemoteTranscriptEdges>
-        </ScrollArea>
-      )}
-      {displayMessages.length > 0 && (
-        <ChatScrollIndicator entries={outline} viewportRef={scrollViewportRef} getMessageTop={messageTop} onJump={jumpToMessage} />
-      )}
-      {!liquidGlass && <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-6 bg-linear-to-t from-card to-transparent" />}
-      <AnimatePresence>
-        {showScrollButton && scrollToBottom && displayMessages.length > 0 && (
-          <motion.button
-            onClick={scrollToBottom}
-            style={{ bottom: 'calc(var(--composer-overhang, 0px) + var(--spacing) * 3)' }}
-            className="absolute bottom-3 left-1/2 z-10 flex size-7 -translate-x-1/2 cursor-pointer items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm transition-colors hover:text-foreground"
-            initial={{ opacity: 0, scale: 0.8 }}
-            animate={{ opacity: 1, scale: 1 }}
-            exit={{ opacity: 0, scale: 0.8 }}
-            transition={{ duration: 0.15 }}
-          >
-            <ArrowDown className="size-3.5" />
-          </motion.button>
-        )}
-      </AnimatePresence>
-    </div>
-    </TurnDetailStateProvider>
+    <ChatTranscriptBody
+      displayedSessionId={displayedSessionId}
+      scrollViewportRef={scrollViewportRef}
+      transcriptRef={transcriptRef}
+      showScrollButton={showScrollButton}
+      scrollToBottom={scrollToBottom}
+      liquidGlass={liquidGlass}
+      displayMessages={displayMessages}
+      rows={rows}
+      dateSeparatorAt={dateSeparatorAt}
+      modelCatalog={modelCatalog}
+      outline={outline}
+      messageTop={messageTop}
+      jumpToMessage={jumpToMessage}
+      historyHydrated={historyHydrated}
+      hasRealtimeTimeline={hasRealtimeTimeline}
+      sessionStatus={sessionStatus}
+      awaitingAssistantReply={awaitingAssistantReply}
+      apiRetry={apiRetry}
+      sideChatParentId={sideChatParentId}
+      realtimeStarting={realtime.starting}
+      awaitingRealtimeTimeline={awaitingRealtimeTimeline}
+      draftMode={draftMode}
+      pendingMessageId={pendingMessage?.id}
+      displayLastAssistantMessageId={displayLastAssistantMessageId}
+      retryTargetMessageId={retryTarget?.message.id}
+      onRetry={retry}
+      queuedMessages={queuedMessages}
+      canStartCodexQueue={canStartCodexQueue}
+      canSteerQueueSoon={canSteerQueueSoon}
+      canSteerQueue={canSteerQueue}
+      queueTarget={queueTarget}
+      startQueuedMessages={startQueuedMessages}
+      steerQueuedMessage={steerQueuedMessage}
+      editQueuedMessage={editQueuedMessage}
+      deleteQueuedMessage={deleteQueuedMessage}
+      isCompacting={isCompacting}
+      compactingStartedAt={compactingStartedAt}
+      compactError={compactError}
+      dismissCompactError={dismissCompactError}
+      isRecapping={isRecapping}
+    />
   )
 }
 
@@ -414,6 +248,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   const {
     messages, sessionStatus, pendingPermissions, pendingQuestion, pendingAsyncQuestions, pendingPlanApproval,
     displayedSessionId, providerSessionId, sessionProvider, preferredProvider,
+    historyHydrated, awaitingAssistantReply, apiRetry, sideChatParentId, isRecapping,
   } = useActiveSession(useShallow((s) => ({
     messages: s.messages,
     sessionStatus: s.status,
@@ -425,6 +260,11 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     providerSessionId: s._providerSessionId,
     sessionProvider: s.sessionProvider,
     preferredProvider: s.preferredProvider,
+    historyHydrated: s._historyHydrated,
+    awaitingAssistantReply: s.awaitingAssistantReply,
+    apiRetry: s.apiRetry,
+    sideChatParentId: s._sideChatParentId ?? null,
+    isRecapping: s.isRecapping,
   })))
   const projectPath = scope?.projectPath ?? activeProject
   // Rows of a remote session may arrive summarized; their detail loads from that machine.
@@ -440,6 +280,9 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
       ? state.sessions[displayedSessionId] ?? EMPTY_CODEX_REALTIME_SESSION_VIEW
       : EMPTY_CODEX_REALTIME_SESSION_VIEW,
   )
+  const realtimeTimelineLoadStatus = useCodexRealtimeViewStore(
+    (state) => displayedSessionId ? state.sessions[displayedSessionId]?.loadStatus ?? 'idle' : 'idle',
+  )
   const threadMessages = useMemo(
     () => isCodexSession && realtime.hasTimeline
       ? mergeCodexThreadMessages(messages, realtime)
@@ -454,6 +297,24 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     && realtime.hasTimeline
     && realtime.view === 'realtime',
   )
+  const awaitingRealtimeTimeline = isCodexSession
+    && !!providerSessionId
+    && (realtimeTimelineLoadStatus === 'idle' || realtimeTimelineLoadStatus === 'loading')
+  const landingMessages = useMemo(
+    () => (isCodexSession && realtime.hasTimeline ? threadMessages : withoutPendingRecapTurn(messages, isRecapping)),
+    [isCodexSession, isRecapping, messages, realtime.hasTimeline, threadMessages],
+  )
+  const isEmptyLanding = !showRealtime
+    && landingMessages.length === 0
+    && historyHydrated
+    && sessionStatus !== 'streaming'
+    && sessionStatus !== 'background'
+    && !awaitingAssistantReply
+    && !apiRetry
+    && !sideChatParentId
+    && !realtime.starting
+    && !awaitingRealtimeTimeline
+  const transcriptFrameKey = useTranscriptFrameKey(displayedSessionId, isEmptyLanding)
   // The composer follows the call, not the view: voice has no text input while a
   // call runs, and once it ends the ordinary composer (with its start-call entry)
   // returns. The backing-thread view keeps the ordinary composer even mid-call so
@@ -520,23 +381,15 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   }, [])
 
   const liquidGlass = useAppStore((s) => s.liquidGlass)
-  const [fullscreenPlan, setFullscreenPlan] = useState<{
-    text: string
-    onApprovePlan?: () => void
-    onRejectPlan?: (feedback?: string) => void
-    planApproval?: CodexPlanApprovalState
-  } | null>(null)
-  const planFullscreenCtx = useMemo(() => ({
-    open: (
-      text: string,
-      actions?: { onApprove?: () => void; onReject?: (feedback?: string) => void; planApproval?: CodexPlanApprovalState },
-    ) => setFullscreenPlan({
-      text,
-      onApprovePlan: actions?.onApprove,
-      onRejectPlan: actions?.onReject,
-      planApproval: actions?.planApproval,
-    }),
-  }), [])
+  const {
+    fullscreenPlan,
+    setFullscreenPlan,
+    planFullscreenCtx,
+    subagentView,
+    subagentNav,
+    workflowView,
+    workflowNav,
+  } = useChatOverlays(displayedSessionId)
 
   // The transcript uses overlap as scroll allowance, without changing its viewport.
   const publishComposerOverhang = useCallback((px: number) => {
@@ -544,65 +397,22 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   }, [])
   const composerFocus = useRestoreChatInputFocus((needsDecision || !!appInput || !!openedComposer) && decisionAvailable, containerRef,
     projectPath && displayedSessionId ? { projectPath, sessionId: displayedSessionId } : undefined)
-  const computeAutoScale = useCallback((w: number) => w >= 672 ? 1.15 : w >= 512 ? 1.1 : 1, [])
-  const [autoScale, setAutoScale] = useState(1)
-  const [manualScaleOffset, setManualScaleOffset] = useState(0)
-  const uiScale = autoScale + manualScaleOffset
-  const densityStyle = useMemo(() => createChatDensityStyle(uiScale), [uiScale])
-  useLayoutEffect(() => {
-    const parent = containerRef.current?.parentElement
-    if (!parent) return
-    setAutoScale(computeAutoScale(parent.getBoundingClientRect().width))
-    let rafId = 0
-    const observer = new ResizeObserver((entries) => {
-      cancelAnimationFrame(rafId)
-      rafId = requestAnimationFrame(() => {
-        const next = computeAutoScale(entries[0]?.contentRect.width ?? 0)
-        setAutoScale((prev) => prev === next ? prev : next)
-      })
-    })
-    observer.observe(parent)
-    return () => { cancelAnimationFrame(rafId); observer.disconnect() }
-  }, [computeAutoScale])
-
-  useEffect(() => {
-    return window.app.onContentZoom((action) => {
-      if (!containerRef.current?.matches(':hover')) return
-      if (action === 'reset') setManualScaleOffset(0)
-      else if (action === 'in') setManualScaleOffset((v) => Math.min(v + 0.05, 0.5))
-      else setManualScaleOffset((v) => Math.max(v - 0.05, -0.5))
-    })
-  }, [])
-
-  const [subagentView, setSubagentView] = useState<SubagentViewState | null>(null)
-  const subagentNav = useMemo(() => ({
-    current: subagentView,
-    open: (state: SubagentViewState) => setSubagentView(state),
-    close: () => setSubagentView(null),
-  }), [subagentView])
-
-  const [workflowView, setWorkflowView] = useState<WorkflowViewState | null>(null)
-  const workflowNav = useMemo(() => ({
-    current: workflowView,
-    open: (state: WorkflowViewState) => setWorkflowView(state),
-    close: () => setWorkflowView(null),
-  }), [workflowView])
-
-  // Full-screen overlays are local UI state; ChatContent stays mounted across
-  // session switches. Adjust during render (React "store info from previous
-  // renders" pattern) so the old overlay never paints over the new session.
-  const [overlaySessionId, setOverlaySessionId] = useState(displayedSessionId)
-  if (displayedSessionId !== overlaySessionId) {
-    setOverlaySessionId(displayedSessionId)
-    setWorkflowView(null)
-    setSubagentView(null)
-    setFullscreenPlan(null)
-  }
+  const densityStyle = useChatDensityScale(containerRef)
+  const activeOverlay = renderActiveChatOverlay({
+    workflowView,
+    subagentView,
+    fullscreenPlan,
+    setFullscreenPlan,
+    showPlanApprovalPrompt: Boolean(pendingPlanApproval && decisionAvailable && !decision),
+    scrollToBottom,
+  })
 
   return (
-    <WorkflowNavigationContext.Provider value={workflowNav}>
-    <SubagentNavigationContext.Provider value={subagentNav}>
-    <PlanFullscreenContext.Provider value={planFullscreenCtx}>
+    <ChatOverlayProviders
+      workflowNav={workflowNav}
+      subagentNav={subagentNav}
+      planFullscreenCtx={planFullscreenCtx}
+    >
     {/* overflow-clip, never hidden: an incoming composer rises from below the
         slot, and the base composer restores the caret on mount. Focus and
         ProseMirror's scrollIntoView scroll every overflow-hidden ancestor to
@@ -619,28 +429,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
       <DetailScopeProvider scope={detailScope}>
       <DesktopModUi projectPath={projectPath} sessionId={displayedSessionId ?? null} enabled={drawsMods}>
       {foreground && drawsMods && projectPath && displayedSessionId ? <ModPaneDockSync projectPath={projectPath} sessionId={displayedSessionId} /> : null}
-      {workflowView ? (
-        <Suspense fallback={null}>
-          <WorkflowFullView view={workflowView} />
-        </Suspense>
-      ) : subagentView ? (
-        <SubagentFullView view={subagentView} />
-      ) : fullscreenPlan ? (
-        <CodexPlanFullscreenView
-          text={fullscreenPlan.text}
-          onApprovePlan={fullscreenPlan.onApprovePlan}
-          onRejectPlan={fullscreenPlan.onRejectPlan}
-          planApproval={fullscreenPlan.planApproval}
-          onClose={(reason) => {
-            setFullscreenPlan(null)
-            if (reason === 'reject') {
-              requestAnimationFrame(() => scrollToBottom?.())
-            }
-          }}
-        />
-      ) : pendingPlanApproval && decisionAvailable && !decision ? (
-        <PlanApprovalPrompt />
-      ) : (
+      {activeOverlay ?? (
         <>
           {/* The fade belongs to arriving at a different session. Switching between
               the voice timeline and the backing thread keeps the frame.
@@ -650,7 +439,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
               overhang, plus the part of the gap a question or permission card
               fills. */}
           <div
-            key={`transcript:${displayedSessionId ?? 'default'}`}
+            key={transcriptFrameKey}
             data-transcript-frame=""
             className="flex min-h-0 min-w-0 flex-1 flex-col -mb-3 animate-[fade-in_150ms_ease-out]"
           >
@@ -703,8 +492,6 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
       </DetailScopeProvider>
       </ChatRootContext.Provider>
     </div>
-    </PlanFullscreenContext.Provider>
-    </SubagentNavigationContext.Provider>
-    </WorkflowNavigationContext.Provider>
+    </ChatOverlayProviders>
   )
 }

@@ -574,6 +574,28 @@ describe('ChatContent empty-state gate is harness-agnostic', () => {
     expect(hoisted.suggestionMounts.count).toBe(1)
   })
 
+  it('keeps ChatSuggestions and transcript frame mounted when switching between two empty landing sessions', () => {
+    reset()
+    hoisted.sessionState._activeSessionId = 'sid-1'
+    hoisted.sessionState.messages = []
+    hoisted.sessionState.session = null
+    hoisted.sessionState._historyHydrated = true
+    hoisted.suggestionMounts.count = 0
+
+    const ref = createRef<HTMLDivElement>()
+    const { container, rerender } = render(<ChatContent scrollViewportRef={ref} />)
+    const initialFrame = container.querySelector('[data-transcript-frame]')
+    expect(initialFrame).not.toBeNull()
+    expect(hoisted.suggestionMounts.count).toBe(1)
+
+    hoisted.sessionState._activeSessionId = 'sid-2'
+    rerender(<ChatContent scrollViewportRef={ref} />)
+
+    expect(container.querySelector('[data-transcript-frame]')).toBe(initialFrame)
+    expect(hoisted.suggestionMounts.count).toBe(1)
+    hoisted.sessionState._activeSessionId = 'sid-1'
+  })
+
   it('ignores timeline thread copies for a Codex session without voice history', () => {
     reset()
     hoisted.sessionState.messages = [{

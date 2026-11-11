@@ -3,7 +3,7 @@
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useSettingsStore } from '@/stores/settings'
-import { ChatSuggestions, ProviderSelector } from './ChatSuggestions'
+import { ChatSuggestions, ProviderSelector, resetProviderSelectorMemoryForTests } from './ChatSuggestions'
 import { useAppStore } from '@/stores/app'
 import { resetEnvironmentListCache } from '@/lib/environment-list'
 import type { EnvironmentListItem, HarnessInstallationStatus } from '@superone/shared/environment'
@@ -121,6 +121,65 @@ describe('ProviderSelector harness catalog', () => {
         screen.queryByText('Install this CLI on your machine, then restart SuperOne.'),
       ).not.toBeInTheDocument()
     })
+  })
+
+  it('marks harnessUserChosen when manually switching from Grok Build to Antigravity so default harness auto-apply does not snap back', async () => {
+    resetProviderSelectorMemoryForTests()
+    window.app.listHarnesses = vi.fn(async () => [
+      { id: 'acp-grok', enabled: true, state: 'ready', runtimeSource: 'external', requiresAuth: true },
+      { id: 'acp-antigravity', enabled: true, state: 'ready', runtimeSource: 'managed', requiresAuth: true },
+    ])
+    window.app.queryHarnessSessionRanks = vi.fn(async () => [])
+    window.app.getAppSettings = vi.fn(async () => ({
+      suggestionHarness: { provider: 'acp', acpAgentId: 'grok-build' },
+      secondaryHarness: { provider: 'acp', acpAgentId: 'antigravity' },
+    }) as never)
+    window.app.saveAppSettings = vi.fn(async () => ({}) as never)
+
+    const project = createDefaultProjectState()
+    project._activeSessionId = 's1'
+    project._sessions = {
+      s1: {
+        ...createDefaultPerSessionState(),
+        _historyHydrated: true,
+        preferredProvider: 'acp',
+        sessionProvider: 'acp',
+        acpAgentId: 'grok-build',
+        harnessUserChosen: false,
+      },
+    }
+    useChatStore.setState({
+      activeProject: '/p',
+      projectSessions: { '/p': project },
+      harnessResources: {
+        ...useChatStore.getState().harnessResources,
+        acp: {
+          agents: [
+            { id: 'grok-build', name: 'Grok Build', installed: true, commandPreview: 'grok agent stdio' },
+            { id: 'antigravity', name: 'Antigravity', installed: true, commandPreview: 'agy --acp' },
+          ],
+          selectedAgentId: 'grok-build',
+          modelsByAgentId: {},
+          configByAgentId: {},
+        },
+      },
+      initializeHarness: vi.fn(async () => {}),
+    })
+
+    render(<ProviderSelector />)
+    const antigravityTab = await screen.findByRole('tab', { name: 'Antigravity' })
+
+    await act(async () => {
+      antigravityTab.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+      antigravityTab.click()
+    })
+
+    await waitFor(() => {
+      const sess = useChatStore.getState().projectSessions['/p']._sessions.s1
+      expect(sess.acpAgentId).toBe('antigravity')
+      expect(sess.harnessUserChosen).toBe(true)
+    })
+    resetProviderSelectorMemoryForTests()
   })
 })
 

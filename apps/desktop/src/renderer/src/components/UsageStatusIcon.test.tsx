@@ -842,4 +842,120 @@ describe('UsageStatusIcon rate-limit tip', () => {
     // Sidebar trigger badge stays bound to the active session (18%)
     expect(trigger).toHaveTextContent('18%')
   })
+
+  it('isolates Grok and Antigravity usage state across ACP agent switches and ignores stale in-flight fetches', async () => {
+    hoisted.sessionState.sessionProvider = 'acp'
+    hoisted.sessionState.preferredProvider = 'acp'
+    hoisted.sessionState.acpAgentId = 'grok-build'
+
+    let resolveLateGrok!: (value: unknown) => void
+    const acpGetRateLimits = vi.fn((_path: string, agentId: string) => {
+      if (agentId === 'grok-build') {
+        return new Promise((resolve) => {
+          resolveLateGrok = resolve
+        })
+      }
+      return Promise.resolve({
+        title: 'Antigravity',
+        planType: 'AI Pro',
+        account: 'dev@google.test',
+        windows: [{ label: 'Claude Opus 4.6', usedPercent: 30, resetsAt: null }],
+        extraUsage: null,
+        fetchedAt: Date.now(),
+      })
+    })
+    vi.stubGlobal('app', { ...window.app, acpGetRateLimits })
+
+    const { rerender } = render(<UsageStatusIcon />)
+    expect(acpGetRateLimits).toHaveBeenCalledWith('/tmp/project', 'grok-build', false)
+
+    hoisted.sessionState.acpAgentId = 'antigravity'
+    rerender(<UsageStatusIcon />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(screen.getByRole('button', { name: 'Antigravity' })).toHaveTextContent('70%')
+    expect(screen.getByText('AI Pro')).toBeInTheDocument()
+    expect(screen.getByText('dev@google.test')).toBeInTheDocument()
+    expect(screen.queryByText('SuperGrok Heavy')).toBeNull()
+    expect(screen.queryByText('grok@x.ai')).toBeNull()
+
+    await act(async () => {
+      resolveLateGrok({
+        title: 'Grok Build',
+        planType: 'SuperGrok Heavy',
+        account: 'grok@x.ai',
+        windows: [{ label: 'Weekly limit', usedPercent: 95, resetsAt: null }],
+        extraUsage: null,
+        creditBalanceDollars: 42,
+        fetchedAt: Date.now(),
+      })
+      await Promise.resolve()
+    })
+
+    expect(screen.getByRole('button', { name: 'Antigravity' })).toHaveTextContent('70%')
+    expect(screen.getByText('AI Pro')).toBeInTheDocument()
+    expect(screen.getByText('dev@google.test')).toBeInTheDocument()
+    expect(screen.queryByText('SuperGrok Heavy')).toBeNull()
+    expect(screen.queryByText('grok@x.ai')).toBeNull()
+    expect(screen.queryByText('$42.00')).toBeNull()
+
+    acpGetRateLimits.mockImplementation(async (_path: string, agentId: string) => {
+      if (agentId === 'grok-build') return null
+      return null
+    })
+    hoisted.sessionState.acpAgentId = 'grok-build'
+    rerender(<UsageStatusIcon />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(screen.queryByText('AI Pro')).toBeNull()
+    expect(screen.queryByText('dev@google.test')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Antigravity' })).toBeNull()
+  })
+
+  it('keeps ACP quota across local project switches and skips local acpGetRateLimits on remote projects', async () => {
+    hoisted.sessionState.sessionProvider = 'acp-grok'
+    hoisted.sessionState.preferredProvider = 'acp-grok'
+    hoisted.sessionState.acpAgentId = 'grok-build'
+
+    const acpGetRateLimits = vi.fn(async () => ({
+      title: 'Grok Build',
+      planType: 'SuperGrok Heavy',
+      account: 'grok@x.ai',
+      windows: [{ label: 'Weekly limit', usedPercent: 25, resetsAt: null }],
+      extraUsage: null,
+      fetchedAt: Date.now(),
+    }))
+    vi.stubGlobal('app', { ...window.app, acpGetRateLimits })
+
+    const { rerender } = render(<UsageStatusIcon />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(acpGetRateLimits).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: 'Grok Build' })).toHaveTextContent('75%')
+
+    hoisted.chatState.activeProject = '/tmp/project-b'
+    rerender(<UsageStatusIcon />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(acpGetRateLimits).toHaveBeenCalledTimes(1)
+    expect(screen.getByRole('button', { name: 'Grok Build' })).toHaveTextContent('75%')
+
+    acpGetRateLimits.mockClear()
+    hoisted.chatState.activeProject = 'remote:node-1:/home/me/app'
+    rerender(<UsageStatusIcon />)
+    await act(async () => {
+      await Promise.resolve()
+    })
+
+    expect(acpGetRateLimits).not.toHaveBeenCalled()
+    hoisted.chatState.activeProject = '/tmp/project'
+  })
 })

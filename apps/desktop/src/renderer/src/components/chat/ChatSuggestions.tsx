@@ -1,16 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent } from 'react'
 import { AnimatePresence, motion } from 'motion/react'
 import { useTranslation } from 'react-i18next'
-import { useAppStore, useHasRealProject } from '@/stores/app'
-import { useActiveSession, useChatStore, useIsRemoteLocked, useSessionScope, type ChatProvider } from '@/stores/chat'
+import { useAppStore } from '@/stores/app'
+import { useActiveSession, useChatStore, useSessionScope, type ChatProvider } from '@/stores/chat'
 import { useProjectHarnessCatalog } from '@/hooks/use-project-harness-catalog'
-import { useProviderScopeSync } from '@/hooks/useProviderScopeSync'
-import { loadEnvironmentItems } from '@/lib/environment-list'
-import { useSettingsStore } from '@/stores/settings'
-import { ProviderLabel } from '@/components/ProviderLabel'
 import { HARNESS_CONTROLS } from '@/harness-ui/controls'
 import { apiKeyDefault } from '@/harness-ui/api-key-defaults'
-import { consumerForHarness, resolveEffective } from '@/lib/provider-resolve'
 import {
   orderSuggestionHarnesses,
   resolveAutoApplyHarness,
@@ -18,8 +13,6 @@ import {
   suggestionHarnessKey,
   type SuggestionHarnessOption,
 } from '@superone/shared/suggestion-harness-order'
-import { ProjectSelector } from '@/components/coding/ProjectSelector'
-import { AddProjectDialog } from '@/components/sidebar/add-project/AddProjectDialog'
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -27,55 +20,38 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@superone/ui/components/ui/dropdown-menu'
-import { Check, ChevronDown, Loader2, Plus } from 'lucide-react'
+import { Check, ChevronDown } from 'lucide-react'
 import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
-import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
 import { cn } from '@superone/ui/lib/utils'
-import { homePath } from '@/lib/path-utils'
-import { withDraftCarry } from '@/lib/draft-surface-select'
-import { displayHostPath, remoteProjectKey } from '@/lib/remote-project-key'
-import { useHostProjects } from '@/hooks/use-host-projects'
 import { useMosaicStore } from '@/components/mosaic/mosaic-store'
 import { useSessionPaneForeground } from '@/stores/chat-store/session-scope'
 import { isSelectedSessionScope } from '@/stores/chat-store/selectors'
-import type {
-  AcpAgentDescriptor,
-  HarnessSessionRank,
-  RecentFolder,
-  SuggestionHarnessPreference,
-} from '@superone/shared/agent-types'
+import type { AcpAgentDescriptor, SuggestionHarnessPreference } from '@superone/shared/agent-types'
 import { acpAgentDisplayName, isGrokAcpAgent, isOpenCodeAcpAgent } from '@superone/shared/acp-brand'
 import {
   catalogIdForSessionProvider,
   isCatalogHarnessEnabled,
   isPickerHarnessEnabled,
-  type HarnessCatalogStatus,
 } from '@/lib/harness-visibility'
+import { ActiveProviderHint } from './chat-suggestions/active-provider-hint'
+import { ChatSuggestionsLanding } from './chat-suggestions/chat-suggestions-landing'
+import {
+  NoHarnessEnabledState,
+  resetBootstrapHarnessMemoryForTests,
+  useBootstrapHarnesses,
+} from './chat-suggestions/use-bootstrap-harnesses'
+import {
+  resetSuggestionPreferencesMemoryForTests,
+  useSuggestionPreferences,
+} from './chat-suggestions/use-suggestion-preferences'
 
 const EMPTY_ACP_AGENTS: AcpAgentDescriptor[] = []
-const EMPTY_RANKS: HarnessSessionRank[] = []
 const DEFAULT_ACP_AGENT_ID = 'grok-build'
-const HARNESS_RANK_DAYS = 7
 
-/**
- * In-process cache for the dropdown-slot harness (separate from the active
- * suggestionHarness preference). Survives ProviderSelector remounts and cold
- * start until app-settings loads, so selecting the fixed slot does not reset
- * the menu tab label.
- */
-let rememberedSuggestionMenuHarness: SuggestionHarnessPreference | null | undefined
-/**
- * Which harnesses are installed and enabled is a machine-level fact, not per-instance
- * state. Empty-session harness switches mint a new session id and remount this
- * component; without the cache the catalog restarts at `null`, which renders as
- * "No harness enabled yet" for the length of one IPC round trip.
- */
-let rememberedHarnessCatalog: HarnessCatalogStatus[] | null = null
-/** Survives ProviderSelector remounts. connectCursor failure clears
- *  `initializedHarnesses`, and empty-session harness switches mint a new
- *  session id — without this latch that pair retries forever. */
-let cursorHarnessBootstrapped = false
-let deepseekHarnessBootstrapped = false
+export function resetProviderSelectorMemoryForTests(): void {
+  resetBootstrapHarnessMemoryForTests()
+  resetSuggestionPreferencesMemoryForTests()
+}
 
 /** Shared trigger chrome — flex-none so short labels (e.g. Codex) don't stretch. */
 const tabTriggerLayoutClass =
@@ -109,10 +85,7 @@ export function ProviderSelector({
   const initializeHarness = useChatStore((s) => s.initializeHarness)
   const experimentalAgentsEnabled = useAppStore((s) => s.experimentalAgentsEnabled)
   const enabledExperimentalAgents = useAppStore((s) => s.enabledExperimentalAgents)
-  const appHarnessCatalog = useAppStore((s) => s.harnessCatalog)
-  const [localHarnessCatalog, setHarnessCatalog] = useState<HarnessCatalogStatus[] | null>(
-    () => appHarnessCatalog ?? rememberedHarnessCatalog,
-  )
+  const localHarnessCatalog = useBootstrapHarnesses(initializeHarness)
   const sessionScope = useSessionScope()
   // Scoped panes stay on their session's machine. An unscoped landing follows
   // the host selector before that host has a project to bind to.
@@ -124,107 +97,26 @@ export function ProviderSelector({
   // Their default selector view is not an empty foreground draft to initialize.
   const canAutoSelect = foreground && selectedAndLoaded
   const [agentMenuOpen, setAgentMenuOpen] = useState(false)
-  const [ranks, setRanks] = useState<HarnessSessionRank[]>(EMPTY_RANKS)
-  const [suggestionHarness, setSuggestionHarness] = useState<SuggestionHarnessPreference | null | undefined>(
-    undefined,
-  )
-  const [secondaryHarness, setSecondaryHarness] = useState<SuggestionHarnessPreference | null>(null)
-  const [harnessOrder, setHarnessOrder] = useState<string[]>([])
-  // Dropdown-slot memory: separate from active preference so selecting the fixed
-  // (top-ranked) slot does not reset the menu tab label / re-activation target.
-  // Survives ProviderSelector remounts that happen when empty-session harness
-  // switches mint a new session id.
-  const [suggestionMenuHarness, setSuggestionMenuHarness] = useState<
-    SuggestionHarnessPreference | null | undefined
-  >(() => rememberedSuggestionMenuHarness)
 
-  useEffect(() => {
-    void initializeHarness('acp')
-  }, [initializeHarness])
-
-  useEffect(() => {
-    if (!isCatalogHarnessEnabled(localHarnessCatalog, 'cursor')) return
-    if (cursorHarnessBootstrapped) return
-    cursorHarnessBootstrapped = true
-    void initializeHarness('cursor')
-  }, [localHarnessCatalog, initializeHarness])
-
-  useEffect(() => {
-    if (!isCatalogHarnessEnabled(localHarnessCatalog, 'dsh')) return
-    if (deepseekHarnessBootstrapped) return
-    deepseekHarnessBootstrapped = true
-    void initializeHarness('dsh')
-  }, [localHarnessCatalog, initializeHarness])
-
-  useEffect(() => {
-    let cancelled = false
-    window.app
-      .listHarnesses?.()
-      .then((list) => {
-        if (cancelled) return
-        rememberedHarnessCatalog = Array.isArray(list)
-          ? list.map((r) => ({ id: r.id, enabled: r.enabled, state: r.state }))
-          : null
-        setHarnessCatalog(rememberedHarnessCatalog)
-      })
-      .catch(() => {
-        // A failed refresh must not blank a catalog that already loaded once.
-        if (!cancelled) setHarnessCatalog(rememberedHarnessCatalog)
-      })
-    return () => {
-      cancelled = true
-    }
+  const prefsEqual = useCallback((
+    a: SuggestionHarnessPreference | null | undefined,
+    b: SuggestionHarnessPreference | null | undefined,
+  ): boolean => {
+    if (a == null || b == null) return a == null && b == null
+    if (a.provider !== b.provider) return false
+    if (a.provider !== 'acp') return true
+    return (a.acpAgentId ?? null) === (b.acpAgentId ?? null)
   }, [])
 
-  useEffect(() => {
-    let cancelled = false
-
-    const applySettings = (settings: {
-      harnessOrder?: string[]
-      suggestionHarness?: SuggestionHarnessPreference | null
-      secondaryHarness?: SuggestionHarnessPreference | null
-      suggestionMenuHarness?: SuggestionHarnessPreference | null
-    } | null) => {
-      if (cancelled) return
-      setHarnessOrder(Array.isArray(settings?.harnessOrder) ? settings.harnessOrder : [])
-      setSuggestionHarness(settings?.suggestionHarness ?? null)
-      const nextSecondary = settings?.secondaryHarness ?? null
-      setSecondaryHarness(nextSecondary)
-      // Explicit secondary (or ordered #2) owns the menu slot — keep in-process
-      // memory aligned so remounts don't resurrect a stale suggestionMenuHarness.
-      if (nextSecondary != null) {
-        rememberedSuggestionMenuHarness = nextSecondary
-        setSuggestionMenuHarness(nextSecondary)
-        return
-      }
-      // Prefer the in-process cache after a remount; fall back to disk on cold start.
-      if (rememberedSuggestionMenuHarness !== undefined) {
-        setSuggestionMenuHarness(rememberedSuggestionMenuHarness)
-      } else {
-        const fromDisk = settings?.suggestionMenuHarness ?? null
-        rememberedSuggestionMenuHarness = fromDisk
-        setSuggestionMenuHarness(fromDisk)
-      }
-    }
-
-    void Promise.all([
-      window.app.queryHarnessSessionRanks(HARNESS_RANK_DAYS).catch(() => EMPTY_RANKS),
-      window.app.getAppSettings().catch(() => null),
-    ]).then(([nextRanks, settings]) => {
-      if (cancelled) return
-      setRanks(Array.isArray(nextRanks) ? nextRanks : EMPTY_RANKS)
-      applySettings(settings)
-    })
-
-    const unsub = window.app.onAppSettingsChange?.((settings) => {
-      applySettings(settings)
-    })
-
-    return () => {
-      cancelled = true
-      unsub?.()
-    }
-  }, [])
+  const {
+    ranks,
+    suggestionHarness,
+    secondaryHarness,
+    harnessOrder,
+    suggestionMenuHarness,
+    persistDefaultHarness,
+    persistSecondaryHarness,
+  } = useSuggestionPreferences(prefsEqual)
 
   const selectProvider = useCallback(async (provider: ChatProvider, userChosen = false) => {
     if (!userChosen && !canAutoSelect) return
@@ -239,48 +131,6 @@ export function ProviderSelector({
       useMosaicStore.getState().replaceTileSession(sessionScope.projectPath, sessionScope.sessionId, nextSessionId)
     }
   }, [sessionScope, setPreferredProvider, canAutoSelect])
-
-  const prefsEqual = useCallback((
-    a: SuggestionHarnessPreference | null | undefined,
-    b: SuggestionHarnessPreference | null | undefined,
-  ): boolean => {
-    if (a == null || b == null) return a == null && b == null
-    if (a.provider !== b.provider) return false
-    if (a.provider !== 'acp') return true
-    return (a.acpAgentId ?? null) === (b.acpAgentId ?? null)
-  }, [])
-
-  const persistDefaultHarness = useCallback((pref: SuggestionHarnessPreference) => {
-    setSuggestionHarness(pref)
-    // Default and secondary must stay distinct — clear secondary on collision.
-    const clearsSecondary = prefsEqual(pref, secondaryHarness)
-    if (clearsSecondary) {
-      setSecondaryHarness(null)
-      rememberedSuggestionMenuHarness = null
-      setSuggestionMenuHarness(null)
-    }
-    void window.app.saveAppSettings({
-      suggestionHarness: pref,
-      ...(clearsSecondary ? { secondaryHarness: null, suggestionMenuHarness: null } : {}),
-    }).catch(() => {
-      /* best-effort; ranking UI still works without persistence */
-    })
-  }, [prefsEqual, secondaryHarness])
-
-  const persistSecondaryHarness = useCallback((pref: SuggestionHarnessPreference) => {
-    // Refuse to pin secondary to the same harness as default.
-    if (prefsEqual(pref, suggestionHarness === undefined ? null : suggestionHarness)) return
-    setSecondaryHarness(pref)
-    rememberedSuggestionMenuHarness = pref
-    setSuggestionMenuHarness(pref)
-    // Pin secondary + keep menu-slot memory in sync so the tab label matches order.
-    void window.app.saveAppSettings({
-      secondaryHarness: pref,
-      suggestionMenuHarness: pref,
-    }).catch(() => {
-      /* best-effort; ranking UI still works without persistence */
-    })
-  }, [prefsEqual, suggestionHarness])
 
   const selectHarnessOption = useCallback(async (
     option: SuggestionHarnessOption,
@@ -305,7 +155,7 @@ export function ProviderSelector({
         await useChatStore.getState().switchToSession(sessionScope.projectPath, sessionScope.sessionId)
       }
       if (!isSelectedSessionScope(useChatStore.getState(), sessionScope)) return
-      if (option.acpAgentId) setAcpAgentId(option.acpAgentId)
+      if (option.acpAgentId) setAcpAgentId(option.acpAgentId, { userChosen: manual })
       if (preferredProvider !== 'acp') await selectProvider('acp', manual)
       return
     }
@@ -319,12 +169,6 @@ export function ProviderSelector({
     setAcpAgentId,
     canAutoSelect,
   ])
-
-  useEffect(() => {
-    if (!appHarnessCatalog) return
-    rememberedHarnessCatalog = appHarnessCatalog
-    setHarnessCatalog(appHarnessCatalog)
-  }, [appHarnessCatalog])
 
   const isAgentAllowed = useCallback(
     (provider: ChatProvider, agentId?: string | null) => isPickerHarnessEnabled(harnessCatalog, provider, agentId, {
@@ -500,16 +344,11 @@ export function ProviderSelector({
     void selectHarnessOption(option, true, 'menu')
   }
 
-  const openHarnessSettings = () => {
-    useAppStore.getState().setSettingsTab('harnesses')
-    useAppStore.getState().navigateTo('settings')
-  }
-
   return (
     <div className="flex flex-col items-center gap-3">
       {hasEnabledHarness ? (
         <>
-          <AnimatePresence mode="wait">
+          <AnimatePresence mode="wait" initial={false}>
             <motion.div
               key={iconKey}
               initial={{ opacity: 0, y: 12, scale: 0.85 }}
@@ -630,276 +469,12 @@ export function ProviderSelector({
           )}
         </>
       ) : (
-        <div className="flex flex-col items-center gap-2 px-4">
-          <p className="text-sm text-muted-foreground">{t('chat.suggestions.noHarnessEnabled')}</p>
-          <button
-            type="button"
-            onClick={openHarnessSettings}
-            className="text-xs font-medium text-primary hover:underline"
-          >
-            {t('chat.suggestions.enableHarnesses')}
-          </button>
-        </div>
+        <NoHarnessEnabledState />
       )}
     </div>
   )
 }
 
-function ActiveProviderHint() {
-  const { t } = useTranslation()
-  const preferredProvider = useActiveSession((s) => s.preferredProvider)
-  const sessionApiProviderId = useActiveSession((s) => s.apiProviderId)
-  const platforms = useSettingsStore((s) => s.platforms)
-  const credentials = useSettingsStore((s) => s.credentials)
-  const bindings = useSettingsStore((s) => s.bindings)
-  const providerScope = useSettingsStore((s) => s.providerScope)
-  const fetchProviderData = useSettingsStore((s) => s.fetchProviderData)
-  const experimentalClaudeOpenAiChatEnabled = useAppStore((s) => s.experimentalClaudeOpenAiChatEnabled)
-
-  useProviderScopeSync()
-
-  useEffect(() => {
-    void fetchProviderData()
-  }, [fetchProviderData, providerScope])
-
-  // Only a harness that runs on API keys says which one powers it.
-  const builtIn = apiKeyDefault(preferredProvider)
-  if (!builtIn) return null
-
-  const effective = resolveEffective(
-    platforms,
-    credentials,
-    bindings,
-    consumerForHarness(preferredProvider),
-    sessionApiProviderId,
-    { experimentalClaudeOpenAiChatEnabled },
-  )
-
-  return (
-    <span className="inline-flex items-center gap-1.5">
-      <span className="text-xs text-muted-foreground">{t('chat.suggestions.poweredBy')}</span>
-      <ProviderLabel
-        brandKey={effective?.brand ?? builtIn.brand}
-        fallback={effective?.platform.name ?? t(builtIn.labelKey)}
-        icon={effective?.platform.icon}
-        size={12}
-        compactFallback
-      />
-    </span>
-  )
-}
-
-/**
- * Empty-pane landing. `draft` keeps the pane on a restored / carried / autosaved
- * draft: the session already owns its harness / model / permission / worktree,
- * so the default-harness auto-apply and the project-switch session reset are
- * off. It is a prop, not a sibling component, so autosave stamping `draftId`
- * mid-typing flips mode in place instead of remounting under the cursor.
- */
 export function ChatSuggestions({ draft = false }: { draft?: boolean } = {}) {
-  const foreground = useSessionPaneForeground()
-  const scope = useSessionScope()
-  const selected = useChatStore(s => isSelectedSessionScope(s, scope))
-  const { t } = useTranslation()
-  const locked = useIsRemoteLocked()
-  const selectProject = useAppStore((s) => s.selectProject)
-  const fetchRecentFolders = useAppStore((s) => s.fetchRecentFolders)
-  const isSwitchingHostProject = useAppStore((s) => s.isSwitchingHostProject)
-  const hasRealProject = useHasRealProject()
-  const { connectionId, isLocal, projects, loading, error, refresh } = useHostProjects()
-
-  const [menuOpen, setMenuOpen] = useState(false)
-  const [addDialogOpen, setAddDialogOpen] = useState(false)
-  const [hostLabel, setHostLabel] = useState('')
-  /** Prevents re-entrant auto-open while selectProject is in flight for this host. */
-  const autoOpenAttemptRef = useRef<string | null>(null)
-
-  const resetSession = useChatStore((s) => s.resetSession)
-
-  // Label for the add-project dialog (remote host name when available).
-  useEffect(() => {
-    if (isLocal) {
-      setHostLabel(window.app.platform === 'darwin' ? t('sidebar.thisMac') : t('sidebar.thisPc'))
-      return
-    }
-    let cancelled = false
-    void loadEnvironmentItems().then((items) => {
-      if (cancelled) return
-      const host = items.find((h) => h.connectionId === connectionId)
-      setHostLabel(host?.label ?? connectionId)
-    }).catch(() => {
-      if (!cancelled) setHostLabel(connectionId)
-    })
-    return () => {
-      cancelled = true
-    }
-  }, [connectionId, isLocal, t])
-
-  // Safety net for host default project: openDefaultProjectForHost already runs on
-  // host switch, but ChatSuggestions can still land empty if that raced connect /
-  // listProjects. Once the host project list is ready and nothing is open, pick
-  // the first non-missing project so the selector shows a real default.
-  useEffect(() => {
-    if (hasRealProject) {
-      autoOpenAttemptRef.current = null
-      return
-    }
-    if (!foreground || !selected || draft || isSwitchingHostProject || loading || error) return
-    const first = projects.find((folder) => !folder.missing)
-    if (!first) return
-    const attemptKey = `${connectionId}::${first.path}`
-    if (autoOpenAttemptRef.current === attemptKey) return
-    autoOpenAttemptRef.current = attemptKey
-    void selectProject(first.path, {
-      connectionId,
-      projectId: first.id || undefined,
-    })
-  }, [
-    draft,
-    hasRealProject,
-    isSwitchingHostProject,
-    loading,
-    error,
-    projects,
-    connectionId,
-    selectProject,
-    foreground,
-    selected,
-  ])
-
-  const openExisting = useCallback(
-    (folder: RecentFolder) => {
-      void selectProject(folder.path, {
-        connectionId,
-        projectId: folder.id || undefined,
-      })
-    },
-    [connectionId, selectProject],
-  )
-
-  const startAddProject = useCallback(() => {
-    if (isLocal) {
-      void selectProject()
-      return
-    }
-    setAddDialogOpen(true)
-  }, [isLocal, selectProject])
-
-  const addDialog = (
-    <AddProjectDialog
-      open={addDialogOpen}
-      onOpenChange={setAddDialogOpen}
-      connectionId={connectionId}
-      hostLabel={hostLabel}
-      onOpened={(project) => {
-        if (isLocal) {
-          void fetchRecentFolders()
-          void selectProject(project.path, withDraftCarry())
-        } else {
-          refresh()
-          void selectProject(
-            remoteProjectKey(connectionId, project.path),
-            withDraftCarry({ connectionId, projectId: project.projectId }),
-          )
-        }
-      }}
-    />
-  )
-
-  if (!hasRealProject && !draft) {
-    const hasProjects = projects.length > 0
-    const isProjectLoading = isSwitchingHostProject || loading
-    return (
-      <div className="flex h-full flex-col items-center justify-center gap-4 px-4" style={{ animation: 'fade-in 400ms ease-out' }}>
-        <ProviderSelector hostConnectionId={connectionId} />
-        {isProjectLoading ? (
-          <div role="status" className="flex h-10 items-center gap-2 text-sm text-muted-foreground">
-            <Loader2 aria-hidden="true" className="size-4 animate-spin" />
-            <span>{t('common.loading')}</span>
-          </div>
-        ) : (
-          <p className="text-sm text-muted-foreground">{t('chat.suggestions.openProject')}</p>
-        )}
-        {!isProjectLoading && (error ? (
-          <div className="flex flex-col items-center gap-2">
-            <p className="max-w-xs text-center text-sm text-destructive">{error}</p>
-            <button
-              type="button"
-              onClick={() => refresh({ force: true })}
-              className="rounded-lg px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent"
-            >
-              {t('common.retry')}
-            </button>
-          </div>
-        ) : hasProjects ? (
-          <DropdownMenu onOpenChange={setMenuOpen}>
-            <DropdownMenuTrigger asChild>
-              <button className="flex items-center gap-2 rounded-lg px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent">
-                {t('chat.suggestions.addProject')}
-                <ChevronDown className={cn('size-4 text-muted-foreground transition-transform duration-200', menuOpen && 'rotate-180')} />
-              </button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="center" className="w-64 overflow-hidden">
-              <ScrollArea
-                type="scroll"
-                edgeFade
-                className="max-h-80 min-h-0 [&_[data-slot=scroll-area-viewport]]:max-h-[inherit] [&_[data-slot=scroll-area-viewport]]:overscroll-contain [&_[data-slot=scroll-area-viewport]>div]:block!"
-              >
-                {projects.map((folder) => (
-                  <DropdownMenuItem key={folder.path} onClick={() => openExisting(folder)} className="gap-2">
-                    <span className="truncate">{folder.name}</span>
-                    <span className="ml-auto truncate text-xs text-muted-foreground">
-                      {homePath(displayHostPath(folder.path))}
-                    </span>
-                  </DropdownMenuItem>
-                ))}
-              </ScrollArea>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem onClick={startAddProject} className="gap-2">
-                <Plus className="size-4 shrink-0" />
-                <span>{t('chat.suggestions.addProject')}</span>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        ) : (
-          <button
-            onClick={startAddProject}
-            className="rounded-lg px-4 py-2.5 text-sm font-medium text-foreground transition-colors hover:bg-accent"
-          >
-            {t('chat.suggestions.addProject')}
-          </button>
-        ))}
-        {addDialog}
-      </div>
-    )
-  }
-
-  return (
-    <div
-      className="flex h-full flex-col items-center justify-center gap-4 px-4"
-      // ComposerSwitch keeps a fixed baseline, so the landing needs no compensation.
-      style={{ animation: 'fade-in 400ms ease-out' }}
-      data-draft={draft || undefined}
-      inert={locked}
-    >
-      <ProviderSelector disableAutoApply={draft} hostConnectionId={draft ? undefined : connectionId} />
-      <ProjectSelector
-        align="center"
-        carryOpenDraft
-        onOpened={() => {
-          if (draft) return
-          const store = useChatStore.getState()
-          const path = store.activeProject
-          const sid = path ? store.projectSessions[path]?._activeSessionId : null
-          const sess = path && sid ? store.projectSessions[path]?._sessions[sid] : null
-          // Already composing / restored draft: keep that session. A fresh
-          // empty landing still mints a new session on the chosen project.
-          if (sess?.draftText.trim() || sess?.draftId) return
-          void resetSession()
-        }}
-        onAddProject={isLocal ? undefined : startAddProject}
-      />
-      {addDialog}
-    </div>
-  )
+  return <ChatSuggestionsLanding draft={draft} ProviderSelectorComponent={ProviderSelector} />
 }

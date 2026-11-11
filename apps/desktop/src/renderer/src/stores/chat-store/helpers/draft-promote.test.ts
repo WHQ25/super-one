@@ -351,6 +351,63 @@ describe('carrying a draft across projects', () => {
     applyCarriedDraft(set, '/to', carried)
     expect(state.projectSessions['/to']._sessions['sid-to']._worktreePath).toBeNull()
   })
+
+  it('carries an empty-text unsent session across projects without minting a draftId and preserves harnessUserChosen', () => {
+    const store = {
+      projectSessions: {
+        '/from': {
+          _activeSessionId: 'sid-from',
+          _sessions: {
+            'sid-from': session({
+              draftText: '',
+              preferredProvider: 'acp',
+              sessionProvider: 'acp',
+              acpAgentId: 'antigravity',
+              harnessUserChosen: true,
+            }),
+          },
+        },
+        '/to': {
+          _activeSessionId: 'sid-busy',
+          _sessions: {
+            'sid-busy': session({
+              draftText: '',
+              _historyHydrated: false,
+              hostSessionOwned: true,
+              messages: [{ id: 'm1' }] as never[],
+            }),
+          },
+        },
+      },
+    } as unknown as ChatStore
+
+    const carried = captureOpenDraft(store, '/from', 'sid-from')
+    expect(carried).not.toBeNull()
+    expect(carried?.draftId).toBeNull()
+    expect(getDraftIdForSession('sid-from')).toBeUndefined()
+
+    let state = store
+    const set = (partial: Partial<ChatStore> | ((s: ChatStore) => Partial<ChatStore>)) => {
+      const patch = typeof partial === 'function' ? partial(state) : partial
+      state = {
+        ...state,
+        ...patch,
+        projectSessions: patch.projectSessions ?? state.projectSessions,
+      }
+    }
+
+    const toSid = applyCarriedDraft(set, '/to', carried!)
+    expect(toSid).not.toBe('sid-busy')
+    const dest = state.projectSessions['/to']._sessions[toSid]
+    expect(dest.preferredProvider).toBe('acp')
+    expect(dest.sessionProvider).toBe('acp')
+    expect(dest.acpAgentId).toBe('antigravity')
+    expect(dest.harnessUserChosen).toBe(true)
+    expect(dest._historyHydrated).toBe(true)
+    expect(dest.hostSessionOwned).toBe(false)
+    expect(dest.draftId).toBeNull()
+    expect(getDraftIdForSession(toSid)).toBeUndefined()
+  })
 })
 
 describe('sessionFieldsFromSettings', () => {

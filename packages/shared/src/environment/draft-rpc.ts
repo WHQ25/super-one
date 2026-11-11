@@ -46,6 +46,7 @@ export const DRAFT_ATTACHMENTS_MAX_BYTES = 8 * 1024 * 1024
  */
 export interface DraftSessionSettings {
   harness?: HarnessId | null
+  harnessUserChosen?: boolean
   /** Claude / ACP / OpenCode model id. */
   model?: string | null
   /** Claude effort. */

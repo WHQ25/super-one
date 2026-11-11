@@ -515,7 +515,7 @@ export interface ChatStore {
   refreshCursorSlashItems: (projectPath?: string) => Promise<void>
   setPreferredProvider: (provider: ChatProvider, opts?: { userChosen?: boolean }) => void
   setDshPreset: (preset: string, target?: SessionWriteTarget) => Promise<void>
-  setAcpAgentId: (agentId: string | null) => void
+  setAcpAgentId: (agentId: string | null, opts?: { userChosen?: boolean }) => void
   setOpenCodeAgentId: (agentId: string | null, target?: SessionWriteTarget) => void
   setSelectedAcpMode: (modeId: string, target?: SessionWriteTarget) => void
   setSelectedAcpContextWindow: (contextWindow: number, target?: SessionWriteTarget) => Promise<boolean>

@@ -18,6 +18,7 @@ function emptyDraftRuntimeReset() {
     detailedUsage: null,
     streamingTokens: { input: 0, output: 0 },
     totalCostUsd: 0,
+    rateLimitInfo: null,
     codexUsageSnapshot: null,
     codexTurnLastUsage: null,
     _providerSessionId: null as string | null,
@@ -189,11 +190,18 @@ export function setAcpAgentIdImpl(
   set: ChatStoreSet,
   get: () => ChatStore,
   agentId: string | null,
+  opts?: { userChosen?: boolean },
 ): void {
   const { activeProject } = get()
   const session = getActivePerSession(get())
   if (session.sessionProvider && session.messages.length > 0 && session.sessionProvider !== 'acp') return
+  const userChosenPatch = session.messages.length === 0 && opts?.userChosen !== undefined
+    ? { harnessUserChosen: opts.userChosen }
+    : {}
   if (session.acpAgentId === agentId) {
+    if (opts?.userChosen !== undefined && session.messages.length === 0 && session.harnessUserChosen !== opts.userChosen) {
+      set((s) => updateActivePerSession(s, () => userChosenPatch))
+    }
     const acp = get().harnessResources.acp
     if (acp?.selectedAgentId === agentId) return
   }
@@ -212,6 +220,7 @@ export function setAcpAgentIdImpl(
     : null
   set((s) => updateActivePerSession(s, () => ({
     acpAgentId: agentId,
+    ...userChosenPatch,
     acpModes: [],
     acpModeConfigId: null,
     selectedAcpModeId: null,

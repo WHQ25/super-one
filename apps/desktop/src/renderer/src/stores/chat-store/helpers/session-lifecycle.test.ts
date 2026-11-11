@@ -297,6 +297,60 @@ describe('focusProjectImpl', () => {
     expect(dest._sessions[dest._activeSessionId!].draftText).toBe('come with me')
     expect(dest._sessions[dest._activeSessionId!].selectedModel).toBe('opus')
   })
+
+  it('atomically carries an empty-text chosen ACP harness across projects and activates the carried session', async () => {
+    seedGrokAcpCache({ selectedAgentId: 'grok-build' })
+    setupProject('/from')
+    patchSession({
+      draftText: '',
+      preferredProvider: 'acp',
+      sessionProvider: 'acp',
+      acpAgentId: 'grok-build',
+      harnessUserChosen: true,
+    }, '/from')
+    useChatStore.getState().ensureSession('/to')
+    const oldToSid = activeProjectState('/to')._activeSessionId!
+    patchSession({
+      messages: [userMsg('u-existing', 'claude')],
+      preferredProvider: 'claude',
+      sessionProvider: 'claude',
+    }, '/to')
+
+    await useChatStore.getState().focusProject('/to', { carryOpenDraft: true })
+
+    const dest = useChatStore.getState().projectSessions['/to']
+    const carriedSid = dest._activeSessionId!
+    expect(carriedSid).not.toBe(oldToSid)
+    expect(dest._sessions[carriedSid]).toMatchObject({
+      preferredProvider: 'acp',
+      sessionProvider: 'acp',
+      acpAgentId: 'grok-build',
+      harnessUserChosen: true,
+      _historyHydrated: true,
+    })
+    expect(dest._sessions[carriedSid].acpModels.map((m) => m.id)).toEqual(['grok-4.5', 'grok-4.20'])
+    expect(mockWindowAgent.activateSession).toHaveBeenCalledWith('/to', carriedSid, '/to')
+    expect(saveDraft).not.toHaveBeenCalled()
+  })
+
+  it('marks harnessUserChosen and clears rateLimitInfo when manually switching ACP agents on an empty draft', () => {
+    setupProject()
+    patchSession({
+      preferredProvider: 'acp',
+      sessionProvider: 'acp',
+      acpAgentId: 'grok-build',
+      harnessUserChosen: false,
+      rateLimitInfo: { status: 'allowed_warning', utilization: 0.9 },
+    })
+
+    useChatStore.getState().setAcpAgentId('antigravity', { userChosen: true })
+
+    expect(activeSession()).toMatchObject({
+      acpAgentId: 'antigravity',
+      harnessUserChosen: true,
+      rateLimitInfo: null,
+    })
+  })
 })
 
 describe('resetSessionImpl', () => {

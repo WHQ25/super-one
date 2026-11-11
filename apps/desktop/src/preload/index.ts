@@ -13,7 +13,7 @@ import type { TerminalCommandRule } from '@superone/shared/terminal-command-rule
 import type { AttachmentOriginalStatus, ControllerPairingEvent, NodePairingEvent, DshPluginInstallSource, StageAttachmentOriginalRequest, FileEntryKind, PinnedSessionEntry, ScheduledSend, SettledSessionPage, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
 import type { GitMentionCapabilities, GitMentionRefKind, GitMentionRefsResult } from '@superone/shared/git-mention-query'
 import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
-import type { DraftListEntry, DraftUpsertRequest, EnvironmentUsageReport, PairRemoteInput, ProjectSnapshot, RepairPairingInput } from '@superone/shared/environment'
+import type { DraftListEntry, DraftUpsertRequest, EnvironmentUsageReport, ExternalCliHarnessId, ExternalCliInstallEvent, ExternalCliInstallResult, PairRemoteInput, ProjectSnapshot, RepairPairingInput } from '@superone/shared/environment'
 import type { IosSimulatorChrome, IosSimulatorCreateRequest, IosSimulatorDevice, IosSimulatorRuntimeOption, IosSimulatorStatus } from '@superone/shared/ios-simulator'
 import type { DeviceCapture, DeviceDescriptor, DeviceFrame, DeviceInput, DeviceInputResult, DeviceState, DeviceStreamOptions, DeviceViewfinderClaim } from '@superone/shared/device'
 import type { DeviceSetupKind, DeviceSetupOption } from '@superone/shared/device-setup'
@@ -1116,6 +1116,17 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.HARNESS_PROBE, harnessId),
   ensureHarness: (harnessId: 'claude' | 'codex') =>
     ipcRenderer.invoke(AgentIpcChannels.HARNESS_ENSURE, harnessId),
+  installHarnessCli: (harnessId: ExternalCliHarnessId) =>
+    ipcRenderer.invoke(AgentIpcChannels.HARNESS_INSTALL_CLI, harnessId) as Promise<ExternalCliInstallResult>,
+  onHarnessCliInstallEvent: (callback: (event: ExternalCliInstallEvent) => void) => {
+    const handler = (_e: Electron.IpcRendererEvent, event: ExternalCliInstallEvent): void => {
+      callback(event)
+    }
+    ipcRenderer.on(AgentIpcChannels.HARNESS_CLI_INSTALL_EVENT, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.HARNESS_CLI_INSTALL_EVENT, handler)
+    }
+  },
   scanHarnessClis: () =>
     ipcRenderer.invoke(AgentIpcChannels.HARNESS_SCAN_CLI) as Promise<{
       hits: Array<{

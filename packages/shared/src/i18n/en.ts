@@ -1,6 +1,7 @@
 import { layoutControlEn, type LayoutControlMessages } from './layout-control'
 import { interactionMemoryEn } from './interaction-memory'
 import { mediaComposerEn } from './media-composer'
+import { harnessCliInstallEn, type HarnessCliInstallMessages } from './harness-cli-install'
 /**
  * One device-setup dialog's worth of copy.
  *
@@ -911,6 +912,7 @@ export type Messages = {
       experimentalBadge: string
       experimentalAcpHint: string
       configSection: string
+      cliInstall: HarnessCliInstallMessages
       fields: {
         source: string
         version: string
@@ -5869,6 +5871,7 @@ export const en: Messages = {
       experimentalAcpHint:
         'This ACP agent is experimental. Enabling it only shows it in session pickers — install the agent binary separately if needed.',
       configSection: 'Configuration',
+      cliInstall: harnessCliInstallEn,
       fields: {
         source: 'Source',
         version: 'Version',

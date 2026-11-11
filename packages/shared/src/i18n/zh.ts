@@ -1,6 +1,7 @@
 import { layoutControlZh } from './layout-control'
 import { interactionMemoryZh } from './interaction-memory'
 import { mediaComposerZh } from './media-composer'
+import { harnessCliInstallZh } from './harness-cli-install'
 import type { Messages } from './en'
 
 export const zh: Messages = {
@@ -944,6 +945,7 @@ export const zh: Messages = {
       experimentalAcpHint:
         '该 ACP agent 为实验性。启用后会出现在会话选择器中；如需二进制请另行安装。',
       configSection: '配置',
+      cliInstall: harnessCliInstallZh,
       fields: {
         source: '来源',
         version: '版本',

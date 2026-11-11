@@ -1,8 +1,9 @@
 /** @vitest-environment jsdom */
 
-import { render, screen, waitFor } from '@testing-library/react'
+import { act, render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ExternalCliInstallEvent } from '@superone/shared/environment/external-cli-install'
 import {
   NODE_HARNESS_IDS,
   type NodeHarnessId,
@@ -144,6 +145,9 @@ describe('first-party harness settings entries', () => {
           })),
         ),
         onHarnessInstallProgress: vi.fn().mockReturnValue(() => {}),
+        onHarnessCliInstallEvent: vi.fn().mockReturnValue(() => {}),
+        installHarnessCli: vi.fn(),
+        platform: 'darwin',
         enableHarness: hoisted.enableHarness,
         disableHarness: vi.fn(),
       },
@@ -257,5 +261,176 @@ describe('first-party harness settings entries', () => {
       expect(chatMock.setHarnessResources).toHaveBeenCalledWith('acp', listedResources)
       expect(chatMock.setHarnessResources).toHaveBeenCalledWith('acp', refreshedResources)
     })
+  })
+
+  it.each([
+    ['acp-grok', 'curl -fsSL https://x.ai/cli/install.sh | bash'],
+    ['acp-antigravity', 'curl -fsSL https://antigravity.google/cli/install.sh | bash'],
+    ['opencode', 'curl -fsSL https://opencode.ai/v2/install | bash'],
+  ] as const)(
+    'renders a runnable Markdown install block for missing %s and installs on click',
+    async (harnessId, expectedCommand) => {
+      let cliEventListener: ((event: ExternalCliInstallEvent) => void) | null = null
+      let currentState: 'missing' | 'ready' = 'missing'
+      const listHarnesses = vi.fn().mockImplementation(async () =>
+        NODE_HARNESS_IDS.map((id) =>
+          id === harnessId
+            ? {
+                id,
+                enabled: true,
+                state: currentState,
+                runtimeSource: 'external',
+                requiresAuth: false,
+                ...(currentState === 'ready'
+                  ? { command: `/Users/test/.local/bin/${id}` }
+                  : {
+                      diagnostic: {
+                        code: 'not_found',
+                        message: 'configured command path was not found',
+                      },
+                    }),
+              }
+            : {
+                id,
+                enabled: false,
+                state: 'disabled',
+                runtimeSource: 'managed',
+                requiresAuth: true,
+              },
+        ),
+      )
+
+      let resolveInstall!: (value: { ok: boolean; harnessId: typeof harnessId; exitCode: number }) => void
+      const installHarnessCli = vi.fn().mockImplementation(
+        () =>
+          new Promise((resolve) => {
+            resolveInstall = resolve
+          }),
+      )
+
+      Object.assign(window.app, {
+        listHarnesses,
+        installHarnessCli,
+        onHarnessCliInstallEvent: vi.fn((cb: (event: ExternalCliInstallEvent) => void) => {
+          cliEventListener = cb
+          return () => {
+            cliEventListener = null
+          }
+        }),
+      })
+
+      const user = userEvent.setup()
+      const { container } = render(<HarnessesSettingsPage />)
+
+      await screen.findByText('Enabled')
+      await user.click(screen.getByRole('button', { name: HARNESS_LABELS[harnessId] }))
+
+      await waitFor(() => {
+        expect(container.querySelector('[data-chat-codeblock] code')?.textContent).toBe(
+          expectedCommand,
+        )
+      })
+      expect(
+        screen.queryByText('configured command path was not found'),
+      ).not.toBeInTheDocument()
+
+      const runButton = screen.getByRole('button', { name: 'Run Shell' })
+      expect(runButton).toBeEnabled()
+      await user.click(runButton)
+
+      expect(installHarnessCli).toHaveBeenCalledWith(harnessId)
+
+      act(() => {
+        cliEventListener?.({ harnessId, phase: 'start' })
+        cliEventListener?.({
+          harnessId,
+          phase: 'output',
+          data: 'Installing binary...\n',
+        })
+      })
+
+      expect(await screen.findByTestId('harness-cli-install-output')).toHaveTextContent(
+        'Installing binary...',
+      )
+
+      currentState = 'ready'
+      await act(async () => {
+        cliEventListener?.({ harnessId, phase: 'done', exitCode: 0 })
+        resolveInstall({ ok: true, harnessId, exitCode: 0 })
+      })
+
+      await waitFor(() => {
+        expect(container.querySelector('[data-chat-codeblock]')).toBeNull()
+      })
+    },
+  )
+
+  it('keeps error output and allows retrying when external CLI installation fails', async () => {
+    let cliEventListener: ((event: ExternalCliInstallEvent) => void) | null = null
+    const listHarnesses = vi.fn().mockResolvedValue(
+      NODE_HARNESS_IDS.map((id) =>
+        id === 'acp-grok'
+          ? {
+              id,
+              enabled: true,
+              state: 'missing',
+              runtimeSource: 'external',
+              requiresAuth: true,
+              diagnostic: {
+                code: 'not_found',
+                message: 'configured command path was not found',
+              },
+            }
+          : {
+              id,
+              enabled: false,
+              state: 'disabled',
+              runtimeSource: 'managed',
+              requiresAuth: true,
+            },
+      ),
+    )
+
+    const installHarnessCli = vi
+      .fn()
+      .mockImplementationOnce(async () => {
+        cliEventListener?.({ harnessId: 'acp-grok', phase: 'start' })
+        cliEventListener?.({
+          harnessId: 'acp-grok',
+          phase: 'output',
+          data: 'curl: (6) Could not resolve host: x.ai\n',
+        })
+        cliEventListener?.({ harnessId: 'acp-grok', phase: 'error', exitCode: 6 })
+        return { ok: false, harnessId: 'acp-grok' as const, exitCode: 6 }
+      })
+      .mockResolvedValueOnce({ ok: true, harnessId: 'acp-grok' as const, exitCode: 0 })
+
+    Object.assign(window.app, {
+      listHarnesses,
+      installHarnessCli,
+      onHarnessCliInstallEvent: vi.fn((cb: (event: ExternalCliInstallEvent) => void) => {
+        cliEventListener = cb
+        return () => {
+          cliEventListener = null
+        }
+      }),
+    })
+
+    const user = userEvent.setup()
+    render(<HarnessesSettingsPage />)
+
+    await screen.findByText('Enabled')
+    await user.click(screen.getByRole('button', { name: HARNESS_LABELS['acp-grok'] }))
+    await user.click(await screen.findByRole('button', { name: 'Run Shell' }))
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(/exit code 6/i)
+    expect(screen.getByTestId('harness-cli-install-output')).toHaveTextContent(
+      'Could not resolve host',
+    )
+
+    const retryButton = screen.getByRole('button', { name: 'Run Shell' })
+    expect(retryButton).toBeEnabled()
+    await user.click(retryButton)
+    expect(installHarnessCli).toHaveBeenCalledTimes(2)
   })
 })

@@ -12,7 +12,8 @@
  */
 
 import { accessSync, constants, existsSync, realpathSync, statSync } from 'node:fs'
-import { isAbsolute, resolve } from 'node:path'
+import { homedir } from 'node:os'
+import { isAbsolute, join, resolve } from 'node:path'
 import {
   getNodeHarnessDefinition,
   isNodeHarnessId,
@@ -230,7 +231,21 @@ export function enableOpencode(
       configJson: JSON.stringify({ serverUrl: safeUrl }),
     })
   }
-  const resolved = resolveExternalCommand(opts.command, ['opencode'])
+  const searchNames =
+    process.platform === 'win32'
+      ? ['opencode.exe', 'opencode.cmd', 'opencode']
+      : ['opencode']
+  let resolved = resolveExternalCommand(opts.command, searchNames)
+  if (!opts.command && !resolved) {
+    const home = homedir()
+    for (const dir of [join(home, '.opencode', 'bin'), join(home, '.local', 'bin')]) {
+      for (const name of searchNames) {
+        resolved = resolveExternalCommand(join(dir, name), [])
+        if (resolved) break
+      }
+      if (resolved) break
+    }
+  }
   if (!resolved) {
     return manager.update('opencode', {
       enabled: true,
@@ -299,7 +314,21 @@ export function enableAcpGrok(
 ): HarnessInstallationStatus {
   const defaultArgs = ['agent', 'stdio']
   const args = sanitizeHarnessArgs(opts.args.length > 0 ? opts.args : defaultArgs)
-  const resolved = resolveExternalCommand(opts.command, ['grok'], { preserveSymlinks: true })
+  const searchNames =
+    process.platform === 'win32'
+      ? ['grok.exe', 'grok.cmd', 'grok']
+      : ['grok']
+  let resolved = resolveExternalCommand(opts.command, searchNames, { preserveSymlinks: true })
+  if (!opts.command && !resolved) {
+    const home = homedir()
+    for (const dir of [join(home, '.grok', 'bin'), join(home, '.local', 'bin')]) {
+      for (const name of searchNames) {
+        resolved = resolveExternalCommand(join(dir, name), [], { preserveSymlinks: true })
+        if (resolved) break
+      }
+      if (resolved) break
+    }
+  }
   if (!resolved) {
     return manager.update('acp-grok', {
       enabled: true,

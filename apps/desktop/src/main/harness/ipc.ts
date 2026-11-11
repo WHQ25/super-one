@@ -5,7 +5,11 @@
 
 import { BrowserWindow, ipcMain } from 'electron'
 import { AgentIpcChannels } from '@superone/shared/agent-types'
-import { isNodeHarnessId } from '@superone/shared/environment'
+import { isNodeHarnessId, type ExternalCliInstallEvent } from '@superone/shared/environment'
+import {
+  installExternalHarnessCli,
+  setExternalCliInstallListener,
+} from './external-cli-installer'
 import {
   alignEnabledManagedHarnesses,
   disableDesktopHarness,
@@ -39,9 +43,20 @@ function broadcastProgress(event: {
   }
 }
 
+function broadcastCliInstallEvent(event: ExternalCliInstallEvent): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send(AgentIpcChannels.HARNESS_CLI_INSTALL_EVENT, event)
+    }
+  }
+}
+
 export function registerHarnessIpcHandlers(): void {
   setHarnessInstallProgressListener((event) => {
     broadcastProgress(event)
+  })
+  setExternalCliInstallListener((event) => {
+    broadcastCliInstallEvent(event)
   })
 
   // Runtime resolution reads PATH, and a miss is persisted as `missing`/`error`.
@@ -124,6 +139,11 @@ export function registerHarnessIpcHandlers(): void {
     log.info('[harness-ipc] ensure %s', harnessId)
     await ensureShellPath()
     return ensureManagedHarnessReady(harnessId)
+  })
+
+  ipcMain.handle(AgentIpcChannels.HARNESS_INSTALL_CLI, async (_e, harnessId: string) => {
+    log.info('[harness-ipc] installCli %s', harnessId)
+    return installExternalHarnessCli(harnessId)
   })
 
   ipcMain.handle(AgentIpcChannels.HARNESS_SCAN_CLI, async () => {

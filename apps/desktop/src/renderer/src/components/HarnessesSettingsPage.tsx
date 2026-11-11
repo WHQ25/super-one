@@ -6,7 +6,6 @@ import { CONFIG_TAB_META, configTabsFor } from './harness-config-tabs'
  */
 
 import {
-  useCallback,
   useEffect,
   useMemo,
   useState,
@@ -25,6 +24,7 @@ import { arrayMove } from '@dnd-kit/sortable'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import { isAntigravityAcpAgent, isGrokAcpAgent } from '@superone/shared/acp-brand'
 import type { AcpAgentDescriptor, SettingsProvider } from '@superone/shared/agent-types'
+import type { ExternalCliHarnessId } from '@superone/shared/environment/external-cli-install'
 import { suggestionHarnessKey } from '@superone/shared/suggestion-harness-order'
 import { refreshAcpResourcesAfterToggle } from '@/harness-ui/acp/refresh-after-toggle'
 import { useChatStore } from '@/stores/chat'
@@ -41,15 +41,19 @@ import { AntigravityAuthSettings } from './AntigravityAuthSettings'
 import { CursorAuthSettings, type CursorSettingsSection } from './CursorAuthSettings'
 import { GrokAuthSettings } from './GrokAuthSettings'
 import { HarnessPreferencesPage } from './preferences/SessionDefaultsSection'
+import type { CliInstallUiState } from './harnesses-settings/ExternalCliInstallBlock'
 import {
   buildHarnessListItems,
-  catalogIsOn,
   HarnessDetailHeaderAndStatus,
   HarnessesSidebar,
   type CatalogRow,
   type ListItem,
   type ProgressState,
 } from './harnesses-settings/HarnessesSettingsParts'
+import {
+  sortHarnessItemsByOrder,
+  useHarnessesCatalogState,
+} from './harnesses-settings/use-harnesses-catalog'
 
 const EMPTY_ACP: AcpAgentDescriptor[] = []
 
@@ -80,19 +84,6 @@ function orderKeyForItem(item: ListItem): string {
     return suggestionHarnessKey('acp', agentId)
   }
   return item.provider
-}
-
-function sortItemsByOrder(items: ListItem[], order: string[]): ListItem[] {
-  if (order.length === 0 || items.length <= 1) return items
-  const index = new Map(order.map((key, i) => [key, i] as const))
-  return [...items].sort((a, b) => {
-    const ai = index.get(orderKeyForItem(a))
-    const bi = index.get(orderKeyForItem(b))
-    if (ai == null && bi == null) return 0
-    if (ai == null) return 1
-    if (bi == null) return -1
-    return ai - bi
-  })
 }
 
 /**
@@ -150,19 +141,31 @@ function HarnessBrandTitle({
 
 export function HarnessesSettingsPage() {
   const { t } = useTranslation()
-  const [catalog, setCatalog] = useState<CatalogRow[] | null>(null)
-  const [loading, setLoading] = useState(true)
-  const [busyKey, setBusyKey] = useState<string | null>(null)
-  const [error, setError] = useState('')
-  const [progress, setProgress] = useState<Record<string, ProgressState>>({})
+  const {
+    catalog,
+    catalogById,
+    loading,
+    busyKey,
+    setBusyKey,
+    error,
+    setError,
+    progress,
+    cliInstalls,
+    authRefreshSeq,
+    harnessOrder,
+    setHarnessOrder,
+    savingOrder,
+    refreshCatalog,
+    isItemEnabled,
+    setExperimentalAgentEnabled,
+    installExternalCli,
+    persistEnabledOrder,
+  } = useHarnessesCatalogState(orderKeyForItem)
+
   const [selectedKey, setSelectedKey] = useState<string | null>(() => {
     const { harnessListFocusKey: focusKey, settingsProvider: provider } = useAppStore.getState()
     return focusKey ?? listKeyForSettingsProvider(provider)
   })
-  const [enabledExperimentalAgents, setEnabledExperimentalAgents] = useState<string[]>([])
-  const [legacyExperimentalAll, setLegacyExperimentalAll] = useState(false)
-  const [harnessOrder, setHarnessOrder] = useState<string[]>([])
-  const [savingOrder, setSavingOrder] = useState(false)
 
   const acpAgents = useChatStore((s) => s.harnessResources.acp?.agents ?? EMPTY_ACP)
   const initializeHarness = useChatStore((s) => s.initializeHarness)
@@ -179,67 +182,6 @@ export function HarnessesSettingsPage() {
   useEffect(() => {
     void initializeHarness('acp')
   }, [initializeHarness])
-
-  useEffect(() => {
-    let mounted = true
-    window.app.getAppSettings().then((s) => {
-      if (!mounted) return
-      setEnabledExperimentalAgents(s.enabledExperimentalAgents ?? [])
-      setLegacyExperimentalAll(!!s.experimentalAgentsEnabled)
-      setHarnessOrder(Array.isArray(s.harnessOrder) ? s.harnessOrder : [])
-    })
-    const unsub = window.app.onAppSettingsChange?.((s) => {
-      if (!mounted) return
-      setEnabledExperimentalAgents(s.enabledExperimentalAgents ?? [])
-      setLegacyExperimentalAll(!!s.experimentalAgentsEnabled)
-      setHarnessOrder(Array.isArray(s.harnessOrder) ? s.harnessOrder : [])
-    })
-    return () => {
-      mounted = false
-      unsub?.()
-    }
-  }, [])
-
-  const refreshCatalog = useCallback(async () => {
-    setLoading(true)
-    setError('')
-    try {
-      const list = (await window.app.listHarnesses()) as CatalogRow[]
-      setCatalog(Array.isArray(list) ? list : [])
-      // Keep the app-wide catalog in sync so open sessions flip to/from
-      // read-only when the user enables or disables a harness here.
-      await useAppStore.getState().refreshHarnessCatalog()
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err))
-      setCatalog(null)
-    } finally {
-      setLoading(false)
-    }
-  }, [])
-
-  useEffect(() => {
-    void refreshCatalog()
-  }, [refreshCatalog])
-
-  useEffect(() => {
-    const unsub = window.app.onHarnessInstallProgress?.((event) => {
-      setProgress((prev) => ({
-        ...prev,
-        [event.harnessId]: {
-          received: event.received,
-          total: event.total,
-          phase: event.phase,
-          message: event.message,
-        },
-      }))
-      if (event.phase === 'done' || event.phase === 'error') {
-        void refreshCatalog()
-      }
-    })
-    return () => {
-      unsub?.()
-    }
-  }, [refreshCatalog])
 
   // Deep links (MCP popup / sandbox → preferences) land with a config section;
   // keep the list selection aligned with settingsProvider. Grok (`acp`) and
@@ -262,30 +204,13 @@ export function HarnessesSettingsPage() {
     useAppStore.setState({ harnessListFocusKey: null })
   }, [harnessListFocusKey])
 
-  const catalogById = useMemo(() => {
-    const m = new Map<string, CatalogRow>()
-    for (const row of catalog ?? []) m.set(row.id, row)
-    return m
-  }, [catalog])
-
   const items = useMemo((): ListItem[] => {
     const agents = acpAgents.filter((a) => a.id !== 'opencode')
     return buildHarnessListItems(acpAgents, agents, t)
   }, [acpAgents, t])
 
-  const isItemEnabled = useCallback(
-    (item: ListItem): boolean => {
-      if (item.kind === 'catalog') {
-        return catalogIsOn(catalogById.get(item.catalogId))
-      }
-      if (legacyExperimentalAll) return true
-      return enabledExperimentalAgents.includes(item.acpAgentId)
-    },
-    [catalogById, enabledExperimentalAgents, legacyExperimentalAll],
-  )
-
   const enabledItems = useMemo(
-    () => sortItemsByOrder(items.filter(isItemEnabled), harnessOrder),
+    () => sortHarnessItemsByOrder(items.filter(isItemEnabled), harnessOrder, orderKeyForItem),
     [items, isItemEnabled, harnessOrder],
   )
   const disabledItems = useMemo(
@@ -294,19 +219,6 @@ export function HarnessesSettingsPage() {
   )
   const selected = items.find((i) => i.key === selectedKey) ?? items[0] ?? null
   const enabledOrderIds = useMemo(() => enabledItems.map((i) => i.key), [enabledItems])
-
-  async function setExperimentalAgentEnabled(agentId: string, enabled: boolean): Promise<void> {
-    const next = enabled
-      ? [...new Set([...enabledExperimentalAgents, agentId])]
-      : enabledExperimentalAgents.filter((id) => id !== agentId)
-    const result = await window.app.saveAppSettings({
-      enabledExperimentalAgents: next,
-      experimentalAgentsEnabled: false,
-    })
-    setEnabledExperimentalAgents(result.enabledExperimentalAgents ?? next)
-    setLegacyExperimentalAll(!!result.experimentalAgentsEnabled)
-    useAppStore.getState().setExperimentalAgentsEnabled(result.experimentalAgentsEnabled)
-  }
 
   async function setEnabled(item: ListItem, enabled: boolean): Promise<void> {
     if (isItemEnabled(item) === enabled) return
@@ -383,34 +295,6 @@ export function HarnessesSettingsPage() {
     }
   }
 
-  async function persistEnabledOrder(nextEnabled: ListItem[]): Promise<void> {
-    // Persist full order: reordered enabled keys first, then any prior keys
-    // for currently-disabled harnesses so re-enable keeps their relative rank.
-    const enabledKeys = nextEnabled.map(orderKeyForItem)
-    const enabledSet = new Set(enabledKeys)
-    const retained = harnessOrder.filter((k) => !enabledSet.has(k))
-    const nextOrder = [...enabledKeys, ...retained]
-    if (
-      nextOrder.length === harnessOrder.length
-      && nextOrder.every((k, i) => k === harnessOrder[i])
-    ) {
-      return
-    }
-    setHarnessOrder(nextOrder)
-    setSavingOrder(true)
-    try {
-      const result = await window.app.saveAppSettings({ harnessOrder: nextOrder })
-      setHarnessOrder(Array.isArray(result.harnessOrder) ? result.harnessOrder : nextOrder)
-    } catch (err) {
-      toast.error(err instanceof Error ? err.message : String(err))
-      // Reload from disk on failure.
-      const s = await window.app.getAppSettings().catch(() => null)
-      if (s) setHarnessOrder(Array.isArray(s.harnessOrder) ? s.harnessOrder : [])
-    } finally {
-      setSavingOrder(false)
-    }
-  }
-
   function handleEnabledDragEnd(event: DragEndEvent): void {
     const { active, over } = event
     if (!over || active.id === over.id) return
@@ -455,8 +339,13 @@ export function HarnessesSettingsPage() {
                 progress={
                   selected.kind === 'catalog' ? progress[selected.catalogId] : undefined
                 }
+                cliInstall={
+                  selected.kind === 'catalog' ? cliInstalls[selected.catalogId] : undefined
+                }
+                authRefreshSeq={authRefreshSeq}
                 configSection={harnessConfigSection}
                 onEnabledChange={(v) => void setEnabled(selected, v)}
+                onInstallCli={(harnessId) => installExternalCli(selected, harnessId)}
                 onConfigSectionChange={(section) => {
                   if (selected.configProvider) setSettingsProvider(selected.configProvider)
                   setHarnessConfigSection(section)
@@ -481,8 +370,11 @@ function HarnessDetail({
   enabled,
   busy,
   progress,
+  cliInstall,
+  authRefreshSeq,
   configSection,
   onEnabledChange,
+  onInstallCli,
   onConfigSectionChange,
   onRefresh,
 }: {
@@ -491,8 +383,11 @@ function HarnessDetail({
   enabled: boolean
   busy: boolean
   progress?: ProgressState
+  cliInstall?: CliInstallUiState
+  authRefreshSeq: number
   configSection: HarnessConfigSection | null
   onEnabledChange: (enabled: boolean) => void
+  onInstallCli: (harnessId: ExternalCliHarnessId) => Promise<void>
   onConfigSectionChange: (section: HarnessConfigSection) => void
   onRefresh?: () => void
 }) {
@@ -516,6 +411,7 @@ function HarnessDetail({
         enabled={enabled}
         busy={busy}
         progress={progress}
+        cliInstall={cliInstall}
         showCommand={showCommand}
         brandTitle={(
           <HarnessBrandTitle
@@ -526,6 +422,7 @@ function HarnessDetail({
           />
         )}
         onEnabledChange={onEnabledChange}
+        onInstallCli={onInstallCli}
       />
 
       {configTabs ? (
@@ -568,8 +465,8 @@ function HarnessDetail({
                 )}
                 {section === 'account' && item.configProvider === 'acp' && (
                   isAntigravityAcpAgent(acpAgentId)
-                    ? <AntigravityAuthSettings onAuthChanged={onRefresh} />
-                    : <GrokAuthSettings onAuthChanged={onRefresh} />
+                    ? <AntigravityAuthSettings key={authRefreshSeq} onAuthChanged={onRefresh} />
+                    : <GrokAuthSettings key={authRefreshSeq} onAuthChanged={onRefresh} />
                 )}
                 {section === 'agents' && <AgentsPage />}
                 {section === 'skills' && <SkillsPage />}

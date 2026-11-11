@@ -5219,6 +5219,8 @@ export const AgentIpcChannels = {
   HARNESS_DISABLE: 'harness:disable',
   HARNESS_PROBE: 'harness:probe',
   HARNESS_ENSURE: 'harness:ensure',
+  HARNESS_INSTALL_CLI: 'harness:installCli',
+  HARNESS_CLI_INSTALL_EVENT: 'harness:cliInstallEvent',
   /** Main → renderer progress while downloading/extracting a managed runtime. */
   HARNESS_INSTALL_PROGRESS: 'harness:installProgress',
   /** Onboarding: scan PATH for first-party harness CLIs. */

@@ -27,6 +27,9 @@ import type {
   DraftUpsertRequest,
   EnvironmentInstallProgress,
   EnvironmentListItem,
+  ExternalCliHarnessId,
+  ExternalCliInstallEvent,
+  ExternalCliInstallResult,
   ProjectSnapshot,
   SessionLoadResult,
   SupervisorSnapshot,
@@ -182,6 +185,8 @@ interface AppAPI extends WindowLayoutAPI {
   disableHarness(harnessId: string): Promise<unknown>
   probeHarness(harnessId: string): Promise<unknown>
   ensureHarness(harnessId: 'claude' | 'codex'): Promise<unknown>
+  installHarnessCli(harnessId: ExternalCliHarnessId): Promise<ExternalCliInstallResult>
+  onHarnessCliInstallEvent(callback: (event: ExternalCliInstallEvent) => void): () => void
   /** Onboarding: scan PATH for first-party harness CLIs. */
   scanHarnessClis(): Promise<{
     hits: Array<{

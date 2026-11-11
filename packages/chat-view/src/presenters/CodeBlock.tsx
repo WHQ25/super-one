@@ -62,6 +62,8 @@ export interface HighlightedCodeBlockPresenterProps {
   language: string
   codePlugin: CodeHighlighterPlugin
   isComplete?: boolean
+  canRun?: boolean
+  isRunning?: boolean
   /** Omit outside a host that can execute scripts. null keeps the run button visibly disabled. */
   runBash?: ((code: string) => Promise<void>) | null
   ports: HighlightedCodeBlockPresenterPorts
@@ -85,12 +87,13 @@ interface TokenLine {
   }>
 }
 
-export function HighlightedCodeBlockPresenter({ code, language, codePlugin, isComplete = true, runBash, ports }: HighlightedCodeBlockPresenterProps) {
+export function HighlightedCodeBlockPresenter({ code, language, codePlugin, isComplete = true, canRun: canRunProp, isRunning = false, runBash, ports }: HighlightedCodeBlockPresenterProps) {
   const { t } = useTranslation()
   const [starting, setStarting] = useState(false)
   const [runError, setRunError] = useState<string | null>(null)
   const startingRef = useRef(false)
-  const canRun = isRunnableShellLanguage(language)
+  const canRun = canRunProp ?? isRunnableShellLanguage(language)
+  const busy = starting || isRunning
   const activePlugin = ports.isDark ? codePlugin : ports.lightCodePlugin
   const fallbackFg = ports.isDark ? DARK_FG : LIGHT_FG
   const [copied, setCopied] = useState(false)
@@ -161,7 +164,7 @@ export function HighlightedCodeBlockPresenter({ code, language, codePlugin, isCo
   }, [code, ports])
 
   const handleRun = async () => {
-    if (!runBash || !isComplete || !code.trim() || startingRef.current) return
+    if (!runBash || !isComplete || !code.trim() || startingRef.current || isRunning) return
     startingRef.current = true
     setStarting(true)
     setRunError(null)
@@ -184,12 +187,12 @@ export function HighlightedCodeBlockPresenter({ code, language, codePlugin, isCo
             <button
               type="button"
               onClick={() => void handleRun()}
-              disabled={!runBash || !isComplete || !code.trim() || starting}
+              disabled={!runBash || !isComplete || !code.trim() || busy}
               aria-label={t('tooltips.runBash')}
               title={t(!runBash ? 'tooltips.runBashNeedsProject' : !isComplete ? 'tooltips.runBashIncomplete' : 'tooltips.runBash')}
               className="rounded p-0.5 opacity-50 transition-opacity hover:opacity-100 disabled:cursor-not-allowed disabled:opacity-25"
             >
-              {starting ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
+              {busy ? <Loader2 className="size-3.5 animate-spin" /> : <Play className="size-3.5" />}
             </button>
           )}
           <button

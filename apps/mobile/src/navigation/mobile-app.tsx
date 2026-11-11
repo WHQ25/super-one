@@ -52,7 +52,7 @@ import {
 import type {
   ChatMessage, GitDirtyStatus, HarnessId, ImageAttachment, PermissionRequest,
   ListHarnessOptionsResponse, PlanApprovalRequest, RemoteHarnessOption,
-  OpenCodeAgentOption, SandboxInfo, SandboxMode, SessionAgentLaunchProposal, SessionForkMode, SessionForkResult, SessionGoal, TodoItem, WorktreeInfo,
+  OpenCodeAgentOption, SandboxInfo, SandboxMode, SessionAgentLaunchProposal, SessionAgentProfile, SessionForkMode, SessionForkResult, SessionGoal, TodoItem, WorktreeInfo,
 } from '@superone/shared/agent-types'
 import { resolveRingContextWindow, SESSION_AGENT_LAUNCHES_FIELD } from '@superone/shared/agent-types'
 import { selectedCatalogContextWindow } from '@superone/shared/model-option-params'
@@ -3094,6 +3094,12 @@ export function MobileApp() {
         <CollabRequestScreen
           key={collab.open.requestId}
           payload={collab.open.payload}
+          onRefreshProfiles={async () => {
+            const client = clientRef.current
+            if (!client) throw new Error('Connect to a desktop to refresh models')
+            const environmentId = runtimeRef.current?.sourceEnvironmentId ?? client.environmentId ?? undefined
+            return client.rpc<SessionAgentProfile[]>('collaboration.listProfiles', { force: true }, { environmentId })
+          }}
           onApprove={(launches) => {
             const { requestId } = collab.open!
             collab.answered(requestId)

@@ -77,7 +77,7 @@ interface AppAPI extends WindowLayoutAPI {
   platform: NodeJS.Platform
   supportsLiquidGlass: boolean
   connectClaude(force?: boolean, apiProviderId?: string | null): Promise<ClaudeResources>
-  connectCodex(): Promise<CodexResources>
+  connectCodex(force?: boolean): Promise<CodexResources>
   connectOpenCode(force?: boolean): Promise<OpenCodeResources>
   connectCursor(force?: boolean): Promise<import('@superone/shared/agent-types').CursorResources>
   connectDeepseek(): Promise<import('@superone/shared/agent-types').DeepseekResources>
@@ -1216,6 +1216,7 @@ export interface EnvironmentAPI extends MediaComposerAPI {
     connectionId: string,
     harness: string,
     apiProviderId?: string | null,
+    force?: boolean,
   ): Promise<Array<{ id: string; name: string; description: string; isDefault?: boolean }>>
   sendSessionMessage(
     connectionId: string,
@@ -1347,6 +1348,8 @@ export interface EnvironmentAPI extends MediaComposerAPI {
       projectId: string
       harnessId?: string
       apiProviderId?: string | null
+      /** Skip the node's 24-hour catalog cache and probe again. */
+      force?: boolean
     },
   ): Promise<unknown>
 
@@ -1357,7 +1360,8 @@ export interface EnvironmentAPI extends MediaComposerAPI {
   ): Promise<import('@superone/shared/environment').EnvironmentUsageReport>
 
   /** Agents a collaboration child can run on another machine, from that machine's catalog. */
-  remoteAgentProfiles(environmentId: string): Promise<import('@superone/shared/agent-types').RemoteAgentProfiles>
+  /** `force` skips the target's catalog cache and probes again. */
+  remoteAgentProfiles(environmentId: string, force?: boolean): Promise<import('@superone/shared/agent-types').RemoteAgentProfiles>
 
   /** Node session_providers list (optional harness filter). */
   listRemoteSessionProviders(

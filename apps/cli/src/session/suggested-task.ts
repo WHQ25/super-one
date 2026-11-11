@@ -32,7 +32,12 @@ export function suggestTask(ctx: CollaborationContext, sessionId: string, args: 
   return suggestedTaskToolResult(args)
 }
 
-export async function suggestedTaskOptions(ctx: CollaborationContext, sessionId: string, taskId: string): Promise<SuggestedTaskLaunchOptions> {
+export async function suggestedTaskOptions(
+  ctx: CollaborationContext,
+  sessionId: string,
+  taskId: string,
+  opts?: { force?: boolean },
+): Promise<SuggestedTaskLaunchOptions> {
   const { parent } = pending(ctx, sessionId, taskId)
   const profiles = ctx.listProfiles()
   const parentProfile = resolveProfile(new Map(profiles.map(item => [item.id, item])), parent.providerId)
@@ -45,6 +50,7 @@ export async function suggestedTaskOptions(ctx: CollaborationContext, sessionId:
       catalog = listNodeLiveHarnessModels({
         store: ctx.deps.providers, harness: profile.harnessId, apiProviderId, harnesses: ctx.deps.harnesses,
         options: { experimentalClaudeOpenAiChatEnabled: ctx.deps.experimentalClaudeOpenAiChatEnabled?.() ?? false },
+        force: opts?.force === true,
       })
       catalogs.set(key, catalog)
     }

@@ -55,7 +55,7 @@ export interface RemoteCollaborationPort {
     input: { baseBranch: string; mode: 'branch'; branchName: string },
   ): Promise<{ path: string }>
   /** The node's launchable agent profiles; rejects with an unsupported error on a node that has none to list. */
-  listProfiles(connectionId: string): Promise<SessionAgentProfile[]>
+  listProfiles(connectionId: string, force?: boolean): Promise<SessionAgentProfile[]>
   createSession(connectionId: string, input: {
     environmentId: string
     projectId: string
@@ -125,9 +125,9 @@ export async function connectedEnvironment(environmentId: string): Promise<Remot
 }
 
 /** The base profiles of `env`, or null when it is too old to list them. */
-async function listBaseProfiles(env: RemoteCollabEnvironment): Promise<SessionAgentProfile[] | null> {
+async function listBaseProfiles(env: RemoteCollabEnvironment, force = false): Promise<SessionAgentProfile[] | null> {
   try {
-    const profiles = await (await remotePort()).listProfiles(env.connectionId)
+    const profiles = await (await remotePort()).listProfiles(env.connectionId, force)
     return (Array.isArray(profiles) ? profiles : []).filter((profile) => profile.id === remoteProviderId(profile.harnessId))
   } catch (error) {
     if (isUnsupported(error)) return null
@@ -140,8 +140,8 @@ async function listBaseProfiles(env: RemoteCollabEnvironment): Promise<SessionAg
  * models, efforts and provider key ids and labels. `supported: false` is a
  * node too old to list them; its children run on its own defaults.
  */
-export async function remoteAgentProfiles(environmentId: string): Promise<RemoteAgentProfiles> {
-  const profiles = await listBaseProfiles(await connectedEnvironment(environmentId))
+export async function remoteAgentProfiles(environmentId: string, force = false): Promise<RemoteAgentProfiles> {
+  const profiles = await listBaseProfiles(await connectedEnvironment(environmentId), force)
   return profiles ? { supported: true, profiles } : { supported: false }
 }
 

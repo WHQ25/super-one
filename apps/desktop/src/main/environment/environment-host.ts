@@ -1285,8 +1285,9 @@ export class EnvironmentHost {
     connectionId: string,
     harness: string,
     apiProviderId?: string | null,
+    force?: boolean,
   ): Promise<unknown> {
-    return this.asRemoteProviderGw(connectionId).providerListModels({ harness, apiProviderId })
+    return this.asRemoteProviderGw(connectionId).providerListModels({ harness, apiProviderId, force })
   }
 
   /**
@@ -1299,6 +1300,7 @@ export class EnvironmentHost {
       projectId: string
       harnessId?: string
       apiProviderId?: string | null
+      force?: boolean
     },
   ): Promise<unknown> {
     return this.asRemoteProviderGw(connectionId).harnessResources(input)
@@ -1320,8 +1322,8 @@ export class EnvironmentHost {
     return this.asRemoteProviderGw(parseRemoteProjectKey(projectKey)!.connectionId).mentionCatalog(context.projectId)
   }
 
-  async listRemoteCollabProfiles(connectionId: string): Promise<unknown> {
-    return this.asRemoteProviderGw(connectionId).collaborationListProfiles()
+  async listRemoteCollabProfiles(connectionId: string, force = false): Promise<unknown> {
+    return this.asRemoteProviderGw(connectionId).collaborationListProfiles(force)
   }
 
   async listRemoteSessionProviders(

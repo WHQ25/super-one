@@ -346,7 +346,7 @@ const HANDLERS: Readonly<Record<string, (payload: unknown, ctx: RpcContext, meth
   'session.setTags': (payload, ctx) => handleSessionSetTags(payload, ctx),
   'session.setUiFlags': (payload, ctx) => handleSessionSetUiFlags(payload, ctx),
   'session.cleanup': (payload, ctx) => handleSessionCleanup(payload, ctx),
-  'collaboration.listProfiles': (_payload, ctx) => handleCollaborationListProfiles(ctx),
+  'collaboration.listProfiles': (payload, ctx) => handleCollaborationListProfiles(payload, ctx),
   'collaboration.request': (payload, ctx) => handleCollaborationRequest(payload, ctx),
   'collaboration.start': (payload, ctx) => handleCollaborationStart(payload, ctx),
   'collaboration.send': (payload, ctx) => handleCollaborationSend(payload, ctx),
@@ -519,6 +519,7 @@ async function handleProviderListModels(payload: unknown, ctx: RpcContext): Prom
     experimentalClaudeOpenAiChatEnabled:
       hostAgentSettings(ctx).experimentalClaudeOpenAiChatEnabled,
   }
+  const force = p.force === true
   if (ctx.providers && ctx.hooks.listLiveHarnessModels) {
     const live = await ctx.hooks.listLiveHarnessModels({
       store: ctx.providers,
@@ -526,6 +527,7 @@ async function handleProviderListModels(payload: unknown, ctx: RpcContext): Prom
       apiProviderId,
       harnesses: ctx.harnesses,
       options,
+      force,
     })
     if (Array.isArray(live) && live.length > 0) return { result: live }
   }
@@ -2732,11 +2734,12 @@ function handleSessionSnapshot(ctx: RpcContext): RpcResult {
   }
 }
 
-async function handleCollaborationListProfiles(ctx: RpcContext): Promise<RpcResult> {
+async function handleCollaborationListProfiles(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
   if (denied) return denied
   try {
-    return { result: await (ctx.collaboration.discoverProfiles?.() ?? ctx.collaboration.listProfiles()) }
+    const force = asRecord(payload).force === true
+    return { result: await (ctx.collaboration.discoverProfiles?.(force) ?? ctx.collaboration.listProfiles()) }
   } catch (err) {
     return mapThrown(err)
   }

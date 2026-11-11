@@ -27,11 +27,12 @@ export interface SuggestedTaskLaunchSheetProps {
  * Agent plus the desktop card's launch bar: model, per-model effort, Fast,
  * provider, permission and sandbox. Edits stay on the choice until Launch.
  */
-function LaunchRuntimeRow({ profile, settings, disabled, onChange }: {
+function LaunchRuntimeRow({ profile, settings, disabled, onChange, onRefresh }: {
   profile: SessionAgentProfile
   settings: SessionAgentLaunchSettings
   disabled: boolean
   onChange: (settings: SessionAgentLaunchSettings) => void
+  onRefresh?: () => Promise<void>
 }) {
   const { tokens: { colors, spacing } } = useMobileTheme()
   const displayed = { ...profile.defaultConfig, ...settings }
@@ -51,7 +52,7 @@ function LaunchRuntimeRow({ profile, settings, disabled, onChange }: {
       }}
       providers={view.providers} providerId={view.providerId}
       onProvider={view.providers.length ? (apiProviderId) => patch({ apiProviderId }) : undefined}
-      acpAgentId={profile.acpAgentId} />
+      acpAgentId={profile.acpAgentId} onRefresh={onRefresh} />
     <PermissionModeSelector harness={profile.harnessId} disabled={disabled}
       modes={HARNESS_LAUNCH_OPTIONS[profile.harnessId].permissionModes}
       value={permissionMode} onChange={(mode) => patch({ permissionMode: mode as SessionAgentLaunchSettings['permissionMode'] })} />
@@ -84,6 +85,12 @@ export function SuggestedTaskLaunchSheet({ request, onDismiss }: SuggestedTaskLa
     return () => { active = false; alive.current = false }
   }, [request, retry])
   const profile = options?.profiles.find(item => item.id === choice?.agentId)
+  const refreshModels = async () => {
+    const value = await request.loadOptions(true)
+    if (!alive.current) return
+    setOptions(value)
+    setChoice((current) => current && value.profiles.some((item) => item.id === current.agentId) ? current : value.initial)
+  }
   const dismiss = () => { if (!launching.current) onDismiss() }
   const launch = async () => {
     if (!choice || !profile || launching.current) return
@@ -114,6 +121,7 @@ export function SuggestedTaskLaunchSheet({ request, onDismiss }: SuggestedTaskLa
       <SelectField label="Agent" value={choice.agentId} options={options.profiles.map(item => ({ id: item.id, label: item.name }))}
         onChange={agentId => setChoice({ agentId, settings: agentId === options.initial.agentId ? options.initial.settings : {} })} />
       <LaunchRuntimeRow key={profile.id} profile={profile} settings={choice.settings} disabled={busy}
+        onRefresh={refreshModels}
         onChange={settings => setChoice(current => current ? { ...current, settings } : current)} />
     </View> : null}
   </PromptSheet>

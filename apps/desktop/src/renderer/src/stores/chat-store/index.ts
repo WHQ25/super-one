@@ -365,7 +365,7 @@ const harnessHandlers: HarnessHandlerMap = {
     apply: (s, r) => applyClaudeResources(s, r, applyDefaultModel),
   },
   codex: {
-    connect: () => window.app.connectCodex(),
+    connect: (opts) => window.app.connectCodex(opts?.force === true),
     apply: (s, r) => applyCodexResources(s, r, resolveSessionCodexSelection),
   },
   acp: {

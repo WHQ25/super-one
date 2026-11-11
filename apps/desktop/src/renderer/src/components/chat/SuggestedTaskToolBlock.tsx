@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Loader2 } from 'lucide-react'
 import type { SessionAgentLaunchSettings } from '@superone/shared/agent-types'
@@ -27,31 +27,73 @@ export type LaunchOptionsState =
   | { status: 'ready'; options: SuggestedTaskLaunchOptions }
   | { status: 'error'; message: string }
 
+function launchErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : String(error)
+}
+
 /** The launch pickers of a pending card, loaded from main; null while there is nothing to launch. */
-function useLaunchOptions(target: { projectPath: string; sessionId: string; taskId: string } | null): LaunchOptionsState | null {
+function useLaunchOptions(target: { projectPath: string; sessionId: string; taskId: string } | null): {
+  state: LaunchOptionsState | null
+  refresh: () => void
+  refreshing: boolean
+} {
   const [state, setState] = useState<{ key: string; value: LaunchOptionsState } | null>(null)
+  const [refreshing, setRefreshing] = useState(false)
   const sessionId = target?.sessionId
   const taskId = target?.taskId
   const projectPath = target?.projectPath
   const key = JSON.stringify([projectPath, sessionId, taskId])
+  const request = useRef(0)
   useEffect(() => {
     if (!projectPath || !sessionId || !taskId) {
       setState(null)
+      setRefreshing(false)
       return
     }
+    const token = ++request.current
     let cancelled = false
     setState({ key, value: { status: 'loading' } })
+    setRefreshing(false)
     callSession(projectPath, sessionId, 'session.suggestedTaskLaunchOptions', { taskId }).then(
       (options) => {
-        if (!cancelled) setState({ key, value: { status: 'ready', options } })
+        if (!cancelled && request.current === token) setState({ key, value: { status: 'ready', options } })
       },
       (error: unknown) => {
-        if (!cancelled) setState({ key, value: { status: 'error', message: error instanceof Error ? error.message : String(error) } })
+        if (!cancelled && request.current === token) setState({ key, value: { status: 'error', message: launchErrorMessage(error) } })
       },
     )
-    return () => { cancelled = true }
+    return () => {
+      cancelled = true
+      request.current += 1
+    }
   }, [projectPath, sessionId, taskId])
-  return target ? state?.key === key ? state.value : { status: 'loading' } : null
+  const refresh = useCallback(() => {
+    if (!projectPath || !sessionId || !taskId) return
+    const token = ++request.current
+    const refreshKey = key
+    setRefreshing(true)
+    callSession(projectPath, sessionId, 'session.suggestedTaskLaunchOptions', { taskId, force: true }).then(
+      (options) => {
+        if (request.current !== token) return
+        setState({ key: refreshKey, value: { status: 'ready', options } })
+      },
+      (error: unknown) => {
+        if (request.current !== token) return
+        setState((current) => (
+          current?.key === refreshKey && current.value.status === 'ready'
+            ? current
+            : { key: refreshKey, value: { status: 'error', message: launchErrorMessage(error) } }
+        ))
+      },
+    ).finally(() => {
+      if (request.current === token) setRefreshing(false)
+    })
+  }, [projectPath, sessionId, taskId, key])
+  return {
+    state: target ? state?.key === key ? state.value : { status: 'loading' } : null,
+    refresh,
+    refreshing: target ? refreshing : false,
+  }
 }
 
 /**
@@ -64,16 +106,21 @@ export function SuggestedTaskLaunchControls({
   choice,
   onChange,
   catalog = 'local',
+  onRefreshModels,
+  modelsLoading,
 }: {
   state: LaunchOptionsState
   /** The user's pick; the options' initial one until they change it. */
   choice?: SuggestedTaskLaunchChoice
   onChange: (choice: SuggestedTaskLaunchChoice) => void
   catalog?: 'local' | 'profile'
+  /** Re-probe a remote snapshot. A local catalog refreshes inside the launch control. */
+  onRefreshModels?: () => void
+  modelsLoading?: boolean
 }) {
   if (state.status === 'loading') return <Loader2 className="ml-1 size-3 animate-spin text-muted-foreground" />
   if (state.status === 'error') return <p className="truncate px-1 text-xs text-error" title={state.message}>{state.message}</p>
-  return <LaunchControls options={state.options} choice={choice ?? state.options.initial} onChange={onChange} catalog={catalog} />
+  return <LaunchControls options={state.options} choice={choice ?? state.options.initial} onChange={onChange} catalog={catalog} onRefreshModels={onRefreshModels} modelsLoading={modelsLoading} />
 }
 
 function LaunchControls({
@@ -81,11 +128,15 @@ function LaunchControls({
   choice,
   onChange,
   catalog,
+  onRefreshModels,
+  modelsLoading,
 }: {
   options: SuggestedTaskLaunchOptions
   choice: SuggestedTaskLaunchChoice
   onChange: (choice: SuggestedTaskLaunchChoice) => void
   catalog: 'local' | 'profile'
+  onRefreshModels?: () => void
+  modelsLoading?: boolean
 }) {
   const profile = options.profiles.find((item) => item.id === choice.agentId)
   const harnessId = profile?.harnessId ?? 'claude'
@@ -113,6 +164,8 @@ function LaunchControls({
         fastMode={config.fastMode}
         serviceTier={config.serviceTier}
         claudeFastMode={config.claudeFastMode}
+        onRefreshModels={onRefreshModels}
+        modelsLoading={modelsLoading}
         onChange={patch}
       />
     </LaunchSettingsBar>
@@ -134,11 +187,12 @@ export function SuggestedTaskToolBlock({ result, ...props }: Props) {
     [pending, projectPath, sessionId, taskId],
   )
   const launchOptions = useLaunchOptions(target)
+  const catalog = projectPath && connectionIdForProjectKey(projectPath) !== 'local' ? 'profile' : 'local'
   const sourceKey = JSON.stringify([projectPath, sessionId, taskId])
   const [selection, setSelection] = useState<{ source: string; choice: SuggestedTaskLaunchChoice }>()
   const picked = selection?.source === sourceKey ? selection.choice : undefined
   const setPicked = (choice: SuggestedTaskLaunchChoice) => setSelection({ source: sourceKey, choice })
-  const choice = picked ?? (launchOptions?.status === 'ready' ? launchOptions.options.initial : undefined)
+  const choice = picked ?? (launchOptions.state?.status === 'ready' ? launchOptions.state.options.initial : undefined)
 
   const actions = useMemo<SuggestedTaskActions | undefined>(() => {
     if (!projectPath || !sessionId || !taskId) return undefined
@@ -154,8 +208,10 @@ export function SuggestedTaskToolBlock({ result, ...props }: Props) {
       {...props}
       actions={actions}
       unavailableReason={t('chat.toolBlock.suggestedTask.unavailable')}
-      launchControls={launchOptions ? <SuggestedTaskLaunchControls state={launchOptions} choice={picked} onChange={setPicked}
-        catalog={projectPath && connectionIdForProjectKey(projectPath) !== 'local' ? 'profile' : 'local'} /> : undefined}
+      launchControls={launchOptions.state ? <SuggestedTaskLaunchControls state={launchOptions.state} choice={picked} onChange={setPicked}
+        catalog={catalog}
+        onRefreshModels={catalog === 'profile' ? launchOptions.refresh : undefined}
+        modelsLoading={catalog === 'profile' ? launchOptions.refreshing : undefined} /> : undefined}
       renderMarkdown={renderToolMarkdown}
     />
   )

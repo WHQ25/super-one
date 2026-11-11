@@ -39,8 +39,23 @@ describe('getNodeClaudeModelCatalog', () => {
     }
 
     await getNodeClaudeModelCatalog({ cwd: '/work', fetchModels, now: () => now })
-    now += 60 * 60_000
+    now += 24 * 60 * 60 * 1000
     await getNodeClaudeModelCatalog({ cwd: '/work', fetchModels, now: () => now })
+
+    expect(calls).toBe(2)
+  })
+
+  it('probes again when the model list asks to refresh', async () => {
+    let calls = 0
+    let now = 1_000
+    const fetchModels = async () => {
+      calls += 1
+      return MODELS
+    }
+
+    await getNodeClaudeModelCatalog({ cwd: '/work', fetchModels, now: () => now })
+    now += 60_000
+    await getNodeClaudeModelCatalog({ cwd: '/work', fetchModels, now: () => now, force: true })
 
     expect(calls).toBe(2)
   })

@@ -96,24 +96,72 @@ export class CollaborationService {
 
   private acpDiscovery: Promise<void> | null = null
   private acpDiscoveredAt = 0
+  private readonly liveDiscovery = new Map<string, Promise<void>>()
+  private readonly liveDiscoveredAt = new Map<string, number>()
 
-  /** Cold catalog discovery for both the remote picker and the list-agents tool. */
-  async discoverProfiles(): Promise<SessionAgentProfile[]> {
-    if (this.deps.harnesses.isSessionHarnessRunnable('acp') && Date.now() - this.acpDiscoveredAt > 30000) {
-      this.acpDiscovery ??= listNodeLiveHarnessModels({
-        store: this.deps.providers, harness: 'acp', apiProviderId: null, harnesses: this.deps.harnesses,
-      }).then(models => {
-        this.deps.acpModels = models ?? []
-        this.acpDiscoveredAt = Date.now()
-      }).catch(error => { console.warn('[collaboration] ACP model discovery failed:', error) })
-        .finally(() => { this.acpDiscovery = null })
-      await this.acpDiscovery
-    }
+  /**
+   * Cold catalog discovery for both the remote picker and the list-agents tool.
+   * `force` is the model-list refresh: skip the 30s record and probe again.
+   */
+  async discoverProfiles(force = false): Promise<SessionAgentProfile[]> {
+    await Promise.all([
+      this.refreshAcpModels(force),
+      this.refreshLiveModels('claude', force),
+      this.refreshLiveModels('codex', force),
+    ])
     return this.listProfiles()
   }
 
+  private async refreshAcpModels(force = false): Promise<void> {
+    if (!this.deps.harnesses.isSessionHarnessRunnable('acp')) return
+    if (!force && this.acpDiscoveredAt !== 0 && Date.now() - this.acpDiscoveredAt <= 30000) return
+    if (!force && this.acpDiscovery) return this.acpDiscovery
+    const run = listNodeLiveHarnessModels({
+      store: this.deps.providers, harness: 'acp', apiProviderId: null, harnesses: this.deps.harnesses, force,
+    }).then(models => {
+      this.deps.acpModels = models ?? []
+      this.acpDiscoveredAt = Date.now()
+    }).catch(error => { console.warn('[collaboration] ACP model discovery failed:', error) })
+      .finally(() => { if (this.acpDiscovery === run) this.acpDiscovery = null })
+    this.acpDiscovery = run
+    await run
+  }
+
+  /**
+   * Ask the harness what it serves. An empty probe leaves the offline slug
+   * table in place and is remembered for 30s; a thrown probe is retried.
+   * `force` skips that record and the catalog cache.
+   */
+  private async refreshLiveModels(harness: 'claude' | 'codex', force = false): Promise<void> {
+    if (!this.deps.harnesses.isSessionHarnessRunnable(harness)) return
+    const discoveredAt = this.liveDiscoveredAt.get(harness) ?? 0
+    if (!force && this.liveDiscoveredAt.has(harness) && Date.now() - discoveredAt <= 30000) return
+    if (!force) {
+      const existing = this.liveDiscovery.get(harness)
+      if (existing) return existing
+    }
+    const run = listNodeLiveHarnessModels({
+      store: this.deps.providers,
+      harness,
+      apiProviderId: null,
+      harnesses: this.deps.harnesses,
+      options: { experimentalClaudeOpenAiChatEnabled: this.deps.experimentalClaudeOpenAiChatEnabled?.() ?? false },
+      force,
+    }).then(models => {
+      this.deps.liveHarnessModels ??= {}
+      if (models && models.length > 0) this.deps.liveHarnessModels[harness] = models
+      else delete this.deps.liveHarnessModels[harness]
+      this.liveDiscoveredAt.set(harness, Date.now())
+    }).catch(error => { console.warn(`[collaboration] ${harness} model discovery failed:`, error) })
+      .finally(() => { if (this.liveDiscovery.get(harness) === run) this.liveDiscovery.delete(harness) })
+    this.liveDiscovery.set(harness, run)
+    await run
+  }
+
   suggestTask(sessionId: string, args: unknown) { return suggestTask(this.ctx, sessionId, args) }
-  suggestedTaskLaunchOptions(sessionId: string, taskId: string) { return suggestedTaskOptions(this.ctx, sessionId, taskId) }
+  suggestedTaskLaunchOptions(sessionId: string, taskId: string, force = false) {
+    return suggestedTaskOptions(this.ctx, sessionId, taskId, { force })
+  }
   launchSuggestedTask(sessionId: string, taskId: string, choice: SuggestedTaskLaunchChoice | undefined, assertControl: () => void, controllerClientSessionId: string) {
     assertControl()
     const key = `${sessionId}:${taskId}`

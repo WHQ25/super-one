@@ -15,6 +15,8 @@ describe('mobile suggested-task actions', () => {
     owner.sessionId = 'switched-session'
     await request.loadOptions()
     expect(rpc).toHaveBeenCalledExactlyOnceWith('session.suggestedTaskLaunchOptions', { sessionId: 'source', taskId: 'task-1' }, { environmentId: 'remote-host' })
+    await request.loadOptions(true)
+    expect(rpc).toHaveBeenLastCalledWith('session.suggestedTaskLaunchOptions', { sessionId: 'source', taskId: 'task-1', force: true }, { environmentId: 'remote-host' })
     const choice = { agentId: 'codex-base', settings: { model: 'gpt-custom', permissionMode: 'plan' as const } }
     await expect(request.launch(choice)).rejects.toThrow('Task already launched')
     expect(controlledRpc).toHaveBeenCalledExactlyOnceWith({ environmentId: 'remote-host', sessionId: 'source' }, 'session.launchSuggestedTask', { taskId: 'task-1', choice }, { timeoutMs: 120_000 })

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { ChevronDown } from 'lucide-react'
+import { ChevronDown, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { acpModeCatalog } from '@superone/shared/harness/acp-mode-catalog'
@@ -7,7 +7,9 @@ import { isAntigravityAcpAgent } from '@superone/shared/acp-brand'
 import { formatEffortOptionLabel } from '@superone/shared/effort-labels'
 import { acpAgentDefaultsFor, acpAgentPreferencePatch } from '@superone/shared/harness/session-defaults'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
+import { useHarnessCatalogRefresh } from '@/harness-ui/catalog-refresh'
 import { projectAntigravityModels } from '@/harness-ui/acp/model-options'
 import { getCachedAcpCatalog } from '@/stores/chat-store/harness/acp-handler'
 import { invalidateDefaultAcpPreferencesCache, useChatStore } from '@/stores/chat'
@@ -17,6 +19,7 @@ import { settingsSelectTriggerClassName } from '@/components/settings/select-tri
 export function AcpDefaultModelRows({ acpAgentId }: { acpAgentId?: string | null }) {
   const { t } = useTranslation()
   const acpResources = useChatStore((s) => s.harnessResources.acp)
+  const catalogRefresh = useHarnessCatalogRefresh('acp', true)
   const initializeHarness = useChatStore((s) => s.initializeHarness)
   const setHarnessResources = useChatStore((s) => s.setHarnessResources)
 
@@ -183,7 +186,22 @@ export function AcpDefaultModelRows({ acpAgentId }: { acpAgentId?: string | null
             </button>
           </PopoverTrigger>
           <PopoverContent align="end" side="bottom" className="w-64 border-border bg-card p-1">
-            <div className="px-2 py-1.5 text-xs text-muted-foreground">{t('settings.preferences.defaultModel.label')}</div>
+            <div className="flex items-center gap-1 px-2 py-1.5 text-xs text-muted-foreground">
+              <span className="min-w-0 flex-1">{t('settings.preferences.defaultModel.label')}</span>
+              <IconButton
+                size="xs"
+                variant="nested"
+                tooltip="Refresh models"
+                disabled={catalogRefresh.modelsLoading}
+                onClick={(event) => {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  catalogRefresh.onRefreshModels?.()
+                }}
+              >
+                <RefreshCw className={cn(catalogRefresh.modelsLoading && 'animate-spin')} />
+              </IconButton>
+            </div>
             <button
               onClick={() => {
                 setModelOpen(false)

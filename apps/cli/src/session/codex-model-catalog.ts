@@ -2,9 +2,12 @@
  * Node-side Codex model catalog.
  *
  * Remote project open (`harness.resources`) and the model-picker refresh
- * (`provider.listModels`) both ask this node. The built-in slug table is only
- * a stale fallback when `model/list` cannot be reached. Empty results are never
- * cached — a failed probe must be retried, not remembered as "no models".
+ * (`provider.listModels`) both ask this node. A successful `model/list` is kept
+ * for 24 hours, the same lifetime as the desktop harness resource cache. The
+ * built-in slug table is only a stale fallback when that probe cannot be
+ * reached. Empty results are never cached — a failed probe must be retried,
+ * not remembered as "no models". A model-list refresh passes `force` and
+ * probes again.
  */
 
 import { isCodexAccountProvider } from '@superone/shared/codex-accounts'
@@ -14,7 +17,7 @@ import { openCodexAppServer, type CodexAppServerHandle } from '@superone/codex'
 import { resolveCodexBinaryPath } from './codex-turn-runner'
 import { nodeCodexAccountStore } from './codex-accounts'
 
-const CATALOG_TTL_MS = 5 * 60_000
+const CATALOG_TTL_MS = 24 * 60 * 60 * 1000
 const PAGE_LIMIT = 100
 const MAX_PAGES = 20
 
@@ -51,6 +54,8 @@ export interface NodeCodexModelCatalogOptions {
   /** Injectable account registry. Defaults to this node's Codex accounts. */
   accounts?: CodexCatalogAccounts
   now?: () => number
+  /** Skip the 24-hour cache and probe again. The model-list refresh sets this. */
+  force?: boolean
 }
 
 function readString(value: unknown): string | null {
@@ -211,8 +216,10 @@ export async function getNodeCodexModelCatalog(
 ): Promise<ModelOption[]> {
   const now = opts.now ?? Date.now
   const key = `${opts.binaryPath ?? ''}\0${opts.apiProviderId ?? ''}`
-  const hit = cache.get(key)
-  if (hit && now() - hit.fetchedAt < CATALOG_TTL_MS) return hit.models
+  if (!opts.force) {
+    const hit = cache.get(key)
+    if (hit && now() - hit.fetchedAt < CATALOG_TTL_MS) return hit.models
+  }
 
   let models: ModelOption[] = []
   try {

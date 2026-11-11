@@ -4,7 +4,8 @@ import { runtimeSessionRef } from './runtime-session-rpc'
 import type { SuggestedTaskLaunchChoice, SuggestedTaskLaunchOptions } from '@superone/shared/suggested-task'
 
 export interface SuggestedTaskLaunchRequest {
-  loadOptions(): Promise<SuggestedTaskLaunchOptions>
+  /** `force` re-probes the host catalog instead of reading its cache. */
+  loadOptions(force?: boolean): Promise<SuggestedTaskLaunchOptions>
   launch(choice: SuggestedTaskLaunchChoice): Promise<{ sessionId: string }>
 }
 
@@ -19,7 +20,9 @@ export function createSuggestedTaskActions(context: () => {
       if (!client || !owner) throw new Error('No active session')
       const ref = runtimeSessionRef(client, owner.sessionId, owner.sourceEnvironmentId)
       present({
-        loadOptions: () => client.rpc('session.suggestedTaskLaunchOptions', { sessionId: ref.sessionId, taskId }, { environmentId: ref.environmentId }),
+        loadOptions: (force) => client.rpc('session.suggestedTaskLaunchOptions', {
+          sessionId: ref.sessionId, taskId, ...(force ? { force: true } : {}),
+        }, { environmentId: ref.environmentId }),
         launch: choice => client.controlledRpc(ref, 'session.launchSuggestedTask', { taskId, choice }, { timeoutMs: 120_000 }),
       })
     },

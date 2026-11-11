@@ -50,6 +50,39 @@ describe('RemoteEnvironmentGateway harness.resources / sessionProviders', () => 
     expect(result.claude.skills[0]?.name).toBe('ship')
   })
 
+  it('forwards a model-list refresh so the node skips its catalog cache', async () => {
+    const rpc = vi.fn(async () => ({}))
+    const client = { rpc } as unknown as NodeRpcClient
+    const gw = new RemoteEnvironmentGateway(client)
+
+    await gw.harnessResources({ projectId: 'p1', harnessId: 'claude', force: true })
+    await gw.providerListModels({ harness: 'codex', force: true })
+
+    expect(rpc).toHaveBeenNthCalledWith(1, 'harness.resources', {
+      projectId: 'p1',
+      harnessId: 'claude',
+      apiProviderId: null,
+      force: true,
+    })
+    expect(rpc).toHaveBeenNthCalledWith(2, 'provider.listModels', {
+      harness: 'codex',
+      apiProviderId: null,
+      force: true,
+    })
+  })
+
+  it('forwards a collaboration catalog refresh and omits force on a normal read', async () => {
+    const rpc = vi.fn(async () => [])
+    const client = { rpc } as unknown as NodeRpcClient
+    const gw = new RemoteEnvironmentGateway(client)
+
+    await gw.collaborationListProfiles()
+    await gw.collaborationListProfiles(true)
+
+    expect(rpc).toHaveBeenNthCalledWith(1, 'collaboration.listProfiles', {})
+    expect(rpc).toHaveBeenNthCalledWith(2, 'collaboration.listProfiles', { force: true })
+  })
+
   it('sessionProviders.list returns CRUD profiles', async () => {
     const rpc = vi.fn(async (method: string) => {
       if (method === 'sessionProviders.list') {

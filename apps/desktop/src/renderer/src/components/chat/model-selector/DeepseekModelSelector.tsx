@@ -2,6 +2,7 @@ import { useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { EffortLevel } from '@superone/shared/agent-types'
 import { formatEffortLabel } from '@superone/shared/effort-labels'
+import { useHarnessCatalogRefresh } from '@/harness-ui/catalog-refresh'
 import { useActiveSession, useChatStore, useScopedSessionActions } from '@/stores/chat'
 import {
   deepseekPresetCopy,
@@ -19,6 +20,7 @@ const DEFAULT_MODEL = 'deepseek-v4-pro'
 
 export function DeepseekModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: Event) => void } = {}) {
   const { t } = useTranslation()
+  const refresh = useHarnessCatalogRefresh('dsh', true)
   const resources = useChatStore((state) => state.harnessResources.dsh)
   const selectedModel = useActiveSession((state) => state.selectedModel)
   const selectedEffort = useActiveSession((state) => state.selectedEffort)
@@ -93,6 +95,8 @@ export function DeepseekModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?:
       }}
       modesDisabled={!switchable}
       modesDisabledReason={t('chatDshPreset.locked')}
+      onRefreshModels={refresh.onRefreshModels}
+      modelsLoading={refresh.modelsLoading}
       onCloseAutoFocus={onCloseAutoFocus}
     />
   )

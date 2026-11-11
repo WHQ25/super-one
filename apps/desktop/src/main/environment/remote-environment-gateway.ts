@@ -1068,10 +1068,12 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
   async providerListModels(input: {
     harness: string
     apiProviderId?: string | null
+    force?: boolean
   }): Promise<unknown> {
     return this.client.rpc('provider.listModels', {
       harness: input.harness,
       apiProviderId: input.apiProviderId ?? null,
+      ...(input.force ? { force: true } : {}),
     })
   }
 
@@ -1083,11 +1085,13 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     projectId: string
     harnessId?: string
     apiProviderId?: string | null
+    force?: boolean
   }): Promise<unknown> {
     return this.client.rpc('harness.resources', {
       projectId: input.projectId,
       harnessId: input.harnessId,
       apiProviderId: input.apiProviderId ?? null,
+      ...(input.force ? { force: true } : {}),
     })
   }
 
@@ -1111,8 +1115,8 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     return this.client.rpc('workspace.mentionCatalog', { projectId })
   }
 
-  async collaborationListProfiles(): Promise<unknown> {
-    return this.client.rpc('collaboration.listProfiles', {})
+  async collaborationListProfiles(force = false): Promise<unknown> {
+    return this.client.rpc('collaboration.listProfiles', force ? { force: true } : {})
   }
 
   async sessionProvidersList(harnessId?: string): Promise<unknown> {

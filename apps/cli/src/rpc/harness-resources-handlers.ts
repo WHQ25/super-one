@@ -71,6 +71,7 @@ function claudeCatalogFor(
   ctx: HarnessResourcesRpcContext,
   apiProviderId: string | null,
   cwd: string,
+  force = false,
 ): (() => Promise<ClaudeCatalogProbe>) | null {
   if (ctx.probeModels) return null
   if (ctx.probeClaudeCatalog) {
@@ -94,6 +95,7 @@ function claudeCatalogFor(
     binaryPath,
     env: claudeAccountProbeEnv(apiProviderId),
     accountScope: claudeCatalogCacheScope(apiProviderId),
+    force,
   }))
 }
 
@@ -102,6 +104,7 @@ function defaultProbeModels(
   ctx: HarnessResourcesRpcContext,
   apiProviderId: string | null,
   claudeCatalog: (() => Promise<ClaudeCatalogProbe>) | null,
+  force = false,
 ): (harnessId: string, cwd: string) => Promise<ModelOption[]> {
   return async (harnessId) => {
     if (harnessId === 'codex') {
@@ -109,6 +112,7 @@ function defaultProbeModels(
         return await getNodeCodexModelCatalog({
           apiProviderId,
           harnesses: ctx.harnesses,
+          force,
         })
       } catch (err) {
         console.warn(
@@ -192,13 +196,14 @@ async function handleHarnessResources(
       ) as ModelOption[]
     }
 
-    const claudeCatalog = claudeCatalogFor(ctx, apiProviderId ?? null, project.path)
+    const force = p.force === true
+    const claudeCatalog = claudeCatalogFor(ctx, apiProviderId ?? null, project.path, force)
 
     // No bound credential: ask the harness on this node what it serves. The
     // built-in slug table only stands in when that probe comes back empty.
     const probeModels = async (hid: string): Promise<ModelOption[]> => {
       if (hid === 'opencode' && nativeOpenCode) return nativeOpenCode.models
-      const probe = ctx.probeModels ?? defaultProbeModels(ctx, apiProviderId ?? null, claudeCatalog)
+      const probe = ctx.probeModels ?? defaultProbeModels(ctx, apiProviderId ?? null, claudeCatalog, force)
       const probed = await probe(hid, project.path)
       if (probed.length > 0) return probed
       // Substituting the built-in slug table is a lie the client cannot detect —

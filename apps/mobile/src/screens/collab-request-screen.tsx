@@ -38,6 +38,8 @@ export type CollabRequestScreenProps = {
   onApprove: (launches: SessionAgentLaunchProposal[]) => void
   /** The feedback is handed back to the agent as the tool result. */
   onReject: (feedback?: string) => void
+  /** Re-probe the host that built this request and replace its model catalogs. */
+  onRefreshProfiles?: () => Promise<SessionAgentProfile[]>
 }
 
 type EditableConfig = Parameters<typeof patchLaunch>[1]
@@ -65,10 +67,14 @@ function workDirLabel(state: LaunchWorkDir, t: (source: string) => string): { ic
  * launch is configured with exactly the vocabulary the composer already uses.
  * Feedback and the decision sit under the list, pinned, like the sheet's footer.
  */
-export function CollabRequestScreen({ payload, onApprove, onReject }: CollabRequestScreenProps) {
+export function CollabRequestScreen({ payload, onApprove, onReject, onRefreshProfiles }: CollabRequestScreenProps) {
   const { tokens: { colors, spacing } } = useMobileTheme()
   const { t } = useMobileLocale()
-  const { launches, profiles } = payload
+  const { launches } = payload
+  const [profiles, setProfiles] = useState(payload.profiles)
+  const refreshProfiles = onRefreshProfiles
+    ? async () => { setProfiles(await onRefreshProfiles()) }
+    : undefined
   const labels = useMemo(() => buildLaunchTabLabels(launches, profiles), [launches, profiles])
   const [overrides, setOverrides] = useState<Record<string, EditableConfig>>({})
   // Each card opens independently; the first starts open so a single request reads
@@ -101,6 +107,7 @@ export function CollabRequestScreen({ payload, onApprove, onReject }: CollabRequ
           launch={launch}
           label={labels[index]!}
           profile={profiles.find((item) => item.id === launch.agentId)}
+          onRefreshProfiles={refreshProfiles}
           expanded={expanded.has(launch.launchId)}
           onToggle={() => toggle(launch.launchId)}
           onChange={(patch) => setOverrides((current) => ({
@@ -122,13 +129,14 @@ export function CollabRequestScreen({ payload, onApprove, onReject }: CollabRequ
   </View>
 }
 
-function LaunchCard({ launch, label, profile, expanded, onToggle, onChange }: {
+function LaunchCard({ launch, label, profile, expanded, onToggle, onChange, onRefreshProfiles }: {
   launch: SessionAgentLaunchProposal
   label: string
   profile: SessionAgentProfile | undefined
   expanded: boolean
   onToggle: () => void
   onChange: (patch: EditableConfig) => void
+  onRefreshProfiles?: () => Promise<void>
 }) {
   const styles = usePromptStyles()
   const { tokens: { colors, spacing } } = useMobileTheme()
@@ -167,7 +175,7 @@ function LaunchCard({ launch, label, profile, expanded, onToggle, onChange }: {
       <Text selectable style={styles.body}>{launch.summary}</Text>
       {handoff ? <Text style={styles.meta}>{t('Takes the task over in its own top-level session — no replies back to this one.')}</Text> : null}
       {link ? <LinkMeta launch={launch} /> : <SpawnMeta launch={launch} />}
-      {!link && profile ? <LaunchConfigRow launch={launch} profile={profile} onChange={onChange} /> : null}
+      {!link && profile ? <LaunchConfigRow launch={launch} profile={profile} onChange={onChange} onRefreshProfiles={onRefreshProfiles} /> : null}
     </View> : null}
   </View>
 }
@@ -177,10 +185,11 @@ function LaunchCard({ launch, label, profile, expanded, onToggle, onChange }: {
  * What the user may retune is exactly what the desktop lets through: model,
  * effort, AI provider, Fast, permission mode and sandbox.
  */
-function LaunchConfigRow({ launch, profile, onChange }: {
+function LaunchConfigRow({ launch, profile, onChange, onRefreshProfiles }: {
   launch: SessionAgentLaunchProposal
   profile: SessionAgentProfile
   onChange: (patch: EditableConfig) => void
+  onRefreshProfiles?: () => Promise<void>
 }) {
   const { t } = useMobileLocale()
   const { tokens: { colors, spacing } } = useMobileTheme()
@@ -222,7 +231,8 @@ function LaunchConfigRow({ launch, profile, onChange }: {
         if (tier !== undefined) onChange(codexSpeedSelectionPatch(tier))
       }}
       providers={providers} providerId={config.apiProviderId ?? null}
-      onProvider={providers.length ? (id) => onChange({ apiProviderId: id, effort: undefined }) : undefined} />
+      onProvider={providers.length ? (id) => onChange({ apiProviderId: id, effort: undefined }) : undefined}
+      onRefresh={onRefreshProfiles} />
     <PermissionModeSelector harness={harness} modes={HARNESS_LAUNCH_OPTIONS[harness].permissionModes}
       value={permissionMode} onChange={(mode) => onChange({ permissionMode: mode as EditableConfig['permissionMode'] })} />
     <SandboxSelector harness={harness} sandboxInfo={sandboxInfoFromMode((config.sandboxMode ?? 'off') as SandboxMode)}

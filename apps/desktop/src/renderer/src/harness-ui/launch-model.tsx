@@ -57,6 +57,9 @@ export interface LaunchModelProps {
   /** Extra Options rows the caller owns, e.g. an agent profile's harness settings. */
   optionParams?: SelectorCatalogParam[]
   onOptionParamChange?: (id: string, value: string) => void
+  /** Re-probe the catalog this list is showing. Profile snapshots pass the parent's reload. */
+  onRefreshModels?: () => void
+  modelsLoading?: boolean
   onChange: (patch: LaunchModelPatch) => void
 }
 
@@ -227,12 +230,12 @@ export function useLaunchProviders(args: {
  * model with none shows no chips, since `profile.efforts` is a union across
  * every model and would offer levels the picked model cannot run.
  */
-export function FlatLaunchModel({ catalog, model, effort, optionParams, onOptionParamChange, onChange }: {
+export function FlatLaunchModel({ catalog, model, effort, optionParams, onOptionParamChange, onRefreshModels, modelsLoading, onChange }: {
   catalog: ModelOption[]
   model: string | null | undefined
   effort: string | null | undefined
   onChange: (patch: LaunchModelPatch) => void
-} & Pick<LaunchModelProps, 'optionParams' | 'onOptionParamChange'>) {
+} & Pick<LaunchModelProps, 'optionParams' | 'onOptionParamChange' | 'onRefreshModels' | 'modelsLoading'>) {
   const models = useMemo(() => toSelectorModels(catalog), [catalog])
   const selected = catalog.find((entry) => entry.id === model)
   const effortOptions = useMemo(() => levelEffortOptions(selected?.supportedEffortLevels ?? []), [selected])
@@ -251,6 +254,8 @@ export function FlatLaunchModel({ catalog, model, effort, optionParams, onOption
       onSelectEffort={(value) => onChange({ effort: value })}
       optionParams={optionParams}
       onOptionParamChange={onOptionParamChange}
+      onRefreshModels={onRefreshModels}
+      modelsLoading={modelsLoading}
     />
   )
 }

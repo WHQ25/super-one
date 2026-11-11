@@ -14,7 +14,7 @@ import { resolveClaudeBinaryPath } from './claude-turn-runner'
 import { listHarnessProviderModels } from '../provider/resolve-service'
 
 /** Account-aware live catalog shared by provider RPC and suggested-task launches. */
-export async function listNodeLiveHarnessModels({ store, harness, apiProviderId, harnesses, options }: Parameters<NonNullable<RpcHostHooks['listLiveHarnessModels']>>[0]) {
+export async function listNodeLiveHarnessModels({ store, harness, apiProviderId, harnesses, options, force }: Parameters<NonNullable<RpcHostHooks['listLiveHarnessModels']>>[0]) {
   const fromProvider = listHarnessProviderModels(
     store as ProviderStore,
     harness,
@@ -44,6 +44,7 @@ export async function listNodeLiveHarnessModels({ store, harness, apiProviderId,
       binaryPath,
       env: claudeAccountProbeEnv(apiProviderId),
       accountScope: claudeCatalogCacheScope(apiProviderId),
+      force,
     })
     if (probed.length === 0) {
       console.warn(
@@ -59,6 +60,7 @@ export async function listNodeLiveHarnessModels({ store, harness, apiProviderId,
   const probed = await getNodeCodexModelCatalog({
     apiProviderId,
     harnesses: harnesses as HarnessManager | undefined,
+    force,
   })
   if (probed.length === 0) {
     console.warn(

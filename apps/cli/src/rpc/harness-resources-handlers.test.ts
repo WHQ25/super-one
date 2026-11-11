@@ -326,6 +326,36 @@ describe('harness.resources RPC', () => {
     expect(getNodeCodexModelCatalog).toHaveBeenCalled()
   })
 
+  it('asks Codex to probe again when the model list is refreshed', async () => {
+    getNodeCodexModelCatalog.mockReset()
+    getNodeCodexModelCatalog.mockResolvedValue([
+      { id: 'gpt-5.5', name: 'GPT-5.5', description: '', isDefault: true },
+    ])
+    const projectDir = mkdtempSync(join(tmpdir(), 'hr-codex-force-'))
+    dirs.push(projectDir)
+    const projects = {
+      get: () => ({ projectId: 'p1', path: projectDir, name: 't', repoIdentity: null }),
+      touch: () => {},
+    } as unknown as ProjectRegistry
+    const providers = {
+      listBindings: () => [],
+      getCredentialDecrypted: () => null,
+      listCustomPlatforms: () => [],
+    } as unknown as ProviderStore
+
+    await dispatchHarnessResourcesRpc(
+      'harness.resources',
+      { projectId: 'p1', harnessId: 'codex', force: true },
+      {
+        client: client(['environment:read', 'workspace:read']),
+        projects,
+        providers,
+      },
+    )
+
+    expect(getNodeCodexModelCatalog).toHaveBeenCalledWith(expect.objectContaining({ force: true }))
+  })
+
   it('keeps the built-in Codex slug table when model/list returns nothing', async () => {
     getNodeCodexModelCatalog.mockReset()
     getNodeCodexModelCatalog.mockResolvedValue([])

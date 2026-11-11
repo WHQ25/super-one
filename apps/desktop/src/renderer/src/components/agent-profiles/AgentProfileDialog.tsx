@@ -1,4 +1,5 @@
 import { useState } from 'react'
+import { useChatStore } from '@/stores/chat'
 import { useTranslation } from 'react-i18next'
 import { Loader2 } from 'lucide-react'
 import { Button } from '@superone/ui/components/ui/button'
@@ -25,7 +26,9 @@ export function AgentProfileDialog({ detail: initialDetail, create, api, onClose
   onSaved: (id: string) => void
 }) {
   const { t } = useTranslation()
+  const initializeHarness = useChatStore((state) => state.initializeHarness)
   const [detail, setDetail] = useState(initialDetail)
+  const [modelsLoading, setModelsLoading] = useState(false)
   const [draft, setDraft] = useState<AgentProfileDraft>(() => ({
     name: create ? '' : detail.spec.identity.name,
     description: create ? '' : detail.spec.identity.description,
@@ -42,6 +45,15 @@ export function AgentProfileDialog({ detail: initialDetail, create, api, onClose
     model: draft.model, effort: draft.effort, permissionMode: draft.permissionMode, options: draft.options,
   })
   const onChange = (patch: Partial<AgentProfileDraft>) => setDraft((previous) => ({ ...previous, ...patch }))
+  const refreshModels = () => {
+    setModelsLoading(true)
+    const probe = initializeHarness(detail.harnessId, { force: true })
+    void probe
+      .then(() => api.get(detail.id))
+      .then((next) => { setDetail(next); setError('') })
+      .catch((cause: unknown) => setError(cause instanceof Error ? cause.message : String(cause)))
+      .finally(() => setModelsLoading(false))
+  }
   const refreshReview = async () => {
     setBusy(true)
     try { setDetail(await api.get(detail.id)); setError('') }
@@ -87,7 +99,8 @@ export function AgentProfileDialog({ detail: initialDetail, create, api, onClose
             <Button type="button" variant="ghost" size="sm" onClick={() => onChange({ model: undefined, effort: undefined, permissionMode: undefined, options: undefined })}>{t(`${P}.resetRuntime`)}</Button>
           }>
             <div className="p-2">
-              <ProfileRuntimeEditor harnessId={detail.harnessId} acpAgentId={detail.acpAgentId} catalogMode="profile" draft={draft} onChange={onChange} editor={{
+              <ProfileRuntimeEditor harnessId={detail.harnessId} acpAgentId={detail.acpAgentId} catalogMode="profile" draft={draft} onChange={onChange}
+                onRefreshModels={refreshModels} modelsLoading={modelsLoading} editor={{
                 draft, catalog: detail.catalog, agent: { ...detail.agent, defaultConfig: detail.baseConfig },
               }} />
             </div>

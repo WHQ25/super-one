@@ -2350,9 +2350,10 @@ function registerIpcHandlers(): void {
       connectionId: string,
       harness: string,
       apiProviderId?: string | null,
+      force?: boolean,
     ) => {
       const { getEnvironmentHost } = await import('./environment')
-      return getEnvironmentHost().listRemoteModels(connectionId, harness, apiProviderId)
+      return getEnvironmentHost().listRemoteModels(connectionId, harness, apiProviderId, force === true)
     },
   )
   sessionIpc.handle(
@@ -2706,6 +2707,7 @@ function registerIpcHandlers(): void {
           remoteKey.connectionId,
           'codex',
           apiProviderId ?? null,
+          force === true,
         )) as ModelOption[]
         return Array.isArray(models) ? models : []
       } catch (err) {
@@ -4971,7 +4973,7 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.CONNECT_CLAUDE, (_e, force?: boolean, apiProviderId?: string | null): Promise<ClaudeResources> =>
     harnessCatalog.connectClaude(force, apiProviderId))
 
-  ipcMain.handle(AgentIpcChannels.CONNECT_CODEX, (): Promise<CodexResources> => harnessCatalog.connectCodex())
+  ipcMain.handle(AgentIpcChannels.CONNECT_CODEX, (_e, force?: boolean): Promise<CodexResources> => harnessCatalog.connectCodex(force === true))
 
   ipcMain.handle(AgentIpcChannels.CONNECT_OPENCODE, async (_e, force?: boolean) => {
     try {

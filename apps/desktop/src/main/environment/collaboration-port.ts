@@ -44,8 +44,8 @@ export function environmentHostCollaborationPort(): RemoteCollaborationPort {
     async activateWorktree(connectionId, projectId, input) {
       return await (await gateway(connectionId)).gitWorktreeActivate(projectId, input) as { path: string }
     },
-    async listProfiles(connectionId) {
-      return await (await gateway(connectionId)).collaborationListProfiles() as SessionAgentProfile[]
+    async listProfiles(connectionId, force) {
+      return await (await gateway(connectionId)).collaborationListProfiles(force === true) as SessionAgentProfile[]
     },
     async createSession(connectionId, input) {
       return (await gateway(connectionId)).sessions.create({

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { SessionScopeProvider } from '@/stores/chat-store/session-scope'
 import { SuggestedTaskToolBlock } from './SuggestedTaskToolBlock'
 
-vi.mock('@/harness-ui/controls', () => ({ HARNESS_CONTROLS: { claude: { LaunchModelControl: ({ catalog, profile, onChange }: { catalog: string; profile: { name: string }; onChange: (value: { model: string }) => void }) => <><span>{catalog} · {profile.name}</span><button onClick={() => onChange({ model: profile.name })}>Pick model</button></> } } }))
+vi.mock('@/harness-ui/controls', () => ({ HARNESS_CONTROLS: { claude: { LaunchModelControl: ({ catalog, profile, onChange, onRefreshModels }: { catalog: string; profile: { name: string }; onChange: (value: { model: string }) => void; onRefreshModels?: () => void }) => <><span>{catalog} · {profile.name}</span><button onClick={() => onChange({ model: profile.name })}>Pick model</button>{onRefreshModels ? <button onClick={() => onRefreshModels()}>Refresh models</button> : null}</> } } }))
 afterEach(() => vi.restoreAllMocks())
 const taskId = '0b9f3c1e-2a4d-4e5f-8a6b-7c8d9e0f1a2b'
 
@@ -50,5 +50,24 @@ describe('suggested task execution environment', () => {
     await waitFor(() => expect(view.getByText(`${connectionId === 'local' ? 'local' : 'profile'} · Source agent`)).toBeTruthy())
     fireEvent.click(view.getByRole('button', { name: 'Launch' }))
     await waitFor(() => expect(callSession).toHaveBeenCalledWith(connectionId, 'source-session', 'session.launchSuggestedTask', { taskId, choice: options.initial }))
+  })
+
+  it('refreshes a remote catalog without replacing the card, and leaves a local catalog to its own control', async () => {
+    const options = { profiles: [{ id: 'claude-base', name: 'Source agent', harnessId: 'claude', defaultConfig: {}, apiProviders: [], models: [], efforts: [] }], initial: { agentId: 'claude-base', settings: {} } }
+    const callSession = vi.fn(async (_connection: string, _session: string, method: string) => method === 'session.suggestedTaskLaunchOptions' ? options : { sessionId: 'new' })
+    Object.defineProperty(window, 'environment', { configurable: true, value: { callSession } })
+    const remote = render(<SessionScopeProvider value={{ projectPath: 'remote:node-A:/repo', sessionId: 'source-session' }}>
+      <SuggestedTaskToolBlock params={{ title: 'Follow up' }} result={JSON.stringify({ taskId })} />
+    </SessionScopeProvider>)
+    fireEvent.click(await remote.findByRole('button', { name: 'Refresh models' }))
+    await waitFor(() => expect(callSession).toHaveBeenCalledWith('node-A', 'source-session', 'session.suggestedTaskLaunchOptions', { taskId, force: true }))
+    expect(remote.getByText('profile · Source agent')).toBeTruthy()
+    remote.unmount()
+
+    const local = render(<SessionScopeProvider value={{ projectPath: '/repo', sessionId: 'source-session' }}>
+      <SuggestedTaskToolBlock params={{ title: 'Follow up' }} result={JSON.stringify({ taskId })} />
+    </SessionScopeProvider>)
+    await local.findByText('local · Source agent')
+    expect(local.queryByRole('button', { name: 'Refresh models' })).toBeNull()
   })
 })

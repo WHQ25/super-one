@@ -2,15 +2,17 @@
  * Node-side Claude model catalog.
  *
  * `harness.resources` is called on every remote project open, so the catalog is
- * cached: spawning the harness once per request would add seconds to session
- * startup. Empty results are never cached — a failed probe must be retried, not
- * remembered as "this node has no models".
+ * cached for 24 hours, the same lifetime as the desktop harness resource cache.
+ * Spawning the harness once per request would add seconds to session startup.
+ * Empty results are never cached — a failed probe must be retried, not
+ * remembered as "this node has no models". A model-list refresh passes `force`
+ * and probes again.
  */
 
 import { fetchClaudeCatalog, type ClaudeCatalogProbe } from '@superone/claude'
 import type { ModelOption } from '@superone/shared/agent-types'
 
-const CATALOG_TTL_MS = 5 * 60_000
+const CATALOG_TTL_MS = 24 * 60 * 60 * 1000
 
 interface CacheEntry {
   fetchedAt: number
@@ -37,6 +39,8 @@ export interface NodeClaudeModelCatalogOptions {
   fetchCatalog?: (opts: { cwd: string; binaryPath?: string | null; env?: Record<string, string | undefined> }) => Promise<ClaudeCatalogProbe>
   /** Injectable clock (tests). */
   now?: () => number
+  /** Skip the 24-hour cache and probe again. The model-list refresh sets this. */
+  force?: boolean
 }
 
 /** Models, account, slash commands and output styles from one harness probe. */
@@ -47,8 +51,10 @@ export async function getNodeClaudeCatalog(opts: NodeClaudeModelCatalogOptions):
   // still inherits `CLAUDE_CONFIG_DIR`, so that variable cannot tell the
   // logins apart.
   const key = `${opts.binaryPath ?? 'sdk-bundled'}\0${opts.accountScope ?? 'inherit'}\0${opts.cwd}`
-  const hit = cache.get(key)
-  if (hit && now() - hit.fetchedAt < CATALOG_TTL_MS) return hit.probe
+  if (!opts.force) {
+    const hit = cache.get(key)
+    if (hit && now() - hit.fetchedAt < CATALOG_TTL_MS) return hit.probe
+  }
 
   const fetchCatalog = opts.fetchCatalog ?? (opts.fetchModels
     ? async (inner: { cwd: string; binaryPath?: string | null }) => ({

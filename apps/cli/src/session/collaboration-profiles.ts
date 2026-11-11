@@ -43,12 +43,15 @@ function launchResolution(
   launch?: AgentLaunchDefaults,
   followsDefaults = false,
 ) {
-  const harnessModels = harnessId === 'acp' && deps.acpModels?.length
-    ? deps.acpModels : listHarnessModels(deps.providers, harnessId, null, providerOptions(deps))
+  const discovered = harnessId === 'acp' ? deps.acpModels : deps.liveHarnessModels?.[harnessId]
+  const harnessModels = discovered?.length
+    ? discovered
+    : listHarnessModels(deps.providers, harnessId, null, providerOptions(deps))
   const defaultModel = harnessModels.find((m) => m.isDefault) ?? harnessModels[0]
   const efforts = new Set<string>()
   for (const m of harnessModels) {
     for (const e of m.supportedEffortLevels ?? []) efforts.add(e)
+    for (const e of m.supportedReasoningEfforts ?? []) efforts.add(e.value)
   }
   const catalog: AgentProfileCatalog = { models: harnessModels, host: { appliable: NODE_APPLIABLE_OPTIONS } }
   const defaults = resolveAgentLaunchDefaults({

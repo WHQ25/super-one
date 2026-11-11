@@ -660,12 +660,14 @@ const environmentAPI = {
     connectionId: string,
     harness: string,
     apiProviderId?: string | null,
+    force?: boolean,
   ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.ENVIRONMENT_PROVIDER_LIST_MODELS,
       connectionId,
       harness,
       apiProviderId ?? null,
+      force === true,
     ),
   sendSessionMessage: (
     connectionId: string,
@@ -835,6 +837,7 @@ const environmentAPI = {
       projectId: string
       harnessId?: string
       apiProviderId?: string | null
+      force?: boolean
     },
   ) =>
     ipcRenderer.invoke(
@@ -854,8 +857,8 @@ const environmentAPI = {
   listRemoteCollabProfiles: (connectionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_COLLAB_LIST_PROFILES, connectionId),
 
-  remoteAgentProfiles: (environmentId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_REMOTE_AGENT_PROFILES, environmentId),
+  remoteAgentProfiles: (environmentId: string, force?: boolean) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_REMOTE_AGENT_PROFILES, environmentId, force === true),
 
   /** Node session_providers CRUD (multi-profile). */
   listRemoteSessionProviders: (connectionId: string, harnessId?: string) =>
@@ -976,8 +979,8 @@ const appAPI = {
   connectClaude: (force?: boolean, apiProviderId?: string | null) =>
     ipcRenderer.invoke(AgentIpcChannels.CONNECT_CLAUDE, force, apiProviderId),
 
-  connectCodex: () =>
-    ipcRenderer.invoke(AgentIpcChannels.CONNECT_CODEX),
+  connectCodex: (force?: boolean) =>
+    ipcRenderer.invoke(AgentIpcChannels.CONNECT_CODEX, force === true),
 
   connectOpenCode: (force?: boolean) =>
     ipcRenderer.invoke(AgentIpcChannels.CONNECT_OPENCODE, force),

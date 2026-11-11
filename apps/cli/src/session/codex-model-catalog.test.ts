@@ -102,6 +102,25 @@ describe('getNodeCodexModelCatalog', () => {
     expect(calls).toBe(2)
   })
 
+  it('keeps a catalog for 24 hours and probes again when refreshed', async () => {
+    let calls = 0
+    let now = 1_000
+    const request = async () => {
+      calls += 1
+      return { data: [{ model: 'gpt-5.5', displayName: 'GPT-5.5', description: '', isDefault: true }] }
+    }
+
+    await getNodeCodexModelCatalog({ request, now: () => now })
+    now += 60 * 60_000
+    await getNodeCodexModelCatalog({ request, now: () => now })
+    expect(calls).toBe(1)
+    await getNodeCodexModelCatalog({ request, now: () => now, force: true })
+    expect(calls).toBe(2)
+    now += 24 * 60 * 60 * 1000
+    await getNodeCodexModelCatalog({ request, now: () => now })
+    expect(calls).toBe(3)
+  })
+
   it('does not ask model/list for a custom credential', async () => {
     const open = vi.fn()
     await expect(getNodeCodexModelCatalog({ apiProviderId: 'cred-custom', open })).resolves.toEqual([])

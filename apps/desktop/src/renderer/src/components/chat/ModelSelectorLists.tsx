@@ -1,5 +1,7 @@
-import { Check, Loader2 } from 'lucide-react'
+import { Check, Loader2, RefreshCw } from 'lucide-react'
 import type { CodexReasoningEffort, EffortLevel, ModelOption, ProviderModelEnv, ReasoningEffortOption } from '@superone/shared/agent-types'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
+import { cn } from '@superone/ui/lib/utils'
 import { resolveClaudeEntries } from '@superone/shared/claude-model-mapping'
 import { formatCodexModelName, formatReasoningEffortLabel } from './chat-input-utils'
 
@@ -12,12 +14,33 @@ interface ClearOption {
 interface ListHeaderProps {
   title?: string
   clearOption?: ClearOption
+  onRefresh?: () => void
+  refreshing?: boolean
 }
 
-function ListHeader({ title, clearOption }: ListHeaderProps) {
+function ListHeader({ title, clearOption, onRefresh, refreshing }: ListHeaderProps) {
   return (
     <>
-      {title && <div className="px-2 py-1.5 text-xs text-muted-foreground">{title}</div>}
+      {title && (
+        <div className="flex items-center gap-1 px-2 py-1.5 text-xs text-muted-foreground">
+          <span className="min-w-0 flex-1">{title}</span>
+          {onRefresh ? (
+            <IconButton
+              size="xs"
+              variant="nested"
+              tooltip="Refresh models"
+              disabled={refreshing}
+              onClick={(event) => {
+                event.preventDefault()
+                event.stopPropagation()
+                onRefresh()
+              }}
+            >
+              <RefreshCw className={cn(refreshing && 'animate-spin')} />
+            </IconButton>
+          ) : null}
+        </div>
+      )}
       {clearOption && (
         <>
           <button
@@ -45,6 +68,8 @@ interface ClaudeModelListProps {
   loadingMessage?: string
   emptyMessage?: string
   modelEnv?: ProviderModelEnv | null
+  onRefresh?: () => void
+  refreshing?: boolean
 }
 
 export function ClaudeModelList({
@@ -56,11 +81,13 @@ export function ClaudeModelList({
   loadingMessage = 'Loading models...',
   emptyMessage,
   modelEnv,
+  onRefresh,
+  refreshing,
 }: ClaudeModelListProps) {
   const entries = resolveClaudeEntries(models, modelEnv)
   return (
     <>
-      <ListHeader title={title} clearOption={clearOption} />
+      <ListHeader title={title} clearOption={clearOption} onRefresh={onRefresh} refreshing={refreshing} />
       {entries.map(({ model, displayName, description }) => {
         const active = model.id === activeId
         return (
@@ -237,6 +264,8 @@ interface CodexModelListProps {
   loading?: boolean
   loadingMessage?: string
   emptyMessage?: string
+  onRefresh?: () => void
+  refreshing?: boolean
 }
 
 export function CodexModelList({
@@ -248,10 +277,12 @@ export function CodexModelList({
   loading = false,
   loadingMessage = 'Loading Codex models...',
   emptyMessage = 'Use default model (auto)',
+  onRefresh,
+  refreshing,
 }: CodexModelListProps) {
   return (
     <>
-      <ListHeader title={title} clearOption={clearOption} />
+      <ListHeader title={title} clearOption={clearOption} onRefresh={onRefresh} refreshing={refreshing} />
       {models.map((model) => {
         const active = model.id === activeId
         return (

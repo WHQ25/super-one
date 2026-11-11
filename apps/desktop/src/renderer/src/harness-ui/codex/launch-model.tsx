@@ -19,6 +19,7 @@ import {
   type SelectorEffortOption,
   type SelectorModelOption,
 } from '@/components/chat/model-selector/GroupedModelEffortSelector'
+import { pickLaunchRefresh } from '../catalog-refresh'
 import {
   effortLabel,
   liveOrProfile,
@@ -83,6 +84,8 @@ export function CodexLaunchModel({
   hideApiProvider,
   optionParams,
   onOptionParamChange,
+  onRefreshModels,
+  modelsLoading,
   onChange,
 }: LaunchModelProps) {
   const { t } = useTranslation()
@@ -96,6 +99,11 @@ export function CodexLaunchModel({
     onChange,
   })
   const live = useCodexLaunchCatalog(!profileOnly, selector.selectedProviderId)
+  const refresh = pickLaunchRefresh(
+    profileOnly,
+    { onRefreshModels: live.refresh, modelsLoading: live.loading },
+    { onRefreshModels, modelsLoading },
+  )
   const onChangeRef = useRef(onChange)
   onChangeRef.current = onChange
 
@@ -187,8 +195,8 @@ export function CodexLaunchModel({
           if (tier !== undefined) onChange(codexSpeedSelectionPatch(tier))
           else onOptionParamChange?.(id, value)
         }}
-        onRefreshModels={live.refresh}
-        modelsLoading={live.loading}
+        onRefreshModels={refresh.onRefreshModels}
+        modelsLoading={refresh.modelsLoading}
       />
     </>
   )

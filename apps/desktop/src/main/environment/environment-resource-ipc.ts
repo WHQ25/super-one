@@ -160,6 +160,7 @@ export function ensureEnvironmentResourceIpcRegistered(): void {
         projectId: string
         harnessId?: string
         apiProviderId?: string | null
+        force?: boolean
       },
     ) => {
       return (await host()).getRemoteHarnessResources(connectionId, input)
@@ -179,9 +180,9 @@ export function ensureEnvironmentResourceIpcRegistered(): void {
   )
   ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_REMOTE_AGENT_PROFILES,
-    async (_e, environmentId: string) => {
+    async (_e, environmentId: string, force?: boolean) => {
       const { remoteAgentProfiles } = await import('../session/collaboration-remote')
-      return remoteAgentProfiles(environmentId)
+      return remoteAgentProfiles(environmentId, force === true)
     },
   )
   ipcMain.handle(

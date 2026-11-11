@@ -3,6 +3,7 @@ import type { ModelOption } from '@superone/shared/agent-types'
 import { useChatStore } from '@/stores/chat'
 import { resolveSlashModelLabel } from '@/components/chat/ModelSelectorLists'
 import { GroupedModelEffortSelector } from '@/components/chat/model-selector/GroupedModelEffortSelector'
+import { pickLaunchRefresh, useHarnessCatalogRefresh } from '../catalog-refresh'
 import {
   effortLabel,
   levelEffortOptions,
@@ -16,9 +17,11 @@ import { toSelectorGroups, toSelectorModels } from '../selector-models'
 const EMPTY_MODELS: ModelOption[] = []
 
 export function OpenCodeLaunchModel({
-  profile, catalog, model, effort, optionParams, onOptionParamChange, onChange,
+  profile, catalog, model, effort, optionParams, onOptionParamChange, onRefreshModels, modelsLoading, onChange,
 }: LaunchModelProps) {
-  const live = useChatStore((s) => (catalog === 'profile' ? EMPTY_MODELS : s.harnessResources.opencode?.models ?? EMPTY_MODELS))
+  const profileOnly = catalog === 'profile'
+  const refresh = pickLaunchRefresh(profileOnly, useHarnessCatalogRefresh('opencode', !profileOnly), { onRefreshModels, modelsLoading })
+  const live = useChatStore((s) => (profileOnly ? EMPTY_MODELS : s.harnessResources.opencode?.models ?? EMPTY_MODELS))
   const profileCatalog = useProfileCatalog(profile)
   const base = liveOrProfile(live, profileCatalog)
   // `provider/model` ids group by provider, as the composer does.
@@ -47,6 +50,8 @@ export function OpenCodeLaunchModel({
       onSelectEffort={(value) => onChange({ effort: value })}
       optionParams={optionParams}
       onOptionParamChange={onOptionParamChange}
+      onRefreshModels={refresh.onRefreshModels}
+      modelsLoading={refresh.modelsLoading}
     />
   )
 }

@@ -463,6 +463,19 @@ describe('a partial collaboration port', () => {
     } as unknown as RpcContext['collaboration'],
   })
 
+  it('probes again when the model list asks to refresh', async () => {
+    const discoverProfiles = vi.fn(async () => profiles)
+    const host = projectsOnlyHost({
+      collaboration: {
+        servedMethods: new Set(['collaboration.listProfiles']),
+        listProfiles: () => profiles,
+        discoverProfiles,
+      } as unknown as RpcContext['collaboration'],
+    })
+    expect(await dispatchRpc('collaboration.listProfiles', { force: true }, host)).toEqual({ result: profiles })
+    expect(discoverProfiles).toHaveBeenCalledExactlyOnceWith(true)
+  })
+
   it('lists profiles and answers the mailbox methods unsupported', async () => {
     expect(await dispatchRpc('collaboration.listProfiles', {}, ctx())).toEqual({ result: profiles })
     const send = await dispatchRpc('collaboration.send', {}, ctx())

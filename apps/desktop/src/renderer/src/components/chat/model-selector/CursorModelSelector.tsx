@@ -9,6 +9,7 @@ import {
   normalizeEffortValue,
 } from '@superone/cursor/cursor-model-selection'
 import { selectorCatalogParams } from '@superone/shared/model-option-params'
+import { useHarnessCatalogRefresh } from '@/harness-ui/catalog-refresh'
 import { useActiveSession, useChatStore, useScopedSessionActions } from '@/stores/chat'
 import {
   GroupedModelEffortSelector,
@@ -37,6 +38,7 @@ function cursorModelHasSideOptions(model: ModelOption | undefined): boolean {
  * Cursor composer model picker — flat list with effort + all catalog Options.
  */
 export function CursorModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: Event) => void } = {}) {
+  const refresh = useHarnessCatalogRefresh('cursor', true)
   const resources = useChatStore((state) => state.harnessResources.cursor)
   const selectedModel = useActiveSession((state) => state.selectedModel)
   const selectedEffort = useActiveSession((state) => state.selectedEffort)
@@ -120,6 +122,8 @@ export function CursorModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (
       onSelectEffort={selectEffort}
       optionParams={optionParams}
       onOptionParamChange={setCursorModelParam}
+      onRefreshModels={refresh.onRefreshModels}
+      modelsLoading={refresh.modelsLoading}
       onCloseAutoFocus={onCloseAutoFocus}
     />
   )

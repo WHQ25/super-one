@@ -25,6 +25,11 @@ export interface CollaborationDeps {
   workspaceGit: WorkspaceGitService
   /** Session-layer provider profiles (feeds multi-profile listProfiles). */
   acpModels?: import('../provider/resolve-service').ModelOptionWire[]
+  /**
+   * Live Claude/Codex catalogs from the last discovery. Absent or empty keeps
+   * the offline slug table. The remote launch picker reads these.
+   */
+  liveHarnessModels?: Partial<Record<string, import('../provider/resolve-service').ModelOptionWire[]>>
   sessionProviders?: SessionProviderStore
   experimentalClaudeOpenAiChatEnabled?: () => boolean
   experimentalAgentProfilesEnabled?: () => boolean

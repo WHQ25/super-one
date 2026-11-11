@@ -19,7 +19,7 @@ export async function dispatchSuggestedTaskRpc(method: string, payload: unknown,
   }
   try {
     const sessionId = text('sessionId'), taskId = text('taskId')
-    if (reading) return { result: await ctx.collaboration.suggestedTaskLaunchOptions(sessionId, taskId) }
+    if (reading) return { result: await ctx.collaboration.suggestedTaskLaunchOptions(sessionId, taskId, input.force === true) }
     const leaseId = text('leaseId'), generation = text('generation')
     const assertControl = () => ctx.leases.assertValid({ resource: { environmentId: ctx.identity.environmentId, sessionId }, leaseId, generation, holderClientId: ctx.client.clientSessionId })
     assertControl()

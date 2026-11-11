@@ -104,7 +104,7 @@ export interface SessionPlanAnswer {
  * environment call. A host that does not serve one answers `unsupported`.
  */
 export interface SessionCallMethods extends SessionOperationMethods {
-  'session.suggestedTaskLaunchOptions': { input: { taskId: string }; result: import('../suggested-task').SuggestedTaskLaunchOptions }
+  'session.suggestedTaskLaunchOptions': { input: { taskId: string; force?: boolean }; result: import('../suggested-task').SuggestedTaskLaunchOptions }
   'session.launchSuggestedTask': { input: { taskId: string; choice?: import('../suggested-task').SuggestedTaskLaunchChoice }; result: { sessionId: string } }
   'composer.openInputRequest': { input: { messageId: string; spec: unknown }; result: ComposerOpenResult }
   'session.dequeue': { input: { clientMessageId: string }; result: { removed: boolean } }

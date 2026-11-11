@@ -170,6 +170,17 @@ describe('provider.listModels codex', () => {
     expect(res.result).toEqual([{ id: 'opus-live', name: 'Opus', description: '' }])
   })
 
+  it('forwards a model-list refresh so the node probes again', async () => {
+    getNodeClaudeModelCatalog.mockResolvedValue([{ id: 'opus', name: 'Opus', description: '' }])
+    getNodeCodexModelCatalog.mockResolvedValue([{ id: 'gpt-live', name: 'GPT', description: '', isDefault: true }])
+
+    await dispatchRpc('provider.listModels', { harness: 'claude', force: true }, ctx(emptyProviders()))
+    await dispatchRpc('provider.listModels', { harness: 'codex', force: true }, ctx(emptyProviders()))
+
+    expect(getNodeClaudeModelCatalog).toHaveBeenCalledWith(expect.objectContaining({ force: true }))
+    expect(getNodeCodexModelCatalog).toHaveBeenCalledWith(expect.objectContaining({ force: true }))
+  })
+
   it('does not probe Claude for a custom credential with no models', async () => {
     const res = await dispatchRpc(
       'provider.listModels',

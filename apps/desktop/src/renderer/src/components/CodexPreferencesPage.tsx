@@ -246,6 +246,15 @@ export function CodexPreferencesPage() {
                     loading={modelsLoading}
                     loadingMessage={t('settings.preferences.defaultModel.loading')}
                     emptyMessage={emptyModelsMessage}
+                    onRefresh={() => {
+                      if (!currentFolder) return
+                      setModelsLoading(true)
+                      void loadCodexModels(currentFolder, defaultProviderId, true)
+                        .then((models) => setCodexModels(models))
+                        .catch(() => {})
+                        .finally(() => setModelsLoading(false))
+                    }}
+                    refreshing={modelsLoading}
                   />
                 </PopoverContent>
               </Popover>

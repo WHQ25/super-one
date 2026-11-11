@@ -131,6 +131,7 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
         const bundle = await fetchRemoteHarnessResourcesForProject(projectPath, {
           harnessId: 'claude',
           apiProviderId,
+          force,
         })
         const fromResources = extractClaudeModels(bundle)
         if (fromResources.length > 0) return fromResources
@@ -138,6 +139,7 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
           remote.connectionId,
           'claude',
           apiProviderId,
+          force,
         )) as ModelOption[]
         return Array.isArray(models) ? models : []
       } catch {
@@ -205,6 +207,7 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
       const bundle = await fetchRemoteHarnessResourcesForProject(projectPath, {
         harnessId: 'claude',
         apiProviderId,
+        force,
       })
       let list = extractClaudeModels(bundle)
       // Apply skills/commands/agents from node discovery into project state.
@@ -243,6 +246,7 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
           remote.connectionId,
           'claude',
           apiProviderId,
+          force,
         )) as ModelOption[]
         list = Array.isArray(models) ? models : []
       }

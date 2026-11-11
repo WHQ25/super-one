@@ -54,7 +54,7 @@ async function resolveRemoteProjectId(
  */
 export async function fetchRemoteHarnessResourcesForProject(
   projectPath: string,
-  opts?: { harnessId?: string; apiProviderId?: string | null },
+  opts?: { harnessId?: string; apiProviderId?: string | null; force?: boolean },
 ): Promise<RemoteHarnessResourcesBundle | null> {
   const remote = parseRemoteProjectKey(projectPath)
   if (!remote) return null
@@ -63,7 +63,7 @@ export async function fetchRemoteHarnessResourcesForProject(
     environment?: {
       getRemoteHarnessResources?: (
         connectionId: string,
-        input: { projectId: string; harnessId?: string; apiProviderId?: string | null },
+        input: { projectId: string; harnessId?: string; apiProviderId?: string | null; force?: boolean },
       ) => Promise<unknown>
     }
   }).environment
@@ -75,6 +75,7 @@ export async function fetchRemoteHarnessResourcesForProject(
     projectId,
     harnessId: opts?.harnessId,
     apiProviderId: opts?.apiProviderId ?? null,
+    ...(opts?.force ? { force: true } : {}),
   }
 
   try {

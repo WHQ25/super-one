@@ -10,6 +10,7 @@ import {
   type SelectorEffortOption,
   type SelectorModelOption,
 } from '@/components/chat/model-selector/GroupedModelEffortSelector'
+import { pickLaunchRefresh, useHarnessCatalogRefresh } from '../catalog-refresh'
 import {
   effortLabel,
   levelEffortOptions,
@@ -37,9 +38,10 @@ export function claudeModelsForProvider(
 }
 
 export function ClaudeLaunchModel({
-  profile, catalog, apiProviderId, model, effort, claudeFastMode, offerFastMode, hideApiProvider, optionParams, onOptionParamChange, onChange,
+  profile, catalog, apiProviderId, model, effort, claudeFastMode, offerFastMode, hideApiProvider, optionParams, onOptionParamChange, onRefreshModels, modelsLoading, onChange,
 }: LaunchModelProps) {
   const profileOnly = catalog === 'profile'
+  const refresh = pickLaunchRefresh(profileOnly, useHarnessCatalogRefresh('claude', !profileOnly), { onRefreshModels, modelsLoading })
   const live = useChatStore((s) => (profileOnly ? EMPTY_MODELS : s.harnessResources.claude?.models ?? EMPTY_MODELS))
   const profileCatalog = useProfileCatalog(profile)
   const { effective, selector } = useLaunchProviders({
@@ -92,6 +94,8 @@ export function ClaudeLaunchModel({
       {...selector}
       optionParams={params}
       onOptionParamChange={(id, value) => id === 'claudeFastMode' ? onChange({ claudeFastMode: value === 'true' }) : onOptionParamChange?.(id, value)}
+      onRefreshModels={refresh.onRefreshModels}
+      modelsLoading={refresh.modelsLoading}
       // Match ClaudeModelSelector's easter-egg trigger label for max.
       triggerLabel={!modelEnv && effort === 'max'
         ? <FireText>{`${(label ?? 'Model').toUpperCase()} · MAX`}</FireText>

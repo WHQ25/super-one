@@ -10,13 +10,16 @@ import { LaunchSettingsBar } from '../chat/launch-settings-bar'
 const P = 'chat.permission.agentProfile'
 
 /** The same runtime controls in the agent confirmation and human settings editor. */
-export function ProfileRuntimeEditor({ harnessId, acpAgentId, editor, draft, onChange, catalogMode = 'local' }: {
+export function ProfileRuntimeEditor({ harnessId, acpAgentId, editor, draft, onChange, catalogMode = 'local', onRefreshModels, modelsLoading }: {
   harnessId: HarnessId
   acpAgentId?: string
   editor: AgentProfileConfirmEditor
   draft: AgentProfileDraft
   onChange: (patch: Partial<AgentProfileDraft>) => void
   catalogMode?: 'local' | 'profile'
+  /** Re-probe the catalog this profile is checked against, then reload it. */
+  onRefreshModels?: () => void
+  modelsLoading?: boolean
 }) {
   const { t } = useTranslation()
   const { agent, catalog } = editor
@@ -73,6 +76,8 @@ export function ProfileRuntimeEditor({ harnessId, acpAgentId, editor, draft, onC
         effort={draft.effort ?? defaults?.effort}
         optionParams={optionParams}
         onOptionParamChange={changeOption}
+        onRefreshModels={onRefreshModels}
+        modelsLoading={modelsLoading}
         onChange={changeModel}
       />
     </LaunchSettingsBar>

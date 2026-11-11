@@ -71,19 +71,41 @@ function bootCollab(opts?: { simulateReady?: boolean; turnRunner?: TurnRunner; a
 }
 
 describe('collaboration grants + mailbox', () => {
-  it('discovers ACP models for cold list-agents calls and reuses them for launch defaults', async () => {
+  it('discovers live harness catalogs for cold list-agents calls and reuses them', async () => {
     const { collab } = bootCollab()
-    const probe = vi.spyOn(modelCatalog, 'listNodeLiveHarnessModels').mockResolvedValue([
-      { id: 'grok-full', name: 'Full', description: '', isDefault: true },
-    ])
+    const probe = vi.spyOn(modelCatalog, 'listNodeLiveHarnessModels').mockImplementation(async ({ harness }) => {
+      if (harness === 'acp') return [{ id: 'grok-full', name: 'Full', description: '', isDefault: true }]
+      if (harness === 'claude') return [{
+        id: 'opus', name: 'Opus 5.5', description: 'For complex work', supportsFastMode: true, isDefault: true,
+        supportedEffortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
+      }]
+      return []
+    })
+    const calls = (harness: string) => probe.mock.calls.filter((call) => call[0]?.harness === harness).length
     try {
       const profiles = await collab.discoverProfiles()
       const grok = profiles.find(profile => profile.harnessId === 'acp')
+      const claude = profiles.find(profile => profile.id === 'claude-base')
+      const codex = profiles.find(profile => profile.id === 'codex-base')
       expect(grok?.models).toEqual([expect.objectContaining({ id: 'grok-full', name: 'Full' })])
       expect(grok?.defaultConfig.model).toBe('grok-full')
       expect(collab.listProfiles().find(profile => profile.id === grok?.id)?.models).toEqual(grok?.models)
+      expect(claude?.models).toEqual([expect.objectContaining({
+        id: 'opus', name: 'Opus 5.5', description: 'For complex work', supportsFastMode: true,
+      })])
+      expect(claude?.defaultConfig.model).toBe('opus')
+      expect(claude?.models.map((model) => model.id)).not.toContain('claude-opus-5-5')
+      expect(codex?.models.map((model) => model.id)).toContain('gpt-5.2')
       await collab.discoverProfiles()
-      expect(probe).toHaveBeenCalledOnce()
+      expect(calls('acp')).toBe(1)
+      expect(calls('claude')).toBe(1)
+      expect(calls('codex')).toBe(1)
+      expect(probe.mock.calls.find((call) => call[0]?.harness === 'claude')?.[0]?.force).toBe(false)
+      await collab.discoverProfiles(true)
+      expect(calls('acp')).toBe(2)
+      expect(calls('claude')).toBe(2)
+      expect(calls('codex')).toBe(2)
+      expect(probe.mock.calls.filter((call) => call[0]?.harness === 'claude').at(-1)?.[0]?.force).toBe(true)
     } finally { probe.mockRestore() }
   })
 

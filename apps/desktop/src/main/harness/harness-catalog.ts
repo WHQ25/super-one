@@ -26,8 +26,8 @@ import { tryResolveHarnessRuntime } from './resolve-runtime'
 export interface HarnessCatalog {
   /** Claude models, account, slash commands and user resources; `apiProviderId` picks the account. */
   connectClaude(force?: boolean, apiProviderId?: string | null): Promise<ClaudeResources>
-  /** Codex models and user prompts for the default provider. */
-  connectCodex(): Promise<CodexResources>
+  /** Codex models and user prompts for the default provider. `force` skips the 24h cache. */
+  connectCodex(force?: boolean): Promise<CodexResources>
   /** Codex models for one project and API provider, with mapped OpenAI-chat models. */
   listCodexModels(projectPath: string, apiProviderId?: string | null, force?: boolean): Promise<ModelOption[]>
   /** One harness's models for an API provider, as the window's composer offers them. */
@@ -166,16 +166,17 @@ export function createHarnessCatalog(codex: CodexExperimentService): HarnessCata
       }
     },
 
-    async connectCodex() {
+    async connectCodex(force = false) {
       const projectPath = app.getPath('userData')
       // Prompts are user files: always rescanned, never served from the cache.
       const prompts = discoverCodexUserPrompts()
       const resources = await connectWithHarnessResourceCache('codex', {
+        force,
         cacheKey: codexCacheKey(projectPath),
         isUsable: (r) => (r.models?.length ?? 0) > 0,
         probe: async () => {
           log.info('[CONNECT_CODEX] Fetching codex resources...')
-          const models = await codex.listModels(projectPath)
+          const models = await codex.listModels(projectPath, null, force)
           log.info('[CONNECT_CODEX] Fetch complete: %d models, %d prompts', models.length, prompts.length)
           return { models, prompts }
         },

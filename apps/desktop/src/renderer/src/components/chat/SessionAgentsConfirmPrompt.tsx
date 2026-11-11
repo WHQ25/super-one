@@ -176,6 +176,8 @@ function LaunchPanel({
   profile,
   remoteCatalog,
   onRetryRemoteCatalog,
+  onRefreshRemoteModels,
+  remoteModelsLoading,
   summaryExpanded,
   onToggleSummary,
   onChange,
@@ -187,6 +189,9 @@ function LaunchPanel({
   /** The target machine's catalog for a remote launch. */
   remoteCatalog: RemoteAgentCatalog | undefined
   onRetryRemoteCatalog: () => void
+  /** Re-probe the target machine's catalog without hiding the models already shown. */
+  onRefreshRemoteModels?: () => void
+  remoteModelsLoading?: boolean
   summaryExpanded: boolean
   onToggleSummary: () => void
   onChange: (patch: EditableConfig) => void
@@ -327,6 +332,8 @@ function LaunchPanel({
                 fastMode={config.fastMode}
                 serviceTier={config.serviceTier}
                 claudeFastMode={config.claudeFastMode}
+                onRefreshModels={config.remote ? onRefreshRemoteModels : undefined}
+                modelsLoading={config.remote ? remoteModelsLoading : undefined}
                 onChange={onChange}
               />
             )}
@@ -363,7 +370,7 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
     () => launches.flatMap((launch) => (launch.config.remote ? [launch.config.remote.environmentId] : [])),
     [launches],
   )
-  const { catalogs: remoteCatalogs, retry: retryRemoteCatalog } = useRemoteAgentCatalogs(remoteEnvironmentIds)
+  const { catalogs: remoteCatalogs, retry: retryRemoteCatalog, refresh: refreshRemoteCatalog, refreshing: remoteRefreshing } = useRemoteAgentCatalogs(remoteEnvironmentIds)
   const tabLabels = useMemo(() => buildLaunchTabLabels(launches, profiles), [launches, profiles])
   const multiple = launches.length > 1
   const activeIndex = Math.min(activeTab, launches.length - 1)
@@ -545,6 +552,12 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
           onRetryRemoteCatalog={() => {
             if (activeLaunch.config.remote) retryRemoteCatalog(activeLaunch.config.remote.environmentId)
           }}
+          onRefreshRemoteModels={activeLaunch.config.remote
+            ? () => refreshRemoteCatalog(activeLaunch.config.remote!.environmentId)
+            : undefined}
+          remoteModelsLoading={activeLaunch.config.remote
+            ? remoteRefreshing[activeLaunch.config.remote.environmentId]
+            : undefined}
           summaryExpanded={summaryExpanded}
           onToggleSummary={() => setSummaryExpanded((value) => !value)}
           onChange={(patch) => setOverrides((current) => ({

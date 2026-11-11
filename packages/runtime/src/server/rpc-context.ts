@@ -205,7 +205,8 @@ export interface CollaborationPort {
    * unsupported. Absent: the whole family.
    */
   readonly servedMethods?: ReadonlySet<string>
-  discoverProfiles?(): Promise<unknown>
+  /** `force` skips the node's short collaboration record and its catalog cache. */
+  discoverProfiles?(force?: boolean): Promise<unknown>
   listProfiles(): unknown
   request(input: {
     parentSessionId: string
@@ -424,6 +425,8 @@ export interface RpcHostHooks {
     apiProviderId: string | null
     harnesses?: HarnessManager
     options?: { experimentalClaudeOpenAiChatEnabled?: boolean }
+    /** Skip the node's catalog cache and probe again. */
+    force?: boolean
   }): Promise<unknown[] | null>
   probeHarnessReadiness(
     harnesses: HarnessManager,

@@ -5,13 +5,16 @@ import { acpModeCatalog } from '@superone/shared/harness/acp-mode-catalog'
 import { useChatStore } from '@/stores/chat'
 import { getCachedAcpCatalog } from '@/stores/chat-store/harness/acp-handler'
 import { GroupedModelEffortSelector } from '@/components/chat/model-selector/GroupedModelEffortSelector'
+import { pickLaunchRefresh, useHarnessCatalogRefresh } from '../catalog-refresh'
 import { effortLabel, useProfileCatalog, type LaunchModelProps } from '../launch-model'
 import { acpSelectorModels, projectAntigravityModels } from './model-options'
 
 export function AcpLaunchModel({
-  profile, catalog, acpAgentId, model, effort, optionParams, onOptionParamChange, onChange,
+  profile, catalog, acpAgentId, model, effort, optionParams, onOptionParamChange, onRefreshModels, modelsLoading, onChange,
 }: LaunchModelProps) {
-  const resources = useChatStore((s) => (catalog === 'profile' ? null : s.harnessResources.acp))
+  const profileOnly = catalog === 'profile'
+  const refresh = pickLaunchRefresh(profileOnly, useHarnessCatalogRefresh('acp', !profileOnly), { onRefreshModels, modelsLoading })
+  const resources = useChatStore((s) => (profileOnly ? null : s.harnessResources.acp))
   const agentId = acpAgentId ?? profile?.acpAgentId ?? resources?.selectedAgentId ?? null
   const live = useMemo(() => getCachedAcpCatalog(resources, agentId), [resources, agentId])
   const profileCatalog = useProfileCatalog(profile)
@@ -66,6 +69,8 @@ export function AcpLaunchModel({
       }}
       optionParams={optionParams}
       onOptionParamChange={onOptionParamChange}
+      onRefreshModels={refresh.onRefreshModels}
+      modelsLoading={refresh.modelsLoading}
     />
   )
 }

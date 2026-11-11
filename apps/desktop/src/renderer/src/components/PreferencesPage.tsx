@@ -45,6 +45,8 @@ function ClaudePreferencesPage() {
   const currentFolder = useAppStore((s) => s.currentFolder)
   const availableOutputStyles = useChatStore(selectClaudeOutputStyles)
   const availableModels = useChatStore(selectClaudeModels)
+  const refreshClaudeResources = useChatStore((state) => state.refreshClaudeResources)
+  const claudeModelsRefreshing = useChatStore((state) => state.claudeResourcesLoading)
   const account = useChatStore(selectClaudeAccount)
   const autoPlanEligibility = checkAutoModePlanEligibility(account)
 
@@ -241,6 +243,8 @@ function ClaudePreferencesPage() {
                     onSelect: () => void handleModelSelect(''),
                   }}
                   emptyMessage={t('settings.preferences.defaultModel.empty')}
+                  onRefresh={() => void refreshClaudeResources(true)}
+                  refreshing={claudeModelsRefreshing}
                 />
               </PopoverContent>
             </Popover>

@@ -48,7 +48,7 @@ import { readAcpHarnessResources } from '../acp/acp-model-cache'
 import { deriveSessionCatalog } from '../acp/acp-config'
 import { readAppSettings } from '../app-settings-service'
 import { getCachedHarnessResources } from '../database'
-import { getHarnessInstallation, probeDesktopHarness } from '../harness/service'
+import { getHarnessInstallation, getHarnessManager, probeDesktopHarness } from '../harness/service'
 import { listCredentials } from '../providers/credential-store'
 import { getPlatforms } from '../providers/registry'
 import { resolveServiceFromCredential } from '../providers/resolver'
@@ -360,18 +360,36 @@ export function agentProfileLaunchConfig(provider: ReturnType<typeof listSession
  * No `isBase` filter — the day custom run configurations ship, they become
  * launchable and mentionable through this one function.
  */
-function usableProviders(): Array<{
+function providerEntries(
+  accept: (provider: ReturnType<typeof listSessionProviders>[number]) => boolean,
+): Array<{
   provider: ReturnType<typeof listSessionProviders>[number]
   acpAgentId: string | null
 }> {
   const enabled = isAgentProfilesEnabled()
   return listSessionProviders()
     .filter((provider) => enabled || !readAgentProfile(provider.config))
-    .filter(isProviderUsable)
+    .filter(accept)
     .map((provider) => ({
       provider,
       acpAgentId: isAcpProtocolHarness(provider.harnessId) ? resolveAcpAgentId(provider) : null,
     }))
+}
+
+/** Mention and collaboration profiles. A `needs_auth` row is probed once. */
+function usableProviders() {
+  return providerEntries(isProviderUsable)
+}
+
+/**
+ * Agents `session.create` would accept on this machine: enabled and ready.
+ * Suggest-task cards use this, not the Settings catalog. A `needs_auth` row
+ * stays hidden until a probe has already marked it ready.
+ */
+export function listRunnableSessionAgentProfiles(): SessionAgentProfile[] {
+  const harnesses = getHarnessManager()
+  return providerEntries((provider) => harnesses.isSessionHarnessRunnable(provider.harnessId))
+    .map(({ provider, acpAgentId }) => sessionAgentProfile(provider, acpAgentId))
 }
 
 export function sessionAgentLaunchDefaults(

@@ -1,11 +1,28 @@
 /** @vitest-environment jsdom */
 import { fireEvent, render, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { resetEnvironmentListCache } from '@/lib/environment-list'
 import { SessionScopeProvider } from '@/stores/chat-store/session-scope'
 import { SuggestedTaskToolBlock } from './SuggestedTaskToolBlock'
 
-vi.mock('@/harness-ui/controls', () => ({ HARNESS_CONTROLS: { claude: { LaunchModelControl: ({ catalog, profile, onChange, onRefreshModels }: { catalog: string; profile: { name: string }; onChange: (value: { model: string }) => void; onRefreshModels?: () => void }) => <><span>{catalog} · {profile.name}</span><button onClick={() => onChange({ model: profile.name })}>Pick model</button>{onRefreshModels ? <button onClick={() => onRefreshModels()}>Refresh models</button> : null}</> } } }))
-afterEach(() => vi.restoreAllMocks())
+vi.mock('@/harness-ui/controls', () => ({
+  HARNESS_CONTROLS: new Proxy({}, {
+    get: () => ({
+      LaunchModelControl: ({ catalog, profile, onChange, onRefreshModels }: { catalog: string; profile?: { name: string }; onChange: (value: { model: string }) => void; onRefreshModels?: () => void }) => <><span>{catalog} · {profile?.name}</span><button onClick={() => onChange({ model: profile?.name ?? '' })}>Pick model</button>{onRefreshModels ? <button onClick={() => onRefreshModels()}>Refresh models</button> : null}</>,
+    }),
+  }),
+}))
+afterEach(() => {
+  resetEnvironmentListCache()
+  vi.restoreAllMocks()
+})
+
+function environment(
+  callSession: (connection: string, session: string, method: string, input?: unknown) => unknown,
+  listItems: () => Promise<unknown> = async () => [],
+) {
+  return { callSession, listItems, onStatusEvent: () => () => {} }
+}
 const taskId = '0b9f3c1e-2a4d-4e5f-8a6b-7c8d9e0f1a2b'
 
 describe('suggested task execution environment', () => {
@@ -15,7 +32,7 @@ describe('suggested task execution environment', () => {
       if (method === 'session.suggestedTaskLaunchOptions') return connection === 'A' ? Promise.resolve(options) : new Promise(() => {})
       return Promise.resolve({ sessionId: 'new' })
     })
-    Object.defineProperty(window, 'environment', { configurable: true, value: { callSession } })
+    Object.defineProperty(window, 'environment', { configurable: true, value: environment(callSession) })
     const card = (connection: string) => <SessionScopeProvider value={{ projectPath: `remote:${connection}:/repo`, sessionId: 'source' }}>
       <SuggestedTaskToolBlock params={{ title: 'Follow up' }} result={JSON.stringify({ taskId })} />
     </SessionScopeProvider>
@@ -29,7 +46,7 @@ describe('suggested task execution environment', () => {
 
   it('shows source-host failures without falling back to the local desktop', async () => {
     const callSession = vi.fn(async (_connection: string, _session: string, _method: string, _input: unknown) => { throw new Error('Source host offline') })
-    Object.defineProperty(window, 'environment', { configurable: true, value: { callSession } })
+    Object.defineProperty(window, 'environment', { configurable: true, value: environment(callSession) })
     const view = render(<SessionScopeProvider value={{ projectPath: 'remote:offline-host:/repo', sessionId: 'source' }}>
       <SuggestedTaskToolBlock params={{ title: 'Follow up' }} result={JSON.stringify({ taskId })} />
     </SessionScopeProvider>)
@@ -41,7 +58,7 @@ describe('suggested task execution environment', () => {
   it.each(['local', 'node-A', 'desktop-B'])('reads and starts only on the card source %s', async connectionId => {
     const options = { profiles: [{ id: 'claude-base', name: 'Source agent', harnessId: 'claude', defaultConfig: {}, apiProviders: [], models: [], efforts: [] }], initial: { agentId: 'claude-base', settings: { permissionMode: 'default' } } }
     const callSession = vi.fn(async (_connection: string, _session: string, method: string) => method === 'session.suggestedTaskLaunchOptions' ? options : { sessionId: 'new' })
-    Object.defineProperty(window, 'environment', { configurable: true, value: { callSession } })
+    Object.defineProperty(window, 'environment', { configurable: true, value: environment(callSession) })
     const projectPath = connectionId === 'local' ? '/repo' : `remote:${connectionId}:/repo`
     const view = render(<SessionScopeProvider value={{ projectPath, sessionId: 'source-session' }}>
       <SuggestedTaskToolBlock params={{ title: 'Follow up', tldr: 'A separate issue' }} result={JSON.stringify({ taskId })} />
@@ -55,7 +72,7 @@ describe('suggested task execution environment', () => {
   it('refreshes a remote catalog without replacing the card, and leaves a local catalog to its own control', async () => {
     const options = { profiles: [{ id: 'claude-base', name: 'Source agent', harnessId: 'claude', defaultConfig: {}, apiProviders: [], models: [], efforts: [] }], initial: { agentId: 'claude-base', settings: {} } }
     const callSession = vi.fn(async (_connection: string, _session: string, method: string) => method === 'session.suggestedTaskLaunchOptions' ? options : { sessionId: 'new' })
-    Object.defineProperty(window, 'environment', { configurable: true, value: { callSession } })
+    Object.defineProperty(window, 'environment', { configurable: true, value: environment(callSession) })
     const remote = render(<SessionScopeProvider value={{ projectPath: 'remote:node-A:/repo', sessionId: 'source-session' }}>
       <SuggestedTaskToolBlock params={{ title: 'Follow up' }} result={JSON.stringify({ taskId })} />
     </SessionScopeProvider>)
@@ -69,5 +86,32 @@ describe('suggested task execution environment', () => {
     </SessionScopeProvider>)
     await local.findByText('local · Source agent')
     expect(local.queryByRole('button', { name: 'Refresh models' })).toBeNull()
+  })
+
+  it('drops a harness the remote node does not advertise, even when the served list includes it', async () => {
+    const options = {
+      profiles: [
+        { id: 'claude-base', name: 'Claude', harnessId: 'claude', defaultConfig: {}, apiProviders: [], models: [], efforts: [] },
+        { id: 'codex-base', name: 'Codex', harnessId: 'codex', defaultConfig: {}, apiProviders: [], models: [], efforts: [] },
+      ],
+      initial: { agentId: 'claude-base', settings: { model: 'opus' } },
+    }
+    const callSession = vi.fn(async (_connection: string, _session: string, method: string) => (
+      method === 'session.suggestedTaskLaunchOptions' ? options : { sessionId: 'new' }
+    ))
+    Object.defineProperty(window, 'environment', {
+      configurable: true,
+      value: environment(callSession, async () => [{ connectionId: 'node-A', capabilities: { harnessIds: ['codex'] } }]),
+    })
+    const view = render(<SessionScopeProvider value={{ projectPath: 'remote:node-A:/repo', sessionId: 'source-session' }}>
+      <SuggestedTaskToolBlock params={{ title: 'Follow up' }} result={JSON.stringify({ taskId })} />
+    </SessionScopeProvider>)
+    await waitFor(() => expect(view.getByText('profile · Codex')).toBeTruthy())
+    expect(view.queryByText('profile · Claude')).toBeNull()
+    fireEvent.click(view.getByRole('button', { name: 'Launch' }))
+    await waitFor(() => expect(callSession).toHaveBeenCalledWith('node-A', 'source-session', 'session.launchSuggestedTask', {
+      taskId,
+      choice: { agentId: 'codex-base', settings: {} },
+    }))
   })
 })

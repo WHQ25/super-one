@@ -13,7 +13,10 @@ import {
   type SuggestedTaskCardProps,
 } from '@superone/chat-view/presenters/SuggestedTaskCard'
 import { HARNESS_CONTROLS } from '@/harness-ui/controls'
+import { useProjectHarnessCatalog } from '@/hooks/use-project-harness-catalog'
+import { catalogEntryOn, catalogIdForSessionProvider, type HarnessCatalogStatus } from '@/lib/harness-visibility'
 import { useChatStore } from '@/stores/chat'
+import { useAppStore } from '@/stores/app'
 import { callSession } from '@/lib/session-client'
 import { connectionIdForProjectKey } from '@/lib/session-list-ops'
 import { useSessionScope } from '@/stores/chat-store/session-scope'
@@ -29,6 +32,27 @@ export type LaunchOptionsState =
 
 function launchErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
+}
+
+/**
+ * A remote card may only offer harnesses that node advertises as enabled and
+ * ready. `null` means the descriptor is not loaded yet, so the served list
+ * stays on screen. This desktop's own card is not filtered here.
+ */
+export function offerSuggestedTaskProfiles(
+  options: SuggestedTaskLaunchOptions,
+  catalog: HarnessCatalogStatus[] | null,
+): SuggestedTaskLaunchOptions {
+  if (!catalog) return options
+  const profiles = options.profiles.filter((profile) => {
+    const id = catalogIdForSessionProvider(profile.harnessId, profile.acpAgentId)
+    return id != null && catalogEntryOn(catalog, id)
+  })
+  if (profiles.length === options.profiles.length) return options
+  if (profiles.length === 0 || profiles.some((profile) => profile.id === options.initial.agentId)) {
+    return { ...options, profiles }
+  }
+  return { ...options, profiles, initial: { agentId: profiles[0]!.id, settings: {} } }
 }
 
 /** The launch pickers of a pending card, loaded from main; null while there is nothing to launch. */
@@ -118,8 +142,10 @@ export function SuggestedTaskLaunchControls({
   onRefreshModels?: () => void
   modelsLoading?: boolean
 }) {
+  const { t } = useTranslation()
   if (state.status === 'loading') return <Loader2 className="ml-1 size-3 animate-spin text-muted-foreground" />
   if (state.status === 'error') return <p className="truncate px-1 text-xs text-error" title={state.message}>{state.message}</p>
+  if (state.options.profiles.length === 0) return <p className="truncate px-1 text-xs text-error">{t('chat.toolBlock.suggestedTask.unavailable')}</p>
   return <LaunchControls options={state.options} choice={choice ?? state.options.initial} onChange={onChange} catalog={catalog} onRefreshModels={onRefreshModels} modelsLoading={modelsLoading} />
 }
 
@@ -187,12 +213,21 @@ export function SuggestedTaskToolBlock({ result, ...props }: Props) {
     [pending, projectPath, sessionId, taskId],
   )
   const launchOptions = useLaunchOptions(target)
-  const catalog = projectPath && connectionIdForProjectKey(projectPath) !== 'local' ? 'profile' : 'local'
+  const remote = Boolean(projectPath && connectionIdForProjectKey(projectPath) !== 'local')
+  const hostCatalog = useProjectHarnessCatalog(useAppStore((state) => state.harnessCatalog))
+  const catalog = remote ? 'profile' : 'local'
+  const shownState = launchOptions.state?.status === 'ready'
+    ? { status: 'ready' as const, options: offerSuggestedTaskProfiles(launchOptions.state.options, remote ? hostCatalog : null) }
+    : launchOptions.state
+  const readyProfiles = shownState?.status === 'ready' ? shownState.options.profiles : null
   const sourceKey = JSON.stringify([projectPath, sessionId, taskId])
   const [selection, setSelection] = useState<{ source: string; choice: SuggestedTaskLaunchChoice }>()
   const picked = selection?.source === sourceKey ? selection.choice : undefined
   const setPicked = (choice: SuggestedTaskLaunchChoice) => setSelection({ source: sourceKey, choice })
-  const choice = picked ?? (launchOptions.state?.status === 'ready' ? launchOptions.state.options.initial : undefined)
+  const validPick = picked && readyProfiles?.some((profile) => profile.id === picked.agentId) ? picked : undefined
+  const servedInitial = shownState?.status === 'ready' ? shownState.options.initial : undefined
+  const choice = validPick
+    ?? (servedInitial && readyProfiles?.some((profile) => profile.id === servedInitial.agentId) ? servedInitial : undefined)
 
   const actions = useMemo<SuggestedTaskActions | undefined>(() => {
     if (!projectPath || !sessionId || !taskId) return undefined
@@ -208,7 +243,7 @@ export function SuggestedTaskToolBlock({ result, ...props }: Props) {
       {...props}
       actions={actions}
       unavailableReason={t('chat.toolBlock.suggestedTask.unavailable')}
-      launchControls={launchOptions.state ? <SuggestedTaskLaunchControls state={launchOptions.state} choice={picked} onChange={setPicked}
+      launchControls={shownState ? <SuggestedTaskLaunchControls state={shownState} choice={validPick} onChange={setPicked}
         catalog={catalog}
         onRefreshModels={catalog === 'profile' ? launchOptions.refresh : undefined}
         modelsLoading={catalog === 'profile' ? launchOptions.refreshing : undefined} /> : undefined}

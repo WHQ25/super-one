@@ -17,7 +17,7 @@ import {
   type SuggestedTaskLaunchOptions,
 } from '@superone/shared/suggested-task'
 import { resolveMainWorktreeDir } from '../git/worktree-ops'
-import { findSessionAgentProfile, listSessionAgentProfiles, sessionAgentLaunchDefaults } from './agent-profiles'
+import { findSessionAgentProfile, listRunnableSessionAgentProfiles, sessionAgentLaunchDefaults } from './agent-profiles'
 import { resolveCwd } from './collaboration-child-project'
 import { resolveLiveSession } from './collaboration-host'
 import { collaborationStore as store } from './collaboration-mailbox'
@@ -73,12 +73,12 @@ function initialChoice(parent: Pick<Session, 'snapshot' | 'getUiSettings'>, prof
   })
 }
 
-/** What the card's launch picker offers for a pending card. */
+/** What the card's launch picker offers: harnesses this host can start. */
 export function suggestedTaskLaunchOptions(host: SessionManager, sessionId: string, taskId: string): SuggestedTaskLaunchOptions {
   const parent = resolveLiveSession(host, sessionId)
   if (!parent) throw new SuggestedTaskError('This session is no longer available.')
   pendingTask(parent, taskId)
-  const profiles = listSessionAgentProfiles()
+  const profiles = listRunnableSessionAgentProfiles()
   const initial = initialChoice(parent, profiles)
   if (!initial) throw new SuggestedTaskError('No agent can launch new sessions.')
   return { profiles, initial }
@@ -120,7 +120,7 @@ async function launch(
   // A start that already made its session is resumed as it was approved; a
   // grant that never started is superseded by the user's current pick.
   if (!store().grantForLaunch(parentSessionId, launchId)?.started_at) {
-    const profiles = listSessionAgentProfiles()
+    const profiles = listRunnableSessionAgentProfiles()
     const choice = requested ?? initialChoice(parent, profiles)
     const profile = choice?.agentId ? findSessionAgentProfile(profiles, choice.agentId) : undefined
     if (!choice || !profile) {

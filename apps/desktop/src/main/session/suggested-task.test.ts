@@ -15,7 +15,7 @@ vi.mock('./session-collaboration', () => ({
 }))
 vi.mock('./collaboration-mailbox', () => ({ collaborationStore: () => ({ grantForLaunch: mocks.grantForLaunch }) }))
 vi.mock('./agent-profiles', () => ({
-  listSessionAgentProfiles: () => [
+  listRunnableSessionAgentProfiles: () => [
     {
       id: 'claude-base', harnessId: 'claude', models: [], efforts: [],
       defaultConfig: { sandboxMode: 'off', model: 'default-model', apiProviderId: 'claude-account:cli' },

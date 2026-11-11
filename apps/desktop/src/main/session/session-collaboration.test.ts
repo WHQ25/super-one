@@ -120,6 +120,12 @@ vi.mock('../harness/service', () => ({
     id,
     ...(state.harnessStatuses[id] ?? { enabled: false, state: 'disabled' }),
   }),
+  getHarnessManager: () => ({
+    isSessionHarnessRunnable: (id: string) => {
+      const row = state.harnessStatuses[id]
+      return Boolean(row?.enabled && row.state === 'ready')
+    },
+  }),
   probeDesktopHarness: state.probeHarness,
 }))
 vi.mock('../git/worktree-ops', () => ({
@@ -197,7 +203,7 @@ vi.mock('../recent-folders', () => ({
 
 import { fakeHost, fakeSession } from './collaboration-test-fixtures'
 import { collaborationWakeQueue, stopCollaborationWakes } from './collaboration-wakes'
-import { listAgentMentionTargets } from './agent-profiles'
+import { listAgentMentionTargets, listRunnableSessionAgentProfiles } from './agent-profiles'
 import { setRemoteCollaborationPort, type RemoteCollaborationPort } from './collaboration-remote'
 import {
   listCollaborationAgents,
@@ -386,6 +392,17 @@ describe('session collaboration', () => {
     state.harnessStatuses.claude = { enabled: true, state: 'needs_auth' }
     expect(listSessionAgentProfiles()).toHaveLength(1)
     expect(state.probeHarness).toHaveBeenCalledWith('claude')
+  })
+
+  it('offers a suggested task only a harness this host can launch, without probing', () => {
+    state.providers = [
+      state.providers[0]!,
+      { id: 'codex-base', harnessId: 'codex', name: 'Codex', isBase: true, config: {}, createdAt: 0, updatedAt: 0 },
+    ]
+    state.harnessStatuses.claude = { enabled: true, state: 'needs_auth' }
+    state.harnessStatuses.codex = { enabled: true, state: 'ready' }
+    expect(listRunnableSessionAgentProfiles().map((profile) => profile.id)).toEqual(['codex-base'])
+    expect(state.probeHarness).not.toHaveBeenCalled()
   })
 })
 

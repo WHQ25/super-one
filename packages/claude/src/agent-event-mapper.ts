@@ -7,6 +7,7 @@
  */
 import type { ClaudeToolApps } from './mcp-apps'
 import type { AgentEvent, MessageMetadata, PromptCacheTtl } from '@superone/shared/agent-types'
+import { parseBashEditDiff } from '@superone/shared/bash-edit-diff'
 import { createDeadStreamLedger } from '@superone/shared/dead-stream-ledger'
 import { createRetractionLedger, mapModelFallbackWire } from '@superone/shared/model-fallback-wire'
 import { readTerminalSlashCommands, sdkSlashCommands } from '@superone/shared/slash-commands'
@@ -274,6 +275,7 @@ export function createClaudeAgentEventMapper(
     const isBash = toolName === 'Bash'
     const outputPath = isBash ? extractBashOutputPath(text) : undefined
     const isTimedOut = isBash ? extractBashKilled(toolUseResult) : undefined
+    const bashEditDiff = isBash ? parseBashEditDiff((toolUseResult as Raw | undefined)?.bashEditDiff) : undefined
     const taskCreateTodo = extractTaskCreateTodo(toolName, toolUseResult, text)
     const resultTitle = artifactResultTitle(toolName, toolUseResult)
     const resourceLinks = toolResultResourceLinks(toolUseResult)
@@ -288,6 +290,7 @@ export function createClaudeAgentEventMapper(
         summary: text,
         ...(outputPath ? { outputPath } : {}),
         ...(isTimedOut ? { isTimedOut } : {}),
+        ...(bashEditDiff ? { bashEditDiff } : {}),
         ...(isError ? { isError: true } : {}),
         ...(taskCreateTodo ?? {}),
         ...(resultTitle ? { resultTitle } : {}),

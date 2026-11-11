@@ -214,7 +214,7 @@ function looksLikeCollabResult(obj: Record<string, unknown>): boolean {
 
 function shouldKeepFullToolResult(summary: string, toolName?: string): boolean {
   if (summary.length <= 4000) return true
-  if (toolName === 'Bash' || toolName === 'ManageTask') return true
+  if (toolName === 'Bash' || toolName === 'ManageTask' || toolName === 'ManageSubagents') return true
   if (isCollabToolName(toolName)) return true
   if (isSessionArchiveToolName(toolName)) return true
   if (looksLikeSessionArchiveToon(summary)) return true

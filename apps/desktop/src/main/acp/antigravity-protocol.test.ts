@@ -1201,5 +1201,176 @@ describe('antigravity-protocol', () => {
       rmSync(tmpRoot, { recursive: true, force: true })
     }
   })
+
+  it('normalizes Antigravity manage_subagents calls to ManageSubagents and enriches completion output from transcript', () => {
+    const tmpRoot = mkdtempSync(join(tmpdir(), 'superone-agy-manage-subagents-'))
+    try {
+      const sessionId = 'c1a24e86-36c4-40e2-b1d8-6df9c7ddca9d'
+      const childId = '92bc1f73-84fa-42e9-9157-83df2d2e33bc'
+      const logsDir = join(tmpRoot, sessionId, '.system_generated', 'logs')
+      mkdirSync(logsDir, { recursive: true })
+      const listText = [
+        'You have 1 active subagent(s):',
+        JSON.stringify([
+          {
+            conversationId: childId,
+            role: 'HarnessId Architecture Researcher',
+            type: 'research',
+            state: 'running',
+            stateDetail: 'read_file · antigravity-protocol.ts',
+          },
+        ]),
+      ].join('\n')
+      const killText = [
+        'Successfully killed 1 subagent(s) and their descendants.',
+        'Killed roles: HarnessId Architecture Researcher',
+      ].join('\n')
+      writeFileSync(
+        join(logsDir, 'transcript_full.jsonl'),
+        [
+          JSON.stringify({ step_index: 1, type: 'USER_INPUT', status: 'DONE', content: 'manage subagents' }),
+          JSON.stringify({
+            step_index: 2,
+            type: 'PLANNER_RESPONSE',
+            status: 'DONE',
+            tool_calls: [
+              {
+                name: 'manage_subagents',
+                args: { Action: 'list' },
+              },
+            ],
+          }),
+          JSON.stringify({
+            step_index: 3,
+            type: 'GENERIC',
+            status: 'DONE',
+            content: `Created At: 2026-11-12T01:16:00+08:00\nCompleted At: 2026-11-12T01:16:01+08:00\n${listText}`,
+          }),
+          JSON.stringify({
+            step_index: 4,
+            type: 'PLANNER_RESPONSE',
+            status: 'DONE',
+            tool_calls: [
+              {
+                name: 'manage_subagents',
+                args: { Action: 'kill', ConversationIds: [childId] },
+              },
+            ],
+          }),
+          JSON.stringify({
+            step_index: 5,
+            type: 'GENERIC',
+            status: 'DONE',
+            content: `Created At: 2026-11-12T01:16:05+08:00\nCompleted At: 2026-11-12T01:16:06+08:00\n${killText}`,
+          }),
+        ].join('\n'),
+        'utf8',
+      )
+
+      const startList = normalizeAntigravitySessionUpdate(
+        {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'call_ms_1',
+          title: 'Running manage_subagents',
+          kind: 'other',
+          status: 'in_progress',
+          rawInput: { Action: 'list' },
+        } as unknown as SessionUpdate,
+        sessionId,
+        [tmpRoot],
+      )
+      expect(mapSessionUpdate(startList, { messageId: 'msg_ms_1' })).toEqual([
+        {
+          type: 'content_delta',
+          messageId: 'msg_ms_1',
+          delta: {
+            type: 'tool_use',
+            toolUseId: 'call_ms_1',
+            toolName: 'ManageSubagents',
+            toolFilePath: undefined,
+            toolSummary: undefined,
+            input: JSON.stringify({ action: 'list' }),
+            status: 'streaming',
+          },
+        },
+      ])
+
+      const doneList = normalizeAntigravitySessionUpdate(
+        {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'call_ms_1',
+          status: 'completed',
+        } as unknown as SessionUpdate,
+        sessionId,
+        [tmpRoot],
+      )
+      const listResult = mapSessionUpdate(doneList, { messageId: 'msg_ms_1' }).find(
+        (e) => e.type === 'content_delta' && e.delta.type === 'tool_result',
+      )
+      expect(listResult).toEqual({
+        type: 'content_delta',
+        messageId: 'msg_ms_1',
+        delta: {
+          type: 'tool_result',
+          toolUseId: 'call_ms_1',
+          summary: listText,
+          isError: false,
+        },
+      })
+
+      const startKill = normalizeAntigravitySessionUpdate(
+        {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'call_ms_2',
+          title: 'Running manage_subagents',
+          kind: 'other',
+          status: 'in_progress',
+          rawInput: { Action: 'kill', ConversationIds: [childId] },
+        } as unknown as SessionUpdate,
+        sessionId,
+        [tmpRoot],
+      )
+      expect(mapSessionUpdate(startKill, { messageId: 'msg_ms_1' })).toEqual([
+        {
+          type: 'content_delta',
+          messageId: 'msg_ms_1',
+          delta: {
+            type: 'tool_use',
+            toolUseId: 'call_ms_2',
+            toolName: 'ManageSubagents',
+            toolFilePath: undefined,
+            toolSummary: undefined,
+            input: JSON.stringify({ action: 'kill', conversationIds: [childId] }),
+            status: 'streaming',
+          },
+        },
+      ])
+
+      const doneKill = normalizeAntigravitySessionUpdate(
+        {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'call_ms_2',
+          status: 'completed',
+        } as unknown as SessionUpdate,
+        sessionId,
+        [tmpRoot],
+      )
+      const killResult = mapSessionUpdate(doneKill, { messageId: 'msg_ms_1' }).find(
+        (e) => e.type === 'content_delta' && e.delta.type === 'tool_result',
+      )
+      expect(killResult).toEqual({
+        type: 'content_delta',
+        messageId: 'msg_ms_1',
+        delta: {
+          type: 'tool_result',
+          toolUseId: 'call_ms_2',
+          summary: killText,
+          isError: false,
+        },
+      })
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true })
+    }
+  })
 })
 

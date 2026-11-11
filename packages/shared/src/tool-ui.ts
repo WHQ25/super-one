@@ -142,6 +142,8 @@ export const TOOL_ID_TO_UI_NAME: Record<string, string> = {
   reportfindings: 'ReportFindings',
   manage_task: 'ManageTask',
   managetask: 'ManageTask',
+  manage_subagents: 'ManageSubagents',
+  managesubagents: 'ManageSubagents',
 }
 
 export function normalizeToolIdKey(id: string): string {
@@ -457,6 +459,26 @@ export function normalizeTranscriptTool(
     if (input.taskId == null && input.TaskId != null) input.taskId = input.TaskId
     if (input.taskId == null && input.task_id != null) input.taskId = input.task_id
     if (input.input == null && input.Input != null) input.input = input.Input
+  } else if (toolName === 'ManageSubagents') {
+    if (input.action == null && typeof input.Action === 'string') input.action = input.Action.toLowerCase()
+    else if (typeof input.action === 'string') input.action = input.action.toLowerCase()
+    const rawIds = input.conversationIds ?? input.ConversationIds ?? input.conversation_ids
+    if (Array.isArray(rawIds)) {
+      input.conversationIds = rawIds
+        .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+        .map((id) => id.trim())
+    } else if (typeof rawIds === 'string' && rawIds.trim().startsWith('[')) {
+      try {
+        const parsed = JSON.parse(rawIds)
+        if (Array.isArray(parsed)) {
+          input.conversationIds = parsed
+            .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+            .map((id) => id.trim())
+        }
+      } catch {
+        void 0
+      }
+    }
   }
 
   return { toolName, input }

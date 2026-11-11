@@ -2,15 +2,15 @@ import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { resolveAntigravityBrainRoots } from './antigravity-profile'
 
-const MAX_CONSUMED_MANAGE_TASK_RESULTS = 1000
-const consumedManageTaskKeys = new Set<string>()
+const MAX_CONSUMED_TRANSCRIPT_RESULTS = 1000
+const consumedTranscriptKeys = new Set<string>()
 
 function recordConsumedKey(key: string): void {
-  if (consumedManageTaskKeys.size >= MAX_CONSUMED_MANAGE_TASK_RESULTS) {
-    const oldest = consumedManageTaskKeys.values().next().value
-    if (oldest) consumedManageTaskKeys.delete(oldest)
+  if (consumedTranscriptKeys.size >= MAX_CONSUMED_TRANSCRIPT_RESULTS) {
+    const oldest = consumedTranscriptKeys.values().next().value
+    if (oldest) consumedTranscriptKeys.delete(oldest)
   }
-  consumedManageTaskKeys.add(key)
+  consumedTranscriptKeys.add(key)
 }
 
 function unwrapStringArg(val: unknown): string | undefined {
@@ -33,6 +33,33 @@ function pickStringArg(obj: Record<string, unknown>, keys: readonly string[], tr
     if (raw === undefined) continue
     const val = trim ? raw.trim() : raw
     if (val.length > 0 || !trim) return val
+  }
+  return undefined
+}
+
+function pickStringArrayArg(obj: Record<string, unknown>, keys: readonly string[]): string[] | undefined {
+  for (const key of keys) {
+    const val = obj[key]
+    if (Array.isArray(val)) {
+      return val
+        .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+        .map((item) => item.trim())
+    }
+    if (typeof val === 'string') {
+      const trimmed = val.trim()
+      if (trimmed.startsWith('[') && trimmed.endsWith(']')) {
+        try {
+          const parsed = JSON.parse(trimmed)
+          if (Array.isArray(parsed)) {
+            return parsed
+              .filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+              .map((item) => item.trim())
+          }
+        } catch {
+          void 0
+        }
+      }
+    }
   }
   return undefined
 }
@@ -69,6 +96,32 @@ export function applyAntigravityManageTaskInput(inObj: Record<string, unknown>):
   }
 }
 
+export function applyAntigravityManageSubagentsInput(inObj: Record<string, unknown>): void {
+  const action = pickStringArg(inObj, ['action', 'Action'])
+  if (action && typeof inObj.action !== 'string') {
+    inObj.action = action.toLowerCase()
+  }
+  const conversationIds = pickStringArrayArg(inObj, ['conversationIds', 'ConversationIds', 'conversation_ids'])
+  if (conversationIds !== undefined && !Array.isArray(inObj.conversationIds)) {
+    inObj.conversationIds = conversationIds
+  }
+}
+
+export function applyAntigravityBuiltinToolInput(
+  mappedUiName: string | null,
+  inObj: Record<string, unknown>,
+): void {
+  if (mappedUiName === 'ManageTask') {
+    applyAntigravityManageTaskInput(inObj)
+  } else if (mappedUiName === 'ManageSubagents') {
+    applyAntigravityManageSubagentsInput(inObj)
+  }
+}
+
+export function isAntigravityTranscriptOutputTool(variant: unknown): boolean {
+  return variant === 'ManageTask' || variant === 'ManageSubagents'
+}
+
 function findTranscriptFile(sessionId: string, brainRoots: string[]): string | null {
   for (const root of brainRoots) {
     for (const filename of ['transcript_full.jsonl', 'transcript.jsonl']) {
@@ -79,21 +132,27 @@ function findTranscriptFile(sessionId: string, brainRoots: string[]): string | n
   return null
 }
 
-export function resolveAntigravityManageTaskOutput(
+interface TranscriptGenericCandidate {
+  key: string
+  args: Record<string, unknown>
+  output: string
+}
+
+function collectTranscriptGenericOutputs(
   sessionId: string | undefined,
-  rawInput: Record<string, unknown>,
+  toolNames: ReadonlySet<string>,
   unwrapOutput: (text: string) => string,
   customBrainRoots?: string[],
-): string | undefined {
-  if (!sessionId || /[/\\]/.test(sessionId)) return undefined
+): TranscriptGenericCandidate[] {
+  if (!sessionId || /[/\\]/.test(sessionId)) return []
   const transcriptPath = findTranscriptFile(sessionId.trim(), customBrainRoots ?? resolveAntigravityBrainRoots())
-  if (!transcriptPath) return undefined
+  if (!transcriptPath) return []
 
   let raw = ''
   try {
     raw = readFileSync(transcriptPath, 'utf8')
   } catch {
-    return undefined
+    return []
   }
 
   const records: Array<{ stepIndex: number; rec: Record<string, unknown> }> = []
@@ -115,18 +174,7 @@ export function resolveAntigravityManageTaskOutput(
     if (records[i]?.rec.type === 'USER_INPUT') lastUserIdx = i
   }
 
-  const wantAction = pickStringArg(rawInput, ['action', 'Action'])?.toLowerCase()
-  const wantTaskId = pickStringArg(rawInput, ['taskId', 'TaskId', 'task_id'])
-  const wantInput = pickStringArg(rawInput, ['input', 'Input'], false)
-
-  const candidates: Array<{
-    key: string
-    action?: string
-    taskId?: string
-    input?: string
-    output: string
-  }> = []
-
+  const candidates: TranscriptGenericCandidate[] = []
   let activeCalls: Array<{ stepIndex: number; callIdx: number; name: string; args: Record<string, unknown> }> = []
   let pendingIdx = 0
 
@@ -151,37 +199,99 @@ export function resolveAntigravityManageTaskOutput(
     if (rec.type === 'GENERIC' && (rec.status === 'DONE' || rec.status === 'ERROR') && pendingIdx < activeCalls.length) {
       const call = activeCalls[pendingIdx]!
       pendingIdx += 1
-      if (call.name !== 'manage_task' && call.name !== 'ManageTask') continue
+      if (!toolNames.has(call.name)) continue
       const content = typeof rec.content === 'string' ? unwrapOutput(rec.content).trim() : ''
       if (!content) continue
       candidates.push({
         key: `${sessionId}:${call.stepIndex}:${call.callIdx}`,
-        action: pickStringArg(call.args, ['action', 'Action'])?.toLowerCase(),
-        taskId: pickStringArg(call.args, ['taskId', 'TaskId', 'task_id']),
-        input: pickStringArg(call.args, ['input', 'Input'], false),
+        args: call.args,
         output: content,
       })
     }
   }
 
-  const matchesArgs = (c: (typeof candidates)[number]): boolean => {
-    if (wantAction && c.action && c.action !== wantAction) return false
-    if (wantTaskId && c.taskId && c.taskId !== wantTaskId) return false
-    if (wantInput !== undefined && c.input !== undefined && c.input !== wantInput) return false
-    return true
-  }
+  return candidates
+}
 
+function selectMatchingTranscriptOutput(
+  candidates: TranscriptGenericCandidate[],
+  matchesArgs: (args: Record<string, unknown>) => boolean,
+): string | undefined {
   for (const candidate of candidates) {
-    if (!consumedManageTaskKeys.has(candidate.key) && matchesArgs(candidate)) {
+    if (!consumedTranscriptKeys.has(candidate.key) && matchesArgs(candidate.args)) {
       recordConsumedKey(candidate.key)
       return candidate.output
     }
   }
-
   for (let i = candidates.length - 1; i >= 0; i -= 1) {
     const candidate = candidates[i]!
-    if (matchesArgs(candidate)) return candidate.output
+    if (matchesArgs(candidate.args)) return candidate.output
   }
+  return undefined
+}
 
+const MANAGE_TASK_NAMES = new Set(['manage_task', 'ManageTask'])
+const MANAGE_SUBAGENTS_NAMES = new Set(['manage_subagents', 'ManageSubagents'])
+
+export function resolveAntigravityManageTaskOutput(
+  sessionId: string | undefined,
+  rawInput: Record<string, unknown>,
+  unwrapOutput: (text: string) => string,
+  customBrainRoots?: string[],
+): string | undefined {
+  const candidates = collectTranscriptGenericOutputs(sessionId, MANAGE_TASK_NAMES, unwrapOutput, customBrainRoots)
+  if (candidates.length === 0) return undefined
+
+  const wantAction = pickStringArg(rawInput, ['action', 'Action'])?.toLowerCase()
+  const wantTaskId = pickStringArg(rawInput, ['taskId', 'TaskId', 'task_id'])
+  const wantInput = pickStringArg(rawInput, ['input', 'Input'], false)
+
+  return selectMatchingTranscriptOutput(candidates, (args) => {
+    const cAction = pickStringArg(args, ['action', 'Action'])?.toLowerCase()
+    const cTaskId = pickStringArg(args, ['taskId', 'TaskId', 'task_id'])
+    const cInput = pickStringArg(args, ['input', 'Input'], false)
+    if (wantAction && cAction && cAction !== wantAction) return false
+    if (wantTaskId && cTaskId && cTaskId !== wantTaskId) return false
+    if (wantInput !== undefined && cInput !== undefined && cInput !== wantInput) return false
+    return true
+  })
+}
+
+export function resolveAntigravityManageSubagentsOutput(
+  sessionId: string | undefined,
+  rawInput: Record<string, unknown>,
+  unwrapOutput: (text: string) => string,
+  customBrainRoots?: string[],
+): string | undefined {
+  const candidates = collectTranscriptGenericOutputs(sessionId, MANAGE_SUBAGENTS_NAMES, unwrapOutput, customBrainRoots)
+  if (candidates.length === 0) return undefined
+
+  const wantAction = pickStringArg(rawInput, ['action', 'Action'])?.toLowerCase()
+  const wantIds = pickStringArrayArg(rawInput, ['conversationIds', 'ConversationIds', 'conversation_ids'])
+
+  return selectMatchingTranscriptOutput(candidates, (args) => {
+    const cAction = pickStringArg(args, ['action', 'Action'])?.toLowerCase()
+    const cIds = pickStringArrayArg(args, ['conversationIds', 'ConversationIds', 'conversation_ids'])
+    if (wantAction && cAction && cAction !== wantAction) return false
+    if (wantIds && wantIds.length > 0 && cIds && cIds.length > 0 && wantIds.join('\0') !== cIds.join('\0')) {
+      return false
+    }
+    return true
+  })
+}
+
+export function resolveAntigravityTranscriptToolOutput(
+  variant: unknown,
+  sessionId: string | undefined,
+  rawInput: Record<string, unknown>,
+  unwrapOutput: (text: string) => string,
+  customBrainRoots?: string[],
+): string | undefined {
+  if (variant === 'ManageTask') {
+    return resolveAntigravityManageTaskOutput(sessionId, rawInput, unwrapOutput, customBrainRoots)
+  }
+  if (variant === 'ManageSubagents') {
+    return resolveAntigravityManageSubagentsOutput(sessionId, rawInput, unwrapOutput, customBrainRoots)
+  }
   return undefined
 }

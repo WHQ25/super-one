@@ -3710,6 +3710,41 @@ export type Messages = {
           unknown: string
         }
       }
+      manageSubagents: {
+        managing: string
+        manageSubagents: string
+        subagentsManaged: string
+        listing: string
+        listSubagents: string
+        subagentsListed: string
+        listingPeers: string
+        listPeers: string
+        peersListed: string
+        stopping: string
+        stopSubagents: string
+        subagentsStopped: string
+        stoppingAll: string
+        stopAllSubagents: string
+        allSubagentsStopped: string
+        none: string
+        noneToKill: string
+        activeCount_one: string
+        activeCount_other: string
+        stoppedCount_one: string
+        stoppedCount_other: string
+        targetCount_one: string
+        targetCount_other: string
+        stoppedRolesLabel: string
+        targetsLabel: string
+        state: {
+          running: string
+          waiting: string
+          idle: string
+          canceling: string
+          errored: string
+          unknown: string
+        }
+      }
       mcpAppTools: {
         toolsList: string
         listingTools: string
@@ -8751,6 +8786,41 @@ export const en: Messages = {
           done: 'Completed',
           error: 'Failed',
           cancelled: 'Cancelled',
+          unknown: 'Unknown',
+        },
+      },
+      manageSubagents: {
+        managing: 'Managing subagents',
+        manageSubagents: 'Manage Subagents',
+        subagentsManaged: 'Subagents Managed',
+        listing: 'Listing subagents',
+        listSubagents: 'List Subagents',
+        subagentsListed: 'Subagents Listed',
+        listingPeers: 'Listing peer subagents',
+        listPeers: 'List Peer Subagents',
+        peersListed: 'Peer Subagents Listed',
+        stopping: 'Stopping subagents',
+        stopSubagents: 'Stop Subagents',
+        subagentsStopped: 'Subagents Stopped',
+        stoppingAll: 'Stopping all subagents',
+        stopAllSubagents: 'Stop All Subagents',
+        allSubagentsStopped: 'All Subagents Stopped',
+        none: 'No active subagents',
+        noneToKill: 'No active subagents',
+        activeCount_one: '{{count}} active subagent',
+        activeCount_other: '{{count}} active subagents',
+        stoppedCount_one: '{{count}} stopped',
+        stoppedCount_other: '{{count}} stopped',
+        targetCount_one: '{{count}} subagent',
+        targetCount_other: '{{count}} subagents',
+        stoppedRolesLabel: 'Stopped roles',
+        targetsLabel: 'Targets',
+        state: {
+          running: 'Running',
+          waiting: 'Waiting',
+          idle: 'Idle',
+          canceling: 'Stopping',
+          errored: 'Failed',
           unknown: 'Unknown',
         },
       },

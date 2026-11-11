@@ -110,6 +110,21 @@ describe('deferred tool rows on the phone', () => {
     expect(container.querySelectorAll('.tool-node')).toHaveLength(1)
   })
 
+  it('mounts ManageSubagentsToolBlockPresenter for ManageSubagents instead of falling back to GenericToolRow', async () => {
+    restore = installFakeHost({
+      [detailRef('ManageSubagents')]: JSON.stringify({
+        input: JSON.stringify({ action: 'kill_all' }),
+        result: 'Successfully killed 1 subagent(s) and their descendants.\nKilled roles: Architecture Researcher',
+      }),
+    })
+    const { container } = render(
+      <PortableMessage message={deferredTurn('ManageSubagents')} scheme="dark" pendingPermission={null} />,
+    )
+    await waitFor(() => expect(container.textContent).toContain('Architecture Researcher'))
+    expect(container.textContent).not.toContain('ManageSubagents')
+    expect(container.querySelectorAll('.tool-node')).toHaveLength(1)
+  })
+
   it('renders session_list as the archive row, not a superone · session list shell', async () => {
     restore = installFakeHost({
       [detailRef('mcp__superone__session_list')]: JSON.stringify({

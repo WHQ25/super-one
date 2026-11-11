@@ -120,6 +120,7 @@ function nameFromVariant(raw: Record<string, unknown>): string | null {
     if (variant === 'AskUserQuestion') return 'AskUserQuestion'
     if (variant === 'TaskOutput') return 'TaskOutput'
     if (variant === 'ManageTask') return 'ManageTask'
+    if (variant === 'ManageSubagents') return 'ManageSubagents'
     if (variant === 'EnterPlanMode') return 'EnterPlanMode'
     if (variant === 'ExitPlanMode') return 'ExitPlanMode'
     if (variant === 'KillTask') return 'KillTask'
@@ -529,6 +530,18 @@ function normalizeInput(
         pickString(raw, ['input', 'Input'])
         ?? (typeof raw.input === 'string' ? raw.input : typeof raw.Input === 'string' ? raw.Input : undefined)
       if (input !== undefined) out.input = input
+      return Object.keys(out).length > 0 ? out : { ...raw }
+    }
+    case 'ManageSubagents': {
+      const out: Record<string, unknown> = {}
+      const action = pickString(raw, ['action', 'Action'])
+      if (action) out.action = action.toLowerCase()
+      const rawIds = pickUnknown(raw, ['conversationIds', 'ConversationIds', 'conversation_ids'])
+      if (Array.isArray(rawIds)) {
+        out.conversationIds = rawIds
+          .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
+          .map((id) => id.trim())
+      }
       return Object.keys(out).length > 0 ? out : { ...raw }
     }
     case 'EnterPlanMode':

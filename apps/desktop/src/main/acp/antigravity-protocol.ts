@@ -5,7 +5,10 @@ import type { PermissionMode } from '@superone/shared/agent-types'
 import { looksLikeComputerUseOutline } from '@superone/shared/computer-use-result-shape'
 import { looksLikeSessionArchiveToon } from '@superone/shared/session-archive-result-shape'
 import { claudeMcpToolRuleName, formatAgentToolOutput, parseMcpToolName, SUPERONE_KNOWN_MCP_BARE_TOOLS, uiToolNameFromId } from '@superone/shared/tool-ui'
-import { applyAntigravityManageTaskInput, compactDiffPair, resolveAntigravityManageTaskOutput } from './antigravity-manage-task'
+import {
+  applyAntigravityBuiltinToolInput, compactDiffPair,
+  isAntigravityTranscriptOutputTool, resolveAntigravityTranscriptToolOutput,
+} from './antigravity-manage-task'
 import {
   antigravityPermissionDisposition, antigravityPermissionMode, consumeAntigravityAnsweredQuestionSummary,
   extractAntigravityElicitationQuestion, extractAntigravitySecurityWarning, extractAntigravityToolNameFromTitle,
@@ -292,9 +295,7 @@ export function normalizeAntigravityRawInput(
     setStringIfMissing(inObj, 'prompt', pickNonEmptyString(inObj, ['prompt', 'Prompt', 'description', 'text']))
     setStringIfMissing(inObj, 'aspect_ratio', pickNonEmptyString(inObj, ['aspect_ratio', 'aspectRatio', 'AspectRatio']))
   }
-  if (mappedUiName === 'ManageTask') {
-    applyAntigravityManageTaskInput(inObj)
-  }
+  applyAntigravityBuiltinToolInput(mappedUiName, inObj)
   const isFileTool = mappedUiName === 'Read' || mappedUiName === 'Write' || mappedUiName === 'Edit' || mappedUiName === 'Delete'
   const fileKeys = ['file_path', 'AbsolutePath', 'TargetFile', 'FilePath', 'filePath', 'target_file']
   setStringIfMissing(inObj, 'file_path', pickNonEmptyString(inObj, isFileTool ? [...fileKeys, 'Path', 'path'] : fileKeys))
@@ -415,20 +416,21 @@ export function normalizeAntigravitySessionUpdate(
     }
   }
   const normalizedIn = normalizeAntigravityRawInput(effectiveRawInput, sanitizedOutput, titleStr, metaVal, update.kind, rawNameStr)
-  const isManageTask = normalizedIn.rawInput.variant === 'ManageTask'
+  const isTranscriptTool = isAntigravityTranscriptOutputTool(normalizedIn.rawInput.variant)
   if (
-    (normalizedIn.isSubagent || normalizedIn.rawInput.variant === 'AskUserQuestion' || normalizedIn.rawInput.variant === 'Edit' || isManageTask) &&
+    (normalizedIn.isSubagent || normalizedIn.rawInput.variant === 'AskUserQuestion' || normalizedIn.rawInput.variant === 'Edit' || isTranscriptTool) &&
     update.toolCallId && update.status !== 'completed' && update.status !== 'failed' && update.rawInput !== undefined
   ) {
     recordAntigravitySubagentInput(update.toolCallId, normalizedIn.rawInput)
   }
   if (
-    isManageTask &&
+    isTranscriptTool &&
     (update.status === 'completed' || update.status === 'failed') &&
     sanitizedOutput === undefined &&
     (!Array.isArray(update.content) || update.content.length === 0)
   ) {
-    const transcriptOut = resolveAntigravityManageTaskOutput(
+    const transcriptOut = resolveAntigravityTranscriptToolOutput(
+      normalizedIn.rawInput.variant,
       sessionId,
       normalizedIn.rawInput,
       unwrapAntigravityToolOutputText,
@@ -462,7 +464,7 @@ export function normalizeAntigravitySessionUpdate(
     }) as typeof update.content
   }
 
-  if ((replaceContentWithOutput || isManageTask) && (update.status === 'completed' || update.status === 'failed') && sanitizedOutput !== undefined) {
+  if ((replaceContentWithOutput || isTranscriptTool) && (update.status === 'completed' || update.status === 'failed') && sanitizedOutput !== undefined) {
     const outText = typeof sanitizedOutput === 'string'
       ? unwrapAntigravityToolOutputText(sanitizedOutput)
       : formatAgentToolOutput(sanitizedOutput)

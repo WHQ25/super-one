@@ -17,6 +17,7 @@ import {
   toVideoStatusItems,
 } from './media-generation'
 import { topFindingSummary } from './report-findings-display'
+import { manageSubagentsSummaryText } from './manage-subagents-display'
 import { manageTaskSummaryText } from './manage-task-display'
 import { artifactToolSummary } from './artifact-link'
 import { isWorkflowSmokeCheck, workflowToolTargetLabel } from './workflow-utils'
@@ -53,6 +54,8 @@ const TOOL_VERBS: Record<string, string> = {
   ListAgents: 'Listing agents',
   ManageTask: 'Managing task',
   manage_task: 'Managing task',
+  ManageSubagents: 'Managing subagents',
+  manage_subagents: 'Managing subagents',
   SendMessage: 'Sending message',
   SubagentHandback: 'Handing back',
   EnterWorktree: 'Entering worktree',
@@ -153,6 +156,8 @@ const TOOL_LABELS: Record<string, string> = {
   KillTask: 'Kill Task',
   ManageTask: 'Manage Task',
   manage_task: 'Manage Task',
+  ManageSubagents: 'Manage Subagents',
+  manage_subagents: 'Manage Subagents',
   ImageGen: 'Image Gen',
   ImageEdit: 'Image Edit',
   ImageToVideo: 'Image To Video',
@@ -258,6 +263,9 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
     case 'ManageTask':
     case 'manage_task':
       return { icon: 'clipboard-list', summary: manageTaskSummaryText(input) }
+    case 'ManageSubagents':
+    case 'manage_subagents':
+      return { icon: 'bot', summary: manageSubagentsSummaryText(input) }
     case 'SendMessage':
       return { icon: 'send', summary: coordinationToolSummary(toolName, input, sp) ?? '' }
     case 'SubagentHandback':

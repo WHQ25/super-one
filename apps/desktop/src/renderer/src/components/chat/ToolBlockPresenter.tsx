@@ -18,6 +18,7 @@ import { getDeviceOp } from './device-tool-display'
 import { getTerminalOp } from './terminal-tool-display'
 import { ImageGenToolBlock } from './ImageGenToolBlock'
 import { ListAgentsToolBlock } from './ListAgentsToolBlock'
+import { ManageSubagentsToolBlock } from './ManageSubagentsToolBlock'
 import { ManageTaskToolBlock } from './ManageTaskToolBlock'
 import { MediaProvidersBlock } from './MediaProvidersBlock'
 import { isMediaToolErrorResult } from './media-generation'
@@ -162,7 +163,9 @@ export function hasDedicatedToolRow(toolName: string): boolean {
     toolName === 'ReportFindings' ||
     toolName === 'ListAgents' ||
     toolName === 'ManageTask' ||
-    toolName === 'manage_task'
+    toolName === 'manage_task' ||
+    toolName === 'ManageSubagents' ||
+    toolName === 'manage_subagents'
   ) return true
   return parseMcpToolName(toolName)?.serverName === SUPERONE_SERVER
 }
@@ -350,6 +353,18 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
   if (toolName === 'ManageTask' || toolName === 'manage_task') {
     return (
       <ManageTaskToolBlock
+        params={params}
+        result={cleanResult}
+        isStreaming={isStreaming}
+        isError={isError}
+        isDenied={isDenied}
+        allowExpand={allowExpand}
+      />
+    )
+  }
+  if (toolName === 'ManageSubagents' || toolName === 'manage_subagents') {
+    return (
+      <ManageSubagentsToolBlock
         params={params}
         result={cleanResult}
         isStreaming={isStreaming}

@@ -248,6 +248,28 @@ export const toolCatalogExamples: ToolCatalogExample[] = [
       'Last progress: 5s ago',
     ].join('\n'),
   )),
+  example('agent/manage-subagents', 'Agent', 'ManageSubagents', call(
+    'ManageSubagents',
+    { action: 'list' },
+    [
+      'You have 2 active subagent(s):',
+      JSON.stringify([
+        {
+          conversationId: 'c1a24e86-36c4-40e2-b1d8-6df9c7ddca9d',
+          role: 'Harness Architecture Researcher',
+          type: 'research',
+          state: 'running',
+          stateDetail: 'read_file · antigravity-protocol.ts',
+        },
+        {
+          conversationId: '92bc1f73-84fa-42e9-9157-83df2d2e33bc',
+          role: 'UI Storybook Verifier',
+          type: 'self',
+          state: 'idle',
+        },
+      ]),
+    ].join('\n'),
+  )),
   example('agent/send-message', 'Agent', 'SendMessage', call(
     'SendMessage',
     { to: 'step4-remote-collab', summary: 'Fix four open items before review', message: 'Good work; the A-side monitor deviation is accepted. Please fix these open items.' },

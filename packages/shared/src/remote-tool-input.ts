@@ -74,6 +74,8 @@ const BUILTIN_TOOL_INPUT_FIELDS: Record<string, readonly string[]> = {
   KillTask: ['task_id', 'taskId'],
   ManageTask: ['action', 'taskId', 'input'],
   manage_task: ['action', 'taskId', 'input'],
+  ManageSubagents: ['action', 'conversationIds'],
+  manage_subagents: ['action', 'conversationIds'],
   TaskCreate: ['subject'],
   TaskUpdate: ['status', 'subject', 'taskId'],
   TaskGet: ['taskId'],

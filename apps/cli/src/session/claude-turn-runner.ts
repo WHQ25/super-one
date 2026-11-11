@@ -769,5 +769,52 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
     busy: entry.busyCount > 0 || entry.live.isBusy || entry.live.hasActiveBackgroundTasks || entry.live.hasScheduledWakeups,
   }))
 
+  runner.callOperation = async (session, method, input) => {
+    if (method !== 'session.previewRewind' && method !== 'session.rewind') {
+      throw Object.assign(new Error(`Unsupported session operation: ${method}`), { code: 'unsupported' })
+    }
+    // Conversation rewind is the transcript slice. File restore is the SDK checkpoint.
+    if (method === 'session.rewind' && input.mode === 'conversation') return { canRewind: true }
+    const checkpointId = String(input.checkpointId ?? '')
+    let entry = lives.get(session.sessionId)
+    if (!entry) {
+      const binary = binaryOrNull()
+      const prior = parseClaudeSessionResume(session.providerResume)
+      if (!binary || !prior) return { canRewind: false, error: 'No active session' }
+      const { cwd, authEnv, uid, permissions } = await prepare({
+        session,
+        apiProviderId: session.apiProviderId,
+        permissionMode: session.permissionMode,
+      })
+      entry = openEntry({
+        session: { ...session, providerResume: formatClaudeSessionResume(prior) },
+        binary,
+        cwd,
+        authEnv,
+        uid,
+        permissionMode: permissions.permissionMode,
+        model: session.model,
+        effort: session.effort,
+        sandboxMode: session.sandboxMode,
+        additionalDirectories: session.additionalDirectories ?? undefined,
+        apiProviderId: session.apiProviderId,
+        claudeFastMode: session.claudeFastMode ?? undefined,
+      })
+    }
+    if (entry.live.isBusy) return { canRewind: false, error: 'Wait for Claude to become idle before rewinding' }
+    try {
+      const result = await entry.live.rewindFiles(checkpointId, { dryRun: method === 'session.previewRewind' })
+      return {
+        canRewind: result.canRewind,
+        ...(result.error ? { error: result.error } : {}),
+        ...(result.filesChanged ? { filesChanged: result.filesChanged } : {}),
+        ...(result.insertions != null ? { insertions: result.insertions } : {}),
+        ...(result.deletions != null ? { deletions: result.deletions } : {}),
+      }
+    } catch (error) {
+      return { canRewind: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  }
+
   return runner
 }

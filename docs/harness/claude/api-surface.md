@@ -75,7 +75,7 @@ Fields of `Options` passed to `query()` / `startup()`. "(warmup key)" marks fiel
 | `debugFile` | unused | Would write CLI debug logs to a file. | — |
 | `disallowedTools` | partial | Desktop only: `CLAUDE_SCHEDULING_TOOLS` (CronCreate, CronDelete, CronList, ScheduleWakeup) when `AppSettings.schedulingProvider` is `superone`. Part of the warmup key. Node never sets it. | `apps/desktop/src/main/agent/claude-query.ts`, `packages/claude/src/session-crons.ts` |
 | `effort` | used | Per-session effort (`low`…`max`) on desktop and node; node drops invalid values (warmup key). | `apps/desktop/src/main/agent/claude-query.ts`, `packages/claude/src/claude-live-session.ts`, `packages/claude/src/run-sdk-turn.ts` |
-| `enableFileCheckpointing` | used | `true` on desktop and node; desktop uses it for `rewindFiles` and checkpoint capture. | `apps/desktop/src/main/agent/claude-query.ts`, `packages/claude/src/claude-live-session.ts`, `apps/desktop/src/main/session/backends/claude-backend.ts` |
+| `enableFileCheckpointing` | used | `true` on desktop and node. Desktop and the node live session use it for `rewindFiles` and checkpoint capture. | `apps/desktop/src/main/agent/claude-query.ts`, `packages/claude/src/claude-live-session.ts`, `apps/desktop/src/main/session/backends/claude-backend.ts`, `apps/cli/src/session/claude-turn-runner.ts` |
 | `env` | used | Desktop passes `buildSafeEnv(custom)` only when provider overrides exist; node merges `process.env` with provider/auth env; probes pass provider env (warmup key). Desktop adds `CLAUDE_CODE_PLUGIN_DIRS` and `CLAUDE_CODE_PLUGIN_DIR_WATCH=1` for the Claude preference "Mod development folders". | `apps/desktop/src/main/agent/claude-query.ts`, `packages/claude/src/claude-live-session.ts`, `apps/desktop/src/main/session/backends/claude-backend.ts`, `packages/claude/src/mod-surface/dev-folders.ts` |
 | `executable` | n/a | We spawn the native platform binary via `pathToClaudeCodeExecutable`, not `cli.js` under node/bun. | — |
 | `executableArgs` | n/a | Same reason: there is no JS runtime between us and the native binary. | — |
@@ -151,7 +151,7 @@ Methods of the `Query` returned by `query()`.
 | `reloadOutputStyles` | unused | Would re-read the output-style directories in the middle of a session. | — |
 | `reloadPlugins` | used | Reloads plugins from disk after a plugin install, toggle or option change (desktop Plugins page, node plugin RPCs), and on user request; the answer refreshes the slash list and a non-zero `error_count` shows a plugin notice. `addPlugins` is unused (backlog #22). | `apps/desktop/src/main/session/backends/claude-backend.ts`, `apps/desktop/src/main/agent/agent-service.ts`, `apps/cli/src/session/claude-turn-runner.ts` |
 | `reloadSkills` | unused | Would refresh the skill list without restarting. SuperOne passes `skills` at spawn instead. | — |
-| `rewindFiles` | used | Desktop checkpoint restore and dry-run preview (`enableFileCheckpointing: true`), started from the renderer's rewind action. | `apps/desktop/src/main/session/backends/claude-backend.ts` |
+| `rewindFiles` | used | Checkpoint restore and dry-run preview (`enableFileCheckpointing: true`) on the desktop session and the node live session. The renderer's rewind action starts it. | `apps/desktop/src/main/session/backends/claude-backend.ts`, `packages/claude/src/claude-live-session.ts`, `apps/cli/src/session/claude-turn-runner.ts` |
 | `seedReadState` | unused | Would seed the Read cache so an Edit works after its Read was removed from context. | — |
 | `setMaxThinkingTokens` | deprecated | Deprecated upstream in favor of the `thinking` option, set at spawn. | — |
 | `setMcpPermissionModeOverride` | unused | Would pin a stricter per-MCP-server permission mode (`default`/`auto`). | — |
@@ -295,7 +295,7 @@ Control-protocol request subtypes. Most are sent by a `Query` method or an `Opti
 | `reload_skills` | unused | via `reloadSkills` (never called). | — |
 | `rename_session` | unused | No Query wrapper; would set the CLI session title. SuperOne keeps titles in its own DB (`db-sessions.renameSession`). | — |
 | `request_user_dialog` | unused | via Options.onUserDialog (not set, no `supportedDialogKinds`); would let the host draw tool-driven blocking dialogs. | — |
-| `rewind_files` | used | via `rewindFiles`; desktop checkpoint restore and dry-run. | `apps/desktop/src/main/session/backends/claude-backend.ts` |
+| `rewind_files` | used | via `rewindFiles`; desktop and node live-session checkpoint restore and dry-run. | `apps/desktop/src/main/session/backends/claude-backend.ts`, `packages/claude/src/claude-live-session.ts`, `apps/cli/src/session/claude-turn-runner.ts` |
 | `seed_read_state` | unused | via `seedReadState` (never called). | — |
 | `set_color` | n/a | No Query wrapper; it sets the CLI/TUI session accent color, which SuperOne's own UI does not use. | — |
 | `set_has_subscribers` | unused | No Query wrapper. It only changes how long the CLI holds stream-event lines when `CLAUDE_CODE_STREAM_EVENT_HOLD_MS` is set. A new process starts as watched, which matches a live SuperOne session. | — |

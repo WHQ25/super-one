@@ -1467,6 +1467,12 @@ export class AcpBackend implements SessionBackend {
     }
   }
 
+  /** Grok owns `x.ai/rewind`. Antigravity shares this backend and does not. */
+  private unsupportedRewind(): RewindFilesResult | null {
+    if (!isAntigravityAcpAgent(this.config.agentId)) return null
+    return { canRewind: false, supportsCodeOnly: false, error: 'Antigravity does not support rewind' }
+  }
+
   private async rewindAtPromptIndex(
     index: number,
     mode: GrokRewindMode,
@@ -2021,6 +2027,8 @@ export class AcpBackend implements SessionBackend {
   }
 
   async rewindFiles(userMessageId: string, opts?: { dryRun?: boolean; includeConversation?: boolean }): Promise<RewindFilesResult> {
+    const unsupported = this.unsupportedRewind()
+    if (unsupported) return unsupported
     const index = Number.parseInt(userMessageId, 10)
     if (!Number.isFinite(index) || index < 0) {
       return { canRewind: false, error: 'Grok prompt boundary not found' }
@@ -2030,6 +2038,8 @@ export class AcpBackend implements SessionBackend {
   }
 
   async rewindConversation(beforeTurnId: string): Promise<RewindFilesResult> {
+    const unsupported = this.unsupportedRewind()
+    if (unsupported) return unsupported
     const index = Number.parseInt(beforeTurnId, 10)
     if (!Number.isFinite(index) || index < 0) {
       return { canRewind: false, error: 'Grok prompt boundary not found' }

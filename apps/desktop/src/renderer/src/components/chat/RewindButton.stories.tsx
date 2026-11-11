@@ -21,6 +21,22 @@ export default meta
 type Story = StoryObj<typeof meta>
 export const Ready: Story = {}
 export const CodeAlreadyRestored: Story = { args: { rewound: 'code' } }
+/** Antigravity has no rewind protocol, so the history control is omitted. */
+export const HiddenForAntigravity: Story = {
+  beforeEach: () => {
+    const project = useChatStore.getState().projectSessions['/storybook']
+    const session = project?._sessions.session
+    if (!project || !session) return
+    useChatStore.setState({
+      projectSessions: {
+        '/storybook': {
+          ...project,
+          _sessions: { session: { ...session, sessionProvider: 'acp', acpAgentId: 'antigravity' } },
+        },
+      },
+    })
+  },
+}
 export const PreviewError: Story = { beforeEach: () => {
   window.environment.callSession = async () => { throw new Error('Preview failed') }
 } }

@@ -75,7 +75,8 @@ function upsertMessage(messages: ChatMessage[], next: ChatMessage): ChatMessage[
   return messages.map((message, index) => (index === idx ? next : message))
 }
 
-function findCheckpointTarget(messages: ChatMessage[], assistantMessageId: string): number {
+function findCheckpointTarget(messages: ChatMessage[], assistantMessageId: string, userMessageId?: string): number {
+  if (userMessageId) return messages.findIndex((message) => message.id === userMessageId && message.role === 'user')
   for (let i = messages.length - 1; i >= 0; i--) {
     if (messages[i].id === assistantMessageId) {
       for (let j = i - 1; j >= 0; j--) {
@@ -295,7 +296,7 @@ export function applyCodexEventToRuntime(runtime: CodexSessionRuntime, event: Ag
     }
     case 'checkpoint_captured': {
       const messages = [...runtime.messages]
-      const targetIndex = findCheckpointTarget(messages, event.messageId)
+      const targetIndex = findCheckpointTarget(messages, event.messageId, event.userMessageId)
       if (targetIndex === -1) return runtime
       messages[targetIndex] = {
         ...messages[targetIndex],

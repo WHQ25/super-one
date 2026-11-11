@@ -1977,6 +1977,25 @@ describe('AcpBackend', () => {
     await backend.close()
   })
 
+  it('refuses rewind for Antigravity without calling x.ai/rewind', async () => {
+    const points = vi.fn(async () => [])
+    const execute = vi.fn()
+    setAcpRuntimeFactory(async () => mockRuntime({
+      rewindPoints: points,
+      rewindExecute: execute,
+    }))
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'antigravity' }))
+    await expect(backend.rewindFiles('1', { dryRun: true })).resolves.toMatchObject({
+      canRewind: false,
+      error: 'Antigravity does not support rewind',
+    })
+    await expect(backend.rewindConversation('1')).resolves.toMatchObject({ canRewind: false })
+    expect(points).not.toHaveBeenCalled()
+    expect(execute).not.toHaveBeenCalled()
+    await backend.close()
+  })
+
   it('paints a foreign x.ai/session/interjection and skips a self-originated echo', async () => {
     let captured: AcpRuntimeOptions | undefined
     let finishFirst!: () => void

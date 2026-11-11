@@ -1144,4 +1144,63 @@ describe('createProductionTurnRunner multi-dispatch', () => {
       rmSync(dir, { recursive: true, force: true })
     }
   })
+
+  it('rewinds Claude files through the live query and leaves conversation to the transcript', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cbr-claude-rewind-'))
+    const bin = join(dir, 'claude')
+    writeFileSync(bin, '#!/bin/sh\n')
+    chmodSync(bin, 0o755)
+    const rewindFiles = vi.fn(async () => ({ canRewind: true, filesChanged: ['a.ts'], insertions: 1, deletions: 0 }))
+    const base = bridgeQuery(() => success('live-rw', 'ok'))
+    const queryFn = ((args: Parameters<ClaudeQueryFn>[0]) => Object.assign(base(args), {
+      mcpServerStatus: async () => [],
+      rewindFiles,
+    })) as unknown as ClaudeQueryFn
+    const runner = createNodeClaudeTurnRunner({
+      binaryPath: bin, resolveProjectPath: () => dir, queryFn, allowSimulatedFallback: false,
+    })
+    const host = {
+      messages: [],
+      assertControl() {},
+      onEvent() {},
+      onQuestion: async () => ({}),
+      onPermission: async () => 'allow' as const,
+    }
+    try {
+      await runner({
+        session: session({ sessionId: 'rw' }),
+        text: 'hi',
+        onDelta: () => {},
+        signal: new AbortController().signal,
+      })
+      const files = await runner.callOperation!(
+        session({ sessionId: 'rw', status: 'idle' }),
+        'session.rewind',
+        { checkpointId: 'sdk-user', mode: 'files' },
+        host,
+      )
+      expect(rewindFiles).toHaveBeenCalledWith('sdk-user', { dryRun: false })
+      expect(files).toMatchObject({ canRewind: true, filesChanged: ['a.ts'], insertions: 1, deletions: 0 })
+
+      rewindFiles.mockClear()
+      await expect(runner.callOperation!(
+        session({ sessionId: 'rw', status: 'idle' }),
+        'session.rewind',
+        { checkpointId: 'sdk-user', mode: 'conversation' },
+        host,
+      )).resolves.toEqual({ canRewind: true })
+      expect(rewindFiles).not.toHaveBeenCalled()
+
+      await runner.callOperation!(
+        session({ sessionId: 'rw', status: 'idle' }),
+        'session.previewRewind',
+        { checkpointId: 'sdk-user' },
+        host,
+      )
+      expect(rewindFiles).toHaveBeenCalledWith('sdk-user', { dryRun: true })
+    } finally {
+      await runner.disposeAll?.()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })

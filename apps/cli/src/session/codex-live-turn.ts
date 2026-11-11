@@ -83,6 +83,8 @@ export async function openTurnAndStream(opts: {
   collaborationMode?: Record<string, unknown> | string | null
   mcpAppBinding?: (server: string) => McpAppsBinding
   messageId?: string
+  /** User message id. Stamped as the checkpoint so conversation rewind can find the next turn. */
+  clientMessageId?: string
   onAgentEvent?: (event: AgentEvent) => void
   onDelta?: (text: string) => void
   signal: AbortSignal
@@ -101,6 +103,15 @@ export async function openTurnAndStream(opts: {
 
   // From here Codex may run the input, even if the turn/start response is lost.
   opts.onInputAccepted?.()
+  if (opts.clientMessageId) {
+    opts.onAgentEvent?.({
+      type: 'checkpoint_captured',
+      messageId: opts.messageId ?? opts.clientMessageId,
+      userMessageId: opts.clientMessageId,
+      checkpointId: opts.clientMessageId,
+      resumePointId: opts.clientMessageId,
+    })
+  }
   const turnStartResult = await opts.client.request(
     'turn/start',
     compactRecord({

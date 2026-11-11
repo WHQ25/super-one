@@ -269,6 +269,8 @@ export class CodexBackend implements SessionBackend {
   private realtimeTurnStreaming = false
   /** Set before a typed `turn/start` so the pump labels the next fresh turn as ordinary Codex work. */
   private realtimeTypedTurnPending = false
+  /** User message id for the typed voice turn, stamped once that turn's assistant row opens. */
+  private realtimeTypedCheckpointId: string | null = null
   private authChangedUnsub: (() => void) | null = null
 
   private warmHandlePromise: Promise<WarmCodexHandle | null> | null = null
@@ -756,6 +758,7 @@ export class CodexBackend implements SessionBackend {
         providerId: 'codex',
       },
     })
+    this.emitUserCheckpoint(assistantMessageId, request.clientMessageId)
     this.emit({ type: 'status_change', status: 'streaming' })
     const baseCallbacks = this.buildCallbacks()
     let compactLifecycleSettled = false
@@ -953,6 +956,7 @@ export class CodexBackend implements SessionBackend {
     // While a delegated turn streams, Codex steers it with this input instead of
     // starting a fresh turn, so no `turn/started` will arrive to consume the flag.
     this.realtimeTypedTurnPending = !this.realtimeTurnStreaming
+    this.realtimeTypedCheckpointId = this.realtimeTypedTurnPending ? (request.clientMessageId ?? null) : null
     try {
       // turn/start goes out on the voice thread here.
       delivery?.onInputAccepted()
@@ -969,6 +973,7 @@ export class CodexBackend implements SessionBackend {
       })
     } catch (error) {
       this.realtimeTypedTurnPending = false
+      this.realtimeTypedCheckpointId = null
       throw error
     }
     if (!this.realtimeTurnStreaming) this.emit({ type: 'status_change', status: 'streaming' })
@@ -1057,7 +1062,9 @@ export class CodexBackend implements SessionBackend {
               this.realtimeTurnStreaming = true
               if (queued) return
               const typed = this.realtimeTypedTurnPending
+              const checkpointId = typed ? this.realtimeTypedCheckpointId : null
               this.realtimeTypedTurnPending = false
+              this.realtimeTypedCheckpointId = null
               const messageId = `codex_realtime_${turnId ?? `${Date.now()}_${Math.random().toString(36).slice(2, 8)}`}`
               this.resetSegments(messageId)
               runningAssistantId = messageId
@@ -1081,6 +1088,7 @@ export class CodexBackend implements SessionBackend {
                 },
               })
               this.emit({ type: 'status_change', status: 'streaming' })
+              if (checkpointId) this.emitUserCheckpoint(messageId, checkpointId)
             },
             onTurnCompleted: ({ turnId }) => {
               finalizeRealtimeTurn({
@@ -1129,6 +1137,7 @@ export class CodexBackend implements SessionBackend {
       this.swapRunAssistantId = null
       this.realtimeTurnStreaming = false
       this.realtimeTypedTurnPending = false
+      this.realtimeTypedCheckpointId = null
     })
     this.realtimeTurnPump = turnPump
     void handle.closed.finally(() => {
@@ -1281,6 +1290,7 @@ export class CodexBackend implements SessionBackend {
             },
           })
           this.swapRunAssistantId?.(cmd.newAssistantMessageId)
+          this.emitUserCheckpoint(cmd.newAssistantMessageId, cmd.newUserMessageId)
         }
         await steerCodex(session, cmd.input)
         return
@@ -1421,8 +1431,11 @@ export class CodexBackend implements SessionBackend {
     }
   }
 
-  async rewindFiles(_userMessageId: string, _opts?: { dryRun?: boolean }): Promise<RewindFilesResult> {
-    return { canRewind: false, error: 'rewindFiles not supported by Codex' }
+  async rewindFiles(_userMessageId: string, opts?: { dryRun?: boolean }): Promise<RewindFilesResult> {
+    // Codex restores the thread, not the worktree. A dry run still says the
+    // conversation can move, so the dialog offers that and nothing else.
+    if (opts?.dryRun) return { canRewind: true, supportsCodeOnly: false }
+    return { canRewind: false, supportsCodeOnly: false, error: 'rewindFiles not supported by Codex' }
   }
 
   async rewindConversation(beforeTurnId: string): Promise<RewindFilesResult> {
@@ -1691,6 +1704,7 @@ export class CodexBackend implements SessionBackend {
       this.resetSegments(nextMessageId)
       this.currentMessageId = nextMessageId
     }
+    this.emitUserCheckpoint(nextMessageId, clientMessageId)
     if (rearmStreaming) this.emit({ type: 'status_change', status: 'streaming' })
   }
 
@@ -1870,6 +1884,18 @@ export class CodexBackend implements SessionBackend {
 
   emitForTest(event: AgentEvent): void {
     this.emit(event)
+  }
+
+  /** Checkpoint id is the user message id, so the next assistant turn is the revert boundary. */
+  private emitUserCheckpoint(assistantMessageId: string, clientMessageId: string | undefined): void {
+    if (!clientMessageId) return
+    this.emit({
+      type: 'checkpoint_captured',
+      messageId: assistantMessageId,
+      userMessageId: clientMessageId,
+      checkpointId: clientMessageId,
+      resumePointId: clientMessageId,
+    })
   }
 
   private emit(event: AgentEvent): void {

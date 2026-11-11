@@ -135,6 +135,33 @@ function session(): NodeSessionRecord {
 }
 
 describe('ACP production turn runner AgentEvents', () => {
+  it('stamps a Grok checkpoint and skips Antigravity', async () => {
+    const nextUpdate = mocks.active.nextUpdate.getMockImplementation()
+    mocks.active.nextUpdate.mockResolvedValue({ kind: 'stop', stopReason: 'end_turn' })
+    const events: AgentEvent[] = []
+    try {
+      const turn = (launch: { command: string; agentId: string }, acpAgentId?: string) => createAcpAgentTurnRunner({ launch })({
+        session: { ...session(), ...(acpAgentId ? { acpAgentId } : {}) },
+        messageId: 'a1',
+        clientMessageId: 'u1',
+        text: 'go',
+        onAgentEvent: (event) => events.push(event),
+        onDelta: () => {},
+        signal: new AbortController().signal,
+      })
+      await turn({ command: 'grok', agentId: 'grok-build' })
+      expect(events).toContainEqual({
+        type: 'checkpoint_captured', messageId: 'a1', userMessageId: 'u1', checkpointId: 'u1', resumePointId: 'u1',
+      })
+      events.length = 0
+      await turn({ command: 'grok', agentId: 'grok-build' }, 'antigravity')
+      await turn({ command: 'agy', agentId: 'antigravity' }, 'antigravity')
+      expect(events.some((event) => event.type === 'checkpoint_captured')).toBe(false)
+    } finally {
+      if (nextUpdate) mocks.active.nextUpdate.mockImplementation(nextUpdate)
+    }
+  })
+
   it('uses the lossless path without duplicating legacy deltas', async () => {
     const events: AgentEvent[] = []
     const deltas: string[] = []

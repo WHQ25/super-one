@@ -911,6 +911,19 @@ describe('CodexBackend send()', () => {
     expect(request.permissionPreset).toBe('full-access')
   })
 
+  it('stamps the user message as a Codex checkpoint', async () => {
+    const pending = backend.send({ content: 'hi', clientMessageId: 'u1', assistantMessageId: 'a1' })
+    service.resolveRun(makeResult())
+    await pending
+    expect(events).toContainEqual({
+      type: 'checkpoint_captured',
+      messageId: 'a1',
+      userMessageId: 'u1',
+      checkpointId: 'u1',
+      resumePointId: 'u1',
+    })
+  })
+
   it('emits message_start → status_change streaming → message_complete → status_change idle on success', async () => {
     const pending = backend.send({ content: 'hi' })
     service.resolveRun(makeResult({ finalResponse: 'bye', threadId: 'th-1', usage: null }))
@@ -1767,7 +1780,14 @@ describe('CodexBackend unsupported operations degrade gracefully', () => {
 
   it('rewindFiles returns canRewind:false', async () => {
     const result = await backend.rewindFiles('msg-1')
-    expect(result.canRewind).toBe(false)
+    expect(result).toEqual({ canRewind: false, supportsCodeOnly: false, error: 'rewindFiles not supported by Codex' })
+  })
+
+  it('previews conversation rewind without claiming file restore', async () => {
+    await expect(backend.rewindFiles('msg-1', { dryRun: true })).resolves.toEqual({
+      canRewind: true,
+      supportsCodeOnly: false,
+    })
   })
 
   it('getMcpServerStatus returns empty without an active app-server connection', async () => {

@@ -14,7 +14,7 @@ import { EventEmitter } from 'node:events'
 import { PassThrough } from 'node:stream'
 import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import type { CodexSpawnFn } from '@superone/codex'
-import type { AgentEvent } from '@superone/shared/agent-types'
+import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
 import { shutdownAll as shutdownAllProxies } from '@superone/runtime/llm-proxy'
 import { openNodeDatabase } from '../db/database'
 import { ProviderStore } from '../provider/provider-store'
@@ -940,6 +940,77 @@ url = "https://mcp.linear.app/mcp"
     ])
     await runner.disposeSession?.('steer-s')
     expect(runner.listActiveRuntimes?.()).toEqual([])
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('previews conversation rewind and forks a legacy thread', async () => {
+    const bare = createNodeCodexTurnRunner({
+      resolveProjectPath: () => '/tmp', allowSimulatedFallback: false, binaryPath: null,
+    })
+    const emptyHost = {
+      messages: [] as ChatMessage[], assertControl() {}, onEvent() {},
+      onQuestion: async () => ({}), onPermission: async () => 'allow' as const,
+    }
+    const idle = session({ status: 'idle' })
+    await expect(bare.callOperation!(idle, 'session.previewRewind', { checkpointId: 'user-1' }, emptyHost))
+      .resolves.toEqual({ canRewind: true, supportsCodeOnly: false })
+    await expect(bare.callOperation!(idle, 'session.rewind', { checkpointId: 'user-1', mode: 'files' }, emptyHost))
+      .resolves.toEqual({ canRewind: false, supportsCodeOnly: false, error: 'rewindFiles not supported by Codex' })
+    await expect(bare.callOperation!(session({ status: 'streaming' }), 'session.rewind', { checkpointId: 'user-1', mode: 'conversation' }, emptyHost))
+      .resolves.toEqual({ canRewind: false, error: 'Cannot rewind an active Codex turn' })
+
+    const dir = mkdtempSync(join(tmpdir(), 'cbr-rewind-'))
+    const bin = join(dir, 'codex')
+    writeFileSync(bin, '#!/bin/sh\n')
+    chmodSync(bin, 0o755)
+    const child = createFakeChild()
+    const lines: string[] = []
+    child.stdin.on('data', (b: Buffer) => {
+      for (const line of b.toString().split('\n')) if (line.trim()) lines.push(line.trim())
+    })
+    const runner = createNodeCodexTurnRunner({
+      binaryPath: bin, resolveProjectPath: () => dir, spawnFn: () => asSpawnChild(child), allowSimulatedFallback: false,
+    })
+    const events: AgentEvent[] = []
+    const turnP = runner({
+      session: session({ status: 'idle' }), text: 'ping', clientMessageId: 'user-1', messageId: 'asst-1',
+      onAgentEvent: (event) => events.push(event), onDelta: () => {}, signal: new AbortController().signal,
+    })
+    const reply = async (method: string, result: unknown) => {
+      await pump()
+      const line = lines.find((item) => item.includes(method))
+      const parsed = JSON.parse(line!)
+      child.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result })}\n`)
+    }
+    await reply('initialize', {})
+    await reply('thread/start', { thread: { id: 't-abc' } })
+    await pump()
+    expect(events).toContainEqual({
+      type: 'checkpoint_captured', messageId: 'asst-1', userMessageId: 'user-1', checkpointId: 'user-1', resumePointId: 'user-1',
+    })
+    await reply('turn/start', { turn: { id: 'u1' } })
+    child.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'turn/completed', params: { turn: { id: 'u1', status: 'completed' } } })}\n`)
+    await turnP
+
+    const onProviderResume = vi.fn()
+    const messages: ChatMessage[] = [
+      { id: 'user-1', role: 'user', status: 'complete', content: [], createdAt: '', providerId: 'codex', checkpointId: 'user-1' },
+      { id: 'asst-1', role: 'assistant', status: 'complete', content: [], createdAt: '', providerId: 'codex', metadata: { codex: { turnId: 'u1', threadId: 't-abc', usage: null, items: [] } } },
+    ]
+    const pending = runner.callOperation!(session({ status: 'idle', providerResume: 'thread:t-abc' }), 'session.rewind', {
+      checkpointId: 'user-1', mode: 'conversation',
+    }, { ...emptyHost, messages, onProviderResume })
+    await pump()
+    const revert = JSON.parse(lines.find((line) => line.includes('thread/revert'))!)
+    expect(revert.params).toEqual({ threadId: 't-abc', beforeTurnId: 'u1' })
+    child.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: revert.id, error: { message: 'thread/revert only supports paginated threads' } })}\n`)
+    await pump()
+    const fork = JSON.parse(lines.find((line) => line.includes('thread/fork'))!)
+    expect(fork.params).toEqual({ threadId: 't-abc', beforeTurnId: 'u1' })
+    child.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: fork.id, result: { thread: { id: 'forked' } } })}\n`)
+    await expect(pending).resolves.toEqual({ canRewind: true, supportsCodeOnly: false })
+    expect(onProviderResume).toHaveBeenCalledWith('thread:forked')
+    await runner.disposeAll?.()
     rmSync(dir, { recursive: true, force: true })
   })
 })

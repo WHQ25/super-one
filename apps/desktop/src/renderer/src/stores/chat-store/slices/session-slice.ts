@@ -26,6 +26,11 @@ import { isDuplicateSend } from '@superone/shared/send-failure'
 import { restoreSentDraft } from '@/components/chat/chat-input/restore-sent-draft'
 import { messageDraft } from '@/components/chat/chat-input/message-draft'
 
+function assertCanRewind(result: RewindFilesResult): RewindFilesResult {
+  if (result.canRewind === false) throw new Error(result.error || 'Cannot rewind')
+  return result
+}
+
 /** Take a queued message back from its host; false once the host has started it. */
 async function dequeue(state: ChatStore, messageId: string, target?: SessionWriteTarget): Promise<boolean> {
   const { projectPath, sessionId } = resolveWriteScope(state, target)
@@ -80,34 +85,28 @@ export const createSessionSlice: StateCreator<ChatStore, [], [], SessionSlice> =
   rewindFiles: async (userMessageId: string, target?: SessionWriteTarget) => {
     const { projectPath: activeProject, sessionId } = resolveWriteScope(get(), target)
     if (!activeProject || !sessionId) throw new Error('No active project')
-    const result = await callSession(activeProject, sessionId, 'session.rewind', { checkpointId: userMessageId, mode: 'files' })
-    if (result.canRewind !== false) {
-      set((s) => commitPerSession(s, { projectPath: activeProject, sessionId }, (sess) => ({
-        messages: sess.messages.map((m) =>
-          m.checkpointId === userMessageId ? { ...m, rewound: 'code' as const } : m
-        ),
-      })))
-    }
+    const result = assertCanRewind(await callSession(activeProject, sessionId, 'session.rewind', { checkpointId: userMessageId, mode: 'files' }))
+    set((s) => commitPerSession(s, { projectPath: activeProject, sessionId }, (sess) => ({
+      messages: sess.messages.map((m) =>
+        m.checkpointId === userMessageId ? { ...m, rewound: 'code' as const } : m
+      ),
+    })))
     return result
   },
 
   rewindCodeAndChat: async (userMessageId: string, target?: SessionWriteTarget) => {
     const { projectPath: activeProject, sessionId } = resolveWriteScope(get(), target)
     if (!activeProject || !sessionId) throw new Error('No active project')
-    const result = await callSession(activeProject, sessionId, 'session.rewind', { checkpointId: userMessageId, mode: 'code+chat' })
-    if (result.canRewind !== false) {
-      _truncateAtCheckpoint(set, get, activeProject, userMessageId, sessionId)
-    }
+    const result = assertCanRewind(await callSession(activeProject, sessionId, 'session.rewind', { checkpointId: userMessageId, mode: 'code+chat' }))
+    _truncateAtCheckpoint(set, get, activeProject, userMessageId, sessionId)
     return result
   },
 
   rewindConversation: async (userMessageId: string, target?: SessionWriteTarget) => {
     const { projectPath: activeProject, sessionId } = resolveWriteScope(get(), target)
     if (!activeProject || !sessionId) throw new Error('No active project')
-    const result = await callSession(activeProject, sessionId, 'session.rewind', { checkpointId: userMessageId, mode: 'conversation' })
-    if (result.canRewind !== false) {
-      _truncateAtCheckpoint(set, get, activeProject, userMessageId, sessionId)
-    }
+    const result = assertCanRewind(await callSession(activeProject, sessionId, 'session.rewind', { checkpointId: userMessageId, mode: 'conversation' }))
+    _truncateAtCheckpoint(set, get, activeProject, userMessageId, sessionId)
     return result
   },
 

@@ -103,7 +103,7 @@ voices still come from
 | `thread/attachmentOwner/list` | unused | Reverse provider attachment lookup; SuperOne owns its attachment identities. | — |
 | `thread/compact/start` | used | Calls the app-server RPC. | `packages/codex/src/app-server-client.ts`, `apps/desktop/src/main/codex/codex-turn.ts` |
 | `thread/delete` | unused | No client call or dedicated handler. | — |
-| `thread/fork` | partial | Native session forks are integrated. Experimental prediction-mode generation is live-verified but not yet a product caller; attached forks and prediction-MCP disablement are unused. See prompt-prediction.md. | `packages/codex/src/fork-thread.ts`, `apps/desktop/src/main/session/backends/codex-backend.ts` |
+| `thread/fork` | partial | Native session forks are integrated. Conversation rewind falls back to `thread/fork` when `thread/revert` only supports paginated threads. Experimental prediction-mode generation is live-verified but not yet a product caller; attached forks and prediction-MCP disablement are unused. See prompt-prediction.md. | `packages/codex/src/fork-thread.ts`, `apps/desktop/src/main/session/backends/codex-backend.ts`, `apps/cli/src/session/node-rewind.ts` |
 | `thread/goal/clear` | used | Calls the app-server RPC. | `apps/desktop/src/main/codex/codex-goal-controller.ts`, `apps/desktop/src/main/codex/codex-goal-service.ts` |
 | `thread/goal/get` | used | Calls the app-server RPC. | `apps/desktop/src/main/codex/codex-goal-controller.ts`, `apps/desktop/src/main/codex/codex-goal-service.ts` |
 | `thread/goal/set` | used | Calls the app-server RPC. | `apps/desktop/src/main/codex/codex-goal-controller.ts`, `apps/desktop/src/main/codex/codex-goal-service.ts` |
@@ -115,7 +115,7 @@ voices still come from
 | `thread/name/set` | unused | No client call or dedicated handler. | — |
 | `thread/read` | used | Calls the app-server RPC. | `apps/desktop/src/main/codex/codex-turn.ts` |
 | `thread/resume` | partial | Resumes model/effort/tier; preserves the stored identity on failure instead of starting blank. Node persists the identity before turn input. New collaborationMode and disabledPluginIds response fields are unused. | `packages/codex/src/app-server-client.ts`, `apps/cli/src/session/codex-turn-runner.ts`, `apps/desktop/src/main/codex/codex-turn.ts` |
-| `thread/revert` | used | Calls the app-server RPC. | `apps/desktop/src/main/session/backends/codex-backend.ts` |
+| `thread/revert` | used | Conversation rewind on the desktop session and the node. `beforeTurnId` is exclusive. | `apps/desktop/src/main/session/backends/codex-backend.ts`, `apps/cli/src/session/codex-turn-runner.ts`, `apps/cli/src/session/node-rewind.ts` |
 | `thread/section/move` | n/a | SuperOne owns projects, remote hosts, sidebar sections and filesystem operations. | — |
 | `thread/shellCommand` | unused | No client call or dedicated handler. | — |
 | `thread/start` | used | Calls the app-server RPC. | `packages/codex/src/app-server-client.ts`, `apps/desktop/src/main/codex/codex-turn.ts` |

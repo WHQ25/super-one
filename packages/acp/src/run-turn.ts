@@ -23,6 +23,7 @@ import {
 } from './agent-event-mapper'
 import { mapPermissionDecision, mapPermissionRequest } from './permission-map'
 import { initializeAcpAgent } from './initialize'
+import { isAntigravityAcpAgent } from '@superone/shared/acp-brand'
 import { grokNodePermissionMeta, isGrokAcpLaunch } from './grok-turn-meta'
 import { spawnAcpProcess, type AcpLaunch } from './process'
 import {
@@ -319,6 +320,17 @@ export function createAcpAgentTurnRunner(opts: RunAcpTurnOptions = {}): TurnRunn
         ? input.text
         : `${superoneHostContext()}\n\n${input.text}`
       // session/prompt goes out here: from now the agent may act on the input.
+      // Grok's rewind index is this user message. Antigravity has no rewind.
+      const checkpointId = input.clientMessageId
+      if (checkpointId && grok && !isAntigravityAcpAgent(input.session.acpAgentId)) {
+        input.onAgentEvent?.({
+          type: 'checkpoint_captured',
+          messageId: input.messageId ?? blockId,
+          userMessageId: checkpointId,
+          checkpointId,
+          resumePointId: checkpointId,
+        })
+      }
       input.onInputAccepted?.()
       const promptPromise = active.prompt(prompt)
       let stopReason = 'end_turn'

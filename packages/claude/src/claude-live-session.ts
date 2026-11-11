@@ -538,6 +538,13 @@ export class ClaudeLiveSession {
     })
   }
 
+  /** File checkpoint restore. The checkpoint id is the SDK user-message UUID. */
+  async rewindFiles(userMessageId: string, opts?: { dryRun?: boolean }) {
+    const query = this.query
+    if (!query) return { canRewind: false as const, error: 'No active session' }
+    return query.rewindFiles(userMessageId, opts)
+  }
+
   async setClaudeFastMode(enabled: boolean): Promise<void> {
     await this.query?.applyFlagSettings({ fastMode: enabled })
   }

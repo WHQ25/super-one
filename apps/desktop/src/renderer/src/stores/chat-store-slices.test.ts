@@ -445,7 +445,7 @@ describe('session-slice: rewindFiles', () => {
     setupProject()
     patchSession({ messages: [makeUserMessage('m1', { checkpointId: 'cp-1' })] })
 
-    await useChatStore.getState().rewindFiles('cp-1')
+    await expect(useChatStore.getState().rewindFiles('cp-1')).rejects.toThrow('Cannot rewind')
     expect(activeSession().messages[0].rewound).toBeUndefined()
   })
 
@@ -494,7 +494,7 @@ describe('session-slice: rewindCodeAndChat / rewindConversation', () => {
     ]
     patchSession({ messages })
 
-    await useChatStore.getState().rewindCodeAndChat('cp-2')
+    await expect(useChatStore.getState().rewindCodeAndChat('cp-2')).rejects.toThrow('Cannot rewind')
     expect(activeSession().messages.map((m) => m.id)).toEqual(['m1', 'm2'])
   })
 })

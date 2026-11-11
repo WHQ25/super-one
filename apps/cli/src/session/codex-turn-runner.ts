@@ -38,7 +38,10 @@ import {
   type NodeClaudeRunnerOptions,
 } from './claude-turn-runner'
 import { createSimulatedCodexRunner, type TurnRunner } from '@superone/runtime/session'
-import { createMultiHarnessRouter, createAcpOpenCodeProductionRouter, createCursorTurnRunner } from './harness-runners'
+import { createMultiHarnessRouter, createAcpOpenCodeProductionRouter, createCursorTurnRunner, resolveProductionAcpLaunch } from './harness-runners'
+import { resolveCliReleaseVersion } from '../cli-release-version'
+import { codexBoundaryTurnId, dispatchNodeRewind, REWIND_METHODS, revertCodexThread } from './node-rewind'
+import { rewindLoadedGrokSession } from '@superone/acp/grok-rewind'
 import type { HarnessCatalogReader } from '@superone/runtime/harness'
 import type { ProviderStore } from '../provider/provider-store'
 import { buildHarnessEnvWithProxy, resolveHarnessService } from '../provider/resolve-service'
@@ -496,6 +499,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
             reasoningEffort,
             collaborationMode: input.collaborationMode,
             messageId: input.messageId,
+            clientMessageId: input.clientMessageId,
             onAgentEvent: event => {
               if (event.type === 'content_delta' && event.delta.type === 'tool_use' && event.delta.app) {
                 prewarmCodexMcpAppView(event.delta.app, conn.client.request.bind(conn.client), conn.client.request)
@@ -621,6 +625,56 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
     lastActivityAt: live.lastActivityAt,
     busy: live.busyCount > 0,
   }))
+  runner.callOperation = async (session, method, input, host) => {
+    if (method !== 'session.previewRewind' && method !== 'session.rewind') {
+      throw Object.assign(new Error(`Unsupported session operation: ${method}`), { code: 'unsupported' })
+    }
+    const mode = input.mode
+    if (method === 'session.previewRewind') return { canRewind: true, supportsCodeOnly: false }
+    if (mode === 'files' || mode === 'code+chat') {
+      return { canRewind: false, supportsCodeOnly: false, error: 'rewindFiles not supported by Codex' }
+    }
+    if (mode !== 'conversation') return { canRewind: false, error: 'Invalid rewind mode' }
+    const live = liveBySession.get(session.sessionId)
+    if (session.status === 'streaming' || live?.activeTurnId || (live && live.busyCount > 0)) {
+      return { canRewind: false, error: 'Cannot rewind an active Codex turn' }
+    }
+    const beforeTurnId = codexBoundaryTurnId(host.messages ?? [], String(input.checkpointId ?? ''))
+    if (!beforeTurnId) return { canRewind: false, error: 'Codex turn boundary not found' }
+    const binary = resolveCodexBinaryPath(opts)
+    const storedThread = session.providerResume?.startsWith('thread:')
+      ? session.providerResume.slice('thread:'.length).trim()
+      : ''
+    const threadId = live?.threadId || storedThread
+    if (!binary || !threadId) return { canRewind: false, error: 'No Codex thread to rewind' }
+    try {
+      const prepared = await prepare({ session, apiProviderId: session.apiProviderId })
+      const conn = await openLive(session.sessionId, binary, prepared.authEnv, prepared.cwd)
+      if (!conn.threadId || conn.threadId !== threadId) {
+        conn.threadId = await ensureCodexThread({
+          client: conn.client,
+          cwd: prepared.cwd,
+          threadId,
+          threadConfig: prepared.threadConfig,
+          permissionPreset: session.permissionPreset,
+          signal: new AbortController().signal,
+        })
+      }
+      const reverted = await revertCodexThread(
+        (rpc, params) => conn.client.request(rpc, params),
+        conn.threadId,
+        beforeTurnId,
+      )
+      if (reverted.threadId !== conn.threadId) {
+        conn.threadId = reverted.threadId
+        host.onProviderResume?.(`thread:${reverted.threadId}`)
+      }
+      return { canRewind: true, supportsCodeOnly: false }
+    } catch (error) {
+      return { canRewind: false, error: error instanceof Error ? error.message : String(error) }
+    }
+  }
+
   runner.codexVoice = {
     async open(session, host) {
       if ((session.harnessId || 'codex') !== 'codex') {
@@ -729,6 +783,41 @@ export function createProductionTurnRunner(opts: NodeProductionRunnerOptions): T
   }
   runner.isModHostRequestPending = (sessionId, requestId) => claude.isModHostRequestPending?.(sessionId, requestId) ?? false
   runner.callOperation = (session, method, input, host) => {
+    if (REWIND_METHODS.has(method)) {
+      return dispatchNodeRewind({
+        session,
+        method,
+        input,
+        host,
+        claude: claude.callOperation,
+        codex: codex.callOperation,
+        opencode: acpOpenCode.callOperation,
+        rewindGrok: async ({ session: grokSession, promptIndex, mode }) => {
+          const launch = resolveProductionAcpLaunch({
+            harnesses: opts.harnesses,
+            acpBinaryPath: opts.acpBinaryPath,
+          })
+          const binary = launch.binaryPath?.trim() ?? ''
+          const resume = grokSession.providerResume ?? ''
+          const providerSessionId = resume.startsWith('acp-session:') ? resume.slice('acp-session:'.length) : ''
+          if (!binary) return { canRewind: false, supportsCodeOnly: true, error: 'ACP agent command not configured' }
+          if (!providerSessionId) return { canRewind: false, supportsCodeOnly: true, error: 'No Grok session to rewind' }
+          const cwd = grokSession.cwd?.trim() || opts.resolveProjectPath(grokSession.projectId) || process.cwd()
+          return rewindLoadedGrokSession({
+            launch: {
+              command: binary,
+              ...(launch.args ? { args: launch.args } : {}),
+              ...(launch.agentId ? { agentId: launch.agentId } : {}),
+            },
+            cwd,
+            providerSessionId,
+            clientVersion: resolveCliReleaseVersion(),
+            promptIndex,
+            mode,
+          })
+        },
+      })
+    }
     if (session.harnessId !== 'opencode' || !acpOpenCode.callOperation)
       return Promise.reject(Object.assign(new Error(`Unsupported session operation: ${method}`), { code: 'unsupported' }))
     return acpOpenCode.callOperation(session, method, input, host)

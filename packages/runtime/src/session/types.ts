@@ -394,6 +394,8 @@ export interface HarnessOperationHost {
   messages?: import('@superone/shared/agent-types').ChatMessage[]
   assertControl(): void
   onEvent(event: AgentEvent): void
+  /** Persist a replacement provider session id (Codex thread/fork fallback). */
+  onProviderResume?: (resume: string) => void
   onQuestion(interaction: PendingInteraction, signal: AbortSignal): Promise<QuestionAnswers>
   onPermission(interaction: PendingInteraction, signal: AbortSignal): Promise<PermissionDecision>
 }

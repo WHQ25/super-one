@@ -3,7 +3,8 @@ import { toast } from 'sonner'
 import { Trans, useTranslation } from 'react-i18next'
 import { History, TriangleAlert } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
-import { useChatStore, useSessionScope } from '@/stores/chat'
+import { useActiveSession, useChatStore, useSessionScope } from '@/stores/chat'
+import { isAntigravityAcpAgent } from '@superone/shared/acp-brand'
 import { useEnvironmentServes } from '@/hooks/use-environment-serves'
 import {
   Dialog,
@@ -57,6 +58,7 @@ export function RewindButton({ checkpointId, rewound, className }: RewindButtonP
   const { t } = useTranslation()
   const scope = useSessionScope()
   const activeProject = useChatStore((s) => s.activeProject)
+  const acpAgentId = useActiveSession((s) => s.acpAgentId)
   const served = useEnvironmentServes(scope?.projectPath ?? activeProject, 'session.rewind')
   const [preview, setPreview] = useState<RewindFilesResult | null>(null)
   const [loading, setLoading] = useState(false)
@@ -104,10 +106,10 @@ export function RewindButton({ checkpointId, rewound, className }: RewindButtonP
       }
       setRewindingMode(null)
       setDialogOpen(false)
-    } catch (e) {
+    } catch (error) {
       setRewindingMode(null)
       setDialogOpen(false)
-      throw e
+      toast.error(error instanceof Error && error.message ? error.message : t('chat.rewind.cannotRestore'))
     }
   }
 
@@ -144,7 +146,9 @@ export function RewindButton({ checkpointId, rewound, className }: RewindButtonP
     return () => window.removeEventListener('keydown', handler)
   }, [dialogOpen, preview?.canRewind, options, handleSelect, chatRootRef])
 
-  if (!served) return null
+  // Antigravity stamps ACP checkpoints but has no x.ai/rewind. Hide the control
+  // instead of opening a dialog that cannot restore anything.
+  if (!served || isAntigravityAcpAgent(acpAgentId)) return null
 
   return (
     <>

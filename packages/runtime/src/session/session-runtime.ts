@@ -1559,6 +1559,7 @@ export class SessionRuntime {
       messages: this.messages(sessionId),
       assertControl,
       onEvent: event => this.handleAmbientEvent(sessionId, event),
+      onProviderResume: (resume) => { session.providerResume = resume; this.persist(session) },
       onQuestion: (interaction, signal) => this.waitForQuestionDecision(session, interaction, signal),
       onPermission: (interaction, signal) => this.waitForPermissionDecision(session, interaction, signal),
     })

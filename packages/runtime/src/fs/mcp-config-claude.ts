@@ -97,8 +97,10 @@ export function listClaudeMcpConfigs(cwd: string, opts?: ClaudeMcpOptions): McpS
   }
 
   addFrom(getUserConfigPath(opts), 'user')
-  addFrom(getProjectSettingsPath(cwd), 'project')
-  addFrom(getProjectMcpJsonPath(cwd), 'project')
+  if (cwd) {
+    addFrom(getProjectSettingsPath(cwd), 'project')
+    addFrom(getProjectMcpJsonPath(cwd), 'project')
+  }
   return results
 }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { isMcpAppHttpDownload, mcpAppDownloadName } from './mcp-app-download'
+import { isBlockedMcpAppDownloadItem, isBlockedMcpAppDownloadName, isMcpAppHttpDownload, mcpAppDownloadName } from './mcp-app-download'
 
 describe('mcpAppDownloadName', () => {
   it('uses the file name of the URI, or a link name that is itself a file name', () => {
@@ -23,5 +23,18 @@ describe('isMcpAppHttpDownload', () => {
     expect(isMcpAppHttpDownload('https://user:pw@example.com/a.pdf')).toBe(false)
     expect(isMcpAppHttpDownload('cad://export/a.csv')).toBe(false)
     expect(isMcpAppHttpDownload('not a url')).toBe(false)
+  })
+})
+
+describe('isBlockedMcpAppDownloadName', () => {
+  it('blocks executable, installer, script-host and disguise names while allowing data and source files', () => {
+    for (const blocked of ['payload.exe', 'PAYLOAD.EXE', 'installer.dmg', 'bundle.appimage', 'launcher.desktop', 'shortcut.lnk', 'page.hta', 'script.js', 'trick.exe.', 'trick.cmd . ', 'report.pdf:evil.exe', 'C:\\Users\\me\\Downloads\\setup.msi', '/tmp/pack.msix']) {
+      expect(isBlockedMcpAppDownloadName(blocked), blocked).toBe(true)
+    }
+    for (const allowed of ['report.pdf', 'part.stl', 'script.py', 'deploy.sh', 'C:\\Users\\me\\Downloads\\report.pdf', '/Users/me/Downloads/archive.zip']) {
+      expect(isBlockedMcpAppDownloadName(allowed), allowed).toBe(false)
+    }
+    expect(isBlockedMcpAppDownloadItem({ type: 'resource_link', uri: 'https://example.com/dropper.exe', name: 'Safe Name' })).toBe(true)
+    expect(isBlockedMcpAppDownloadItem({ type: 'resource_link', uri: 'https://example.com/download/1', name: 'script.py' })).toBe(false)
   })
 })

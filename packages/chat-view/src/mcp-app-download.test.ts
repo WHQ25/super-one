@@ -45,4 +45,9 @@ describe('MCP App downloads on the phone', () => {
     await expect(run().downloadFile!([{ type: 'resource_link', uri: 'cad://export/parts.csv', name: 'Parts' }], signal)).rejects.toMatchObject({ code: 'inactive' })
     expect(native.async).toHaveBeenCalledTimes(1)
   })
+
+  it('returns isError without calling the shell when any item has a blocked extension', async () => {
+    await expect(run().downloadFile!([{ type: 'resource_link', uri: 'https://example.com/app.apk', name: 'Installer' }], signal)).resolves.toEqual({ isError: true })
+    expect(native.async).not.toHaveBeenCalled()
+  })
 })

@@ -87,12 +87,15 @@ export function mcpAppResourceMeta(meta?: Record<string, unknown>): McpUiResourc
   return { ...siblings, ...record(ui) }
 }
 
-/** Metadata constrains requests; it never moves an agent-invoked View out of inline. */
 export function mcpAppResourceModes(meta?: McpUiResourceMeta): McpAppDisplayMode[] | undefined {
   const ui = record(meta?.['openai/ui'])
-  if (Array.isArray(ui.availableDisplayModes)) return ui.availableDisplayModes.filter((mode): mode is McpAppDisplayMode => mode === 'inline' || mode === 'fullscreen')
-  if (ui.preferredDisplayMode === 'inline' || ui.preferredDisplayMode === 'fullscreen') return [ui.preferredDisplayMode]
+  if (Array.isArray(ui.availableDisplayModes)) return ui.availableDisplayModes.filter((mode): mode is McpAppDisplayMode => mode === 'inline' || mode === 'fullscreen' || mode === 'pip')
   return undefined
+}
+
+export function mcpAppPreferredDisplayMode(meta?: McpUiResourceMeta): 'inline' | 'fullscreen' | undefined {
+  const candidate = meta?.preferredDisplayMode ?? record(meta?.ui).preferredDisplayMode ?? record(meta?.['openai/ui']).preferredDisplayMode
+  return candidate === 'inline' || candidate === 'fullscreen' ? candidate : undefined
 }
 
 export function mcpAppPresentationIcon(presentation?: McpAppPresentation, theme?: 'light' | 'dark'): string | undefined {

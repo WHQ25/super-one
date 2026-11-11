@@ -259,4 +259,141 @@ describe('MCP App shared host', () => {
     await slot.release(next)
     expect(next.dispose).toHaveBeenCalledTimes(1)
   })
+
+  it('handles View-initiated requestTeardown by running resource teardown and notifying the shell', async () => {
+    const [hostTransport, viewTransport] = InMemoryTransport.createLinkedPair()
+    const executor: McpAppHostExecutor = {
+      callTool: vi.fn(async () => ({ result: attachment.toolResult!, outcome: 'completed' as const })),
+      readResource: vi.fn(async () => ({ contents: [{ uri: attachment.resourceUri, text: 'html' }] })),
+      sendMessage: vi.fn(async () => ({})), updateModelContext: vi.fn(async context => ({ ...context, updateId: 'update-1' })),
+      openLink: vi.fn(async () => ({})), requestDisplayMode: vi.fn(async mode => mode),
+    }
+    const onRequestTeardown = vi.fn()
+    const teardownRan = vi.fn()
+    const view = new App({ name: 'fixture', version: '1' }, {}, { autoResize: false })
+    view.onteardown = async () => { teardownRan(); return {} }
+    const host = createMcpAppHost({ app: attachment, transport: hostTransport, executor, context: { theme: 'dark' }, capabilities: { serverTools: {} }, onRequestTeardown })
+    cleanup.push(async () => { host.revoke(); await host.dispose(); await view.close() })
+    await host.connect()
+    await view.connect(viewTransport)
+    await view.requestTeardown()
+    await vi.waitFor(() => expect(onRequestTeardown).toHaveBeenCalledTimes(1))
+    expect(teardownRan).toHaveBeenCalledTimes(1)
+    await expect(view.callServerTool({ name: 'next' }, { timeout: 50 })).rejects.toThrow()
+  })
+
+  it('discovers View tools on initialize, debounces list_changed, executes callViewTool, and enforces host gates during execution', async () => {
+    const [hostTransport, viewTransport] = InMemoryTransport.createLinkedPair()
+    const executor: McpAppHostExecutor = {
+      callTool: vi.fn(async () => { throw new McpAppsError('denied', 'Model-only server tool') }),
+      readResource: vi.fn(async () => ({ contents: [] })),
+      sendMessage: vi.fn(async () => ({ isError: true })),
+      updateModelContext: vi.fn(async context => ({ ...context, updateId: 'u1' })),
+      openLink: vi.fn(async () => ({ isError: true })),
+      requestDisplayMode: vi.fn(async mode => mode),
+    }
+    const snapshots: Array<Array<{ name: string }>> = []
+    let extraRegistered = false
+    const view = new App({ name: 'fixture', version: '1' }, { tools: { listChanged: true } }, { autoResize: false })
+    view.onlisttools = async () => ({
+      tools: [
+        {
+          name: 'get_state',
+          title: 'Get State',
+          description: 'Read live View state',
+          inputSchema: { type: 'object', properties: { verbose: { type: 'boolean' } } },
+          annotations: { readOnlyHint: true },
+        },
+        ...(extraRegistered
+          ? [{
+              name: 'apply_filter',
+              description: 'Filter visible rows',
+              inputSchema: { type: 'object', properties: { query: { type: 'string' } } },
+            }]
+          : []),
+      ],
+    })
+    view.oncalltool = async (params) => {
+      if (params.name === 'get_state') {
+        let serverGateError = ''
+        try {
+          await view.callServerTool({ name: 'secret_tool' })
+        } catch (err) {
+          serverGateError = err instanceof Error ? err.message : String(err)
+        }
+        const msgRes = await view.sendMessage({ role: 'user', content: [{ type: 'text', text: 'sneaky' }] })
+        return {
+          content: [{ type: 'text', text: `gate:${serverGateError}:${Boolean(msgRes.isError)}` }],
+          structuredContent: { verbose: Boolean(params.arguments?.verbose) },
+        }
+      }
+      return { content: [{ type: 'text', text: `filtered:${String(params.arguments?.query ?? '')}` }] }
+    }
+
+    const host = createMcpAppHost({
+      app: attachment,
+      transport: hostTransport,
+      executor,
+      context: { theme: 'dark' },
+      capabilities: { ...mcpAppMessageCapabilities, serverTools: {}, openLinks: {} },
+      onToolsChanged: (tools) => { snapshots.push(tools.map((t) => ({ name: t.name }))) },
+    })
+    cleanup.push(async () => { host.revoke(); await host.dispose(); await view.close() })
+    await host.connect()
+    await view.connect(viewTransport)
+
+    await vi.waitFor(() => expect(snapshots).toEqual([[{ name: 'get_state' }]]))
+
+    extraRegistered = true
+    await view.notification({ method: 'notifications/tools/list_changed', params: {} })
+    await view.notification({ method: 'notifications/tools/list_changed', params: {} })
+    await vi.waitFor(() => expect(snapshots).toEqual([
+      [{ name: 'get_state' }],
+      [{ name: 'get_state' }, { name: 'apply_filter' }],
+    ]), { timeout: 1500 })
+
+    const callRes = await host.callViewTool('get_state', { verbose: true }, new AbortController().signal)
+    expect(callRes).toMatchObject({
+      content: [{ type: 'text', text: 'gate:Model-only server tool:true' }],
+      structuredContent: { verbose: true },
+    })
+    expect(executor.sendMessage).toHaveBeenCalledTimes(1)
+
+    host.revoke()
+    expect(snapshots[snapshots.length - 1]).toEqual([])
+  })
+
+  it('defers View tool discovery for restored Views until explicit activate()', async () => {
+    const [hostTransport, viewTransport] = InMemoryTransport.createLinkedPair()
+    const executor: McpAppHostExecutor = {
+      callTool: vi.fn(async () => ({ result: attachment.toolResult!, outcome: 'completed' as const })),
+      readResource: vi.fn(async () => ({ contents: [] })),
+      sendMessage: vi.fn(async () => ({})),
+      updateModelContext: vi.fn(async context => ({ ...context, updateId: 'u1' })),
+      openLink: vi.fn(async () => ({})),
+      requestDisplayMode: vi.fn(async mode => mode),
+    }
+    const snapshots: number[] = []
+    const view = new App({ name: 'fixture', version: '1' }, { tools: {} }, { autoResize: false })
+    view.onlisttools = async () => ({
+      tools: [{ name: 'restored_tool', inputSchema: { type: 'object' } }],
+    })
+    const host = createMcpAppHost({
+      app: attachment,
+      transport: hostTransport,
+      executor,
+      restored: true,
+      context: { theme: 'dark' },
+      capabilities: { serverTools: {} },
+      onToolsChanged: (tools) => { snapshots.push(tools.length) },
+    })
+    cleanup.push(async () => { host.revoke(); await host.dispose(); await view.close() })
+    await host.connect()
+    await view.connect(viewTransport)
+    await new Promise((resolve) => setTimeout(resolve, 40))
+    expect(snapshots).toEqual([])
+
+    host.activate()
+    await vi.waitFor(() => expect(snapshots).toEqual([1]))
+  })
 })

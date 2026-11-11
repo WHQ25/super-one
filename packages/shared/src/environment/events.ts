@@ -203,6 +203,7 @@ export interface ClientStreamMessage {
   type: 'client'
   event: import('../agent-types').ComposerSettledEvent | ControlLostEvent
     | Extract<import('../agent-types').AgentEvent, { type: 'realtime_call_signal' }>
+    | import('../mcp-app-tools').McpAppToolClientEvent
 }
 
 export interface EnvironmentSnapshot {

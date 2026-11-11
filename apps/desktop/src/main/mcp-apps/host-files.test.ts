@@ -3,7 +3,19 @@ import { tmpdir } from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 vi.mock('electron', () => ({ BrowserWindow: { getAllWindows: () => [] } }))
-import { hostFileApp, openHostFileApp, readHostFile, releaseHostFileApp, releaseHostFileApps, writeHostFile } from './host-files'
+import {
+  hostEntrypointAppsForSession,
+  hostFileApp,
+  hostOpenedApp,
+  openHostEntrypointApp,
+  openHostFileApp,
+  readHostFile,
+  releaseHostFileApp,
+  releaseHostFileApps,
+  releaseHostOpenedApp,
+  updateHostOpenedApp,
+  writeHostFile,
+} from './host-files'
 import { MCP_APP_RESOURCE_WRITE_MAX_BYTES } from '@superone/shared/mcp-app-files'
 
 const ref = { environmentId: 'local', sessionId: 's' }
@@ -65,5 +77,39 @@ describe('host file Apps', () => {
     releaseHostFileApp(entry)
     expect(hostFileApp(ref, entry.app.appInstanceId)).toBeUndefined()
     await expect(openHostFileApp({ ref, projectPath: '/p', workspace: [w.root], path: 'relative.stl', app })).rejects.toMatchObject({ code: 'invalid' })
+  })
+
+  it('deduplicates live entrypoint Views per (session, server, tool) and supports session-scoped modelContext', () => {
+    const first = openHostEntrypointApp({
+      ref,
+      projectPath: '/p',
+      entrypoint: 'thread',
+      app: { ...app, toolName: 'open_board' },
+    })
+    expect(first.reused).toBe(false)
+    updateHostOpenedApp(first.entry, { status: 'result', toolResult: { content: [] } })
+
+    const duplicate = openHostEntrypointApp({
+      ref,
+      projectPath: '/p',
+      entrypoint: 'thread',
+      app: { ...app, toolName: 'open_board' },
+    })
+    expect(duplicate.reused).toBe(true)
+    expect(duplicate.entry.app.appInstanceId).toBe(first.entry.app.appInstanceId)
+
+    updateHostOpenedApp(first.entry, {
+      modelContext: {
+        updateId: 'ctx-1',
+        content: [{ type: 'text', text: 'Selected card #42' }],
+        source: { appInstanceId: first.entry.app.appInstanceId, server: 'cad' },
+      },
+    })
+    expect(hostOpenedApp(ref, first.entry.app.appInstanceId)?.app.modelContext?.updateId).toBe('ctx-1')
+    expect(hostEntrypointAppsForSession(ref)).toHaveLength(1)
+    expect(hostEntrypointAppsForSession({ environmentId: 'local', sessionId: 'other' })).toEqual([])
+
+    releaseHostOpenedApp(ref, first.entry.app.appInstanceId)
+    expect(hostOpenedApp(ref, first.entry.app.appInstanceId)).toBeUndefined()
   })
 })

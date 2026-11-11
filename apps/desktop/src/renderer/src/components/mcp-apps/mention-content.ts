@@ -1,4 +1,5 @@
 import { createMcpMentionPreviewCache, formatMcpResourceReminder, parseMcpMentionValue, type McpMentionReadResource } from '@superone/shared/mcp-app-mentions'
+import { formatMcpAppToolsReminder } from '@superone/shared/mcp-app-tools'
 import type { McpAppRoute } from './desktop-executor'
 import type { Mention } from '@/stores/chat-store/types'
 
@@ -30,4 +31,14 @@ export function previewMcpMention(route: McpAppRoute, value: string): Promise<Mc
   if (!target) return Promise.resolve(null)
   return previews(JSON.stringify([route.projectPath, route.sessionId, value]), () =>
     window.environment.mcpAppMentionRead(route.projectPath, route.sessionId, [target]).then((result) => (result.ok ? result.value[0] ?? null : null)))
+}
+
+export async function mcpAppToolsContentForModel(projectPath: string, sessionId: string): Promise<string> {
+  if (!sessionId || !window.environment?.mcpAppToolsListForSend) return ''
+  try {
+    const views = await window.environment.mcpAppToolsListForSend(projectPath, sessionId)
+    return formatMcpAppToolsReminder(Array.isArray(views) ? views : [])
+  } catch {
+    return ''
+  }
 }

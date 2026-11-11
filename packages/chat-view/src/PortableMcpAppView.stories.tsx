@@ -279,4 +279,17 @@ export const RestoredResourceReference: Story = {
 }
 export const RestoredReferenceLoading: Story = { ...RestoredResourceReference, args: { ...RestoredResourceReference.args, app: attachment(id('restored-ref-loading'), { resource: { hash: RESOURCE.hash, meta: RESOURCE.meta } }), mode: 'slow' } }
 export const RestoredReferenceOffline: Story = { ...RestoredResourceReference, args: { ...RestoredResourceReference.args, app: attachment(id('restored-ref-offline'), { resource: { hash: RESOURCE.hash, meta: RESOURCE.meta } }), mode: 'fails' } }
+export const BorderlessInline: Story = {
+  name: 'Inline without border · prefersBorder false',
+  args: { app: attachment(id('borderless'), { resource: { ...RESOURCE, meta: { prefersBorder: false } } }) },
+}
+export const FullscreenOnlyLaunchCard: Story = {
+  name: 'Fullscreen-only · compact launch card in transcript',
+  args: { app: attachment(id('fs-only'), { resource: { ...RESOURCE, meta: { 'openai/ui': { availableDisplayModes: ['fullscreen'] } } } }) },
+}
+export const FullscreenOnlyLaunchCardNarrow: Story = {
+  ...FullscreenOnlyLaunchCard,
+  name: 'Fullscreen-only · narrow 280 px',
+  args: { ...FullscreenOnlyLaunchCard.args, app: attachment(id('fs-only-narrow'), { resource: { ...RESOURCE, meta: { 'openai/ui': { availableDisplayModes: ['fullscreen'] } } } }), width: 280 },
+}
 

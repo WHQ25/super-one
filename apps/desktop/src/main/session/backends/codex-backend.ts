@@ -1341,12 +1341,29 @@ export class CodexBackend implements SessionBackend {
       configGeneration: 0, configFingerprint: mcpServerConfigFingerprint(config) }
   }
 
+  private async ensureHostThreadId(): Promise<string | null> {
+    if (this.providerSessionId) return this.providerSessionId
+    if (!this.startOpts || !this.session) return null
+    await this.ensureManagementConnection()
+    const session = this.session
+    if (!session?.connectionHandle) return null
+    if (!session.threadId || !session.threadReady) {
+      const cwd = session.effectiveCwd || this.startOpts.cwd || this.startOpts.projectPath
+      const threadId = await prewarmCodexSession(session.connectionHandle, session, cwd)
+      session.threadId = threadId
+      session.threadReady = true
+    }
+    if (session.threadId) this.fireProviderSessionId(session.threadId)
+    return this.providerSessionId
+  }
+
   async getMcpAppsHostBindings(): Promise<Array<{ binding: McpAppsBinding; origin: McpAppOrigin }>> {
-    const threadId = this.providerSessionId
-    if (!this.startOpts || !threadId) return []
-    // Hosted connectors (`codex_apps`) are not served by the public-server provider.
-    return listCodexMcpConfigs(this.startOpts.cwd).filter(config => !config.disabled && config.name !== 'codex_apps')
-      .map(config => ({ binding: this.mcpAppsBinding(config.name, config), origin: { providerSessionId: threadId } }))
+    if (!this.startOpts) return []
+    const configs = listCodexMcpConfigs(this.startOpts.cwd).filter(config => !config.disabled && config.name !== 'codex_apps')
+    if (!configs.length) return []
+    const threadId = this.providerSessionId ?? await this.ensureHostThreadId()
+    if (!threadId) return []
+    return configs.map(config => ({ binding: this.mcpAppsBinding(config.name, config), origin: { providerSessionId: threadId } }))
   }
 
   async getMcpAppsProvider(binding: McpAppsBinding, origin: McpAppOrigin): Promise<McpAppsProvider> {

@@ -8,9 +8,10 @@ import { createHash, randomUUID } from 'node:crypto'
 import { isAbsolute } from 'node:path'
 import { McpUiDownloadFileRequestSchema, McpUiUpdateModelContextRequestSchema } from '@modelcontextprotocol/ext-apps/app-bridge'
 import { McpAppMessageRequestSchema } from '@superone/shared/mcp-apps-host/message-schema'
+import { parseMcpAppStandaloneSessionId } from '@superone/shared/mcp-app-entrypoints'
 import { parseSessionKey, type SessionRef } from '@superone/shared/environment/refs'
 import type { McpAppsProviderRpcRequest, McpAppsRpcResult } from '@superone/shared/environment/mcp-apps-rpc'
-import { assertMcpAppSize, MCP_APP_HTML_MAX_BYTES, MCP_APP_OUTPUT_MAX_BYTES, MCP_APP_MIME_TYPE, McpAppsError } from '@superone/shared/mcp-apps'
+import { assertMcpAppSize, compactMcpToolDescriptor, MCP_APP_HTML_MAX_BYTES, MCP_APP_OUTPUT_MAX_BYTES, MCP_APP_MIME_TYPE, McpAppsError } from '@superone/shared/mcp-apps'
 import { isMcpAppHostResource, type McpAppResourceWriteParams, type McpAppResourceWriteResult } from '@superone/shared/mcp-app-files'
 import type { McpAppDownloadContents, McpAppApprovalPrompt, McpAppAttachmentUpdate, McpAppHostOperation, McpAppHostRequest, McpAppHostResult, McpAppRequester, McpAppReadResult, McpAppsCallResult, McpAppsCapabilities, McpToolDescriptor, ToolAppAttachment } from '@superone/shared/mcp-apps'
 
@@ -28,7 +29,7 @@ export interface McpAppExecutorPorts {
   persist(target: McpAppResolvedTarget, update: McpAppAttachmentUpdate, signal: AbortSignal): Promise<void>
   provider(target: McpAppResolvedTarget, operation: Omit<McpAppsProviderRpcRequest, 'binding' | 'origin'>, signal: AbortSignal): Promise<McpAppsRpcResult>
   sendMessage(target: McpAppResolvedTarget, params: Extract<McpAppHostOperation, { operation: 'sendMessage' }>['params'], requester: McpAppRequester, signal: AbortSignal): Promise<void>
-  createMessageSession?(target: McpAppResolvedTarget, signal: AbortSignal): Promise<{ ref: SessionRef; projectPath: string }>
+  createMessageSession?(target: McpAppResolvedTarget, signal: AbortSignal, mode?: 'active' | 'new'): Promise<{ ref: SessionRef; projectPath: string }>
   hydrateResource?(target: McpAppResolvedTarget, signal: AbortSignal): Promise<McpAppResourceSnapshot>
   /** The opened file of a file-entrypoint View (`target.app.file`); never another URI. */
   hostResource?(target: McpAppResolvedTarget, request: HostResourceRequest, signal: AbortSignal): Promise<McpAppReadResult | McpAppResourceWriteResult | void>
@@ -120,9 +121,11 @@ interface PendingMessage {
   params: Extract<McpAppHostOperation, { operation: 'sendMessage' }>['params']
 }
 
-function requesterKey(requester: McpAppRequester): string {
+export function mcpAppRequesterKey(requester: McpAppRequester): string {
   return requester.kind === 'desktop' ? 'desktop' : `mobile:${requester.deviceId}`
 }
+
+const requesterKey = mcpAppRequesterKey
 
 /** Host policy is shared by desktop IPC and paired-device requests. */
 export class McpAppExecutor {
@@ -248,7 +251,7 @@ export class McpAppExecutor {
     if (!tool || signal.aborted) return
     const current = await this.ports.resolve(target.ref, target.app.appInstanceId, target.messageId, signal)
     if (signal.aborted || this.bindingKey(current.app) !== this.bindingKey(target.app)) return
-    await this.ports.persist(current, { presentation: mcpAppPresentation(tool) }, signal)
+    await this.ports.persist(current, { presentation: mcpAppPresentation(tool), toolDescriptor: compactMcpToolDescriptor(tool) }, signal)
   }
 
   /**
@@ -349,8 +352,9 @@ export class McpAppExecutor {
       } else if (operation.operation === 'sendMessage') {
         const server = mcpAppServerTitle(target.app)
         const details = mcpAppMessagePreview(operation.params, server)
-        if (details.target === 'new' && requester.kind === 'mobile') throw new McpAppsError('denied', 'Creating a new conversation from an MCP App is supported on desktop only; use target: active on phone')
-        if (details.target === 'new' && !this.ports.createMessageSession) throw new McpAppsError('not_connected', 'MCP App new conversation routing is unavailable')
+        const needsSessionHandoff = details.target === 'new' || Boolean(parseMcpAppStandaloneSessionId(target.ref.sessionId))
+        if (needsSessionHandoff && requester.kind === 'mobile') throw new McpAppsError('denied', 'Creating a new conversation from an MCP App is supported on desktop only; use target: active on phone')
+        if (needsSessionHandoff && !this.ports.createMessageSession) throw new McpAppsError('not_connected', 'MCP App new conversation routing is unavailable')
         prompt = { kind: 'sendMessage', server, ...details }
         assertMcpAppSize(prompt)
       }
@@ -433,10 +437,11 @@ export class McpAppExecutor {
           if (times.length >= 3) throw new McpAppsError('denied', 'MCP App message rate limit reached')
           times.push(this.now())
           this.messageTimes.set(key, times)
-          if (mcpAppMessageTarget(operation.params) === 'new') {
+          const messageTarget = mcpAppMessageTarget(operation.params)
+          if (messageTarget === 'new' || parseMcpAppStandaloneSessionId(target.ref.sessionId)) {
             const bytes = new TextEncoder().encode(JSON.stringify(operation.params)).byteLength
             if (this.pendingSends.size >= 64 || [...this.pendingSends.values()].reduce((total, pending) => total + pending.bytes, bytes) > 16 * 1024 * 1024) throw new McpAppsError('denied', 'Too many pending MCP App messages')
-            const destination = await this.ports.createMessageSession!(target, signal)
+            const destination = await this.ports.createMessageSession!(target, signal, messageTarget)
             if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App message cancelled')
             const pendingSend = randomUUID()
             this.pendingSends.set(pendingSend, { expires: this.now() + 300_000, key: activeKey, binding, bytes, destination, params: operation.params })

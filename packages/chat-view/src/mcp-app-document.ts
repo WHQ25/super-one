@@ -1,6 +1,7 @@
 import { McpAppResourceCache, type McpAppResourceSnapshot } from '@superone/shared/mcp-app-resource'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import type { McpUiResourceMeta } from '@superone/shared/mcp-apps'
+import type { McpAppToolSurfaceRequest } from '@superone/shared/mcp-app-tools'
 import { mcpAppMessageAttachments } from '@superone/shared/mcp-apps-state'
 import { mcpAppCspDomains, mcpAppCspMeta } from '@superone/shared/mcp-apps-host'
 
@@ -117,4 +118,26 @@ export function exitMcpAppFullscreen(): boolean {
   if (!fullscreenExit) return false
   fullscreenExit()
   return true
+}
+
+type ToolRequestListener = (request: McpAppToolSurfaceRequest) => void
+const toolRequestListeners = new Map<string, Set<ToolRequestListener>>()
+
+export function subscribeMcpAppToolRequest(viewId: string, listener: ToolRequestListener): () => void {
+  let set = toolRequestListeners.get(viewId)
+  if (!set) {
+    set = new Set()
+    toolRequestListeners.set(viewId, set)
+  }
+  set.add(listener)
+  return () => {
+    set?.delete(listener)
+    if (set?.size === 0) toolRequestListeners.delete(viewId)
+  }
+}
+
+export function dispatchMcpAppToolRequest(request: McpAppToolSurfaceRequest): void {
+  const set = toolRequestListeners.get(request.viewId)
+  if (!set) return
+  for (const listener of [...set]) listener(request)
 }

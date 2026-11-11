@@ -734,10 +734,10 @@ model context, `openai/message` and most form features. Still missing:
 | `ui/download-file` | Done on desktop and phone (see features/mcp-apps.md) |
 | Collapsed untitled long text | S1 leftover — Phase 3 host follow-up |
 | Form capability on Claude and on the remote-node Codex client | Codex desktop/node forms: done. Claude: not built (routing rule); node ACP form content remains separate work |
-| Global and thread entrypoints, deep links | Not supported — later; need the host-origin binding from Phase 3 |
+| Global and thread entrypoints, deep links | Local desktop global and thread entrypoints: done (see [features/mcp-apps.md](../features/mcp-apps.md#entry-points-global-thread-file)). Deep links (`openai/deepLink`), remote projects and phone later |
 | Structured settings (`openai/settings`) | Not supported — later (Phase 4). Codex reports server capabilities; on Claude, which withholds them, read them from the direct client (`hostClient`) |
 | Plugin onboarding | Out of scope until SuperOne has plugin packages |
-| Display modes | Supported, except `preferredDisplayMode` on first render (deliberate) and phone PiP |
+| Display modes | Supported, including `_meta.ui` / `openai/ui` `preferredDisplayMode` side-panel auto-open and `fullscreen`-only launch cards on desktop ([features/mcp-apps.md](../features/mcp-apps.md)); phone PiP not supported |
 
 ## Phase 3: files and mentions
 
@@ -961,4 +961,4 @@ Security review (2026-10-02), with what it changed:
   the model's); HTTP without TLS is allowed exactly as Claude allows it.
 
 Out of this phase: phone parity (file preview "more" menu is the natural
-place), remote-node direct clients, global/thread entrypoints, settings.
+place), remote-node direct clients, structured settings (`openai/settings`).

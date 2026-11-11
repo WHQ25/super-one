@@ -89,6 +89,7 @@ import { SetupMiniAppDevBlockPresenter } from './presenters/SetupMiniAppDevBlock
 import { SuperoneCompactToolRowPresenter } from './presenters/SuperoneCompactToolRow'
 import { superoneToolDescriptor } from './presenters/superone-tool-display'
 import { LAYOUT_CONTROL_TOOL_NAMES, LayoutControlToolRow } from './presenters/LayoutControlToolRow'
+import { MCP_APP_MCP_TOOL_NAMES, McpAppToolsBlock } from './presenters/McpAppToolsBlock'
 import { ToolGroupPresenter } from './presenters/ToolGroup'
 import { WorkflowBlockPresenter } from './presenters/WorkflowBlock'
 import { parseWorkflowLaunch, stripWorkflowNamePrefix, workflowToolTargetLabel } from './presenters/workflow-utils'
@@ -416,6 +417,22 @@ function renderDedicatedTool(props: TurnToolPresenterProps, brandIconSrc?: strin
         isStreaming={props.status === 'streaming'}
         isError={props.isError}
         isDenied={isDenied}
+      />
+    )
+  }
+  if (collabToolName && MCP_APP_MCP_TOOL_NAMES.has(collabToolName)) {
+    const isDenied = Boolean(props.result?.startsWith('[denied] '))
+    const clean = isDenied ? props.result?.slice('[denied] '.length) : props.result
+    return (
+      <McpAppToolsBlock
+        mcpToolName={collabToolName}
+        params={parseRecord(props.input)}
+        result={clean ?? null}
+        toolSummary={props.toolSummary}
+        isStreaming={props.status === 'streaming'}
+        isError={props.isError}
+        isDenied={isDenied}
+        elapsedSeconds={props.elapsedSeconds}
       />
     )
   }

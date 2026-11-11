@@ -16,16 +16,22 @@ import { createMcpAppStoryFixture, type McpAppStoryState } from './story-fixture
 /** Bits & Bolts' real icon: one hard-coded dark stroke that a dark theme would swallow. */
 const DARK_STROKE_ICON = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32"><path fill="none" stroke="#27272a" stroke-width="3" stroke-linejoin="round" d="M9.5 4.75h13L29 16l-6.5 11.25h-13L3 16zM13 10.8h6l3 5.2-3 5.2h-6L10 16z"/></svg>')
 
-function Scenario({ state = 'live', narrow = false, scrolling = false, initialMode = 'inline', restoredContext = false, cachedReference = false, resultOmitted = false, topRightControl = false, darkStrokeIcon = false }: { darkStrokeIcon?: boolean; topRightControl?: boolean; resultOmitted?: boolean; cachedReference?: boolean; restoredContext?: boolean; state?: McpAppStoryState; narrow?: boolean; scrolling?: boolean; initialMode?: McpAppSurface }) {
+function Scenario({ state = 'live', narrow = false, scrolling = false, initialMode = 'inline', restoredContext = false, cachedReference = false, resultOmitted = false, topRightControl = false, darkStrokeIcon = false, prefersBorder = false, fullscreenOnly = false, preferredFullscreen = false }: { preferredFullscreen?: boolean; fullscreenOnly?: boolean; prefersBorder?: boolean; darkStrokeIcon?: boolean; topRightControl?: boolean; resultOmitted?: boolean; cachedReference?: boolean; restoredContext?: boolean; state?: McpAppStoryState; narrow?: boolean; scrolling?: boolean; initialMode?: McpAppSurface }) {
   const maximized = useActivityPanelStore(state => state.maximized)
   const fixture = useMemo(() => {
-    const value = createMcpAppStoryFixture(state, { topRightControl })
+    const resourceMeta = {
+      ...(prefersBorder ? { prefersBorder: true } : {}),
+      ...(preferredFullscreen ? { preferredDisplayMode: 'fullscreen' as const } : {}),
+      ...(fullscreenOnly ? { 'openai/ui': { availableDisplayModes: ['fullscreen' as const] } } : {}),
+    }
+    const value = createMcpAppStoryFixture(state, { topRightControl, meta: resourceMeta })
+    if (state === 'missing') delete value.app.resource
     if (restoredContext) value.app.modelContext = { updateId: 'restored-context-id', content: [{ type: 'text', text: 'Selected part', _meta: { 'openai/title': 'Agent dial' } }], source: { appInstanceId: value.app.appInstanceId, server: value.app.binding.server } }
     if (resultOmitted) value.app.toolResultOmitted = { bytes: 2_500_000, reason: 'size_limit' }
-    if (cachedReference) value.app.resource = { hash: 'a'.repeat(64), meta: {} }
+    if (cachedReference) value.app.resource = { hash: 'a'.repeat(64), meta: resourceMeta }
     if (darkStrokeIcon && value.app.presentation) value.app.presentation = { ...value.app.presentation, icons: [{ src: DARK_STROKE_ICON }] }
     return value
-  }, [state, restoredContext, cachedReference, resultOmitted, topRightControl, darkStrokeIcon])
+  }, [state, restoredContext, cachedReference, resultOmitted, topRightControl, darkStrokeIcon, prefersBorder, fullscreenOnly, preferredFullscreen])
   useEffect(() => {
     useSettingsStore.setState(state => ({ mcpMetaCache: { ...state.mcpMetaCache, [fixture.app.binding.server]: { name: fixture.app.binding.server, icons: [{ src: darkStrokeIcon ? DARK_STROKE_ICON : 'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16"%3E%3Cpath fill="%237c3aed" d="M2 1h12v14H2z"/%3E%3C/svg%3E' }] } } }))
     useMcpAppLayout.getState().setMode(fixture.app.appInstanceId, initialMode)
@@ -87,4 +93,8 @@ export const RestoredModelContext: Story = { args: { state: 'inactive', restored
 export const RestoredResourceReference: Story = { args: { state: 'inactive', cachedReference: true } }
 export const CachedReferenceLoading: Story = { args: { state: 'loading', cachedReference: true } }
 export const CachedReferenceRetry: Story = { args: { state: 'error', cachedReference: true } }
+export const PrefersBorder: Story = { args: { prefersBorder: true } }
+export const FullscreenOnlyLaunchCard: Story = { args: { fullscreenOnly: true } }
+export const FullscreenOnlyLaunchCardNarrow: Story = { args: { fullscreenOnly: true, narrow: true }, globals: { locale: 'zh' } }
+export const AutoOpenFullscreenPanel: Story = { args: { preferredFullscreen: true } }
 

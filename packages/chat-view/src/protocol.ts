@@ -155,6 +155,7 @@ export type HostInbound =
   | { type: 'nativeActionProgress'; requestId: string; progress: unknown }
   /** A private composer result for the widget frame that opened it. */
   | { type: 'composerSettled'; viewId: string; localId: string; outcome?: import('@superone/shared/composer-api').SuperOneComposerOutcome; error?: string }
+  | { type: 'mcpAppToolRequest'; request: import('@superone/shared/mcp-app-tools').McpAppToolSurfaceRequest }
 
 export type HostOutbound =
   | { type: 'scheduledSendAction'; action: 'accept' | 'dismiss' | 'cancel'; sessionId: string; sendAt: number }

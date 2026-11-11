@@ -365,3 +365,19 @@ export const LAYOUT_ACT_HEIGHT_DESCRIPTION = 'resize_group: CSS px. resize_windo
 export const LAYOUT_ACT_MODE_DESCRIPTION = 'chat_mode: docked (column), floating (over the panel), icon (collapsed). window_mode: mini (convert this native window in place) or full (restore the complete app, not OS fullscreen). Requires a visible target; close splits with close_split first. Waits for the window animation; repeated mode is a no-op.'
 export const LAYOUT_ACT_POSITION_DESCRIPTION = 'chat_mode: where the floating chat or its icon snaps. Alone it moves the chat without changing mode; while docked it is kept for the next float.'
 export const LAYOUT_ACT_SESSION_DESCRIPTION = 'split_session / close_split: a session id from session_list, session_search or session_collab_*.'
+
+export const MCP_APP_TOOLS_LIST_DESCRIPTION =
+  'List live UI tools registered by mounted MCP App Views in this session (ext-apps registerTool / WebMCP). ' +
+  'Omit viewId to list mounted Views with tool summaries; pass viewId (or includeSchema=true) to read full JSON input schemas before calling mcp_app_tools_call. ' +
+  'Only initialized, currently open Views appear.'
+export const MCP_APP_TOOLS_LIST_VIEW_ID_DESCRIPTION = 'Mounted View ID (appInstanceId) from <superone-mcp-app-tools> or mcp_app_tools_list. Omit for all mounted Views.'
+export const MCP_APP_TOOLS_LIST_INCLUDE_SCHEMA_DESCRIPTION = 'Include full inputSchema and outputSchema JSON Schemas. Defaults to true when viewId is set, false otherwise.'
+
+export const MCP_APP_TOOLS_CALL_DESCRIPTION =
+  'Invoke a live UI tool registered by a mounted MCP App View in this session. ' +
+  'Call mcp_app_tools_list({ viewId }) first to inspect inputSchema. ' +
+  'Opens a user confirmation dialog in standard permission mode unless always-allowed for this exact tool definition; do not retry a denied call without user instruction.'
+export const MCP_APP_TOOLS_CALL_VIEW_ID_DESCRIPTION = 'Mounted View ID (appInstanceId) from mcp_app_tools_list.'
+export const MCP_APP_TOOLS_CALL_TOOL_DESCRIPTION = 'App Tool name registered on the View.'
+export const MCP_APP_TOOLS_CALL_INPUT_DESCRIPTION = 'Tool arguments matching the inputSchema from mcp_app_tools_list.'
+export const MCP_APP_TOOLS_CALL_SUMMARY_DESCRIPTION = 'Short plain-language summary shown in the chat row and confirmation dialog.'

@@ -5,8 +5,20 @@ import { chmod, readFile, realpath, rename, rm, stat, writeFile } from 'node:fs/
 import path from 'node:path'
 import { BrowserWindow } from 'electron'
 import type { SessionRef } from '@superone/shared/environment/refs'
-import { McpAppsError, type McpAppAttachmentUpdate, type McpAppReadResult, type ToolAppAttachment } from '@superone/shared/mcp-apps'
+import { McpAppsError, type McpAppAttachmentUpdate, type McpAppHostUpdate, type McpAppReadResult, type ToolAppAttachment } from '@superone/shared/mcp-apps'
+import { applyMcpAppHostUpdate } from '@superone/shared/mcp-apps-state'
 import { MCP_APP_RESOURCE_READ_MAX_BYTES, MCP_APP_RESOURCE_WRITE_MAX_BYTES, type McpAppResourceWriteParams, type McpAppResourceWriteResult } from '@superone/shared/mcp-app-files'
+import type { McpAppEntrypointKind } from '@superone/shared/mcp-app-entrypoints'
+
+export interface HostEntrypointApp {
+  ref: SessionRef
+  projectPath: string
+  entrypoint: McpAppEntrypointKind
+  app: ToolAppAttachment
+  pairedSession?: { sessionId: string; projectPath: string }
+}
+
+export type HostOpenedApp = HostFileApp | HostEntrypointApp
 
 /**
  * A View the host opened through a file entrypoint. It lives only in memory: it is
@@ -29,6 +41,7 @@ export interface HostFileApp {
 }
 
 const apps = new Map<string, HostFileApp>()
+const entrypointApps = new Map<string, HostEntrypointApp>()
 const MAX_OPEN = 64
 
 function etagOf(bytes: Uint8Array): string {
@@ -52,7 +65,7 @@ export async function openHostFileApp(input: {
   if (!path.isAbsolute(input.path)) throw new McpAppsError('invalid', 'File path must be absolute')
   const info = await stat(input.path).catch(() => null)
   if (!info?.isFile()) throw new McpAppsError('invalid', 'File not found')
-  if (apps.size >= MAX_OPEN) throw new McpAppsError('denied', 'Too many files are open in Apps')
+  if (apps.size + entrypointApps.size >= MAX_OPEN) throw new McpAppsError('denied', 'Too many files are open in Apps')
   const id = randomUUID()
   const entry: HostFileApp = {
     ref: input.ref, projectPath: input.projectPath, path: input.path,
@@ -63,9 +76,54 @@ export async function openHostFileApp(input: {
   return entry
 }
 
+export function openHostEntrypointApp(input: {
+  ref: SessionRef
+  projectPath: string
+  entrypoint: McpAppEntrypointKind
+  app: Omit<ToolAppAttachment, 'appInstanceId' | 'file' | 'status'>
+}): { entry: HostEntrypointApp; reused: boolean } {
+  for (const existing of entrypointApps.values()) {
+    if (
+      existing.ref.environmentId === input.ref.environmentId
+      && existing.ref.sessionId === input.ref.sessionId
+      && existing.app.binding.server === input.app.binding.server
+      && existing.app.toolName === input.app.toolName
+      && (existing.app.status === 'result' || existing.app.status === 'pending')
+    ) {
+      return { entry: existing, reused: true }
+    }
+  }
+  if (apps.size + entrypointApps.size >= MAX_OPEN) throw new McpAppsError('denied', 'Too many Apps are open')
+  const entry: HostEntrypointApp = {
+    ref: input.ref,
+    projectPath: input.projectPath,
+    entrypoint: input.entrypoint,
+    app: { ...input.app, appInstanceId: `host-app:${randomUUID()}`, status: 'pending' },
+  }
+  entrypointApps.set(entry.app.appInstanceId, entry)
+  return { entry, reused: false }
+}
+
 export function hostFileApp(ref: SessionRef, appInstanceId: string): HostFileApp | undefined {
   const entry = apps.get(appInstanceId)
   return entry && entry.ref.environmentId === ref.environmentId && entry.ref.sessionId === ref.sessionId ? entry : undefined
+}
+
+export function hostOpenedApp(ref: SessionRef, appInstanceId: string): HostOpenedApp | undefined {
+  return hostFileApp(ref, appInstanceId) ?? (() => {
+    const entry = entrypointApps.get(appInstanceId)
+    return entry && entry.ref.environmentId === ref.environmentId && entry.ref.sessionId === ref.sessionId ? entry : undefined
+  })()
+}
+
+export function hostEntrypointAppsForSession(ref: SessionRef): ToolAppAttachment[] {
+  const result: ToolAppAttachment[] = []
+  for (const entry of entrypointApps.values()) {
+    const matchesDirect = entry.ref.environmentId === ref.environmentId && entry.ref.sessionId === ref.sessionId
+    const matchesPaired = ref.environmentId === 'local' && entry.pairedSession?.sessionId === ref.sessionId
+    if (matchesDirect || matchesPaired) result.push(entry.app)
+  }
+  return result
 }
 
 export function updateHostFileApp(entry: HostFileApp, update: McpAppAttachmentUpdate | Partial<Pick<ToolAppAttachment, 'toolInput' | 'toolResult' | 'status' | 'error'>>): void {
@@ -73,13 +131,47 @@ export function updateHostFileApp(entry: HostFileApp, update: McpAppAttachmentUp
   entry.app = { ...entry.app, ...update }
 }
 
+export function updateHostOpenedApp(entry: HostOpenedApp, update: McpAppHostUpdate): void {
+  if ('path' in entry) {
+    updateHostFileApp(entry, update)
+    return
+  }
+  entry.app = applyMcpAppHostUpdate(entry.app, update)
+  const boundedUpdate: McpAppHostUpdate = entry.app.toolResultOmitted
+    ? { ...update, toolResult: undefined, toolResultOmitted: entry.app.toolResultOmitted }
+    : update
+  const payload = { sessionId: entry.ref.sessionId, projectPath: entry.projectPath, appInstanceId: entry.app.appInstanceId, update: boundedUpdate }
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) window.webContents.send('mcpApp:hostUpdated', payload)
+  }
+}
+
 export function releaseHostFileApp(entry: HostFileApp): void {
   unsubscribeHostFile(entry)
   apps.delete(entry.app.appInstanceId)
 }
 
+export function releaseHostOpenedApp(ref: SessionRef, appInstanceId: string): void {
+  const file = hostFileApp(ref, appInstanceId)
+  if (file) {
+    releaseHostFileApp(file)
+    return
+  }
+  const entry = entrypointApps.get(appInstanceId)
+  if (entry && entry.ref.environmentId === ref.environmentId && entry.ref.sessionId === ref.sessionId) {
+    entrypointApps.delete(appInstanceId)
+  }
+}
+
 export function releaseHostFileApps(ref: SessionRef): void {
   for (const entry of [...apps.values()]) if (entry.ref.environmentId === ref.environmentId && entry.ref.sessionId === ref.sessionId) releaseHostFileApp(entry)
+  for (const entry of [...entrypointApps.values()]) {
+    if (entry.ref.environmentId === ref.environmentId && entry.ref.sessionId === ref.sessionId) {
+      entrypointApps.delete(entry.app.appInstanceId)
+    } else if (ref.environmentId === 'local' && entry.pairedSession?.sessionId === ref.sessionId) {
+      entry.pairedSession = undefined
+    }
+  }
 }
 
 function assertOwnUri(entry: HostFileApp, uri: string): void {

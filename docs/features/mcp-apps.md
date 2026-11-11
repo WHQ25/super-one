@@ -7,11 +7,15 @@ renders the resource as a **View** bound to that one tool call, on desktop, on
 the phone and for sessions running on a remote node.
 
 We implement the [stable spec 2026-01-26](https://github.com/modelcontextprotocol/ext-apps/blob/main/specification/2026-01-26/apps.mdx)
-with `@modelcontextprotocol/ext-apps` **1.7.5** and `@modelcontextprotocol/sdk`
-**1.32.2** on the SDK 1.x line. Where spec prose and the
+and production host extensions with `@modelcontextprotocol/ext-apps` **2.1.0**
+(`@modelcontextprotocol/client` **^2.0.0** and `@modelcontextprotocol/core`
+**^2.0.0** for `AppBridge`), while keeping `@modelcontextprotocol/sdk` **1.32.2**
+for harness SDKs and local MCP servers. Where spec prose and the
 pinned SDK schema disagree, the schema wins (`ui/message.content` is an array).
-Draft features (sampling, app-provided tools) are not advertised, except
-`ui/download-file` (below). The deprecated flat `_meta["ui/resourceUri"]` is read as a
+View-originated `sampling/createMessage` is not advertised; `ui/download-file`,
+`ui/notifications/request-teardown`, and bidirectional App Tools
+(`app.registerTool` and WebMCP `navigator.modelContext` bridging) are supported
+(below). The deprecated flat `_meta["ui/resourceUri"]` is read as a
 fallback; OpenAI's `openai/outputTemplate` is out of scope. SuperOne's own UI
 surfaces (`widget_show`, mini-apps) keep their own contracts.
 
@@ -38,10 +42,11 @@ feature takes the first path that works, and is not built otherwise:
 1. **Native**: the harness speaks it (Codex `mcpServer/tool/call` with request
    `_meta`, full `Tool._meta`, client extensions in `initialize`).
 2. **Host to server**: the host reaches the server itself. View ↔ host
-   features (`openai/message`, `openai/modelContext`, display modes) need no
-   server; host-initiated calls (`mentions/search`, file entrypoints) use the
-   harness's channel, or SuperOne's direct client (`hostClient`) where the
-   native one lacks the data, as on Claude.
+   features (`openai/message`, `openai/modelContext`, display modes, App Tools)
+   need no server; host-initiated calls (`mentions/search`, `file` / `thread` /
+   `global` entrypoints) use the harness's channel, or SuperOne's direct client
+   (`hostClient`) where the native one lacks the data (Claude sessions) or when
+   discovering uncached global entrypoints outside a live session.
 3. **Neither**: unsupported. Server → harness features that require the
    harness to declare a capability in MCP `initialize` (`openai/elicitation`
    forms) exist only where the harness can declare it, today Codex.
@@ -115,8 +120,11 @@ unsupported there. These surfaces do not open the desktop's picker or preview.
   corresponding host-to-View reply; other bridge traffic keeps the 1 MiB cap. Initial
   resource reads allow the 2 MiB HTML plus 1 MiB metadata envelope on both
   providers. Presentation is separate: only a resolved safe image per theme
-  is saved, icons over 32 KiB are dropped, and presentation has a 70 KiB
-  budget. A large icon never makes otherwise valid tool data fail.
+  is saved, icons over 32 KiB are dropped, presentation has a 70 KiB budget,
+  and `toolDescriptor` retains a compact `McpToolDescriptor` (up to 32 KiB) so
+  `hostContext.toolInfo` exposes `{ id?, tool }` (`id` is `harnessCallId` for
+  agent calls and omitted for host-originated Views). A large icon or descriptor
+  never makes otherwise valid tool data fail.
 - **`mcp_app_updated`** is the harness-neutral host event that patches an
   attachment by `appInstanceId` (snapshot, model context), wherever it lives:
   content blocks, legacy Codex items or rows reconstructed from a remote node.
@@ -258,9 +266,10 @@ the only View-to-host entry, used by desktop IPC and by the phone's
 | `ui/message` | Confirmed every time (host card with labeled attachments, single-use challenge bound to requester, View, message and binding). `openai/message` defaults to `target: active`, which uses the View's original session and normal queue/receipt. On desktop, `target: new` creates a conversation in the same project and harness, switches to it, then sends through that path. Phone supports `active` only and explicitly refuses `new`. Three messages per View per minute. |
 | `ui/update-model-context` | Per-View context entry in the original session, last write wins. It keeps `content` / `structuredContent` with source attribution and accompanies every model request until replaced or removed. Each visible block is a removable composer attachment on desktop and phone; background-only state has one removable App context chip. The update result and `hostContext["openai/modelContext"]` carry `updateId`; cleared state is `null`. |
 | `openai/files/open` | Desktop local sessions only (`experimental["openai/files"]`); remote sessions and the phone do not advertise it. Main resolves the absolute path to an existing regular file's real path; inside the session's project it opens in the file preview directly, outside it needs a confirmation that shows the real path. The approval is bound to that real path, so a link changed after the prompt is refused. The provider is never contacted. |
-| `ui/download-file` | Advertised on desktop and phone for every session; files land on the device showing the View. Phone: the chat document resolves each item (embedded bytes and http(s) links as is, a link to the View's own server read through the host), the shell writes or fetches it into its cache and opens it in the file preview, whose menu saves or shares it. Desktop: each item (at most 8) opens the native save dialog, which names the App and is the confirmation; the first cancel stops the rest and answers `isError`. Downloads have no size cap: they cross only this desktop's IPC to a file the user chose. Embedded text/blob is written as sent; an http(s) link without credentials is fetched by main without cookies and streamed to disk; any other link is a transient `resources/read` on the View's own server. Bytes are fetched only after a path is chosen. |
+| `ui/download-file` | Advertised on desktop and phone for every session; files land on the device showing the View. Executable, installer, script-host and shortcut extensions (`.action`, `.apk`, `.app`, `.appimage`, `.appx`, `.bat`, `.cmd`, `.com`, `.command`, `.cpl`, `.deb`, `.desktop`, `.dmg`, `.exe`, `.hta`, `.jar`, `.js`, `.jse`, `.lnk`, `.msi`, `.msix`, `.pif`, `.pkg`, `.ps1`, `.reg`, `.rpm`, `.scr`, `.url`, `.vbe`, `.vbs`, `.workflow`, `.wsf`, `.wsh`), trailing dot/space disguises and Windows ADS (`:`) names are rejected (`isError: true`) before prompting and again on the user-chosen save path, while developer source files like `.py` and `.sh` remain allowed after confirmation. Phone: the chat document resolves each item (embedded bytes and http(s) links as is, a link to the View's own server read through the host), the shell writes or fetches it into its cache and opens it in the file preview, whose menu saves or shares it. Desktop: each item (at most 8) opens the native save dialog, which names the App and is the confirmation; the first cancel stops the rest and answers `isError`. Downloads have no size cap: they cross only this desktop's IPC to a file the user chose. Embedded text/blob is written as sent; an http(s) link without credentials is fetched by main without cookies and streamed to disk; any other link is a transient `resources/read` on the View's own server. Bytes are fetched only after a path is chosen. |
 | `ui/open-link` | The shared host accepts credential-free http(s) only. Desktop opens it through the standard external-link prompt (built-in or external browser); the phone uses the transcript link path. |
 | `ui/request-display-mode` | Allowed when the host offers the mode and, if the View declared `availableDisplayModes`, the View declared it too. An undeclared View's request counts as intent. Otherwise the answer is `inline`. |
+| `ui/notifications/request-teardown` | The host gracefully runs `ui/resource-teardown`, revokes the View's bridge and transitions the desktop/phone UI out of its mounted state (closing fullscreen/PiP/panel tabs or marking inline Views closed). |
 
 `experimental["openai/message"]` and message text/image/resourceLink/resource
 modalities are advertised by the shared host on both shells. The pinned
@@ -316,11 +325,113 @@ tool requests the backend reads provider ancestry and resumes that child on the
 current connection. An unrelated thread cannot reuse the parent's session
 binding. Child `thread/started` notifications never select a new root thread.
 
+## App-provided tools (`app.registerTool` and WebMCP)
+
+Views using `@modelcontextprotocol/ext-apps` (`app.registerTool` or 2.1's
+built-in WebMCP `navigator.modelContext` bridge) or answering `tools/list` and
+`tools/call` directly expose live client-side tools to the session's agent:
+
+- **Host tool surface**: `superone-mcp-server` and
+  `HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS` register `mcp_app_tools_list`
+  (read-only) and `mcp_app_tools_call` (mutating, non-requeueable) across local
+  Claude, Codex, ACP/Grok, and desktop-controlled remote-node sessions (routed
+  through the Host Action queue to `desktopHostActionExecutor`, matching
+  `browser_tools_*`; standalone headless CLI sessions with no connected Desktop
+  Host Action consumer do not advertise them). Calls render with a dedicated
+  chat `ToolBlock` (`McpAppToolsBlock`).
+- **Live registry and control-lease routing**: `McpAppToolsRegistry`
+  (`main/mcp-apps/app-tools-registry.ts`) holds View tools in memory per
+  `(sessionId, requesterKey, viewId)` (`requesterKey` is `desktop` or
+  `mobile:<deviceId>`, `viewId` is `appInstanceId`). Tools populate after
+  `ui/initialize` when `appCapabilities.tools` is declared, refresh (debounced)
+  on `notifications/tools/list_changed`, and purge immediately on View unmount,
+  teardown, `releaseSession`, renderer disconnect or mobile lease loss. When
+  both desktop and a paired phone mount the same `viewId`, `mcp_app_tools_list`
+  deduplicates by `viewId` preferring the session's active control-lease holder,
+  and `mcp_app_tools_call` routes to the control-lease holder when mounted
+  there, otherwise to the sole mounted surface, with a 45-second post-approval
+  execution timeout.
+- **Ambient turn discovery**: client-side message send on desktop and phone
+  appends an agent-only `<superone-mcp-app-tools>` block listing open Views and
+  their tools (`name` plus truncated first-line description), explicitly framed
+  as untrusted third-party View data with `<superone-*>` tags escaped, and
+  stripped from user bubbles, copy text, auto-titles and draft restore.
+- **Approval security**: in standard permission mode every `mcp_app_tools_call`
+  prompts for user approval via `McpAppConsent` / `McpAppConsentCard` —
+  including tools declaring `readOnlyHint: true`, because annotations come from
+  an untrusted View — unless covered by session auto-approval or a saved
+  "Always allow" rule pinned to `(projectScope, serverId, originToolName,
+  appToolName, definitionHash)` over canonical `{ title, description,
+  inputSchema }` (`schemaFallback` tools allow one-shot approval only). Any
+  View-originated requests triggered while an App Tool runs (`tools/call` to the
+  server, `ui/message`, `ui/open-link`, `ui/download-file`) still pass their own
+  host gates.
+
+## Entry points (`global`, `thread`, `file`)
+
+Tools declaring `_meta.ui.resourceUri` (`ui://...`) and
+`_meta["openai/ui"].entrypoints` (or `_meta.ui.entrypoints`, including OpenAI
+`quickAction: { title, icons }` presentation fallbacks) can be opened by the
+host without an agent tool call (model `visibility` is ignored for entrypoint
+tools):
+
+- **File entry points** (`type: "file"`): listed under "Open with" in file
+  previews and file menus (`main/mcp-apps/host-files.ts`, `file-apps-ipc.ts`).
+  Bound to a single `host-resource://` file URI (`read`, `subscribe`,
+  `openai/resources/write` with `ifMatch`) and `_meta["openai/resource"].path`
+  injection; `ui/message` and `ui/update-model-context` are disabled.
+- **Global & Thread entry points** (`type: "global"`, `type: "thread"`):
+  consolidated in the Mini-Apps drawer (`AppDrawer.tsx`) and Apps sidebar panel
+  (`AppsPanel.tsx`) under a dedicated **MCP Apps** group
+  (`GlobalMcpAppsSection.tsx`, `entrypoint-apps.ts`).
+  - **Discovery & caching**: `entrypoints-cache.ts` stores lightweight metadata
+    (`mcp-app-entrypoints.json` in `userData`) for both `global` and `thread`
+    tools keyed by `(projectBucket, harness, serverName)` and
+    `configFingerprint`, painting cached Apps on cold startup with
+    zero process spawns. User-scope servers (`~/.claude.json`,
+    `~/.codex/config.toml`) share a project-independent `'__user__'` bucket and
+    load even when no project folder is open (`projectPath === ""`); opening a
+    local project merges its project-scope servers (`<project>/.mcp.json`,
+    `<project>/.codex/config.toml`). Opening the drawer or refreshing lazily
+    connects via `hostClient` (`listMcpConfigs`, using `homedir()` as `cwd` for
+    user-scope discovery when no project is open) only for uncached or
+    fingerprint-invalidated servers and merges live session servers via
+    `findHostTools`, enforcing project-scope stdio trust checks (`~/.claude.json`
+    `enabledMcpjsonServers` / `enableAllProjectMcpServers` and
+    `~/.codex/config.toml` `trust_level === "trusted"`) before spawning any
+    project `stdio` server.
+  - **Session & harness filtering**: when a session is active (including draft
+    sessions), the group filters to the session's selected harness (`claude` or
+    `codex`), showing both `global` and `thread` entrypoints for that harness
+    (deduplicated per `(server, tool)` when a tool declares both) and hiding the
+    group on unsupported harnesses (`acp`, `opencode`, `deepseek`, `cursor`).
+    When no session is active (including when no project is open), only `global`
+    entrypoints are shown, deduplicating identical `(server, resourceUri,
+    title)` entries across harnesses.
+  - **Launch routing**: clicking a `thread`-capable entrypoint in an active
+    non-empty session deduplicates a single live instance per
+    `(sessionId, server, tool)`, invokes the tool with `{}`, docks the View as
+    an activity tab in that session, and binds `ui/message` and
+    `ui/update-model-context` to it (`host-resource://` stays disabled).
+    Clicking a `global` entrypoint opens directly in the side activity panel via
+    a sessionless standalone host provider (`main/mcp-apps/standalone-provider.ts`,
+    keyed by `mcp-global:<harness>:<encodedProjectPath>`) without creating or
+    switching chat sessions, immediately mounting a loading tab while `tools/call`
+    runs asynchronously and pushing completion via `mcpApp:hostUpdated`.
+    Confirmation cards (`ui/message`, `openai/files/open`, App Tools) render
+    inline inside `McpAppPanel` when opened standalone; sending a message via
+    `ui/message` lazily creates (or reuses for `target: "active"`) a paired chat
+    session on the App's harness (falling back to the first local project when
+    opened without a project) and forwards any accumulated `modelContext`.
+
 ## View host
 
 `packages/shared/src/mcp-apps-host/` is shared by desktop and phone: the
-per-directive CSP builder, theme to `hostContext` mapping, document
-generations, a guarded `PostMessageTransport` and the `AppBridge` adapter.
+per-directive CSP builder, full 76-variable `McpUiStyles` token map
+(`mcp-apps-host/styles.ts`) and theme-to-`hostContext` mapping (`toolInfo`,
+mode-specific `containerDimensions`: `{ width, maxHeight }` in `inline` and
+`pip`, `{ width, height }` in `fullscreen`), document generations, a guarded
+`PostMessageTransport` and the `AppBridge` adapter.
 The barrel has no runtime SDK; shells lazy-load `host` and `transport`.
 Every iframe `load` calls `document.loaded()`; a second load permanently
 revokes the bridge (the View shows Restart).
@@ -349,7 +460,9 @@ revokes the bridge (the View shows Restart).
   a main-registered handle. Navigation, release and window close abort its
   pending work.
 - **Presentation**: an available View replaces its tool row, in the same
-  borderless frame as widgets (`EmbeddedToolView`), with the header pinned.
+  borderless frame as widgets (`EmbeddedToolView`), with the header pinned; an
+  inline card border is drawn only when `_meta.ui.prefersBorder === true`
+  (matching phone; panel/fullscreen stays borderless).
   Inline Views have no host height cap. The
   header shows the server icon (`ToolBrandIcon`, tool icons then server icons
   then the MCP fallback),
@@ -363,13 +476,26 @@ revokes the bridge (the View shows Restart).
   snapshot. Until activation the header ends with an Activate button that
   pulses when a blocked operation is attempted. Its tooltip explains
   reconnecting; an activation error shows as a note under the header.
-- **Display modes**: `inline`, `fullscreen` and `pip`. Fullscreen is a
+- **Display modes**: `inline`, `fullscreen` and `pip` (narrowed by resource
+  `_meta["openai/ui"].availableDisplayModes` when declared). When a View omits
+  `appCapabilities.availableDisplayModes`, it defaults to `['inline',
+  'fullscreen']` (matching Claude); an explicit `['inline']` or `[]` hides
+  expand actions. Resource `preferredDisplayMode` reads
+  `_meta.ui.preferredDisplayMode` first and falls back to
+  `_meta["openai/ui"].preferredDisplayMode` without narrowing
+  `availableDisplayModes`. When an agent-invoked View with
+  `preferredDisplayMode: "fullscreen"` finishes `ui/initialize` after a
+  non-error result, desktop opens it in the unmaximized side activity panel
+  unless another panel tab is already open or the user closed it. Views whose
+  resource or View modes offer `fullscreen` without `inline` render a compact
+  launch card in the transcript instead of an inline iframe. Fullscreen is a
   transient standard activity-panel tab; the View sees `fullscreen` whether or
   not the tab is maximized. A View request maximizes the tab. For Views that
-  declare fullscreen, the inline header adds Open in Panel (unmaximized) and
+  support fullscreen, the inline header adds Open in Panel (unmaximized) and
   Full Screen (maximized); the tab's own maximize/restore action switches
   between the two. Closing the tab, Esc or a View request for inline return the
-  View to the chat and restore the panel's previous state. The inline header's
+  View to the chat and restore the panel's previous state (for host-opened
+  Views with no inline row, leaving the tab closes the View). The inline header's
   title and trailing chevron collapse the View to its header by zeroing the
   inline height, so the document stays connected. The controller owns
   the iframe outside React and moves it with `moveBefore()`, which keeps the
@@ -422,8 +548,8 @@ authorization page (http(s) only) and waits until `tools` stops reporting
 
 - **Fixture server**: `apps/desktop/src/test/fixtures/mcp-apps/fixture-server.ts`
   (stdio or `--http [--token | --oauth]`). It provides model-only, app-only,
-  default and legacy-key tools, private `_meta`, `outputSchema`, `isError`
-  and a cancellable slow tool.
+  default, legacy-key and `global`/`thread` entrypoint (`fixture_open_board`)
+  tools, private `_meta`, `outputSchema`, `isError` and a cancellable slow tool.
 - **Live harness checks** (isolated credential stores):
   `apps/desktop/scripts/check-claude-mcp-apps.ts`, `check-codex-mcp-apps.ts`
   and `check-mcp-apps-oauth.ts`. Rerun the Claude check whenever the SDK
@@ -431,8 +557,10 @@ authorization page (http(s) only) and waits until `tools` stops reporting
 - **Electron security and display modes**:
   `bunx playwright test e2e/mcp-apps-security.spec.ts` from `apps/desktop`
   (needs sandbox escalation).
-- **Stories**: `McpAppView.stories.tsx` (desktop, `Chat/MCP Apps`), checked by
-  `e2e/mcp-apps-stories.spec.ts` against a running Storybook, and
-  `PortableMcpAppView.stories.tsx` (phone).
+- **Stories**: `McpAppView.stories.tsx` (desktop, `Chat/MCP Apps`, checked by
+  `e2e/mcp-apps-stories.spec.ts` against a running Storybook),
+  `PortableMcpAppView.stories.tsx` (phone), `McpAppConsent.stories.tsx`
+  (App Tool consent states), `AppToolBlock.stories.tsx` (App Tool rows) and
+  `GlobalMcpAppsSection.stories.tsx` (AppDrawer / Apps panel `MCP Apps` group).
 - **Replay**: `claude-mcp-apps.sdk.json` covers a direct call and a subagent
   call.

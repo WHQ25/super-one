@@ -59,6 +59,24 @@ describe('saveMcpAppDownloads', () => {
     expect(creds.ports.fetch).not.toHaveBeenCalled()
     expect(creds.ports.read).toHaveBeenCalled()
   })
+
+  it('rejects blocked executable extensions before prompting and if renamed in the save dialog', async () => {
+    const pre = ports()
+    await expect(saveMcpAppDownloads([{ type: 'resource', resource: { uri: 'file:///dropper.exe', text: 'MZ' } }], pre.ports, signal()))
+      .resolves.toEqual({ isError: true })
+    expect(pre.ports.choosePath).not.toHaveBeenCalled()
+
+    const renamed = ports({ choosePath: vi.fn(async () => join(pre.dir, 'renamed.exe.')) })
+    await expect(saveMcpAppDownloads([{ type: 'resource_link', uri: 'https://example.com/report.pdf', name: 'Report' }], renamed.ports, signal()))
+      .resolves.toEqual({ isError: true })
+    expect(renamed.ports.fetch).not.toHaveBeenCalled()
+
+    const allowed = ports()
+    await expect(saveMcpAppDownloads([
+      { type: 'resource', resource: { uri: 'file:///tool.py', text: 'print(1)' } },
+      { type: 'resource', resource: { uri: 'file:///build.sh', text: 'echo ok' } },
+    ], allowed.ports, signal())).resolves.toEqual({})
+  })
 })
 
 const APP: ToolAppAttachment = { appInstanceId: 'view', binding: { node: 'local', session: 's', server: 'cad', configGeneration: 0, configFingerprint: 'c' },

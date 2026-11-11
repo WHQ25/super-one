@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { ReactNode } from 'react'
-import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
+import type { McpAppHostUpdate, ToolAppAttachment } from '@superone/shared/mcp-apps'
+import { applyMcpAppHostUpdate } from '@superone/shared/mcp-apps-state'
 import type { McpAppDesktopApi, McpAppRoute } from './desktop-executor'
 import { syncMcpAppTab } from '@/components/activity/mcp-app-tabs'
 
@@ -24,13 +25,28 @@ const surfaces = new Map<string, Partial<Record<McpAppSurface, HTMLElement>>>()
 const claims = new Map<string, Map<symbol, Omit<McpAppOwner, 'mode'>>>()
 const transcripts = new Set<symbol>()
 const retainedViews = new Map<string, Set<symbol>>()
+const fullscreenHandled = new Set<string>()
+
+export function wasMcpAppAutoOpenHandled(key: string): boolean {
+  return fullscreenHandled.has(key)
+}
+
+export function markMcpAppAutoOpenHandled(key: string): void {
+  fullscreenHandled.add(key)
+}
 
 function pruneUnclaimedView(key: string): void {
   const state = useMcpAppLayout.getState()
   if (state.views[key]?.row || claims.get(key)?.size) return
   state.surface(key, 'inline', null)
   if (state.views[key]?.mode !== 'inline' || [...(retainedViews.get(key) ?? [])].some(token => transcripts.has(token))) return
-  useMcpAppLayout.setState(current => { const views = { ...current.views }; delete views[key]; return { views } })
+  useMcpAppLayout.setState(current => {
+    const views = { ...current.views }
+    const overlays = { ...current.overlays }
+    delete views[key]
+    delete overlays[key]
+    return { views, overlays }
+  })
   surfaces.delete(key)
   retainedViews.delete(key)
 }
@@ -105,12 +121,15 @@ export function resumeMcpAppFullscreenFrames(): void {
 
 interface McpAppLayoutState {
   views: Record<string, McpAppOwner>
+  overlays: Record<string, HTMLElement | null>
   claim(owner: Omit<McpAppOwner, 'mode'>): () => void
   /** Show a host-opened View (`onClose` set) in its own activity tab. */
   openHost(owner: Omit<McpAppOwner, 'mode' | 'row'> & { onClose: () => void }, maximized?: boolean): void
+  updateHostApp(key: string, update: McpAppHostUpdate): void
   /** `maximized` applies to the fullscreen activity tab only. */
   setMode(key: string, mode: McpAppSurface, maximized?: boolean): void
   surface(key: string, mode: McpAppSurface, element: HTMLElement | null): void
+  overlay(key: string, element: HTMLElement | null): void
   frame(key: string, iframe: HTMLIFrameElement, revoke: () => void): () => void
   clear(): void
 }
@@ -118,6 +137,7 @@ interface McpAppLayoutState {
 /** Owns the document independently of transcript rows, including virtualization. */
 export const useMcpAppLayout = create<McpAppLayoutState>((set, get) => ({
   views: {},
+  overlays: {},
   claim(owner) {
     const key = owner.app.appInstanceId
     if (owner.retention) {
@@ -153,6 +173,16 @@ export const useMcpAppLayout = create<McpAppLayoutState>((set, get) => ({
     if (!get().views[key]) set(state => ({ views: { ...state.views, [key]: { ...owner, row: null, mode: 'fullscreen' } } }))
     syncMcpAppTab(key, 'fullscreen', maximized)
   },
+  updateHostApp(key, update) {
+    const current = get().views[key]
+    if (!current || !current.onClose) return
+    set(state => ({
+      views: {
+        ...state.views,
+        [key]: { ...current, app: applyMcpAppHostUpdate(current.app, update) },
+      },
+    }))
+  },
   setMode(key, mode, maximized = true) {
     const owner = get().views[key]
     if (!owner) return
@@ -160,13 +190,20 @@ export const useMcpAppLayout = create<McpAppLayoutState>((set, get) => ({
       // A host-opened View has no row to return to: leaving its tab closes it.
       move(key, true)
       syncMcpAppTab(key, 'inline')
-      set(state => { const views = { ...state.views }; delete views[key]; return { views } })
+      set(state => {
+        const views = { ...state.views }
+        const overlays = { ...state.overlays }
+        delete views[key]
+        delete overlays[key]
+        return { views, overlays }
+      })
       surfaces.delete(key)
       owner.onClose()
       return
     }
     // Park synchronously before React can remove the previous surface.
     move(key, true)
+    if (owner.mode === 'fullscreen' && mode === 'inline') fullscreenHandled.add(key)
     set(state => ({ views: { ...state.views, [key]: { ...owner, mode } } }))
     syncMcpAppTab(key, mode, maximized)
     refreshClaim(key)
@@ -183,6 +220,15 @@ export const useMcpAppLayout = create<McpAppLayoutState>((set, get) => ({
       if (frame && !frame.iframe.isConnected) invalidMove(frame)
     }
   },
+  overlay(key, element) {
+    set(state => {
+      if ((state.overlays[key] ?? null) === element) return state
+      const overlays = { ...state.overlays }
+      if (element) overlays[key] = element
+      else delete overlays[key]
+      return { overlays }
+    })
+  },
   frame(key, iframe, revoke) {
     parkingContainer().appendChild(iframe) // Initial insertion, before setting src.
     const owner = { iframe, revoke, failed: false }
@@ -195,6 +241,6 @@ export const useMcpAppLayout = create<McpAppLayoutState>((set, get) => ({
   },
   clear() {
     for (const key of Object.keys(get().views)) get().setMode(key, 'inline')
-    set({ views: {} }); surfaces.clear(); claims.clear(); retainedViews.clear()
+    set({ views: {}, overlays: {} }); surfaces.clear(); claims.clear(); retainedViews.clear(); fullscreenHandled.clear()
   },
 }))

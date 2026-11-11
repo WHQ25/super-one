@@ -1229,6 +1229,11 @@ export class ChatRuntime {
 
   private handleSideEvent(event: AgentEvent): boolean {
     if (this.widgetComposers.consume(event)) return true
+    if ((event as unknown as { type?: string })?.type === 'mcp_app_tool_request') {
+      const req = event as unknown as import('@superone/shared/mcp-app-tools').McpAppToolClientEvent
+      if (req.sessionId === this.sessionId) this.hooks.onMcpAppToolRequest?.(req)
+      return true
+    }
     if (event.type === 'remote_detail') {
       if (event.sessionId === this.sessionId) this.hooks.onDetail?.(event)
       return true

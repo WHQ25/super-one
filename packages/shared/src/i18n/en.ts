@@ -675,6 +675,7 @@ export type Messages = {
       previewInBrowser: string
     }
     appDrawer: {
+      miniAppsSection: string
       buildYourOwn: string
       marketplace: string
       buildAppPrompt: string
@@ -3709,6 +3710,16 @@ export type Messages = {
           unknown: string
         }
       }
+      mcpAppTools: {
+        toolsList: string
+        listingTools: string
+        toolsListed_one: string
+        toolsListed_other: string
+        toolsEmpty: string
+        toolsCall: string
+        arguments: string
+        result: string
+      }
     }
     workflow: {
       running: string
@@ -4791,6 +4802,22 @@ export type Messages = {
     superOnePreview: string
     openWithApp: string
     openFileFailed: string
+    fullscreenOnly: string
+    closed: string
+    approveAppTool: string
+    alwaysAllow: string
+    appToolPrompt: string
+    readOnlyBadge: string
+    destructiveBadge: string
+    openWorldBadge: string
+    idempotentBadge: string
+    schemaUnverified: string
+    openApp: string
+    openAppFailed: string
+    noEntrypointApps: string
+    discoverApps: string
+    incompleteApps: string
+    mcpAppsSection: string
   }
   mediaPlayer: {
     play: string
@@ -5613,6 +5640,7 @@ export const en: Messages = {
       previewInBrowser: 'Preview in Browser',
     },
     appDrawer: {
+      miniAppsSection: 'Mini Apps',
       buildYourOwn: 'Build Your Own',
       marketplace: 'Marketplace',
       buildAppPrompt: 'Help me build a mini app for SuperOne. First call `read_manual({ domain: "miniapp", topic: "overview" })` (via the `superone` MCP server) to load the development guide, then guide me through the process step by step.',
@@ -8726,6 +8754,16 @@ export const en: Messages = {
           unknown: 'Unknown',
         },
       },
+      mcpAppTools: {
+        toolsList: 'List App Tools',
+        listingTools: 'Listing App Tools',
+        toolsListed_one: 'Listed {{count}} App Tool',
+        toolsListed_other: 'Listed {{count}} App Tools',
+        toolsEmpty: 'No App Tools',
+        toolsCall: 'Call App Tool',
+        arguments: 'Arguments',
+        result: 'Result',
+      },
     },
     workflow: {
       running: 'Running',
@@ -9808,6 +9846,22 @@ export const en: Messages = {
     superOnePreview: 'SuperOne Preview',
     openWithApp: 'Open with {{app}}',
     openFileFailed: 'Could not open {{name}}: {{error}}',
+    fullscreenOnly: 'This App opens in fullscreen.',
+    closed: 'The App closed its View.',
+    approveAppTool: 'Run App Tool',
+    alwaysAllow: 'Always Allow',
+    appToolPrompt: 'The agent wants to run “{{tool}}” in {{server}}.',
+    readOnlyBadge: 'Read-Only',
+    destructiveBadge: 'Destructive',
+    openWorldBadge: 'External',
+    idempotentBadge: 'Idempotent',
+    schemaUnverified: 'Input schema exceeds validation limits; one-time approval only.',
+    openApp: 'Open App',
+    openAppFailed: 'Could not open {{app}}: {{error}}',
+    noEntrypointApps: 'No MCP Apps available in this session.',
+    discoverApps: 'Refresh MCP Apps',
+    incompleteApps: 'Some MCP servers did not respond.',
+    mcpAppsSection: 'MCP Apps',
   },
   mediaPlayer: {
     play: 'Play',

@@ -2,7 +2,7 @@ import type { McpUiMessageRequest, McpUiRequestDisplayModeRequest } from '@model
 import { McpAppsError, type McpAppApprovalPrompt, type McpAppHostOperation, type McpAppHostResult, type McpAppReadResult, type McpAppsCallResult } from '@superone/shared/mcp-apps'
 import type { McpAppHostExecutor } from '@superone/shared/mcp-apps-host'
 import { NativeRequestTimeout, requestNative, requestNativeAsync } from './bridge'
-import { isMcpAppHttpDownload, mcpAppDownloadName, type McpAppLocalDownload } from '@superone/shared/mcp-app-download'
+import { isBlockedMcpAppDownloadItem, isBlockedMcpAppDownloadName, isMcpAppHttpDownload, mcpAppDownloadName, type McpAppLocalDownload } from '@superone/shared/mcp-app-download'
 import { markMcpAppInactive } from './mcp-app-document'
 
 export type McpAppDisplayMode = McpUiRequestDisplayModeRequest['params']['mode']
@@ -127,6 +127,7 @@ export function createMcpAppExecutor(
       const items: McpAppLocalDownload[] = []
       for (const item of contents) {
         const name = mcpAppDownloadName(item)
+        if (isBlockedMcpAppDownloadItem(item) || isBlockedMcpAppDownloadName(name)) return { isError: true }
         if (item.type === 'resource') { items.push(localDownload(name, item.resource)); continue }
         if (isMcpAppHttpDownload(item.uri)) { items.push({ name, mimeType: item.mimeType ?? DEFAULT_MIME_TYPE, url: item.uri }); continue }
         const read = await run<McpAppReadResult>({ operation: 'readResource', uri: item.uri }, signal)

@@ -73,3 +73,32 @@ it('ignores old runtime status arriving after revive and keeps the old View disc
   expect(await oldStatus).toEqual([])
   await expect(read()).rejects.toMatchObject({ code: 'not_connected', message: 'MCP App server configuration changed' })
 })
+
+it('exposes hostClient bindings on an empty session before the first turn assigns a providerSessionId', async () => {
+  const httpConfig = { type: 'http', url: 'https://cad.example/mcp' }
+  const backend = new ClaudeBackend(); runtimes.push(backend)
+  hoisted.captured.mockQueryMcpServerStatus.mockResolvedValue([{
+    name: 'cad',
+    status: 'connected',
+    config: httpConfig,
+    tools: [{ name: 'open_library', _meta: { ui: { resourceUri: 'ui://cad/library.html' } } }],
+  }])
+  await backend.start(makeStartOpts())
+
+  const bindings = await backend.getMcpAppsHostBindings()
+  expect(bindings).toEqual([
+    {
+      binding: {
+        ...binding,
+        configFingerprint: mcpServerConfigFingerprint(httpConfig),
+        hostClient: true,
+      },
+      origin: { providerSessionId: 'claude-host-pending' },
+    },
+  ])
+
+  const provider = await backend.getMcpAppsProvider(bindings[0]!.binding, bindings[0]!.origin)
+  hoisted.captured.onSessionId?.('thread-after-turn')
+  expect(backend.getCurrentProviderSessionId()).toBe('thread-after-turn')
+  provider.dispose()
+})

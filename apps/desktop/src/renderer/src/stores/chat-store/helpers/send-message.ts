@@ -674,6 +674,16 @@ export async function sendMessageImpl(
 
 
   if (!resolvedSessionId) return
+  if (!isCompactSlash && !isRecapSlash && (!resolvedCodexCommand || resolvedCodexCommand.kind === 'run')) {
+    const { mcpAppToolsContentForModel } = await import('../../../components/mcp-apps/mention-content')
+    const appToolsSuffix = await mcpAppToolsContentForModel(projectPath, resolvedSessionId)
+    if (appToolsSuffix) {
+      finalContent += appToolsSuffix
+      if (effectiveProvider === 'codex' && resolvedCodexCommand?.kind === 'run') {
+        resolvedCodexCommand = { kind: 'run', prompt: finalContent }
+      }
+    }
+  }
   // A Codex review or compact names its turn kind; everything else is a run.
   const codexTurn = resolvedCodexCommand?.kind === 'review'
     ? { turnKind: 'review' as const, reviewTarget: resolvedCodexCommand.target }

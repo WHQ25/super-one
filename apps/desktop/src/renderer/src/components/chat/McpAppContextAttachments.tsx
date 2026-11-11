@@ -4,6 +4,7 @@ import { mcpAppContextAttachments } from '@superone/shared/mcp-apps-state'
 import { ContextAttachments } from '@superone/ui/components/ui/context-attachments'
 import { useActiveSession, useChatStore, useSessionScope } from '@/stores/chat'
 import { useIsDark } from '@/hooks/use-is-dark'
+import { useMcpAppLayout } from '@/components/mcp-apps/layout-store'
 
 /** Producer wiring; the presentation remains generic for future agent.setContext callers. */
 export function McpAppContextAttachments() {
@@ -19,8 +20,15 @@ export function McpAppContextAttachments() {
   const currentRoute = useRef(routeKey); currentRoute.current = routeKey
   const isDark = useIsDark()
   const { t } = useTranslation()
-  const items = useMemo(() => mcpAppContextAttachments(messages ?? [], isDark ? 'dark' : 'light')
-    .map(item => item.fields === undefined ? item : { ...item, title: t('mcpApp.contextFields', { count: item.fields }) }), [messages, isDark, t])
+  const views = useMcpAppLayout(state => state.views)
+  const hostApps = useMemo(() => {
+    if (!route) return []
+    return Object.values(views)
+      .filter(owner => owner.onClose && !owner.app.file && owner.route.projectPath === route.projectPath && owner.route.sessionId === route.sessionId)
+      .map(owner => owner.app)
+  }, [route, views])
+  const items = useMemo(() => mcpAppContextAttachments(messages ?? [], isDark ? 'dark' : 'light', hostApps)
+    .map(item => item.fields === undefined ? item : { ...item, title: t('mcpApp.contextFields', { count: item.fields }) }), [messages, hostApps, isDark, t])
   const [pending, setPending] = useState<{ route: string; views: string[] }>({ route: '', views: [] })
   const [error, setError] = useState<{ route: string; message: string }>()
   const removing = pending.route === routeKey ? items.filter(item => pending.views.includes(item.appInstanceId)).map(item => item.id) : []

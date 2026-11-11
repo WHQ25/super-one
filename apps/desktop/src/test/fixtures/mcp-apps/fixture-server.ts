@@ -96,6 +96,22 @@ export function createFixtureServer(): FixtureServerHandle {
   )
 
   server.registerTool(
+    'fixture_open_board',
+    {
+      title: 'Fixture Board',
+      description: 'Open the fixture board directly from global or thread entry points.',
+      inputSchema: {},
+      outputSchema: itemsOutput,
+      annotations: { readOnlyHint: true },
+      _meta: {
+        ui: { resourceUri: FIXTURE_VIEW_URI, visibility: ['app'] },
+        'openai/ui': { entrypoints: [{ type: 'global' }, { type: 'thread' }] },
+      },
+    },
+    async () => pageResult(1, 'entrypoint'),
+  )
+
+  server.registerTool(
     'fixture_model_echo',
     {
       description: 'Model-only echo. A View calling it must be rejected by the host.',

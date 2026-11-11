@@ -364,7 +364,7 @@ export function McpAppTab(props: IDockviewPanelHeaderProps<{ appInstanceId: stri
     <HoverCloseSlot onClose={() => props.api.close()}>
       <ToolBrandIcon src={icon} alt={server} icon={getToolDisplay(owner?.toolName ?? `mcp__${server}__app`, {}).icon} />
     </HoverCloseSlot>
-    <TabTitle>{owner?.app.file?.name ?? server}</TabTitle>
+    <TabTitle>{owner?.app.file?.name ?? (owner?.onClose ? owner.title : undefined) ?? server}</TabTitle>
     <MaximizeTabAction api={props.api} active={active} />
   </div>
 }

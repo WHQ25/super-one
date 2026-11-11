@@ -13,6 +13,8 @@ import { MarqueeText } from '@superone/ui/components/ui/marquee-text'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { InstallPermissionDialog } from '@/components/miniapp/InstallPermissionDialog'
 import { SidebarCollapse } from '@/components/sidebar/SidebarCollapse'
+import { GlobalMcpAppsSection } from './GlobalMcpAppsSection'
+import { loadGlobalMcpAppEntrypoints, useVisibleMcpAppEntrypoints } from '@/components/mcp-apps/entrypoint-apps'
 import type { MiniAppEntry } from '@superone/shared/miniapp-types'
 import { NO_PROJECT_KEY } from '@superone/shared/miniapp-url'
 import { DndContext, closestCenter, PointerSensor, useSensor, useSensors, type DragEndEvent } from '@dnd-kit/core'
@@ -105,7 +107,12 @@ export function AppDrawer() {
   }, [expanded, refreshApps, currentFolder])
 
   const sensors = useSensors(useSensor(PointerSensor, { activationConstraint: { distance: 5 } }))
-  const totalApps = allApps.length
+  const { entrypoints: visibleMcpApps, loading: mcpAppsLoading, incomplete: mcpAppsIncomplete } = useVisibleMcpAppEntrypoints(currentFolder ?? '')
+  useEffect(() => {
+    void loadGlobalMcpAppEntrypoints(currentFolder ?? '', { discover: false })
+  }, [currentFolder])
+  const totalApps = allApps.length + visibleMcpApps.length
+  const hasMcpAppsGroup = visibleMcpApps.length > 0 || mcpAppsLoading || mcpAppsIncomplete
   const stackedApps = allApps.slice(0, MAX_STACKED_ICONS)
 
   const [appOrder, setAppOrder] = useState<string[]>([])
@@ -299,6 +306,13 @@ export function AppDrawer() {
                   className="sidebar-scroll max-h-96 min-h-0 [&_[data-slot=scroll-area-viewport]]:max-h-[inherit] [&_[data-slot=scroll-area-viewport]]:overscroll-contain [&_[data-slot=scroll-area-viewport]>div]:block!"
                 >
                   <div className="px-1 py-1">
+                    {orderedApps.length > 0 && hasMcpAppsGroup && (
+                      <div className="px-2 py-1">
+                        <span className="text-[11px] font-medium text-sidebar-foreground/50">
+                          {t('sidebar.appDrawer.miniAppsSection')}
+                        </span>
+                      </div>
+                    )}
                     <DndContext sensors={sensors} collisionDetection={closestCenter} onDragEnd={handleDragEnd}>
                       <SortableContext items={orderedApps.map((a) => a.id)} strategy={verticalListSortingStrategy}>
                         {orderedApps.map((app, i) => (
@@ -312,6 +326,13 @@ export function AppDrawer() {
                         ))}
                       </SortableContext>
                     </DndContext>
+                    <GlobalMcpAppsSection
+                      projectPath={currentFolder ?? ''}
+                      active={expanded}
+                      compact
+                      divided={orderedApps.length > 0}
+                      onAfterOpen={() => setExpanded(false)}
+                    />
                   </div>
                 </ScrollArea>
 

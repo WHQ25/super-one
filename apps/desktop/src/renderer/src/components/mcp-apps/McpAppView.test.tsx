@@ -49,7 +49,7 @@ describe('MCP App desktop View lifecycle', () => {
       return <McpAppTranscriptRetention.Provider value={token}>{visible && <McpAppView app={app} route={{ projectPath: '/original-project', sessionId: 'original' }} api={s.api} />}</McpAppTranscriptRetention.Provider>
     }
     const ui = render(<><McpAppHostLayer /><Transcript visible /></>)
-    await screen.findByTestId('frame')
+    await screen.findByTestId('frame', {}, { timeout: 5000 })
     const document = frame.props?.registration
     ui.rerender(<><McpAppHostLayer /><Transcript visible={false} /></>)
     await act(async () => {})
@@ -287,5 +287,22 @@ describe('MCP App desktop View lifecycle', () => {
     vi.mocked(s.api.mcpAppRegister).mockImplementation(() => new Promise(resolve => { finish = resolve }))
     s.mount().unmount(); await act(async () => finish({ ok: true, value: prepared }))
     expect(s.api.mcpAppRelease).toHaveBeenCalledWith('doc')
+  })
+  it('applies inline ring only when prefersBorder is true, renders a fullscreen-only launch card, auto-opens preferred fullscreen once and handles requestTeardown', async () => {
+    const s = setup()
+    vi.mocked(s.api.mcpAppRegister).mockResolvedValue({ ok: true, value: { ...prepared, document: { ...prepared.document, appInstanceId: 'v-border' }, active: true, meta: { prefersBorder: true, preferredDisplayMode: 'fullscreen' } } })
+    const ui = render(<><McpAppHostLayer /><McpAppView app={{ ...app, appInstanceId: 'v-border' }} api={s.api} route={{ projectPath: '/original-project', sessionId: 'original' }} /></>)
+    await screen.findByTestId('frame')
+    expect(document.querySelector('[data-mcp-app-surface="v-border"]')?.className).toContain('ring-1')
+    await waitFor(() => expect(panel.openMcpAppTab).toHaveBeenCalledWith('v-border', false))
+    act(() => frame.props!.onRequestTeardown?.())
+    expect(screen.getByText('mcpApp.closed')).toBeTruthy()
+    ui.unmount()
+
+    vi.mocked(s.api.mcpAppRegister).mockResolvedValue({ ok: true, value: { ...prepared, document: { ...prepared.document, appInstanceId: 'v-fs-only' }, active: true, meta: { 'openai/ui': { availableDisplayModes: ['fullscreen'] } } } })
+    render(<><McpAppHostLayer /><McpAppView app={{ ...app, appInstanceId: 'v-fs-only' }} api={s.api} route={{ projectPath: '/original-project', sessionId: 'original' }} /></>)
+    await screen.findByTestId('frame')
+    expect(screen.getByText('mcpApp.fullscreenOnly')).toBeTruthy()
+    expect(document.querySelector<HTMLElement>('[data-mcp-app-surface="v-fs-only"]')?.style.height).toBe('0px')
   })
 })

@@ -1,12 +1,13 @@
 import { useEffect, useRef, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import type { McpAppMessagePrompt } from '@superone/shared/mcp-apps'
+import type { McpAppMessagePrompt, McpAppToolPrompt } from '@superone/shared/mcp-apps'
 import { ContextAttachments } from '@superone/ui/components/ui/context-attachments'
 
+export type McpAppConsentDecision = boolean | { approved: boolean; alwaysAllow?: boolean }
+
 export interface McpAppConsentRequest {
-  /** The phone confirms only messages; the host refuses its other approval kinds before asking. */
-  prompt: McpAppMessagePrompt
-  resolve: (confirmed: boolean) => void
+  prompt: McpAppMessagePrompt | McpAppToolPrompt
+  resolve: (decision: McpAppConsentDecision) => void
 }
 
 function Action({ label, onPress, primary }: { label: string; onPress: () => void; primary?: boolean }) {
@@ -56,6 +57,43 @@ export function McpAppConsentCard({ request }: { request: McpAppConsentRequest }
   const { t } = useTranslation()
   const detail = 'rounded bg-background/60 px-2 py-1.5 text-xs text-foreground whitespace-pre-wrap break-words'
   const { prompt, resolve } = request
+  if (prompt.kind === 'callAppTool') {
+    const badges: Array<{ key: string; label: string; destructive?: boolean }> = []
+    if (prompt.annotations?.readOnlyHint) badges.push({ key: 'ro', label: t('mcpApp.readOnlyBadge') })
+    if (prompt.annotations?.destructiveHint) badges.push({ key: 'dest', label: t('mcpApp.destructiveBadge'), destructive: true })
+    if (prompt.annotations?.openWorldHint) badges.push({ key: 'ow', label: t('mcpApp.openWorldBadge') })
+    if (prompt.annotations?.idempotentHint) badges.push({ key: 'idem', label: t('mcpApp.idempotentBadge') })
+    return (
+      <ConsentDialog label={t('mcpApp.approveAppTool')}>
+        <p className="text-sm font-medium text-foreground">{t('mcpApp.approveAppTool')}</p>
+        <p className="text-xs text-muted-foreground">
+          {t('mcpApp.appToolPrompt', { tool: prompt.toolTitle || prompt.toolName, server: prompt.server })}
+        </p>
+        {badges.length > 0 ? (
+          <div className="flex flex-wrap gap-1.5">
+            {badges.map(badge => (
+              <span
+                key={badge.key}
+                className={`rounded px-1.5 py-0.5 text-[11px] font-medium ${badge.destructive ? 'bg-error/10 text-error' : 'bg-muted text-muted-foreground'}`}
+              >
+                {badge.label}
+              </span>
+            ))}
+          </div>
+        ) : null}
+        {prompt.description ? <p className="line-clamp-3 text-xs text-muted-foreground whitespace-pre-wrap break-words">{prompt.description}</p> : null}
+        {prompt.argsPreview !== '{}' ? <pre className={`${detail} max-h-40 overflow-y-auto`}>{prompt.argsPreview}</pre> : null}
+        {prompt.schemaFallback ? <p className="text-xs text-muted-foreground">{t('mcpApp.schemaUnverified')}</p> : null}
+        <div className="flex flex-wrap justify-end gap-2">
+          <Action label={t('common.cancel')} onPress={() => resolve(false)} />
+          {prompt.allowAlwaysAllow ? (
+            <Action label={t('mcpApp.alwaysAllow')} onPress={() => resolve({ approved: true, alwaysAllow: true })} />
+          ) : null}
+          <Action primary label={t('mcpApp.allow')} onPress={() => resolve({ approved: true })} />
+        </div>
+      </ConsentDialog>
+    )
+  }
   return (
     <ConsentDialog label={t('mcpApp.sendMessage', { server: prompt.server })}>
       <p className="text-sm text-foreground">{t('mcpApp.sendMessage', { server: prompt.server })}</p>

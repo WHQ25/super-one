@@ -10,6 +10,7 @@ export function phoneMethodScopes(method: string, sessionOperation: boolean, pay
     const operation = (payload?.request as { operation?: string } | undefined)?.operation
     return operation === 'writeResource' ? OPERATION_SCOPES.writeWorkspace : operation === 'load' ? OPERATION_SCOPES.readSession : OPERATION_SCOPES.operateSession
   }
+  if (method === 'mcpApps.toolsSync' || method === 'mcpApps.toolsRespond') return OPERATION_SCOPES.operateSession
   if (sessionOperation) return OPERATION_SCOPES.operateSession
   if (ACCESS_METHODS.has(method)) return OPERATION_SCOPES.manageAccess
   if (CLIENT_SCOPED.has(method)) return OPERATION_SCOPES.readEnvironment

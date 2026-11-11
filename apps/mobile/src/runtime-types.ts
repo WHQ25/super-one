@@ -22,6 +22,7 @@ export type WindowPage = {
 export type ChatRuntimeHooks = {
   onCommandError?(message: string): void
   onComposerResult?: (result: import('./widget-composer-client').WidgetComposerResult) => void
+  onMcpAppToolRequest?: (request: import('@superone/shared/mcp-app-tools').McpAppToolSurfaceRequest) => void
   onCachedHydrate?: () => void
   onDetail?: (event: Extract<AgentEvent, { type: 'remote_detail' }>) => void
   onSessionRecap?: (sessionId: string) => void

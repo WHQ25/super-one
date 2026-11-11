@@ -1,5 +1,6 @@
 import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
 import { MCP_RESOURCE_REMINDER_REGEX } from '@superone/shared/mcp-app-mentions'
+import { MCP_APP_TOOLS_REMINDER_REGEX } from '@superone/shared/mcp-app-tools'
 import { markSendFailure, withSendFailure, withoutSendFailure } from '@superone/shared/send-failure'
 import type { ChatCoreSession } from './types'
 
@@ -13,7 +14,7 @@ type SendRetriedEvent = Extract<AgentEvent, { type: 'user_message_send_retried' 
  * stored copy of mentioned MCP resources is what the host read, not what was typed.
  */
 export function userMessageText(message: ChatMessage): string {
-  return message.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('').replace(MCP_RESOURCE_REMINDER_REGEX, '')
+  return message.content.flatMap((b) => (b.type === 'text' ? [b.text] : [])).join('').replace(MCP_RESOURCE_REMINDER_REGEX, '').replace(MCP_APP_TOOLS_REMINDER_REGEX, '')
 }
 
 /** Put a sent message's text back in front of whatever has been typed since. */

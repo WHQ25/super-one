@@ -1,6 +1,7 @@
 import { ipcMain, shell } from 'electron'
 import { AgentIpcChannels } from '@superone/shared/agent-types'
 import { dispatchMcpAppsProviderRequest } from '@superone/runtime/mcp-apps/provider-rpc'
+import { parseMcpAppStandaloneSessionId } from '@superone/shared/mcp-app-entrypoints'
 import { McpAppsError, type McpAppsBinding, type McpAppOrigin } from '@superone/shared/mcp-apps'
 import type { McpAppsProviderRpcRequest, McpAppsRpcResult } from '@superone/shared/environment/mcp-apps-rpc'
 import type { Session } from '../session/types'
@@ -9,6 +10,8 @@ import { registerMcpAppDocumentIpc } from './document-ipc'
 import { registerMcpAppFileIpc } from './file-apps-ipc'
 import { registerMcpAppMentionIpc } from './mention-search-ipc'
 import { registerMcpFormResourceIpc } from './form-resources-ipc'
+import { registerMcpAppToolsIpc } from './app-tools-ipc'
+import { getStandaloneMcpAppsProvider } from './standalone-provider'
 import { windowControlIpc } from '../session/control-context'
 
 let registered = false
@@ -25,6 +28,9 @@ export async function routeMcpAppsProviderRequest(
     if (connectionId !== 'local') {
       const { getEnvironmentHost } = await import('../environment/environment-host')
       return await getEnvironmentHost().requestMcpAppsProvider(connectionId, input, signal)
+    }
+    if (parseMcpAppStandaloneSessionId(input.binding.session)) {
+      return dispatchMcpAppsProviderRequest(input, getStandaloneMcpAppsProvider(input.binding, input.origin), signal)
     }
     const session = getSession(input.binding.session)
     if (!session?.getMcpAppsProvider) throw new McpAppsError('not_connected', 'MCP Apps session unavailable')
@@ -43,6 +49,7 @@ export function registerMcpAppsProviderIpc(getSession: (id: string) => Session |
   registerMcpAppFileIpc(getSession, resumeSession)
   registerMcpAppMentionIpc(getSession, resumeSession)
   registerMcpFormResourceIpc(getSession)
+  registerMcpAppToolsIpc()
   windowIpc.handle(AgentIpcChannels.ENVIRONMENT_MCP_APPS_PROVIDER, (_event, connectionId: string, input: McpAppsProviderRpcRequest) =>
     routeMcpAppsProviderRequest(getSession, connectionId, input))
 

@@ -4,9 +4,9 @@ import { openFileTab } from '@/components/activity/activity-panel-api'
 import type { McpAppHostExecutor } from '@superone/shared/mcp-apps-host'
 import type { McpAppDocumentRegistration } from '@superone/shared/mcp-apps-desktop'
 
-export type McpAppDesktopApi = Pick<Window['environment'], 'mcpAppRegister' | 'mcpAppRelease' | 'mcpAppRequest' | 'mcpAppCancel' | 'onMcpAppDocumentRevoked' | 'mcpAppsAuthenticate'> & Partial<Pick<Window['environment'], 'onMcpAppEscape' | 'onMcpAppResourceUpdated' | 'mcpAppCloseFile'>>
+export type McpAppDesktopApi = Pick<Window['environment'], 'mcpAppRegister' | 'mcpAppRelease' | 'mcpAppRequest' | 'mcpAppCancel' | 'onMcpAppDocumentRevoked' | 'mcpAppsAuthenticate'> & Partial<Pick<Window['environment'], 'onMcpAppEscape' | 'onMcpAppResourceUpdated' | 'mcpAppCloseFile' | 'mcpAppToolsSync' | 'mcpAppToolsRespond' | 'onMcpAppToolRequest'>>
 export interface McpAppRoute { projectPath: string; sessionId: string }
-export type McpAppConsent = (prompt: McpAppApprovalPrompt, signal: AbortSignal) => Promise<Record<string, never> | null>
+export type McpAppConsent = (prompt: McpAppApprovalPrompt, signal: AbortSignal) => Promise<{ alwaysAllow?: boolean } | null>
 
 /** Only this trusted renderer adapter has access to preload. The iframe receives AppBridge. */
 export function createDesktopMcpAppExecutor(options: {
@@ -27,7 +27,7 @@ export function createDesktopMcpAppExecutor(options: {
         const approval = await options.consent(result.error.prompt, signal)
         if (!approval || signal.aborted) throw new McpAppsError(signal.aborted ? 'cancelled' : 'denied', 'MCP App request declined')
         // Consume the host's exact-operation challenge once; never loop or retry a tool call.
-        result = await api.mcpAppRequest(route.projectPath, route.sessionId, { ...request, approval: { challenge: result.error.challenge, ...approval } }, context)
+        result = await api.mcpAppRequest(route.projectPath, route.sessionId, { ...request, approval: { challenge: result.error.challenge } }, context)
       }
       if (!result.ok) {
         if (result.error.code === 'approval_required') throw new McpAppsError('denied', 'MCP App approval expired')

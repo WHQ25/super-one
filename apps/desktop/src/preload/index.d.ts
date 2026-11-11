@@ -917,6 +917,10 @@ export interface EnvironmentAPI extends MediaComposerAPI {
   /** Calls the App's entrypoint on an absolute path; the returned View lives in memory only. */
   mcpAppOpenFile(projectPath: string, sessionId: string, target: { server: string; tool: string; path: string }): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<import('@superone/shared/mcp-apps').ToolAppAttachment>>
   mcpAppCloseFile(projectPath: string, sessionId: string, appInstanceId: string): Promise<void>
+  mcpAppThreadEntrypoints(projectPath: string, sessionId: string, options?: { passive?: boolean }): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<import('@superone/shared/mcp-app-entrypoints').McpAppThreadEntrypointsResult>>
+  mcpAppOpenEntrypoint(projectPath: string, sessionId: string, target: { server: string; tool: string; entrypoint: import('@superone/shared/mcp-app-entrypoints').McpAppEntrypointKind }): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<import('@superone/shared/mcp-apps').ToolAppAttachment>>
+  mcpAppGlobalEntrypoints(projectPath: string, options?: import('@superone/shared/mcp-app-entrypoints').McpAppGlobalEntrypointsQuery): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<import('@superone/shared/mcp-app-entrypoints').McpAppGlobalEntrypointsResult>>
+  onMcpAppHostUpdated(callback: (event: { sessionId: string; projectPath: string; appInstanceId: string; update: import('@superone/shared/mcp-apps').McpAppHostUpdate }) => void): () => void
   /** Items from every server `mentions/search` tool for the composer; may start the session's harness. */
   mcpAppMentionSearch(projectPath: string, sessionId: string, query: string): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<import('@superone/shared/mcp-app-mentions').McpMentionSearchResult>>
   /** Text of mentioned resources for the model at send; unreadable ones come back `skipped`. */
@@ -926,6 +930,10 @@ export interface EnvironmentAPI extends MediaComposerAPI {
   /** Reads the pending option's declared preview from its eliciting server. */
   mcpFormPreviewResource(sessionId: string, requestId: string, field: string, optionUri: string): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<import('@superone/shared/mcp-apps').McpAppReadResult>>
   onMcpAppResourceUpdated(callback: (event: { appInstanceId: string; uri: string }) => void): () => void
+  mcpAppToolsSync(projectPath: string, sessionId: string, payload: { viewId: string; messageId?: string; tools: unknown }): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<null>>
+  mcpAppToolsRespond(response: import('@superone/shared/mcp-app-tools').McpAppToolSurfaceResponse): Promise<boolean>
+  mcpAppToolsListForSend(projectPath: string, sessionId: string): Promise<import('@superone/shared/mcp-app-tools').McpAppViewToolCatalog[]>
+  onMcpAppToolRequest(callback: (request: import('@superone/shared/mcp-app-tools').McpAppToolSurfaceRequest) => void): () => void
   mcpAppsProvider(connectionId: string, input: import('@superone/shared/environment/mcp-apps-rpc').McpAppsProviderRpcRequest): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult>
   /** Sign the View's MCP server in; resolves once the provider no longer reports auth_required. */
   mcpAppsAuthenticate(connectionId: string, target: Pick<import('@superone/shared/environment/mcp-apps-rpc').McpAppsProviderRpcRequest, 'binding' | 'origin'>): Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<null>>

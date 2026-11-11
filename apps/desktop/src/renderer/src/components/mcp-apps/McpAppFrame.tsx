@@ -3,6 +3,7 @@ import { MCP_APP_OPEN_FILES_EXTENSION, mcpAppFileCapabilities, mcpAppMessageCapa
 import { useLayoutEffect, useRef } from 'react'
 import type { McpUiHostContext } from '@modelcontextprotocol/ext-apps/app-bridge'
 import type { ToolAppAttachment, McpUiResourceMeta } from '@superone/shared/mcp-apps'
+import type { McpAppRegisteredTool } from '@superone/shared/mcp-app-tools'
 import type { McpAppDocumentRegistration } from '@superone/shared/mcp-apps-desktop'
 import { createMcpAppHost, createMcpAppHostSlot, type McpAppHost, type McpAppHostExecutor } from '@superone/shared/mcp-apps-host/host'
 import { createMcpAppDocument } from '@superone/shared/mcp-apps-host/document'
@@ -17,7 +18,7 @@ export interface McpAppFrameProps {
   meta: McpUiResourceMeta; registration: McpAppDocumentRegistration; api: McpAppDesktopApi
   executor: McpAppHostExecutor; context: McpUiHostContext; active: boolean
   onHost(host: McpAppHost | null): void; onInitialized(modes: Array<'inline' | 'fullscreen' | 'pip'>): void
-  onError(error: unknown): void; onUnknown(): void; onRevoked(): void; onHeight(height: number): void
+  onError(error: unknown): void; onUnknown(): void; onRevoked(): void; onRequestTeardown?(): void; onToolsChanged?(tools: McpAppRegisteredTool[]): void; onHeight(height: number): void
 }
 
 /**
@@ -52,8 +53,10 @@ export default function McpAppFrame(props: McpAppFrameProps) {
       restored: !latest.current.active, context: latest.current.context,
       // Permissions are deliberately ungranted, even if the resource requests them.
       capabilities: { ...mcpAppDesktopCapabilities(props.app, props.localSession), serverTools: {}, serverResources: {}, openLinks: {}, logging: {}, sandbox: { permissions: {}, csp: mcpAppCspDomains(props.meta.csp) } },
-      onInitialized: () => latest.current.onInitialized(host.appCapabilities()?.availableDisplayModes ?? ['inline']),
+      onInitialized: () => latest.current.onInitialized(host.appCapabilities()?.availableDisplayModes ?? ['inline', 'fullscreen']),
       onError: error => latest.current.onError(error), onUnknownOutcome: () => latest.current.onUnknown(),
+      onRequestTeardown: () => latest.current.onRequestTeardown?.(),
+      onToolsChanged: tools => latest.current.onToolsChanged?.(tools),
       onSizeChanged: size => { if (size.height) latest.current.onHeight(size.height) },
     })
     slot.current ??= createMcpAppHostSlot()

@@ -4,8 +4,8 @@ import type { AgentEvent, ChatMessage, ContentBlock, ImageAttachment } from './a
 import { readableContent } from './codex-content'
 import { mcpAppContextInput, mcpAppContextItems, type McpAppContextAttachment } from './mcp-app-model-context'
 import { validateTurnAttachments } from './attachment-validation'
-import { assertMcpAppSize } from './mcp-apps'
-import type { McpAppAttachmentUpdate, ToolAppAttachment } from './mcp-apps'
+import { assertMcpAppSize, boundedToolAppAttachment, compactMcpToolDescriptor, MCP_APP_TOOL_DESCRIPTOR_MAX_BYTES } from './mcp-apps'
+import type { McpAppAttachmentUpdate, McpAppHostUpdate, ToolAppAttachment } from './mcp-apps'
 
 /** Works with desktop transcripts and the node's denser message catalog. */
 export interface McpAppMessage {
@@ -56,7 +56,7 @@ export function mergeMcpAppAttachment(previous: ToolAppAttachment | undefined, n
   const identity = (app: ToolAppAttachment): string => JSON.stringify([app.binding.node, app.binding.session, app.binding.server, app.binding.account,
     app.binding.configGeneration, app.binding.configFingerprint, app.binding.hostClient, app.resourceUri, app.origin?.providerSessionId, app.origin?.originCallId])
   if (identity(previous) !== identity(next)) return next
-  return { ...next, resource: previous.resource ?? next.resource, modelContext: previous.modelContext !== undefined ? previous.modelContext : next.modelContext, presentation: previous.presentation ?? next.presentation }
+  return { ...next, resource: previous.resource ?? next.resource, modelContext: previous.modelContext !== undefined ? previous.modelContext : next.modelContext, presentation: previous.presentation ?? next.presentation, toolDescriptor: previous.toolDescriptor ?? next.toolDescriptor }
 }
 
 /**
@@ -100,18 +100,39 @@ export function validateMcpAppAttachmentUpdate(update: McpAppAttachmentUpdate): 
     mcpAppContextInput({ appInstanceId: update.modelContext.source.appInstanceId, binding: { server: update.modelContext.source.server }, modelContext: update.modelContext } as ToolAppAttachment)
   }
   if (update.presentation) assertMcpAppSize(compactMcpAppPresentation(update.presentation), MCP_APP_PRESENTATION_MAX_BYTES)
+  if (update.toolDescriptor) assertMcpAppSize(compactMcpToolDescriptor(update.toolDescriptor), MCP_APP_TOOL_DESCRIPTOR_MAX_BYTES)
+}
+
+export function applyMcpAppAttachmentUpdate(app: ToolAppAttachment, update: McpAppAttachmentUpdate): ToolAppAttachment {
+  validateMcpAppAttachmentUpdate(update)
+  return {
+    ...app,
+    ...(update.resource ? { resource: update.resource } : {}),
+    ...(update.modelContext !== undefined ? { modelContext: update.modelContext } : {}),
+    ...(update.presentation ? { presentation: compactMcpAppPresentation(update.presentation) } : {}),
+    ...(update.toolDescriptor ? { toolDescriptor: compactMcpToolDescriptor(update.toolDescriptor) } : {}),
+  }
+}
+
+export function applyMcpAppHostUpdate(app: ToolAppAttachment, update: McpAppHostUpdate): ToolAppAttachment {
+  const next = applyMcpAppAttachmentUpdate(app, update)
+  return boundedToolAppAttachment({
+    ...next,
+    ...(update.toolInput !== undefined ? { toolInput: update.toolInput } : {}),
+    ...(update.toolResult !== undefined ? { toolResult: update.toolResult } : {}),
+    ...(update.toolResultOmitted !== undefined ? { toolResultOmitted: update.toolResultOmitted } : {}),
+    ...(update.status !== undefined ? { status: update.status } : {}),
+    ...('error' in update ? { error: update.error } : {}),
+  })
 }
 
 /** Changes only existing attachments, preserving every provider-authored identity field. */
 export function updateMcpAppAttachments<T extends McpAppMessage>(messages: readonly T[], appInstanceId: string, update: McpAppAttachmentUpdate): T[] {
   validateMcpAppAttachmentUpdate(update)
-  const patch = { ...(update.resource ? { resource: update.resource } : {}),
-    ...(update.modelContext !== undefined ? { modelContext: update.modelContext } : {}),
-    ...(update.presentation ? { presentation: compactMcpAppPresentation(update.presentation) } : {}) }
   const replace = <B>(block: B): B => {
     const app = record(block).app as ToolAppAttachment | undefined
     if (app?.appInstanceId !== appInstanceId) return block
-    return { ...block, app: { ...app, ...patch } }
+    return { ...block, app: applyMcpAppAttachmentUpdate(app, update) }
   }
   return messages.map(message => {
     if (!mcpAppMessageAttachments(message).some(app => app.appInstanceId === appInstanceId)) return message
@@ -156,14 +177,16 @@ export function restoreMcpAppContexts<T extends McpAppMessage>(messages: readonl
   return next
 }
 
-export function mcpAppContextAttachments(messages: readonly McpAppMessage[], scheme?: 'light' | 'dark'): McpAppContextAttachment[] {
-  return latestApps(messages).flatMap(({ app, messageId }) => mcpAppContextItems(app, messageId, scheme))
+export function mcpAppContextAttachments(messages: readonly McpAppMessage[], scheme?: 'light' | 'dark', extraApps: readonly ToolAppAttachment[] = []): McpAppContextAttachment[] {
+  const transcript = latestApps(messages).flatMap(({ app, messageId }) => mcpAppContextItems(app, messageId, scheme))
+  const host = extraApps.flatMap(app => mcpAppContextItems(app, '', scheme))
+  return [...transcript, ...host]
 }
 
-export function mcpAppModelContextInput(messages: readonly McpAppMessage[]): { text: string; images: ImageAttachment[] } {
+export function mcpAppModelContextInput(messages: readonly McpAppMessage[], extraApps: readonly ToolAppAttachment[] = []): { text: string; images: ImageAttachment[] } {
   const entries: unknown[] = []
   const images: ImageAttachment[] = []
-  for (const { app } of latestApps(messages)) {
+  for (const app of [...latestApps(messages).map(item => item.app), ...extraApps]) {
     if (!app.modelContext) continue
     const input = mcpAppContextInput(app)
     images.push(...input.images)

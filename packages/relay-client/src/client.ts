@@ -473,7 +473,7 @@ export class RelayClient {
           if (this.ws !== ws || this.channel !== channel) throw new Error('connection replaced')
           this.sendFrame(ws, JSON.stringify({ type: 'command', data: sealLinkFrame(channel, { t: 'rpc' }, out) }))
         }, (message) => {
-          if ((message as { type?: string })?.type === 'composer_settled') this.deliverEvents([message])
+          if (['composer_settled', 'mcp_app_tool_request'].includes((message as { type?: string })?.type ?? '')) this.deliverEvents([message])
           if (['realtime_call_signal', 'control_lost'].includes((message as { type?: string })?.type ?? '')) this.hooks.onArrived?.([message])
           this.hooks.onProtocolMessage?.(message)
         }, undefined, (resource, error) => this.hooks.onControlLost?.(resource, error))

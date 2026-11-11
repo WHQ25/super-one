@@ -7,7 +7,7 @@ import { isPreviewableMermaid } from '@superone/chat-view/mermaid-preview'
 import type { ComposerOpenResult, McpAppDeviceRequest, QuestionAnnotations, SaveWidgetTemplateRequest } from '@superone/shared/agent-types'
 import { parseWidgetLayout } from '@superone/shared/generative-ui/types'
 import { isPreviewableImageSource, parseImageGenerationInfo, type ImagePreviewTarget } from './image-preview-state'
-import { parseMcpAppDownloads, parseMcpAppRequest } from './mcp-apps'
+import { parseMcpAppDownloads, parseMcpAppRequest, parseMcpAppToolsRespond, parseMcpAppToolsSync } from './mcp-apps'
 import { admitInputRequestOutput, admitInputRequestSpec, type InputRequestSpec } from '@superone/shared/input-request'
 import type { ComposerViewRequest } from '@superone/shared/composer-view-bridge'
 import type { McpAppLocalDownload } from '@superone/shared/mcp-app-download'
@@ -146,6 +146,8 @@ export interface NativeActionPorts {
    * preview, whose menu saves or shares them.
    */
   mcpAppDownload?(items: McpAppLocalDownload[]): Promise<void>
+  mcpAppToolsSync?(payload: { viewId: string; messageId?: string; tools: unknown }): Promise<void>
+  mcpAppToolsRespond?(response: import('@superone/shared/mcp-app-tools').McpAppToolSurfaceResponse): Promise<void>
   /** Resend a user message the host never took, exactly as it went out. */
   resendFailedMessage(messageId: string): Promise<void>
   /** Pull a user message the host never took back into the composer. */
@@ -359,6 +361,10 @@ export async function resolveNativeRequest(
       await ports.mcpAppDownload(parseMcpAppDownloads(message.payload))
     } else if (message.action === 'mcpAppFullscreen') {
       await ports.mcpAppFullscreen?.(parseMcpAppFullscreen(message.payload))
+    } else if (message.action === 'mcpAppToolsSync') {
+      await ports.mcpAppToolsSync?.(parseMcpAppToolsSync(message.payload))
+    } else if (message.action === 'mcpAppToolsRespond') {
+      await ports.mcpAppToolsRespond?.(parseMcpAppToolsRespond(message.payload))
     } else if (message.action === 'haptic') {
       const style = (message.payload as Record<string, unknown> | undefined)?.style
       // An unknown strength still ticks: feedback is better than a silent gesture.

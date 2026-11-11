@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { buildMcpAppCsp, mcpAppCspDomains, mcpAppCspMeta, mcpAppAllowAttribute } from './csp'
-import { mcpAppHostContext } from './context'
+import { mcpAppHostContext, mcpAppToolInfo } from './context'
+import { MCP_APP_DARK_STYLE_VARIABLES } from './styles'
 
 describe('MCP App sandbox policy', () => {
   it('has strict defaults and forbids forms even when the iframe allows them', () => {
@@ -45,9 +46,25 @@ describe('MCP App sandbox policy', () => {
 
   it('maps resolved desktop and mobile tokens without framework dependencies', () => {
     const context = mcpAppHostContext({ theme: 'dark', platform: 'mobile', locale: 'zh-CN', timeZone: 'Asia/Shanghai', width: 320, colors: { background: '#111', foreground: '#fff' } })
+    expect(Object.keys(MCP_APP_DARK_STYLE_VARIABLES)).toHaveLength(76)
+    expect(Object.keys(context.styles?.variables ?? {})).toHaveLength(76)
     expect(context.styles?.variables?.['--color-background-primary']).toBe('#111')
+    expect(context.styles?.variables?.['--color-text-primary']).toBe('#fff')
+    expect(context.styles?.variables?.['--border-radius-md']).toBe('0.375rem')
     expect(context.deviceCapabilities).toEqual({ touch: true, hover: false })
     expect(context.availableDisplayModes).toEqual(['inline'])
     expect(context.containerDimensions).toEqual({ width: 320 })
+  })
+
+  it('reports mode-specific containerDimensions and optional toolInfo id', () => {
+    const inline = mcpAppHostContext({ theme: 'light', displayMode: 'inline', width: 640, maxHeight: 720, height: 900 })
+    expect(inline.containerDimensions).toEqual({ width: 640, maxHeight: 720 })
+    const fullscreen = mcpAppHostContext({ theme: 'light', displayMode: 'fullscreen', width: 640, maxHeight: 720, height: 900 })
+    expect(fullscreen.containerDimensions).toEqual({ width: 640, height: 900 })
+    const descriptor = { name: 'cad.open', title: 'Open CAD', inputSchema: { type: 'object' as const } }
+    const base = { appInstanceId: 'v', binding: { node: 'local', session: 's', server: 'cad', configGeneration: 0, configFingerprint: 'f' }, resourceUri: 'ui://cad', status: 'result' as const, toolDescriptor: descriptor }
+    expect(mcpAppToolInfo(base)).toEqual({ tool: descriptor })
+    expect(mcpAppToolInfo({ ...base, harnessCallId: 'call-1' })).toEqual({ id: 'call-1', tool: descriptor })
+    expect(mcpAppToolInfo({ ...base, toolDescriptor: undefined })).toBeUndefined()
   })
 })

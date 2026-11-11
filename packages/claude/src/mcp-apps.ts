@@ -3,6 +3,7 @@ import type { Query } from '@anthropic-ai/claude-agent-sdk'
 import {
   assertMcpAppSize, MCP_APP_HTML_MAX_BYTES, MCP_APP_DATA_MAX_BYTES, MCP_APP_OUTPUT_MAX_BYTES,
   boundedToolAppAttachment,
+  compactMcpToolDescriptor,
   mcpAppResourceUri,
   McpAppsError,
   type McpAppOrigin,
@@ -270,7 +271,7 @@ export class ClaudeToolApps {
       binding,
       ...(providerSessionId ? { origin: { providerSessionId } } : {}),
       harnessCallId: toolUseId,
-      resourceUri, toolName: resolved.tool.name, presentation: mcpAppPresentation(resolved.tool),
+      resourceUri, toolName: resolved.tool.name, toolDescriptor: compactMcpToolDescriptor(resolved.tool), presentation: mcpAppPresentation(resolved.tool),
       ...(call.input ? { toolInput: call.input } : {}),
       ...patch,
     })

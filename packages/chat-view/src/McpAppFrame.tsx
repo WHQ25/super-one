@@ -5,7 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { Loader2, Maximize, Power, RotateCw } from 'lucide-react'
 import type { McpUiHostCapabilities } from '@modelcontextprotocol/ext-apps/app-bridge'
 import { boundedToolAppAttachment, McpAppsError, type McpUiResourceMeta, type ToolAppAttachment } from '@superone/shared/mcp-apps'
-import { createMcpAppDocument, mcpAppHostContext } from '@superone/shared/mcp-apps-host'
+import { createMcpAppDocument, mcpAppHostContext, mcpAppToolInfo } from '@superone/shared/mcp-apps-host'
 import { createMcpAppHost, createMcpAppHostSlot, type McpAppHost } from '@superone/shared/mcp-apps-host/host'
 import { createMcpAppTransport } from '@superone/shared/mcp-apps-host/transport'
 import { requestNative } from './bridge'
@@ -14,7 +14,7 @@ import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { McpAppActivateButton, McpAppStateButton, useMcpAppEmphasis, type McpAppState } from '@superone/ui/components/ui/mcp-app-state'
 import { cn } from '@superone/ui/lib/utils'
 import { McpAppChrome } from './McpAppChrome'
-import { buildMcpAppSrcdoc, markMcpAppActivated, mcpAppNeedsActivation, mobileMcpAppCsp, setMcpAppFullscreenExit } from './mcp-app-document'
+import { buildMcpAppSrcdoc, markMcpAppActivated, mcpAppNeedsActivation, mobileMcpAppCsp, setMcpAppFullscreenExit, subscribeMcpAppToolRequest } from './mcp-app-document'
 import { createMcpAppExecutor, runMcpAppOperation, type McpAppConsent, type McpAppDisplayMode } from './mcp-app-executor'
 import { PortableTurnContext } from './portable-turn-context'
 
@@ -37,7 +37,7 @@ const COLOR_SOURCES = {
   primaryForeground: '--primary-foreground', destructive: '--error',
 } as const
 
-function readHostContext(node: HTMLElement, scheme: 'light' | 'dark', fullscreen: boolean, meta?: McpUiResourceMeta) {
+function readHostContext(node: HTMLElement, scheme: 'light' | 'dark', fullscreen: boolean, meta?: McpUiResourceMeta, app?: ToolAppAttachment) {
   const styles = getComputedStyle(node)
   const root = getComputedStyle(document.documentElement)
   const inset = (edge: string) => Number.parseFloat(root.getPropertyValue(`--safe-area-${edge}`)) || 0
@@ -49,10 +49,12 @@ function readHostContext(node: HTMLElement, scheme: 'light' | 'dark', fullscreen
     platform: 'mobile',
     locale: document.documentElement.lang || 'en',
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    toolInfo: mcpAppToolInfo(app),
     displayMode: fullscreen ? 'fullscreen' : 'inline',
     availableDisplayModes: mcpAppResourceModes(meta) ?? ['inline', 'fullscreen'],
     width: node.clientWidth,
-    maxHeight: fullscreen ? window.innerHeight : MAX_INLINE_HEIGHT,
+    height: fullscreen ? (node.clientHeight || window.innerHeight) : undefined,
+    maxHeight: fullscreen ? undefined : MAX_INLINE_HEIGHT,
     touch: true,
     hover: false,
     safeAreaInsets: fullscreen
@@ -94,6 +96,7 @@ export default function McpAppFrame({ app: rawApp, messageId, html, meta, toolNa
   const [initialized, setInitialized] = useState(false)
   const [viewModes, setViewModes] = useState<string[]>([])
   const [revoked, setRevoked] = useState(false)
+  const [tornDown, setTornDown] = useState(false)
   const [restart, setRestart] = useState(0)
   const [inactive, setInactive] = useState(() => mcpAppNeedsActivation(app.appInstanceId))
   // A restored View stays a tool row, its frame unmounted, until the user opens its snapshot.
@@ -118,11 +121,12 @@ export default function McpAppFrame({ app: rawApp, messageId, html, meta, toolNa
       cancelConsent()
       let settled = false
       const cancel = () => request.resolve(false)
-      const request: McpAppConsentRequest = { prompt, resolve: confirmed => {
+      const request: McpAppConsentRequest = { prompt, resolve: decision => {
         if (settled) return
         settled = true
         signal.removeEventListener('abort', cancel)
         if (consentRef.current === request) { consentRef.current = null; setConsent(null) }
+        const confirmed = typeof decision === 'boolean' ? decision : decision.approved
         resolve(confirmed && !signal.aborted)
       } }
       consentRef.current = request
@@ -137,7 +141,7 @@ export default function McpAppFrame({ app: rawApp, messageId, html, meta, toolNa
   }, [])
 
   const server = mcpAppServerTitle(app)
-  const available = initialized && !unknownOutcome && !revoked
+  const available = initialized && !unknownOutcome && !revoked && !tornDown
   const restoring = available && inactive
   // Activate and the state card live in the frame's header, which fullscreen hides, so any
   // of those states shows the View inline instead.
@@ -168,16 +172,18 @@ export default function McpAppFrame({ app: rawApp, messageId, html, meta, toolNa
       document,
       transport: createMcpAppTransport(frame, 'null'),
       executor: createMcpAppExecutor(target, ask, display),
-      context: readHostContext(root, scheme, false, meta),
+      context: readHostContext(root, scheme, false, meta, app),
       capabilities: {
         ...mcpAppMessageCapabilities,
         openLinks: {}, serverTools: {}, serverResources: {}, logging: {}, downloadFile: {},
         sandbox: { permissions: {}, csp: mobileMcpAppCsp(meta) },
       } satisfies McpUiHostCapabilities,
       restored: mcpAppNeedsActivation(app.appInstanceId),
-      onInitialized: () => { setViewModes(host.appCapabilities()?.availableDisplayModes ?? ['inline']); setInitialized(true) },
+      onInitialized: () => { setViewModes(host.appCapabilities()?.availableDisplayModes ?? ['inline', 'fullscreen']); setInitialized(true) },
+      onToolsChanged: (tools) => { requestNative('mcpAppToolsSync', { viewId: app.appInstanceId, messageId, tools }) },
       onSizeChanged: (size) => { if (size.height) setHeight(Math.min(MAX_INLINE_HEIGHT, Math.max(MIN_HEIGHT, size.height))) },
       onUnknownOutcome: () => { setUnknownOutcome(true); setFullscreen(false) },
+      onRequestTeardown: () => { cancelConsent(); setTornDown(true); setFullscreen(false) },
       // A restored View tried to call out, or the host stopped serving it; either way it
       // waits for Activate, and the attempt points the user there.
       onError: (error) => {
@@ -198,6 +204,7 @@ export default function McpAppFrame({ app: rawApp, messageId, html, meta, toolNa
       cancelled = true
       cancelConsent()
       stop()
+      requestNative('mcpAppToolsSync', { viewId: app.appInstanceId, messageId, tools: [] })
       if (hostRef.current === host) hostRef.current = null
       void slot.release(host)
     }
@@ -206,11 +213,91 @@ export default function McpAppFrame({ app: rawApp, messageId, html, meta, toolNa
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [app.appInstanceId, html, meta, root, restart, dormant])
 
+  useEffect(() => {
+    const pending = new Map<string, AbortController>()
+    const unsubscribe = subscribeMcpAppToolRequest(app.appInstanceId, (req) => {
+      if (req.kind === 'cancel') {
+        const controller = pending.get(req.requestId)
+        pending.delete(req.requestId)
+        controller?.abort()
+        return
+      }
+      const controller = new AbortController()
+      pending.set(req.requestId, controller)
+      if (req.kind === 'approve') {
+        cancelConsent()
+        let settled = false
+        const finish = (decision: boolean | { approved: boolean; alwaysAllow?: boolean }, cancelled = false) => {
+          if (settled) return
+          settled = true
+          pending.delete(req.requestId)
+          controller.signal.removeEventListener('abort', onAbort)
+          if (consentRef.current === request) { consentRef.current = null; setConsent(null) }
+          const approved = typeof decision === 'boolean' ? decision : decision.approved
+          const alwaysAllow = typeof decision === 'object' && decision.alwaysAllow === true
+          requestNative('mcpAppToolsRespond', {
+            response: {
+              kind: 'approve',
+              requestId: req.requestId,
+              approved: !cancelled && approved,
+              ...(alwaysAllow && !cancelled ? { alwaysAllow: true } : {}),
+              ...(cancelled ? { cancelled: true } : {}),
+            },
+          })
+        }
+        const onAbort = () => finish(false, true)
+        const request: McpAppConsentRequest = {
+          prompt: req.prompt,
+          resolve: (decision) => finish(decision, controller.signal.aborted),
+        }
+        consentRef.current = request
+        controller.signal.addEventListener('abort', onAbort, { once: true })
+        setConsent(request)
+        return
+      }
+      const host = hostRef.current
+      if (!host) {
+        pending.delete(req.requestId)
+        requestNative('mcpAppToolsRespond', {
+          response: { kind: 'call', requestId: req.requestId, ok: false, error: { code: 'not_connected', message: 'MCP App View is not mounted' } },
+        })
+        return
+      }
+      void host.callViewTool(req.toolName, req.args, controller.signal).then(
+        (result) => {
+          pending.delete(req.requestId)
+          requestNative('mcpAppToolsRespond', {
+            response: { kind: 'call', requestId: req.requestId, ok: true, result },
+          })
+        },
+        (error) => {
+          pending.delete(req.requestId)
+          requestNative('mcpAppToolsRespond', {
+            response: {
+              kind: 'call',
+              requestId: req.requestId,
+              ok: false,
+              error: {
+                code: error instanceof McpAppsError ? error.code : 'invalid',
+                message: error instanceof Error ? error.message : String(error),
+              },
+            },
+          })
+        },
+      )
+    })
+    return () => {
+      unsubscribe()
+      for (const controller of pending.values()) controller.abort()
+      pending.clear()
+    }
+  }, [app.appInstanceId, cancelConsent])
+
   useEffect(() => { void hostRef.current?.update(app).catch(() => {}) }, [app])
 
   useEffect(() => {
-    if (root) hostRef.current?.updateContext(readHostContext(root, scheme, expanded, meta))
-  }, [root, scheme, expanded])
+    if (root) hostRef.current?.updateContext(readHostContext(root, scheme, expanded, meta, app))
+  }, [root, scheme, expanded, meta, app])
 
   const onLoad = () => {
     // The initial about:blank load precedes `srcdoc`; only the View's own document counts.
@@ -238,11 +325,17 @@ export default function McpAppFrame({ app: rawApp, messageId, html, meta, toolNa
     }
   }
 
-  // Host-initiated modes are limited to those both the resource and the View declare.
+  const resourceModes = mcpAppResourceModes(meta)
   const canExpand = available && !restoring && !expanded && viewModes.includes('fullscreen')
-    && (mcpAppResourceModes(meta) ?? ['fullscreen']).includes('fullscreen')
-  const shown = available && (expanded || !collapsed)
-  const state: McpAppState | null = available || dormant ? null
+    && (resourceModes ?? ['fullscreen']).includes('fullscreen')
+  const fullscreenOnly = available && !expanded && canExpand && ((resourceModes !== undefined && !resourceModes.includes('inline')) || !viewModes.includes('inline'))
+  const shown = available && !fullscreenOnly && (expanded || !collapsed)
+  const state: McpAppState | null = dormant ? null
+    : available
+      ? fullscreenOnly
+        ? { message: t('mcpApp.fullscreenOnly'), icon: <Maximize className="size-3.5 shrink-0 text-muted-foreground" />, action: <McpAppStateButton icon={<Maximize className="size-3.5" />} label={t('mcpApp.fullscreen')} onClick={() => display('fullscreen')} /> }
+        : null
+    : tornDown ? { message: t('mcpApp.closed'), action: <McpAppStateButton icon={<RotateCw className="size-3.5" />} label={t('mcpApp.restart')} onClick={() => { setTornDown(false); setRevoked(false); setRestart((value) => value + 1) }} /> }
     : revoked ? { message: t('mcpApp.revoked'), action: <McpAppStateButton icon={<RotateCw className="size-3.5" />} label={t('mcpApp.restart')} onClick={() => { setRevoked(false); setRestart((value) => value + 1) }} /> }
     : unknownOutcome ? { message: t('mcpApp.unknown') }
     : { message: t('mcpApp.loading'), icon: <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" /> }
@@ -291,7 +384,7 @@ export default function McpAppFrame({ app: rawApp, messageId, html, meta, toolNa
               shown && !expanded && (app.resource?.meta.prefersBorder ?? meta?.prefersBorder) && 'ring-1 ring-border',
               collapsing && 'transition-[height] duration-200 ease-out motion-reduce:transition-none')}
           >
-            {!dormant && <iframe
+            {!dormant && !tornDown && <iframe
               key={restart}
               ref={frameRef}
               title={server}

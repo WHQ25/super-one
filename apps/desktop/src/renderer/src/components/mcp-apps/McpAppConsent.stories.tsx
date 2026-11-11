@@ -17,6 +17,31 @@ const prompts = {
   long: { kind: 'sendMessage', server, text: Array.from({ length: 40 }, (_, i) => `Line ${i + 1}: a long, page-authored message the App wants to send on the user's behalf.`).join('\n'), nonTextBlocks: 2 },
   openFile: { kind: 'openFile', server, path: '/Users/me/.codex/bits-and-bolts/library/parts/hex-bolt-m3x12.stl' },
   openFileLongPath: { kind: 'openFile', server, path: `/Volumes/Shared Projects/${Array.from({ length: 12 }, (_, i) => `nested-folder-${i + 1}`).join('/')}/assembly with a very long file name.step` },
+  appToolReadOnly: {
+    kind: 'callAppTool',
+    server,
+    viewId: 'view-bolts-1',
+    viewTitle: 'Assembly Viewer',
+    toolName: 'get_selected_parts',
+    toolTitle: 'Get Selected Parts',
+    description: 'Read the currently highlighted fasteners and torque tolerances from the live 3D assembly.',
+    argsPreview: '{\n  "includeSpecs": true\n}',
+    annotations: { readOnlyHint: true, idempotentHint: true },
+    allowAlwaysAllow: true,
+  },
+  appToolDestructiveFallback: {
+    kind: 'callAppTool',
+    server,
+    viewId: 'view-bolts-1',
+    viewTitle: 'Assembly Viewer',
+    toolName: 'clear_bom_overrides',
+    toolTitle: 'Clear BOM Overrides',
+    description: 'Discard unsaved manual bill-of-materials overrides in the active View.',
+    argsPreview: '{}',
+    annotations: { destructiveHint: true, openWorldHint: true },
+    schemaFallback: true,
+    allowAlwaysAllow: false,
+  },
 } satisfies Record<string, McpAppApprovalPrompt>
 
 /** Queues real requests in the store, so Allow / Deny / Escape dequeue exactly as in the app. */
@@ -57,3 +82,5 @@ export const Dark: Story = { globals: { theme: 'dark' } }
 export const OpenFileOutsideProject: Story = { args: { queue: ['openFile'] } }
 export const OpenFileLongPathNarrow: Story = { args: { queue: ['openFileLongPath'], width: 360 } }
 export const OpenFileChineseDark: Story = { args: { queue: ['openFile'] }, globals: { locale: 'zh', theme: 'dark' } }
+export const CallAppToolWithBadges: Story = { args: { queue: ['appToolReadOnly'] } }
+export const CallAppToolSchemaFallback: Story = { args: { queue: ['appToolDestructiveFallback'] } }

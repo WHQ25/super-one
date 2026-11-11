@@ -10,6 +10,9 @@ import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { MarqueeText } from '@superone/ui/components/ui/marquee-text'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { InstallPermissionDialog } from '@/components/miniapp/InstallPermissionDialog'
+import { useTranslation } from 'react-i18next'
+import { GlobalMcpAppsSection } from './GlobalMcpAppsSection'
+import { useVisibleMcpAppEntrypoints } from '@/components/mcp-apps/entrypoint-apps'
 
 const S1APP_EXT = '.s1app'
 
@@ -33,6 +36,7 @@ function getS1AppPaths(e: DragEvent): string[] {
 }
 
 export function AppsPanel() {
+  const { t } = useTranslation()
   const currentFolder = useAppStore((s) => s.currentFolder)
   const apps = useMiniAppStore(useShallow((s) => s.apps))
   const openAppInPanel = useMiniAppStore((s) => s.openAppInPanel)
@@ -42,6 +46,8 @@ export function AppsPanel() {
   const filteredApps = appSearch
     ? apps.filter((a) => a.manifest.name.toLowerCase().includes(appSearch.toLowerCase()))
     : apps
+  const { entrypoints: visibleMcpApps, loading: mcpAppsLoading, incomplete: mcpAppsIncomplete } = useVisibleMcpAppEntrypoints(currentFolder ?? '')
+  const hasGlobalMcpApps = visibleMcpApps.length > 0 || mcpAppsLoading || mcpAppsIncomplete
 
   const [isDragOver, setIsDragOver] = useState(false)
   const [installStatus, setInstallStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null)
@@ -138,6 +144,13 @@ export function AppsPanel() {
           )}
           {filteredApps.length > 0 ? (
             <div className="flex flex-col">
+              {hasGlobalMcpApps && (
+                <div className="px-2 py-1">
+                  <span className="text-[11px] font-medium text-sidebar-foreground/50">
+                    {t('sidebar.appDrawer.miniAppsSection')}
+                  </span>
+                </div>
+              )}
               {filteredApps.map((app) => (
                 <div
                   key={app.id}
@@ -167,12 +180,18 @@ export function AppsPanel() {
                 </div>
               ))}
             </div>
-          ) : (
+          ) : !hasGlobalMcpApps ? (
             <div className="flex flex-1 flex-col items-center justify-center gap-2 p-4 text-xs text-sidebar-foreground/70">
               <PackagePlus className="size-6 text-sidebar-foreground/30" />
               {appSearch ? 'No matching apps' : 'Drop .s1app file to install'}
             </div>
-          )}
+          ) : null}
+          <GlobalMcpAppsSection
+            projectPath={currentFolder ?? ''}
+            active
+            divided={filteredApps.length > 0}
+            search={appSearch}
+          />
         </div>
       </ScrollArea>
     </div>

@@ -1,4 +1,5 @@
 import { parseHostInbound, type HostInbound, type HostOutbound } from './protocol'
+import { dispatchMcpAppToolRequest } from './mcp-app-document'
 import type { ComposerViewRequest } from '@superone/shared/composer-view-bridge'
 import type { SuperOneComposerOutcome } from '@superone/shared/composer-api'
 
@@ -128,6 +129,9 @@ export function installHostBridge(onMessage: (message: HostInbound) => void): ()
       if (message.error) pending?.reject(new Error(message.error))
       else if (message.outcome) pending?.resolve(message.outcome)
       else pending?.reject(new Error('Invalid composer result'))
+    }
+    if (message?.type === 'mcpAppToolRequest') {
+      dispatchMcpAppToolRequest(message.request)
     }
     if (message) onMessage(message)
     if (delivery) {

@@ -138,7 +138,7 @@ import { loadInlineImage } from '../inline-images'
 import { loadTextFile } from '../text-files'
 import { loadVideoPoster } from '../video-posters'
 import { cachedLinkFavicon, requestLinkFavicon } from '../link-favicons'
-import { requestMcpApp } from '../mcp-apps'
+import { mcpAppToolsContentForModel, requestMcpApp } from '../mcp-apps'
 import { NewFolderSheet } from '../prompts/NewFolderSheet'
 import { FileFinderView } from '../screens/file-finder-view'
 import { leaveMobileSession, sessionRemovalStatus } from '../session-exit'
@@ -899,10 +899,27 @@ export function MobileApp() {
       return invokeModUi(client, { projectPath: project.path, sessionId, environmentId: runtimeRef.current?.sourceEnvironmentId }, payload)
     },
     mcpAppFullscreen: async (view) => { mcpApp.show(view) },
-    mcpAppDownload: async (items) => {
+      mcpAppDownload: async (items) => {
       const files: CachedDownload[] = []
       for (const item of items) files.push(await cacheMcpAppDownload(item))
       filePreview.showDownloads(files)
+    },
+    mcpAppToolsSync: async (payload) => {
+      const client = workspaceClientRef.current
+      if (!client || !sessionId || routedEnvironmentId) return
+      try {
+        await client.rpc('mcpApps.toolsSync', {
+          sessionId,
+          viewId: payload.viewId,
+          ...(payload.messageId ? { messageId: payload.messageId } : {}),
+          tools: payload.tools,
+        })
+      } catch {}
+    },
+    mcpAppToolsRespond: async (response) => {
+      const client = workspaceClientRef.current
+      if (!client || routedEnvironmentId) return
+      await client.rpc('mcpApps.toolsRespond', { response })
     },
     openFile: async (path) => {
       if (!project) throw new Error('no active project')
@@ -1529,6 +1546,7 @@ export function MobileApp() {
       onCachedHydrate: () => { if (runtimeRef.current === runtime) setSessionLoading(false) },
       onDetail: (event) => { if (runtimeRef.current === runtime) inject(webRef, { ...event, type: 'detailUpdate' }) },
       onComposerResult: result => { if (runtimeRef.current === runtime) inject(webRef, { type: 'composerSettled', ...result }) },
+      onMcpAppToolRequest: request => { if (runtimeRef.current === runtime) inject(webRef, { type: 'mcpAppToolRequest', request }) },
       onSessionRecap: (sid) => autoRecap.markRecapShown(sid),
       onCommandError: message => { if (runtimeRef.current === runtime) setStatus(message) },
       transcripts: environmentId ? {
@@ -2153,8 +2171,10 @@ export function MobileApp() {
     // As the desktop composer does: the bubble then carries what each MCP chip sent.
     const mcpContent = clientRef.current && project && runtime.sessionId
       ? await mcpMentionContentForModel(clientRef.current, project.path, runtime.sessionId, text) : ''
+    const mcpAppToolsSuffix = workspaceClientRef.current && runtime.sessionId
+      ? await mcpAppToolsContentForModel(workspaceClientRef.current, runtime.sessionId, routedEnvironmentId) : ''
     if (runtimeRef.current !== runtime) return
-    runtime.send(text + mcpContent, {
+    runtime.send(text + mcpContent + mcpAppToolsSuffix, {
       userMessageContent: [...sentDraft.userMessageContent, ...(mcpContent ? [{ type: 'text' as const, text: mcpContent, isPaste: false }] : [])],
       images: attachments,
       ...(selectedProvider === 'codex' && remoteDrafts.settings?.codexCollaborationMode

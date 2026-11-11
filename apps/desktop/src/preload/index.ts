@@ -214,6 +214,17 @@ const environmentAPI = {
     ipcRenderer.invoke(AgentIpcChannels.MCP_APP_OPEN_FILE, projectPath, sessionId, target) as Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<import('@superone/shared/mcp-apps').ToolAppAttachment>>,
   mcpAppCloseFile: (projectPath: string, sessionId: string, appInstanceId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MCP_APP_CLOSE_FILE, projectPath, sessionId, appInstanceId) as Promise<void>,
+  mcpAppThreadEntrypoints: (projectPath: string, sessionId: string, options?: { passive?: boolean }) =>
+    ipcRenderer.invoke(AgentIpcChannels.MCP_APP_THREAD_ENTRYPOINTS, projectPath, sessionId, options) as Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<import('@superone/shared/mcp-app-entrypoints').McpAppThreadEntrypointsResult>>,
+  mcpAppOpenEntrypoint: (projectPath: string, sessionId: string, target: { server: string; tool: string; entrypoint: import('@superone/shared/mcp-app-entrypoints').McpAppEntrypointKind }) =>
+    ipcRenderer.invoke(AgentIpcChannels.MCP_APP_OPEN_ENTRYPOINT, projectPath, sessionId, target) as Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<import('@superone/shared/mcp-apps').ToolAppAttachment>>,
+  mcpAppGlobalEntrypoints: (projectPath: string, options?: import('@superone/shared/mcp-app-entrypoints').McpAppGlobalEntrypointsQuery) =>
+    ipcRenderer.invoke(AgentIpcChannels.MCP_APP_GLOBAL_ENTRYPOINTS, projectPath, options) as Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<import('@superone/shared/mcp-app-entrypoints').McpAppGlobalEntrypointsResult>>,
+  onMcpAppHostUpdated: (callback: (event: { sessionId: string; projectPath: string; appInstanceId: string; update: import('@superone/shared/mcp-apps').McpAppHostUpdate }) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: { sessionId: string; projectPath: string; appInstanceId: string; update: import('@superone/shared/mcp-apps').McpAppHostUpdate }) => callback(data)
+    ipcRenderer.on('mcpApp:hostUpdated', listener)
+    return () => { ipcRenderer.removeListener('mcpApp:hostUpdated', listener) }
+  },
   mcpAppMentionSearch: (projectPath: string, sessionId: string, query: string) =>
     ipcRenderer.invoke(AgentIpcChannels.MCP_APP_MENTION_SEARCH, projectPath, sessionId, query) as Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<import('@superone/shared/mcp-app-mentions').McpMentionSearchResult>>,
   mcpAppMentionRead: (projectPath: string, sessionId: string, targets: Array<{ server: string; uri: string }>) =>
@@ -226,6 +237,17 @@ const environmentAPI = {
     const listener = (_event: Electron.IpcRendererEvent, data: { appInstanceId: string; uri: string }) => callback(data)
     ipcRenderer.on('mcpApp:resourceUpdated', listener)
     return () => { ipcRenderer.removeListener('mcpApp:resourceUpdated', listener) }
+  },
+  mcpAppToolsSync: (projectPath: string, sessionId: string, payload: { viewId: string; messageId?: string; tools: unknown }) =>
+    ipcRenderer.invoke(AgentIpcChannels.MCP_APP_TOOLS_SYNC, projectPath, sessionId, payload) as Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult<null>>,
+  mcpAppToolsRespond: (response: import('@superone/shared/mcp-app-tools').McpAppToolSurfaceResponse) =>
+    ipcRenderer.invoke(AgentIpcChannels.MCP_APP_TOOLS_RESPOND, response) as Promise<boolean>,
+  mcpAppToolsListForSend: (projectPath: string, sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.MCP_APP_TOOLS_LIST_FOR_SEND, projectPath, sessionId) as Promise<import('@superone/shared/mcp-app-tools').McpAppViewToolCatalog[]>,
+  onMcpAppToolRequest: (callback: (request: import('@superone/shared/mcp-app-tools').McpAppToolSurfaceRequest) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, data: import('@superone/shared/mcp-app-tools').McpAppToolSurfaceRequest) => callback(data)
+    ipcRenderer.on('mcpApp:toolRequest', listener)
+    return () => { ipcRenderer.removeListener('mcpApp:toolRequest', listener) }
   },
   mcpAppsProvider: (connectionId: string, input: import('@superone/shared/environment/mcp-apps-rpc').McpAppsProviderRpcRequest) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_MCP_APPS_PROVIDER, connectionId, input) as Promise<import('@superone/shared/environment/mcp-apps-rpc').McpAppsRpcResult>,

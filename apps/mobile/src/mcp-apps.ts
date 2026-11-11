@@ -5,7 +5,8 @@ import type { McpAppDeviceRequest } from '@superone/shared/agent-types'
 import type { McpAppsErrorCode } from '@superone/shared/mcp-apps'
 import { runtimeSessionRef } from './runtime-session-rpc'
 import { MCP_APP_CONTROL_OPERATIONS } from '@superone/shared/environment/mcp-apps-rpc'
-import { isMcpAppHttpDownload, type McpAppLocalDownload } from '@superone/shared/mcp-app-download'
+import { isBlockedMcpAppDownloadName, isMcpAppHttpDownload, type McpAppLocalDownload } from '@superone/shared/mcp-app-download'
+import { formatMcpAppToolsReminder, type McpAppToolSurfaceResponse, type McpAppViewToolCatalog } from '@superone/shared/mcp-app-tools'
 
 /** What a phone View may ask the host for. Links open on the phone and never cross. */
 const OPERATIONS: ReadonlySet<string> = new Set<McpAppDeviceRequest['operation']>(['load', 'activate', 'callTool', 'readResource', 'sendMessage', 'updateModelContext', 'removeModelContext'])
@@ -105,6 +106,7 @@ export function parseMcpAppDownloads(payload: unknown): McpAppLocalDownload[] {
   return items.map((value) => {
     const item = value as Record<string, unknown> | null
     if (!item || typeof item.name !== 'string' || !item.name || typeof item.mimeType !== 'string') throw new Error('invalid mcpAppDownload item')
+    if (isBlockedMcpAppDownloadName(item.name)) throw new Error('blocked mcpAppDownload item')
     const base = { name: item.name, mimeType: item.mimeType || 'application/octet-stream' }
     const sources = ['text', 'base64', 'url'].filter((key) => typeof item[key] === 'string')
     if (sources.length !== 1) throw new Error('invalid mcpAppDownload item')
@@ -113,4 +115,38 @@ export function parseMcpAppDownloads(payload: unknown): McpAppLocalDownload[] {
     if (!isMcpAppHttpDownload(item.url as string)) throw new Error('unsupported mcpAppDownload link')
     return { ...base, url: item.url as string }
   })
+}
+
+export function parseMcpAppToolsSync(payload: unknown): { viewId: string; messageId?: string; tools: unknown } {
+  const value = payload as Record<string, unknown> | undefined
+  if (!value || typeof value.viewId !== 'string' || !value.viewId || !Array.isArray(value.tools)) {
+    throw new Error('invalid mcpAppToolsSync payload')
+  }
+  return {
+    viewId: value.viewId,
+    ...(typeof value.messageId === 'string' && value.messageId ? { messageId: value.messageId } : {}),
+    tools: value.tools,
+  }
+}
+
+export function parseMcpAppToolsRespond(payload: unknown): McpAppToolSurfaceResponse {
+  const response = (payload as Record<string, unknown> | undefined)?.response as Record<string, unknown> | undefined
+  if (!response || typeof response.requestId !== 'string' || (response.kind !== 'approve' && response.kind !== 'call')) {
+    throw new Error('invalid mcpAppToolsRespond payload')
+  }
+  return response as unknown as McpAppToolSurfaceResponse
+}
+
+export async function mcpAppToolsContentForModel(
+  client: Pick<MobileRpcClient, 'rpc'>,
+  sessionId: string,
+  routedEnvironmentId?: string | null,
+): Promise<string> {
+  if (routedEnvironmentId || !sessionId) return ''
+  try {
+    const result = await client.rpc('mcpApps.toolsForSend', { sessionId }) as { views?: McpAppViewToolCatalog[] } | undefined
+    return formatMcpAppToolsReminder(Array.isArray(result?.views) ? result.views : [])
+  } catch {
+    return ''
+  }
 }

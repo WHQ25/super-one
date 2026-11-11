@@ -1,6 +1,6 @@
 import { boundedToolAppAttachment, mcpAppOmittedMessage, mcpAppToolFailed, MCP_APP_DATA_MAX_BYTES, MCP_APP_RESULT_MAX_BYTES } from './mcp-apps'
 import { describe, expect, it } from 'vitest'
-import { mcpAppHeaderTitle, mcpAppServerTitle, mcpAppIcon, mcpAppMonochromeSvg, mcpAppPresentation, mcpAppResourceMeta, mcpAppResourceModes, safeMcpAppImage } from './mcp-apps-metadata'
+import { mcpAppHeaderTitle, mcpAppServerTitle, mcpAppIcon, mcpAppMonochromeSvg, mcpAppPreferredDisplayMode, mcpAppPresentation, mcpAppResourceMeta, mcpAppResourceModes, safeMcpAppImage } from './mcp-apps-metadata'
 
 describe('MCP App presentation metadata', () => {
   it('shows identical resolved server/tool titles once on both host surfaces', () => {
@@ -24,12 +24,15 @@ describe('MCP App presentation metadata', () => {
     expect(mcpAppIcon([{ src: 'https://example.com/light.png', theme: 'light' }, { src: 'https://example.com/dark.png', theme: 'dark' }], 'dark')).toBe('https://example.com/dark.png')
     for (const src of ['file:///secret', 'http://example.com/icon', 'data:text/html,<svg>', '<svg onload="alert(1)">', 'https://user:pass@example.com/a']) expect(safeMcpAppImage(src)).toBeUndefined()
   })
-  it('keeps OpenAI resource metadata beside stable UI fields', () => {
-    const meta = mcpAppResourceMeta({ ui: { prefersBorder: true }, 'openai/ui': { preferredDisplayMode: 'fullscreen', availableDisplayModes: ['inline', 'fullscreen'] } })
+  it('keeps OpenAI resource metadata beside stable UI fields without narrowing modes on preference', () => {
+    const meta = mcpAppResourceMeta({ ui: { prefersBorder: true, preferredDisplayMode: 'inline' }, 'openai/ui': { preferredDisplayMode: 'fullscreen', availableDisplayModes: ['inline', 'fullscreen'] } })
     expect(meta.prefersBorder).toBe(true)
     expect(mcpAppResourceModes(meta)).toEqual(['inline', 'fullscreen'])
-    expect(mcpAppResourceModes({ 'openai/ui': { preferredDisplayMode: 'inline' } })).toEqual(['inline'])
+    expect(mcpAppResourceModes({ 'openai/ui': { preferredDisplayMode: 'inline' } })).toBeUndefined()
     expect(mcpAppResourceModes({})).toBeUndefined()
+    expect(mcpAppPreferredDisplayMode(meta)).toBe('inline')
+    expect(mcpAppPreferredDisplayMode(mcpAppResourceMeta({ 'openai/ui': { preferredDisplayMode: 'fullscreen' } }))).toBe('fullscreen')
+    expect(mcpAppPreferredDisplayMode({})).toBeUndefined()
   })
 })
 

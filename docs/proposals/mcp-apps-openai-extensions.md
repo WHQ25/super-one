@@ -69,10 +69,10 @@ see the plan's phase 3. `openai/elicitation` forms are not built for Claude.
 
 | Extension | SuperOne surface | Mini-app counterpart |
 |---|---|---|
-| Resource `_meta["openai/ui"]` `availableDisplayModes` / `preferredDisplayMode`; Codex `preferredModelDisplayMode` | Agent-invoked Views always start inline, as in ChatGPT; the metadata only shapes the placeholder before `initialize` and limits which modes a View may request. Fullscreen comes from the View's own request. We still offer `pip` | — |
+| Resource `_meta["openai/ui"]` `availableDisplayModes` / `preferredDisplayMode`, `_meta.ui.preferredDisplayMode`; Codex `preferredModelDisplayMode` | Resource `availableDisplayModes` narrows host modes; `_meta.ui.preferredDisplayMode` (with `openai/ui` fallback) auto-opens the unmaximized side panel on desktop after initialize when no other panel tab is open; `fullscreen`-only Views render a launch card ([features/mcp-apps.md](../features/mcp-apps.md)) | — |
 | Tool `icons`, server icons (`server/discover`, `serverInfo`), tool `title` → `annotations.title` → `name` | Row header, sidebar entry, tab | `logo`, `displayName` |
-| Global entrypoint, deep link | Apps sidebar entry; opens a session with the App as a pinned activity tab, and `ui/message` and model context target that session. `hostContext["openai/deepLink"]` once SuperOne has a URL scheme | Apps panel |
-| Thread entrypoint | "Open app" in a session's activity panel; one instance per session | — |
+| Global entrypoint, deep link | Dedicated **MCP Apps** group in the Mini-Apps drawer (`AppDrawer`) and Apps panel (including `quickAction` title/icons, cached cold start and lazy `hostClient` discovery); loads user-scope servers even with no project open and merges project-scope servers when a local project is open; opens directly in the side activity panel via a sessionless standalone provider (`mcp-global:<harness>:<encodedProjectPath>`) without creating an empty chat session, lazily creating or reusing a paired session only when the View sends `ui/message`. `hostContext["openai/deepLink"]` once SuperOne has a URL scheme | Apps drawer / panel |
+| Thread entrypoint | Same **MCP Apps** group in `AppDrawer` / Apps panel when a compatible session (`claude` / `codex`) is active; opens in the active session's activity panel with one live instance per `(session, server, tool)` | Apps drawer / panel |
 | File entrypoint, host resources (`read`, `subscribe`, `openai/resources/write` with `etag`) | "Open with" in the file preview; host-handled opaque `host-resource://` URIs; `_meta["openai/resource"].path` injected into the App's server calls | — |
 | `openai/settings` | Settings page for the server, native controls; a `tool` item that is an App opens it in a dialog | Mini-app settings use the same renderer |
 | `openai/modelContext` | Removable context attachments in the composer (text, image, resource link, embedded resource), `openai/title`, `openai/thumbnail`, hidden `audience: ["assistant"]` blocks; `hostContext["openai/modelContext"]` with `updateId`, `null` after removal. Context is state: it stays attached and goes with every message until the View replaces it or the user removes it | `agent.setContext` becomes one attachment kind |
@@ -120,15 +120,16 @@ rows.
    standard elicitations.
 3. **Files and mentions**: the §5 binding, file entrypoints, resource
    writes, `files/open`, `@` mentions.
-4. **Entrypoints and settings**: thread then global entrypoints, the shared
-   settings renderer.
+4. **Settings**: the shared `openai/settings` renderer (thread and global
+   entrypoints are shipped; see [features/mcp-apps.md](../features/mcp-apps.md#entry-points-global-thread-file)).
 
 ## 8. Open questions
 
-- Global entrypoints: which harness and project host the session when the
-  server is configured in only one harness, or in several.
-- Does Codex app-server expose entrypoints or plugin metadata itself? If it
-  does, read them from Codex instead of re-deriving them from `tools/list`.
+- Does Codex app-server expose plugin metadata itself beyond `tools/list`?
+- Answered: global entrypoints work both with and without an open project
+  (user-scope servers load independent of project path; project-scope servers
+  merge when a local project is open) and open directly in the activity panel
+  without creating a session until the View sends `ui/message`.
 - Answered: servers do not reliably fall back when Claude omits
   `openai/elicitation`. Bits & Bolts throws instead of using standard forms;
   per the routing rule, OpenAI forms are not built for Claude.

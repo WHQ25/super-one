@@ -1,7 +1,7 @@
 import { create } from 'zustand'
 import type { McpAppApprovalPrompt } from '@superone/shared/mcp-apps'
 
-export type McpAppConsentValue = Record<string, never> | null
+export type McpAppConsentValue = { alwaysAllow?: boolean } | null
 export interface PendingMcpConsent { id: string; sessionId: string; prompt: McpAppApprovalPrompt; finish(value: McpAppConsentValue): void }
 
 /**

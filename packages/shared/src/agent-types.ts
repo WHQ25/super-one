@@ -5254,9 +5254,15 @@ export const AgentIpcChannels = {
   MCP_APP_FILE_HANDLERS: 'environment:mcpApps.fileHandlers',
   MCP_APP_OPEN_FILE: 'environment:mcpApps.openFile',
   MCP_APP_CLOSE_FILE: 'environment:mcpApps.closeFile',
+  MCP_APP_THREAD_ENTRYPOINTS: 'environment:mcpApps.threadEntrypoints',
+  MCP_APP_OPEN_ENTRYPOINT: 'environment:mcpApps.openEntrypoint',
+  MCP_APP_GLOBAL_ENTRYPOINTS: 'environment:mcpApps.globalEntrypoints',
   /** Composer @-mentions from servers that declare `mentions/search`. */
   MCP_APP_MENTION_SEARCH: 'environment:mcpApps.mentionSearch',
   MCP_APP_MENTION_READ: 'environment:mcpApps.mentionRead',
+  MCP_APP_TOOLS_SYNC: 'environment:mcpApps.toolsSync',
+  MCP_APP_TOOLS_RESPOND: 'environment:mcpApps.toolsRespond',
+  MCP_APP_TOOLS_LIST_FOR_SEND: 'environment:mcpApps.toolsListForSend',
   MCP_FORM_PICK_RESOURCES: 'environment:mcpForm.pickResources',
   MCP_FORM_PREVIEW_RESOURCE: 'environment:mcpForm.previewResource',
   /** Sign a View's MCP server in through its harness (browser + optional loopback relay). */

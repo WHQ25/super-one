@@ -31,6 +31,7 @@ import {
   isShownOnDesktop,
   shortensSessionWidgetResult,
   miniappToolDepsForSurface,
+  mcpAppToolDepsForSurface,
   notifyDevAppReady,
 } from './superone-mcp-server'
 import type { SuperoneMcpToolDescriptor } from './superone-mcp-types'
@@ -39,6 +40,11 @@ import {
   executeMiniappFixedTool,
   getMiniappFixedToolDescriptors,
 } from './miniapp-mcp-tools'
+import {
+  executeMcpAppFixedTool,
+  getMcpAppToolDescriptors,
+  isMcpAppToolName,
+} from './mcp-app-tools-mcp'
 import {
   listWidgetTemplatesHandler,
   executeWidgetSaveTool,
@@ -65,6 +71,7 @@ export function listSuperoneMcpTools(sessionId: string): SuperoneMcpToolDescript
     ...BUILT_IN_SUPERONE_TOOL_DEFS.filter((tool) => agentProfilesEnabled || !AGENT_PROFILE_TOOL_NAMES.some((name) => name === tool.name)),
     ...(browserAndComputerUseDenied ? [] : getBrowserToolDescriptors()),
     ...getMiniappFixedToolDescriptors() as SuperoneMcpToolDescriptor[],
+    ...getMcpAppToolDescriptors(),
     // The same descriptors a remote node advertises, so the two cannot drift apart.
     ...HOST_ACTION_WIDGET_DESCRIPTORS,
     WIDGET_SAVE_DESCRIPTOR,
@@ -224,6 +231,11 @@ async function runSuperoneMcpTool(
             }
           : undefined,
     })
+  }
+
+  if (isMcpAppToolName(toolName)) {
+    const mcpApp = executeMcpAppFixedTool(sessionId, toolName, args, mcpAppToolDepsForSurface(), signal, connectionId)
+    if (mcpApp) return mcpApp
   }
 
   if ((BUILT_IN_SUPERONE_TOOL_NAMES as readonly string[]).includes(toolName)) {

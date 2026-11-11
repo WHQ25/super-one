@@ -929,8 +929,13 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   async getMcpAppsProvider(binding: McpAppsBinding, origin: McpAppOrigin): Promise<McpAppsProvider> {
+    const expectedProviderSessionId = () => (
+      binding.hostClient && origin.providerSessionId === 'claude-host-pending'
+        ? 'claude-host-pending'
+        : this.providerSessionId
+    )
     const assertBinding = () => assertMcpAppsBindingIdentity(binding, origin, {
-      session: this._lastStartOpts?.sessionId, providerSessionId: this.providerSessionId,
+      session: this._lastStartOpts?.sessionId, providerSessionId: expectedProviderSessionId(),
       account: this._lastStartOpts?.apiProviderId,
       configFingerprint: mcpServerConfigFingerprint(this.mcpAppsCatalog.config(binding.server)),
     })
@@ -974,7 +979,7 @@ export class ClaudeBackend implements SessionBackend {
       config: () => this.hostClientConfig(binding.server),
       cwd: () => this._lastStartOpts?.cwd,
       credentialScope: () => JSON.stringify([this._lastStartOpts?.apiProviderId ?? null, credentialDir()]),
-      providerSessionId: () => this.providerSessionId,
+      providerSessionId: expectedProviderSessionId,
       // Rechecked per request: a server Claude disconnects or disables is no longer reached directly.
       assertBinding: () => {
         assertBinding()
@@ -998,10 +1003,9 @@ export class ClaudeBackend implements SessionBackend {
   }
 
   async getMcpAppsHostBindings(): Promise<Array<{ binding: McpAppsBinding; origin: McpAppOrigin }>> {
-    if (!(await this.ensureQuery())) return []
+    if (!this._lastStartOpts?.sessionId || !(await this.ensureQuery())) return []
     await this.refreshMcpAppsCatalog({ force: true })
-    const providerSessionId = this.providerSessionId
-    if (!providerSessionId) return []
+    const providerSessionId = this.providerSessionId ?? 'claude-host-pending'
     return this.mcpAppsCatalog.hostServers()
       .filter(server => this.hostClientConfig(server) !== null)
       .map(server => ({ binding: { ...this.mcpAppsBinding(server), hostClient: true as const }, origin: { providerSessionId } }))

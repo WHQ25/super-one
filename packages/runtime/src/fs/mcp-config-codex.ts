@@ -89,7 +89,7 @@ function parseConfigFile(
 
 export function listCodexMcpConfigs(cwd: string, opts?: CodexMcpOptions): McpServerConfig[] {
   const userConfigs = parseConfigFile(join(codexHomeOf(opts), 'config.toml'), 'user')
-  const projectConfigs = parseConfigFile(join(cwd, '.codex', 'config.toml'), 'project')
+  const projectConfigs = cwd ? parseConfigFile(join(cwd, '.codex', 'config.toml'), 'project') : []
   const merged = new Map<string, McpServerConfig>()
   for (const config of userConfigs) merged.set(config.name, config)
   for (const config of projectConfigs) merged.set(config.name, config)

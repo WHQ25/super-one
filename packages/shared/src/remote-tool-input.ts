@@ -376,6 +376,8 @@ function sanitizeWorkflowInput(toolName: string, input: string): string {
     'session_cleanup',
     'miniapp_call',
     'miniapp_dev_pack',
+    'mcp_app_tools_list',
+    'mcp_app_tools_call',
   ])
   if (!bare || !supported.has(bare) || !input) return ''
   let parsed: unknown
@@ -411,6 +413,10 @@ function sanitizeWorkflowInput(toolName: string, input: string): string {
   } else if (bare === 'miniapp_call') {
     // The card names the app and the tool it ran; the tool's own arguments stay private.
     copyDefined(source, safe, ['appId', 'tool'])
+  } else if (bare === 'mcp_app_tools_list') {
+    copyDefined(source, safe, ['viewId'])
+  } else if (bare === 'mcp_app_tools_call') {
+    copyDefined(source, safe, ['viewId', 'tool', 'description'])
   } else if (bare === 'miniapp_dev_pack') {
     copyDefined(source, safe, ['appDir', 'outputDir'])
   } else if (bare === 'session_cleanup') {

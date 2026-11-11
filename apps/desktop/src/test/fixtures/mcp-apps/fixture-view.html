@@ -26,6 +26,8 @@
       <button id="fullscreen">Fullscreen</button>
       <button id="pip">Picture in picture</button>
       <button id="inline">Inline</button>
+      <button id="toggle-extra-tool">Toggle extra tool</button>
+      <button id="request-teardown">Request teardown</button>
     </div>
     <div>
       <button id="forbidden-tool">Call model-only tool</button>
@@ -41,6 +43,36 @@
       let nextId = 1
       let page = 1
       let items = []
+      let extraToolEnabled = false
+
+      function registeredTools() {
+        const list = [
+          {
+            name: 'fixture_get_selection',
+            title: 'Get Selected Item',
+            description: 'Read the currently visible page and first item from the live fixture View.',
+            inputSchema: { type: 'object', properties: {} },
+            annotations: { readOnlyHint: true },
+          },
+          {
+            name: 'fixture_jump_page',
+            title: 'Jump to Page',
+            description: 'Switch the live fixture View to a target page.',
+            inputSchema: { type: 'object', properties: { page: { type: 'number' } }, required: ['page'] },
+            annotations: { readOnlyHint: false, idempotentHint: true },
+          },
+        ]
+        if (extraToolEnabled) {
+          list.push({
+            name: 'fixture_clear_log',
+            title: 'Clear Log',
+            description: 'Clear the fixture View protocol log.',
+            inputSchema: { type: 'object', properties: {}, required: [] },
+            annotations: { destructiveHint: true },
+          })
+        }
+        return list
+      }
 
       function log(line) {
         document.getElementById('log').textContent += line + '\n'
@@ -82,6 +114,25 @@
           case 'ui/notifications/tool-cancelled': log('tool-cancelled ' + (msg.params && msg.params.reason)); break
           case 'ui/notifications/host-context-changed': log('host-context-changed ' + Object.keys(msg.params).join(',')); break
           case 'ui/resource-teardown': log('teardown'); respond(msg.id, {}); break
+          case 'tools/list': respond(msg.id, { tools: registeredTools() }); break
+          case 'tools/call': {
+            const toolName = msg.params && msg.params.name
+            const toolArgs = (msg.params && msg.params.arguments) || {}
+            if (toolName === 'fixture_get_selection') {
+              respond(msg.id, { content: [{ type: 'text', text: JSON.stringify({ page, items }) }], structuredContent: { page, items } })
+            } else if (toolName === 'fixture_jump_page') {
+              request('tools/call', { name: 'fixture_next_page', arguments: { page: Number(toolArgs.page) || 1 } }).then((res) => {
+                render(res)
+                respond(msg.id, { content: [{ type: 'text', text: 'jumped to page ' + page }], structuredContent: { page, items } })
+              }, (err) => respond(msg.id, { isError: true, content: [{ type: 'text', text: String(err && err.message || err) }] }))
+            } else if (toolName === 'fixture_clear_log' && extraToolEnabled) {
+              document.getElementById('log').textContent = ''
+              respond(msg.id, { content: [{ type: 'text', text: 'cleared' }] })
+            } else {
+              post({ jsonrpc: '2.0', id: msg.id, error: { code: -32602, message: 'Unknown view tool: ' + toolName } })
+            }
+            break
+          }
           case 'ping': respond(msg.id, {}); break
           default: if ('id' in msg) post({ jsonrpc: '2.0', id: msg.id, error: { code: -32601, message: 'Method not found' } })
         }
@@ -103,6 +154,14 @@
       on('fullscreen', async () => log('display ' + JSON.stringify(await request('ui/request-display-mode', { mode: 'fullscreen' }))))
       on('pip', async () => log('display ' + JSON.stringify(await request('ui/request-display-mode', { mode: 'pip' }))))
       on('inline', async () => log('display ' + JSON.stringify(await request('ui/request-display-mode', { mode: 'inline' }))))
+      on('toggle-extra-tool', async () => {
+        extraToolEnabled = !extraToolEnabled
+        notify('notifications/tools/list_changed', {})
+        log('tools-list-changed ' + extraToolEnabled)
+      })
+      on('request-teardown', async () => {
+        notify('ui/notifications/request-teardown', {})
+      })
       on('forbidden-tool', async () => log('model-only call returned ' + JSON.stringify(await request('tools/call', { name: 'fixture_model_echo', arguments: { text: 'hi' } }))))
       on('forbidden-fetch', async () => {
         try { await fetch('https://example.com/'); log('fetch allowed') } catch (e) { log('fetch blocked') }
@@ -116,7 +175,7 @@
       request('ui/initialize', {
         protocolVersion: '2026-01-26',
         appInfo: { name: 'mcp-apps-fixture-view', version: '1.0.0' },
-        appCapabilities: { availableDisplayModes: ['inline', 'fullscreen', 'pip'] },
+        appCapabilities: { availableDisplayModes: ['inline', 'fullscreen', 'pip'], tools: { listChanged: true } },
       }).then((result) => {
         document.getElementById('status').textContent = 'initialized (' + (result.hostContext && result.hostContext.theme) + ')'
         notify('ui/notifications/initialized', {})

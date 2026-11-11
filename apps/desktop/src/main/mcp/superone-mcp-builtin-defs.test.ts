@@ -1,9 +1,10 @@
 import { INTERACTION_MEMORY_TOOL_DEFS } from '@superone/shared/interaction-memory'
-import { BROWSER_TOOL_NAMES, DEVICE_AGENT_TOOL_NAMES, isStaticHostOwnedSuperoneBareName } from '@superone/shared/superone-host-owned-tools'
+import { BROWSER_TOOL_NAMES, DEVICE_AGENT_TOOL_NAMES, MCP_APP_TOOL_NAMES, isStaticHostOwnedSuperoneBareName } from '@superone/shared/superone-host-owned-tools'
 import { isNodeLocalSuperoneTool, listHostActionSuperoneTools } from '@superone/shared/environment/host-action-browser-catalog'
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { getDeviceAgentToolDescriptors } from '../device-agent/tools'
 import { getComputerUseToolDescriptors } from '../computer-use/tools'
+import { getMcpAppToolDescriptors } from './mcp-app-tools-mcp'
 import { setJevFastLoopEnabledForTests } from '../jev/run-tool-common'
 import { HOST_ACTION_SUPERONE_TOOL_DESCRIPTORS } from '@superone/shared/environment/host-action-superone-descriptors'
 import { classifyHostActionTool } from '@superone/shared/environment/host-action-browser-catalog'
@@ -48,7 +49,7 @@ import {
 // These carry their own descriptors (generated from zod, or hand-built) rather than
 // living in BUILT_IN_SUPERONE_TOOL_DEFS. Listed explicitly so "forgot the descriptor"
 // still fails for everything else.
-const SEPARATELY_DESCRIBED = ['browser_', 'widget_', 'device_']
+const SEPARATELY_DESCRIBED = ['browser_', 'widget_', 'device_', 'mcp_app_tools_']
 
 describe('built-in superone tool registration surfaces', () => {
   it('allows reading every settings domain advertised by the registry', () => {
@@ -87,6 +88,7 @@ describe('built-in superone tool registration surfaces', () => {
   it.each([
     ['computer-use', getComputerUseToolDescriptors],
     ['device', getDeviceAgentToolDescriptors],
+    ['mcp-app-tools', getMcpAppToolDescriptors],
     ['built-in', () => BUILT_IN_SUPERONE_TOOL_DEFS],
   ])('keeps %s descriptors aligned with the remote Host Action dump', (_group, source) => {
     for (const desktop of source()) {
@@ -156,6 +158,17 @@ describe('built-in superone tool registration surfaces', () => {
   it('keeps widget tools on their own descriptor path rather than silently dropping them', () => {
     expect(widgetTools).toEqual(['widget_list_templates', 'widget_show'])
     expect(widgetTools.every((name) => !describedNames.has(name))).toBe(true)
+  })
+
+  it('keeps MCP App View tools on their own descriptor path and classifies list vs call', () => {
+    const described = getMcpAppToolDescriptors()
+    expect(described.map((def) => def.name)).toEqual([...MCP_APP_TOOL_NAMES])
+    for (const def of described) {
+      expect(def.description.length, `${def.name} description length`).toBeLessThanOrEqual(700)
+      expect(isStaticHostOwnedSuperoneBareName(def.name)).toBe(true)
+    }
+    expect(classifyHostActionTool('mcp_app_tools_list').replayPolicy).toBe('safe')
+    expect(classifyHostActionTool('mcp_app_tools_call').replayPolicy).toBe('unsafe')
   })
 
   it('gives every descriptor a usable object schema', () => {

@@ -128,6 +128,8 @@ export const TERMINAL_TOOL_NAMES = [
 /** Desktop layout control (docs/features/layout-control.md); reversible, so no executor confirm. */
 export const LAYOUT_TOOL_NAMES = ['layout_snapshot', 'layout_act'] as const
 
+export const MCP_APP_TOOL_NAMES = ['mcp_app_tools_list', 'mcp_app_tools_call'] as const
+
 /**
  * Bare tool names registered as SuperOne MCP builtins (desktop surface).
  * Keep in sync with tools registered on the SuperOne MCP surface.
@@ -182,6 +184,7 @@ export const BUILT_IN_SUPERONE_TOOL_NAMES = [
   ...DEVICE_AGENT_TOOL_NAMES,
   ...TERMINAL_TOOL_NAMES,
   ...LAYOUT_TOOL_NAMES,
+  ...MCP_APP_TOOL_NAMES,
 ] as const
 
 export type BuiltInSuperoneToolName = (typeof BUILT_IN_SUPERONE_TOOL_NAMES)[number]

@@ -148,3 +148,58 @@ export const MiniappCall: Story = {
     </StoryShell>
   ),
 }
+
+export const McpAppViewTools: Story = {
+  name: 'mcp_app_tools_list & mcp_app_tools_call',
+  render: () => (
+    <StoryShell>
+      <Section title="mcp_app_tools_list">
+        {block('mcp__superone__mcp_app_tools_list', {}, 'streaming')}
+        {block('mcp__superone__mcp_app_tools_list', { viewId: 'view-1' }, 'complete', JSON.stringify({
+          viewId: 'view-1',
+          server: 'Bits & Bolts',
+          viewTitle: 'Assembly Viewer',
+          tools: [
+            {
+              name: 'get_selected_parts',
+              title: 'Get Selected Parts',
+              description: 'Read currently highlighted fasteners from the live 3D assembly.',
+              annotations: { readOnlyHint: true, idempotentHint: true },
+            },
+            {
+              name: 'clear_bom_overrides',
+              title: 'Clear BOM Overrides',
+              description: 'Discard manual bill-of-materials overrides.',
+              annotations: { destructiveHint: true },
+            },
+          ],
+        }))}
+      </Section>
+      <Section title="mcp_app_tools_call">
+        {block('mcp__superone__mcp_app_tools_call', {
+          viewId: 'view-1',
+          tool: 'get_selected_parts',
+          description: 'Read highlighted assembly parts',
+          input: { includeSpecs: true },
+        }, 'streaming')}
+        {block('mcp__superone__mcp_app_tools_call', {
+          viewId: 'view-1',
+          tool: 'get_selected_parts',
+          description: 'Read highlighted assembly parts',
+          input: { includeSpecs: true },
+        }, 'complete', JSON.stringify({ parts: ['hex-bolt-m3x12', 'washer-m3'], count: 2 }))}
+        {block('mcp__superone__mcp_app_tools_call', {
+          viewId: 'view-1',
+          tool: 'clear_bom_overrides',
+          description: 'Discard manual BOM overrides',
+          input: {},
+        }, 'complete', JSON.stringify({
+          status: 'denied',
+          viewId: 'view-1',
+          tool: 'clear_bom_overrides',
+          hint: 'The user did not approve this MCP App tool. Do not retry without their instruction.',
+        }))}
+      </Section>
+    </StoryShell>
+  ),
+}

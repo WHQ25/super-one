@@ -621,6 +621,7 @@ export function ChatView() {
         return
       case 'nativeActionProgress':
       case 'nativeActionResult':
+      case 'mcpAppToolRequest':
         return
     }
   }, [prepareNavigation, jumpToMessage])

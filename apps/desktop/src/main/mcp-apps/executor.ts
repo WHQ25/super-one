@@ -5,6 +5,7 @@ import type { McpAppResourceSnapshot } from '@superone/shared/mcp-app-resource'
 import { randomUUID } from 'node:crypto'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { mcpAppContent } from '@superone/shared/mcp-apps-content'
+import { parseMcpAppStandaloneSessionId } from '@superone/shared/mcp-app-entrypoints'
 import { parseSessionKey, type SessionRef } from '@superone/shared/environment/refs'
 import { McpAppsError } from '@superone/shared/mcp-apps'
 import type { McpAppHostRequest, McpAppHostResult, McpAppRequester, ToolAppAttachment } from '@superone/shared/mcp-apps'
@@ -20,7 +21,9 @@ import { watchSessionCloses, watchSessionDeletes } from '../session-list-watch'
 import { resolveMcpAppOpenFile } from './open-file'
 import { chooseMcpAppDownloadPath } from './download-dialog'
 import { saveMcpAppDownloads } from './download-file'
-import { hostFileApp, readHostFile, releaseHostFileApps, subscribeHostFile, unsubscribeHostFile, updateHostFileApp, writeHostFile } from './host-files'
+import { hostFileApp, hostOpenedApp, readHostFile, releaseHostFileApps, subscribeHostFile, unsubscribeHostFile, updateHostOpenedApp, writeHostFile } from './host-files'
+import { getMcpAppToolsRegistry } from './app-tools-registry'
+import { releaseMobileMcpAppToolSurface } from './app-tools-ipc'
 
 interface MobileSender {
   remoteSendMcpAppMessage(input: Parameters<typeof sendPhoneMcpAppMessage>[1], source: Parameters<typeof sendPhoneMcpAppMessage>[2], onAccepted: () => void): Promise<void>
@@ -38,8 +41,8 @@ export function initializeMcpAppExecutor(manager: SessionManagerImpl, mobile: Mo
   if (executor) return
   const local = (id: string) => manager.getSession(id) ?? manager.resumeSession(id, { passive: true })
   const resolve = async (ref: SessionRef, appInstanceId: string, messageId: string | undefined, signal: AbortSignal): Promise<McpAppResolvedTarget> => {
-    const file = hostFileApp(ref, appInstanceId)
-    if (file) return { ref, node: 'local', projectPath: file.projectPath, messageId: '', app: file.app }
+    const opened = hostOpenedApp(ref, appInstanceId)
+    if (opened) return { ref, node: 'local', projectPath: opened.projectPath, messageId: '', app: opened.app }
     if (ref.environmentId === 'local') {
       const session = local(ref.sessionId)
       const target = findMcpAppAttachment(session.snapshot.messages, appInstanceId, messageId)
@@ -64,8 +67,19 @@ export function initializeMcpAppExecutor(manager: SessionManagerImpl, mobile: Mo
     async persist(target, update, signal) {
       if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App request cancelled')
       const compact = update.resource?.html !== undefined ? { ...update, resource: resourceStore().put(update.resource as McpAppResourceSnapshot) } : update
-      const file = hostFileApp(target.ref, target.app.appInstanceId)
-      if (file) { updateHostFileApp(file, compact); return }
+      const opened = hostOpenedApp(target.ref, target.app.appInstanceId)
+      if (opened) {
+        if (
+          update.modelContext !== undefined
+          && !('path' in opened)
+          && target.ref.environmentId === 'local'
+          && !parseMcpAppStandaloneSessionId(target.ref.sessionId)
+        ) {
+          local(target.ref.sessionId).lease.assertMutation()
+        }
+        updateHostOpenedApp(opened, compact)
+        return
+      }
       const event: AgentEvent = { type: 'mcp_app_updated', sessionId: target.ref.sessionId, projectPath: target.projectPath,
         messageId: target.messageId, appInstanceId: target.app.appInstanceId, update: compact }
       if (target.ref.environmentId === 'local') {
@@ -113,9 +127,36 @@ export function initializeMcpAppExecutor(manager: SessionManagerImpl, mobile: Mo
     },
     openFile: (target, path) => resolveMcpAppOpenFile(target.projectPath, path),
     downloadFile: (target, contents, read, signal) => saveMcpAppDownloads(contents, { read, choosePath: name => chooseMcpAppDownloadPath(mcpAppServerTitle(target.app), name) }, signal),
-    async createMessageSession(target, signal) {
+    async createMessageSession(target, signal, mode) {
       if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App message cancelled')
       if (target.ref.environmentId === 'local') {
+        const standalone = parseMcpAppStandaloneSessionId(target.ref.sessionId)
+        if (standalone) {
+          const opened = hostOpenedApp(target.ref, target.app.appInstanceId)
+          if (mode !== 'new' && opened && !('path' in opened) && opened.pairedSession) {
+            const existing = manager.getSession(opened.pairedSession.sessionId)
+            if (existing) {
+              return { ref: { environmentId: 'local', sessionId: existing.id }, projectPath: opened.pairedSession.projectPath }
+            }
+          }
+          let projectPath = standalone.projectPath
+          if (!projectPath) {
+            const { getEnvironmentHost } = await import('../environment/environment-host')
+            projectPath = (await getEnvironmentHost().listProjects('local'))[0]?.path ?? ''
+          }
+          if (!projectPath) {
+            throw new McpAppsError('not_connected', 'Open a project folder before starting a conversation from this MCP App')
+          }
+          const session = manager.createSession({
+            projectPath,
+            cwd: projectPath,
+            providerId: standalone.harness,
+          })
+          if (opened && !('path' in opened)) {
+            opened.pairedSession = { sessionId: session.id, projectPath }
+          }
+          return { ref: { environmentId: 'local', sessionId: session.id }, projectPath }
+        }
         const owner = local(target.ref.sessionId)
         const source = owner.snapshot
         const settings = owner.getUiSettings()
@@ -173,7 +214,22 @@ export function initializeMcpAppExecutor(manager: SessionManagerImpl, mobile: Mo
       for (const app of mcpAppEventAttachments(event)) executor!.observeLive({ environmentId: 'local', sessionId: sessionId! }, app)
     },
   })
-  const releaseSession = (ref: SessionRef) => { executor!.releaseSession(ref); remoteFreshness.releaseSession(ref); releaseHostFileApps(ref) }
+  getMcpAppToolsRegistry().setPreferredRequesterResolver((key) => {
+    const ref = parseSessionKey(key)
+    if (!ref || ref.environmentId !== 'local') return undefined
+    const session = manager.getSession(ref.sessionId)
+    if (!session) return undefined
+    const phone = session.lease.phoneDeviceId
+    if (phone) return `mobile:${phone}`
+    if (session.lease.current?.delegate?.startsWith('window:')) return 'desktop'
+    return undefined
+  })
+  const releaseSession = (ref: SessionRef) => {
+    executor!.releaseSession(ref)
+    remoteFreshness.releaseSession(ref)
+    releaseHostFileApps(ref)
+    getMcpAppToolsRegistry().releaseSession(ref)
+  }
   watchSessionCloses(releaseSession)
   watchSessionDeletes(ids => { for (const sessionId of ids) releaseSession({ environmentId: 'local', sessionId }) })
   // Time-based cleanup only applies to short-lived approvals/rate windows.
@@ -181,7 +237,11 @@ export function initializeMcpAppExecutor(manager: SessionManagerImpl, mobile: Mo
   setInterval(() => executor!.sweepExpired(), 60_000).unref()
 }
 
-export function releaseMcpAppRequester(requester: McpAppRequester): void { executor?.releaseRequester(requester) }
+export function releaseMcpAppRequester(requester: McpAppRequester): void {
+  executor?.releaseRequester(requester)
+  getMcpAppToolsRegistry().releaseRequester(requester)
+  if (requester.kind === 'mobile') releaseMobileMcpAppToolSurface(requester.deviceId)
+}
 
 /** A View the host just opened itself is live, like one from a new provider event. */
 export function activateMcpAppHostView(ref: SessionRef, app: ToolAppAttachment): void { executor?.observeLive(ref, app) }

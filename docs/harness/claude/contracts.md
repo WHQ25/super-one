@@ -600,6 +600,24 @@ module that runs inside the CLI process. Upstream docs:
 - **Guard:** `apps/desktop/src/main/mcp-apps/provider-auth.test.ts`;
   `apps/desktop/scripts/check-mcp-apps-oauth.ts` (live).
 
+### App-provided tools and sessionless entrypoint discovery stay host-owned
+
+- **Behavior:** The Claude Agent SDK still withholds sibling tool `_meta` keys
+  (`openai/ui` entrypoints) from `mcpServerStatus()` and provides no dynamic
+  per-View tool injection channel without restarting or mutating query tool
+  lists. Project-scoped `.mcp.json` stdio trust lives in `~/.claude.json` under
+  `projects[cwd].enabledMcpjsonServers` and `enableAllProjectMcpServers`.
+- **Depends on it:** SuperOne exposes View-provided tools (`app.registerTool`
+  and WebMCP) through fixed `mcp_app_tools_list` and `mcp_app_tools_call` tools
+  on `superone-mcp-server` (and Host Action on desktop-controlled remote nodes)
+  paired with `<superone-mcp-app-tools>` turn context. Thread entrypoints in
+  Claude sessions read full `Tool._meta` through `HostClients`; sessionless
+  global entrypoint discovery (`apps/desktop/src/main/mcp-apps/entrypoints-cache.ts`)
+  connects lazily via `host-client` only after checking `~/.claude.json`
+  project trust for project-scoped `stdio` servers.
+- **Guard:** `apps/desktop/src/main/mcp/mcp-app-tools-mcp.test.ts`;
+  `apps/desktop/src/main/mcp-apps/entrypoints-cache.test.ts`.
+
 ## Warm start
 
 ### Warmup reuse key

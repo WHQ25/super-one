@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { App } from '@modelcontextprotocol/ext-apps'
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js'
-import { EmptyResultSchema, ResourceUpdatedNotificationSchema, ResultSchema } from '@modelcontextprotocol/sdk/types.js'
+import { EmptyResultSchema, ResultSchema } from '@modelcontextprotocol/sdk/types.js'
 import { createMcpAppHost, type McpAppHostExecutor } from './host'
 import { mcpAppFileCapabilities, mcpAppMessageCapabilities } from './capabilities'
 import { MCP_APP_RESOURCE_WRITE_MAX_BYTES } from '../mcp-app-files'
@@ -28,7 +28,7 @@ async function setup(file = true) {
     capabilities: { ...(file ? mcpAppFileCapabilities : mcpAppMessageCapabilities), serverResources: {} } })
   const view = new App({ name: 'cad', version: '1' }, {}, { autoResize: false })
   const updates: string[] = []
-  view.setNotificationHandler(ResourceUpdatedNotificationSchema, notification => { updates.push(notification.params.uri) })
+  view.setNotificationHandler('notifications/resources/updated', notification => { updates.push(notification.params.uri) })
   cleanup.push(async () => { host.revoke(); await host.dispose(); await view.close() })
   await host.connect()
   await view.connect(viewTransport)

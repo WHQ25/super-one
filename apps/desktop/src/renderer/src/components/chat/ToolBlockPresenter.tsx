@@ -80,6 +80,7 @@ import { bashToolDisplay } from '@superone/chat-view/presenters/bash-tool-displa
 import { WidgetToolRow } from '@superone/chat-view/presenters/WidgetToolRow'
 import { superoneToolDescriptor } from '@superone/chat-view/presenters/superone-tool-display'
 import { LAYOUT_CONTROL_TOOL_NAMES, LayoutControlToolRow } from '@superone/chat-view/presenters/LayoutControlToolRow'
+import { MCP_APP_MCP_TOOL_NAMES, McpAppToolsBlock } from '@superone/chat-view/presenters/McpAppToolsBlock'
 
 function isCompleteJson(s: string): boolean {
   try { JSON.parse(s); return true } catch { return false }
@@ -594,6 +595,22 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
           isStreaming={isStreaming}
           isError={!!isError}
           isDenied={isDenied}
+        />
+      )
+    }
+    if (MCP_APP_MCP_TOOL_NAMES.has(mcpInfo.mcpToolName)) {
+      return (
+        <McpAppToolsBlock
+          mcpToolName={mcpInfo.mcpToolName}
+          params={params}
+          result={cleanResult ?? null}
+          toolSummary={toolSummary}
+          isStreaming={isStreaming}
+          isError={!!isError}
+          isDenied={isDenied}
+          elapsedSeconds={elapsedSeconds}
+          allowExpand={allowExpand}
+          renderJson={ports.renderJson}
         />
       )
     }

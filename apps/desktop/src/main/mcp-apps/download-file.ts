@@ -3,7 +3,7 @@ import { writeFile } from 'node:fs/promises'
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { McpAppsError, type McpAppDownloadContents, type McpAppReadResult } from '@superone/shared/mcp-apps'
-import { isMcpAppHttpDownload, mcpAppDownloadName } from '@superone/shared/mcp-app-download'
+import { isBlockedMcpAppDownloadItem, isBlockedMcpAppDownloadName, isMcpAppHttpDownload, mcpAppDownloadName } from '@superone/shared/mcp-app-download'
 
 export interface McpAppDownloadPorts {
   /** Save dialog for one item; the chosen path, or null when the user cancels. */
@@ -33,8 +33,10 @@ async function saveLink(uri: string, path: string, ports: McpAppDownloadPorts, s
  */
 export async function saveMcpAppDownloads(contents: McpAppDownloadContents, ports: McpAppDownloadPorts, signal: AbortSignal): Promise<{ isError?: boolean }> {
   for (const item of contents) {
-    const path = await ports.choosePath(mcpAppDownloadName(item), signal)
-    if (!path) return { isError: true }
+    const name = mcpAppDownloadName(item)
+    if (isBlockedMcpAppDownloadItem(item) || isBlockedMcpAppDownloadName(name)) return { isError: true }
+    const path = await ports.choosePath(name, signal)
+    if (!path || isBlockedMcpAppDownloadName(path)) return { isError: true }
     if (signal.aborted) throw new McpAppsError('cancelled', 'MCP App download cancelled')
     if (item.type === 'resource') { await writeFile(path, contentBytes(item.resource), { signal }); continue }
     if (isMcpAppHttpDownload(item.uri)) { await saveLink(item.uri, path, ports, signal); continue }

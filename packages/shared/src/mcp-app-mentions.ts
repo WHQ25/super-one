@@ -9,6 +9,7 @@
 
 import type { McpToolDescriptor } from './mcp-apps'
 import { mcpAppIcon } from './mcp-apps-metadata'
+import { MCP_APP_TOOLS_REMINDER_REGEX } from './mcp-app-tools'
 
 /** Longest query sent to a server; the composer never needs more for a typeahead. */
 export const MCP_MENTION_QUERY_MAX_CHARS = 200
@@ -284,5 +285,5 @@ export function parseMcpResourceReminder(text: string): Map<string, McpMentionRe
 
 /** User-visible collapse: `@Hex bolt`. */
 export function replaceMcpResourceTagsWithMention(text: string): string {
-  return text.replace(MCP_RESOURCE_REMINDER_REGEX, '').replace(MCP_RESOURCE_TAG_REGEX, (_full, _server, name) => `@${unescapeTagText(String(name)).trim()}`)
+  return text.replace(MCP_RESOURCE_REMINDER_REGEX, '').replace(MCP_APP_TOOLS_REMINDER_REGEX, '').replace(MCP_RESOURCE_TAG_REGEX, (_full, _server, name) => `@${unescapeTagText(String(name)).trim()}`)
 }

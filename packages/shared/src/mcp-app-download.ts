@@ -22,6 +22,40 @@ export function mcpAppDownloadName(item: Item): string {
   return clean || 'download'
 }
 
+export const MCP_APP_BLOCKED_DOWNLOAD_EXTENSIONS: ReadonlySet<string> = new Set([
+  '.action', '.apk', '.app', '.appimage', '.appx', '.bat', '.cmd', '.com', '.command', '.cpl',
+  '.deb', '.desktop', '.dmg', '.exe', '.hta', '.jar', '.js', '.jse', '.lnk', '.msi', '.msix',
+  '.pif', '.pkg', '.ps1', '.reg', '.rpm', '.scr', '.url', '.vbe', '.vbs', '.workflow', '.wsf', '.wsh',
+])
+
+function rawItemLeaf(item: Item): string {
+  const uri = item.type === 'resource' ? item.resource.uri : item.uri
+  let pathname: string
+  try { pathname = new URL(uri).pathname } catch { pathname = uri.split(/[?#]/)[0] }
+  let segment = pathname.split('/').filter(Boolean).pop() ?? ''
+  try { segment = decodeURIComponent(segment) } catch {}
+  const linkName = item.type === 'resource_link' ? item.name : ''
+  return /\.[^.\s]+$/.test(linkName) ? linkName : segment || linkName
+}
+
+export function isBlockedMcpAppDownloadName(nameOrPath: string): boolean {
+  if (!nameOrPath) return true
+  const withoutDrive = nameOrPath.replace(/^[A-Za-z]:(?=[\\/])/, '')
+  const leaf = withoutDrive.split(/[/\\]/).filter(Boolean).pop() ?? ''
+  if (!leaf || leaf.includes(':')) return true
+  const trimmed = leaf.replace(/[. ]+$/, '').toLowerCase()
+  if (!trimmed) return true
+  const dot = trimmed.lastIndexOf('.')
+  if (dot <= 0) return false
+  return MCP_APP_BLOCKED_DOWNLOAD_EXTENSIONS.has(trimmed.slice(dot))
+}
+
+export function isBlockedMcpAppDownloadItem(item: Item): boolean {
+  const raw = rawItemLeaf(item)
+  if (raw.includes(':')) return true
+  return isBlockedMcpAppDownloadName(raw) || isBlockedMcpAppDownloadName(mcpAppDownloadName(item))
+}
+
 /** A link a device may fetch on its own: http(s) without credentials. Anything else is read from the View's server. */
 export function isMcpAppHttpDownload(uri: string): boolean {
   try {

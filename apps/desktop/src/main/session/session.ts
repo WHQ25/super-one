@@ -7,6 +7,7 @@ import { updateMcpAppAttachments } from '@superone/shared/mcp-apps-state'
 import { applySuggestedTaskUpdate } from '@superone/shared/suggested-task'
 import { stampCompletedAt } from '@superone/shared/message-completed-at'
 import { withMcpAppContext } from './mcp-app-context'
+import { hostEntrypointAppsForSession } from '../mcp-apps/host-files'
 import { admitTurnAttachments } from '@superone/shared/attachment-turn'
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
 import { insertCodexTimelineRow, stampCodexTimelineOrder } from '@superone/shared/codex-timeline-rows'
@@ -2937,7 +2938,11 @@ export class Session implements SessionContract {
 
   /** What crosses the runtime boundary: the turn plus session-owned defaults it omitted. */
   private outboundRequest(request: SendMessageRequest): SendMessageRequest {
-    return withMcpAppContext(withSessionSelections(this.harnessId, request, this._uiSettings), this._messages)
+    return withMcpAppContext(
+      withSessionSelections(this.harnessId, request, this._uiSettings),
+      this._messages,
+      hostEntrypointAppsForSession({ environmentId: 'local', sessionId: this.id }),
+    )
   }
 
   /** Records explicit picks, which a turn queued before them must not replace. */

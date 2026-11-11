@@ -101,6 +101,7 @@ const SUPERONE_READ_NAMES = new Set<string>([
   'speech_list_providers',
   'widget_list_templates',
   'miniapp_list',
+  'mcp_app_tools_list',
   'automation_list',
   'agent_profile_list',
   'device_list',

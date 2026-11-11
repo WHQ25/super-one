@@ -211,3 +211,13 @@ it('keeps a restored View inline until it is activated, where its Activate actio
   expect(activateButton()).not.toBeNull()
   expect(requestNative).not.toHaveBeenCalledWith('mcpAppFullscreen', expect.objectContaining({ active: true }))
 })
+
+it('renders a fullscreen launch card without mounting an inline iframe when the resource is fullscreen-only', async () => {
+  markMcpAppActivated('fs-only')
+  await render({ ...saved, appInstanceId: 'fs-only', resource: { hash: 'a'.repeat(64), meta: { 'openai/ui': { availableDisplayModes: ['fullscreen'] } } } })
+  expect(container!.querySelector('[data-mcp-app-fullscreen-launch]')).not.toBeNull()
+  expect(container!.querySelector('iframe')).toBeNull()
+  await act(async () => container!.querySelector<HTMLButtonElement>('[data-mcp-app-fullscreen-launch] button')!.click())
+  await vi.waitFor(() => expect(wire.pairs).toHaveLength(1))
+  expect(container!.querySelector('[data-mcp-app-fullscreen]')).not.toBeNull()
+})

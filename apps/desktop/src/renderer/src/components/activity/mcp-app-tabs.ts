@@ -65,7 +65,8 @@ export function syncMcpAppTab(key: string, mode: McpAppSurface, maximized = true
   try {
     store.setShowPanel(true, { forTab: true })
     const group = dock.groups.find(group => group.id === store.maximizedGroupId)
-    const panel = dock.addPanel({ id: panelId(key), component: 'mcp-app', tabComponent: 'mcp-app-tab', title: owner.app.file?.name ?? owner.app.binding.server,
+    const tabTitle = owner.app.file?.name ?? (owner.onClose ? owner.title : undefined) ?? owner.app.binding.server
+    const panel = dock.addPanel({ id: panelId(key), component: 'mcp-app', tabComponent: 'mcp-app-tab', title: tabTitle,
       params: { appInstanceId: key }, renderer: 'always',
       ...(group ? { position: { referenceGroup: group, direction: 'within' as const } } : {}),
     })
@@ -76,6 +77,11 @@ export function syncMcpAppTab(key: string, mode: McpAppSurface, maximized = true
 function maximizePanel(panel: IDockviewPanel): void {
   if (maximize) maximize(panel.id)
   else { panel.api.maximize(); useActivityPanelStore.getState().setMaximizedGroup(panel.group.id) }
+}
+
+export function hasActiveActivityPanelTab(): boolean {
+  const store = useActivityPanelStore.getState()
+  return store.showPanel && Boolean(dock?.activePanel || store.hasPanels)
 }
 
 /** Fullscreen tabs are transient and never enter a parked session snapshot. */

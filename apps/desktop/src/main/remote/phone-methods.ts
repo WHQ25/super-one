@@ -90,6 +90,40 @@ function createHandlers(host: PhoneMethodHost): Record<string, Handler> {
         assertControl()
       })
     },
+    'mcpApps.toolsSync': async (p, ctx) => {
+      if (!ctx.client.clientSessionId.startsWith('phone:')) throw Object.assign(new Error('Authenticated phone required'), { code: 'forbidden' })
+      const sessionId = text(p, 'sessionId')
+      const path = sessionProjectPath(ctx, sessionId)
+      const viewId = text(p, 'viewId')
+      const deviceId = deviceOf(ctx)
+      const { syncMcpAppSurfaceTools } = await import('../mcp-apps/app-tools-ipc')
+      await syncMcpAppSurfaceTools({
+        projectPath: path,
+        sessionId,
+        requester: { kind: 'mobile', deviceId, transport: transportOf(ctx) },
+        senderKey: `mobile:${deviceId}`,
+        viewId,
+        messageId: optionalText(p, 'messageId'),
+        tools: p.tools,
+        push: (request) => {
+          ctx.streams?.push({ type: 'client', event: { type: 'mcp_app_tool_request', ...request } })
+        },
+      })
+      return { ok: true }
+    },
+    'mcpApps.toolsRespond': async (p, ctx) => {
+      if (!ctx.client.clientSessionId.startsWith('phone:')) throw Object.assign(new Error('Authenticated phone required'), { code: 'forbidden' })
+      if (!p.response || typeof p.response !== 'object' || Array.isArray(p.response)) throw new InvalidArgument('response is required')
+      const { getMcpAppToolSurfaceBridge } = await import('../mcp-apps/app-tools-ipc')
+      return { ok: getMcpAppToolSurfaceBridge().respond(`mobile:${deviceOf(ctx)}`, p.response as import('@superone/shared/mcp-app-tools').McpAppToolSurfaceResponse) }
+    },
+    'mcpApps.toolsForSend': async (p, ctx) => {
+      if (!ctx.client.clientSessionId.startsWith('phone:')) throw Object.assign(new Error('Authenticated phone required'), { code: 'forbidden' })
+      const sessionId = text(p, 'sessionId')
+      const path = sessionProjectPath(ctx, sessionId)
+      const { listMcpAppToolsForSend } = await import('../mcp-apps/app-tools-ipc')
+      return { views: listMcpAppToolsForSend(path, sessionId) }
+    },
     // Session reads beyond the shared session family.
     'session.attachment': (p, ctx) => {
       const sessionId = text(p, 'sessionId')

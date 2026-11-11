@@ -5,6 +5,7 @@ import type { McpUiDownloadFileRequest, McpUiMessageRequest } from '@modelcontex
 import type { McpAppsRpcResult } from './environment/mcp-apps-rpc'
 import type { ContextAttachment } from './context-attachments'
 import type { McpAppResourceWriteParams } from './mcp-app-files'
+import type { McpAppToolAnnotations } from './mcp-app-tools'
 import { MAX_REMOTE_PAYLOAD_BYTES } from './remote-payload'
 import { formatBytes } from './format-bytes'
 
@@ -147,7 +148,20 @@ export type McpAppDownloadContents = McpUiDownloadFileRequest['params']['content
 export type McpAppMessagePrompt = { kind: 'sendMessage'; server: string; text: string; nonTextBlocks: number; items?: ContextAttachment[]; target?: 'active' | 'new' }
 /** `openai/files/open` for a file outside the session's project; `path` is the host-resolved real path. */
 export type McpAppOpenFilePrompt = { kind: 'openFile'; server: string; path: string }
-export type McpAppApprovalPrompt = McpAppMessagePrompt | McpAppOpenFilePrompt
+export type McpAppToolPrompt = {
+  kind: 'callAppTool'
+  server: string
+  viewId: string
+  viewTitle?: string
+  toolName: string
+  toolTitle?: string
+  description?: string
+  argsPreview: string
+  annotations?: McpAppToolAnnotations
+  schemaFallback?: true
+  allowAlwaysAllow: boolean
+}
+export type McpAppApprovalPrompt = McpAppMessagePrompt | McpAppOpenFilePrompt | McpAppToolPrompt
 
 export type McpAppHostOperation =
   | { operation: 'load'; referenceOnly?: boolean }
@@ -196,7 +210,10 @@ export interface McpAppAttachmentUpdate {
   resource?: NonNullable<ToolAppAttachment['resource']>
   modelContext?: McpAppModelContext | null
   presentation?: McpAppPresentation
+  toolDescriptor?: McpToolDescriptor
 }
+
+export type McpAppHostUpdate = McpAppAttachmentUpdate & Partial<Pick<ToolAppAttachment, 'toolInput' | 'toolResult' | 'toolResultOmitted' | 'status' | 'error'>>
 
 export interface ToolAppAttachment {
   appInstanceId: string
@@ -206,6 +223,7 @@ export interface ToolAppAttachment {
   gatewayCallId?: string
   resourceUri: string
   toolName?: string
+  toolDescriptor?: McpToolDescriptor
   /** Set only on a View the host opened through a file entrypoint; such Views live in memory, outside the transcript. */
   file?: { name: string; resourceUri: string }
   presentation?: McpAppPresentation
@@ -238,6 +256,20 @@ export function mcpAppToolVisible(tool: McpToolDescriptor): boolean {
   return tool._meta?.ui?.visibility?.includes('app') ?? true
 }
 
+export const MCP_APP_TOOL_DESCRIPTOR_MAX_BYTES = 128 * 1024
+
+export function compactMcpToolDescriptor(tool: McpToolDescriptor): McpToolDescriptor {
+  return {
+    name: tool.name,
+    ...(tool.title ? { title: tool.title } : {}),
+    ...(tool.description !== undefined ? { description: tool.description } : {}),
+    ...(tool.inputSchema ? { inputSchema: tool.inputSchema } : {}),
+    ...(tool.outputSchema ? { outputSchema: tool.outputSchema } : {}),
+    ...(tool.annotations ? { annotations: tool.annotations } : {}),
+    ...(tool._meta ? { _meta: tool._meta } : {}),
+  }
+}
+
 /** Keep data bounded without turning a working View into an error for an oversized result. */
 export function boundedToolAppAttachment(app: ToolAppAttachment, logOmission = false): ToolAppAttachment {
   // An explicit omission always wins over raw harness data or restored fallbacks.
@@ -246,6 +278,11 @@ export function boundedToolAppAttachment(app: ToolAppAttachment, logOmission = f
     const presentation = compactMcpAppPresentation(app.presentation)
     try { assertMcpAppSize(presentation, MCP_APP_PRESENTATION_MAX_BYTES); app = { ...app, presentation } }
     catch { app = { ...app, presentation: undefined } }
+  }
+  if (app.toolDescriptor) {
+    const toolDescriptor = compactMcpToolDescriptor(app.toolDescriptor)
+    try { assertMcpAppSize(toolDescriptor, MCP_APP_TOOL_DESCRIPTOR_MAX_BYTES); app = { ...app, toolDescriptor } }
+    catch { app = { ...app, toolDescriptor: undefined } }
   }
   try {
     assertMcpAppSize({ toolInput: app.toolInput })

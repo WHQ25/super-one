@@ -1,10 +1,11 @@
 import { mcpAppResourceModes } from '../mcp-apps-metadata'
-import { AppBridge } from '@modelcontextprotocol/ext-apps/app-bridge'
+import { AppBridge, MESSAGE_METHOD, McpUiMessageResultSchema } from '@modelcontextprotocol/ext-apps/app-bridge'
 import type { McpUiAppCapabilities, McpUiHostCapabilities, McpUiHostContext, McpUiRequestDisplayModeRequest } from '@modelcontextprotocol/ext-apps/app-bridge'
 import type { Transport } from '@modelcontextprotocol/sdk/shared/transport.js'
 import { CallToolResultSchema, ErrorCode, McpError, ReadResourceResultSchema } from '@modelcontextprotocol/sdk/types.js'
 import { boundedToolAppAttachment, assertMcpAppSize, MCP_APP_OUTPUT_MAX_BYTES, McpAppsError } from '../mcp-apps'
-import type { McpAppDownloadContents, McpAppMessageParams, McpAppModelContext, McpAppReadResult, McpAppsCallResult, ToolAppAttachment, McpUiResourceMeta } from '../mcp-apps'
+import type { McpAppDownloadContents, McpAppMessageParams, McpAppModelContext, McpAppReadResult, McpAppsCallResult, McpAppToolResult, ToolAppAttachment, McpUiResourceMeta } from '../mcp-apps'
+import { boundMcpAppToolCallResult, validateMcpAppRegisteredTools, type McpAppRegisteredTool } from '../mcp-app-tools'
 import { McpAppMessageRequestSchema } from './message-schema'
 import { mcpAppContextState, type McpAppModelContextState } from '../mcp-app-model-context'
 import { createMcpAppDocument } from './document'
@@ -44,6 +45,8 @@ export interface McpAppHostOptions {
   onError?: (error: unknown) => void
   onUnknownOutcome?: (response: McpAppsCallResult) => void
   onSizeChanged?: (size: { width?: number; height?: number }) => void
+  onRequestTeardown?: () => void
+  onToolsChanged?: (tools: McpAppRegisteredTool[]) => void
 }
 
 export interface McpAppHost {
@@ -56,6 +59,7 @@ export interface McpAppHost {
   updateContext(context: McpUiHostContext): void
   /** Forward a host file change to a View that subscribed to `uri`. */
   resourceUpdated(uri: string): void
+  callViewTool(name: string, args: Record<string, unknown>, signal?: AbortSignal): Promise<McpAppToolResult>
   /** Synchronous gate close for navigation/unmount; outstanding executions are aborted. */
   revoke(): void
   dispose(): Promise<void>
@@ -107,7 +111,7 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
       throw error
     }
   }
-  bridge.oncalltool = (params, extra) => execute(extra.signal, async signal => {
+  bridge.oncalltool = (params, extra) => execute(extra.mcpReq.signal, async signal => {
     const request = { tool: params.name, args: params.arguments ?? {} }
     assertMcpAppSize(request)
     const response = await options.executor.callTool(request, signal)
@@ -116,14 +120,13 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
     assertMcpAppSize(response.result, MCP_APP_OUTPUT_MAX_BYTES)
     return CallToolResultSchema.parse(response.result)
   })
-  bridge.onreadresource = (params, extra) => execute(extra.signal, async signal => {
+  bridge.onreadresource = (params, extra) => execute(extra.mcpReq.signal, async signal => {
     const representation = (params._meta?.['openai/resource'] as { representation?: unknown } | undefined)?.representation
     const result = await options.executor.readResource({ uri: params.uri, ...(representation === 'text' || representation === 'blob' ? { representation } : {}) }, signal)
     assertMcpAppSize(result, MCP_APP_OUTPUT_MAX_BYTES)
     return ReadResourceResultSchema.parse(result)
   })
-  bridge.setRequestHandler(McpAppMessageRequestSchema, (request, extra) => execute(extra.signal, signal => {
-    const params = request.params
+  bridge.setRequestHandler(MESSAGE_METHOD, { params: McpAppMessageRequestSchema.shape.params, result: McpUiMessageResultSchema }, (params, extra) => execute(extra.mcpReq.signal, signal => {
     assertMcpAppSize(params)
     const now = Date.now()
     while (messageTimes.length && messageTimes[0] <= now - 60_000) messageTimes.shift()
@@ -132,7 +135,7 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
     // Executor confirms every request and uses the original session's normal send queue.
     return options.executor.sendMessage(params, signal)
   }))
-  bridge.onupdatemodelcontext = (params, extra) => execute(extra.signal, async signal => {
+  bridge.onupdatemodelcontext = (params, extra) => execute(extra.mcpReq.signal, async signal => {
     // Whitelist the two model-facing fields; never inject tool result _meta.
     const modelContext: McpAppModelContext = {
       ...(params.content ? { content: params.content } : {}),
@@ -145,7 +148,7 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
     contextChanged({ ...context, 'openai/modelContext': state })
     return { _meta: { 'openai/modelContext': { updateId: state?.updateId ?? crypto.randomUUID() } } }
   })
-  bridge.onopenlink = (params, extra) => execute(extra.signal, signal => {
+  bridge.onopenlink = (params, extra) => execute(extra.mcpReq.signal, signal => {
     let url: URL
     try { url = new URL(params.url) } catch { throw new McpAppsError('invalid', 'Invalid MCP App link') }
     if (!['https:', 'http:'].includes(url.protocol) || url.username || url.password) throw new McpAppsError('denied', 'Unsupported MCP App link')
@@ -153,8 +156,8 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
   })
   const { downloadFile } = options.executor
   // Not size-bounded: the bytes are already in the View and go only to a file the user picks.
-  if (options.capabilities.downloadFile && downloadFile) bridge.ondownloadfile = (params, extra) => execute(extra.signal, signal => downloadFile(params.contents, signal))
-  bridge.onrequestdisplaymode = (params, extra) => execute(extra.signal, async signal => {
+  if (options.capabilities.downloadFile && downloadFile) bridge.ondownloadfile = (params, extra) => execute(extra.mcpReq.signal, signal => downloadFile(params.contents, signal))
+  bridge.onrequestdisplaymode = (params, extra) => execute(extra.mcpReq.signal, async signal => {
     const resourceModes = mcpAppResourceModes(options.resourceMeta ?? app.resource?.meta)
     const declared = bridge.getAppCapabilities()?.availableDisplayModes
     // A refused request reports the mode actually in effect.
@@ -173,20 +176,20 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
   }
   if (hostResources || openFiles) bridge.fallbackRequestHandler = async (request, extra) => {
     if (hostResources) switch (request.method) {
-      case 'resources/subscribe': return execute(extra.signal, async signal => {
+      case 'resources/subscribe': return execute(extra.mcpReq.signal, async signal => {
         const uri = uriOf(request.params)
         if (!subscribeResource) throw new McpAppsError('denied', 'Resource subscriptions are unavailable')
         await subscribeResource({ uri }, signal)
         subscriptions.add(uri)
         return {}
       })
-      case 'resources/unsubscribe': return execute(extra.signal, async signal => {
+      case 'resources/unsubscribe': return execute(extra.mcpReq.signal, async signal => {
         const uri = uriOf(request.params)
         subscriptions.delete(uri)
         await unsubscribeResource?.({ uri }, signal)
         return {}
       })
-      case 'openai/resources/write': return execute(extra.signal, async signal => {
+      case 'openai/resources/write': return execute(extra.mcpReq.signal, async signal => {
         const params = request.params as Record<string, unknown> | undefined
         const uri = uriOf(params)
         const ifMatch = params?.ifMatch
@@ -199,7 +202,7 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
         return await writeResource(write, signal)
       })
     }
-    if (openFiles && request.method === 'openai/files/open') return execute(extra.signal, async signal => {
+    if (openFiles && request.method === 'openai/files/open') return execute(extra.mcpReq.signal, async signal => {
       const path = (request.params as { path?: unknown } | undefined)?.path
       if (typeof path !== 'string' || !path || path.length > 4096) throw new McpError(ErrorCode.InvalidParams, 'Invalid file path')
       if (!openFile) throw new McpAppsError('denied', 'Opening local files is unavailable')
@@ -247,9 +250,47 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
     flush = flush.then(send).catch(error => { if (!revoked) options.onError?.(error) })
     return flush
   }
+  let toolsRefreshTimer: ReturnType<typeof setTimeout> | undefined
+  let toolsListSubscribed = false
+  let toolsRevision = 0
+  let hadTools = false
+  const refreshTools = async (): Promise<void> => {
+    if (revoked || !initialized || !active || !bridge.getAppCapabilities()?.tools) return
+    const revision = ++toolsRevision
+    try {
+      const response = await bridge.listTools({}, { signal: lifetime.signal })
+      if (revoked || revision !== toolsRevision) return
+      const tools = validateMcpAppRegisteredTools(response.tools)
+      hadTools = tools.length > 0
+      options.onToolsChanged?.(tools)
+    } catch (error) {
+      if (revoked || lifetime.signal.aborted || revision !== toolsRevision) return
+      if (hadTools) {
+        hadTools = false
+        options.onToolsChanged?.([])
+      }
+      options.onError?.(error)
+    }
+  }
+  const scheduleToolsRefresh = (): void => {
+    if (revoked || !initialized) return
+    if (toolsRefreshTimer) clearTimeout(toolsRefreshTimer)
+    toolsRefreshTimer = setTimeout(() => {
+      toolsRefreshTimer = undefined
+      void refreshTools()
+    }, 250)
+  }
   bridge.oninitialized = () => {
     if (revoked || initialized) return
     initialized = true
+    const capabilities = bridge.getAppCapabilities()
+    if (capabilities?.tools) {
+      if (capabilities.tools.listChanged && !toolsListSubscribed) {
+        toolsListSubscribed = true
+        bridge.setNotificationHandler('notifications/tools/list_changed', () => scheduleToolsRefresh())
+      }
+      if (active) void refreshTools()
+    }
     options.onInitialized?.()
     void queue()
   }
@@ -258,17 +299,43 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
     if (revoked) return
     revoked = true
     active = false
+    if (toolsRefreshTimer) {
+      clearTimeout(toolsRefreshTimer)
+      toolsRefreshTimer = undefined
+    }
+    if (hadTools) {
+      hadTools = false
+      options.onToolsChanged?.([])
+    }
     lifetime.abort()
     document.revoke()
     // close() removes postMessage listeners synchronously, including during StrictMode remount.
     void bridge.close().catch(() => {})
+  }
+  const dispose = (): Promise<void> => {
+    if (disposed) return disposed
+    active = false
+    lifetime.abort()
+    disposed = (async () => {
+      try { if (initialized && !revoked) await bridge.teardownResource({}, { timeout: 500 }) } catch { /* Best effort before removing the document. */ }
+      finally { revoke() }
+    })()
+    return disposed
+  }
+  bridge.onrequestteardown = () => {
+    if (revoked || !initialized) return
+    void dispose().finally(() => options.onRequestTeardown?.())
   }
   document.onRevoke(revoke)
   return {
     document,
     appCapabilities: () => bridge.getAppCapabilities(),
     connect: () => bridge.connect(options.transport),
-    activate() { if (!revoked) active = true },
+    activate() {
+      if (revoked || active) return
+      active = true
+      if (initialized && bridge.getAppCapabilities()?.tools) void refreshTools()
+    },
     async update(next) {
       if (next.appInstanceId !== app.appInstanceId || JSON.stringify(next.binding) !== JSON.stringify(app.binding)) throw new McpAppsError('invalid', 'MCP App binding changed')
       app = boundedToolAppAttachment(next, true)
@@ -282,17 +349,15 @@ export function createMcpAppHost(options: McpAppHostOptions): McpAppHost {
       if (revoked || !initialized || !subscriptions.has(uri)) return
       void bridge.notification({ method: 'notifications/resources/updated', params: { uri } } as never).catch(() => {})
     },
-    revoke,
-    dispose() {
-      if (disposed) return disposed
-      active = false
-      lifetime.abort()
-      disposed = (async () => {
-        try { if (initialized && !revoked) await bridge.teardownResource({}, { timeout: 500 }) } catch { /* Best effort before removing the document. */ }
-        finally { revoke() }
-      })()
-      return disposed
+    callViewTool(name, args, signal = new AbortController().signal) {
+      return execute(signal, async combined => {
+        assertMcpAppSize({ name, arguments: args })
+        const raw = await bridge.callTool({ name, arguments: args }, { signal: combined })
+        return boundMcpAppToolCallResult(raw)
+      })
     },
+    revoke,
+    dispose,
   }
 }
 

@@ -44,6 +44,10 @@ import {
   registerMiniappTools,
   type MiniappToolDeps,
 } from './miniapp-mcp-tools'
+import {
+  registerMcpAppTools,
+  type McpAppToolsMcpDeps,
+} from './mcp-app-tools-mcp'
 
 const TOOL_INTERCEPT_TIMEOUT_MS = 10_000
 
@@ -184,6 +188,24 @@ export function miniappToolDepsForSurface(): MiniappToolDeps {
       const session = getSessionHost()?.getSession(sessionId)
       if (!session?.emitHostEvent) return null
       return (event) => session.emitHostEvent!(event)
+    },
+  }
+}
+
+export function mcpAppToolDepsForSurface(): McpAppToolsMcpDeps {
+  return {
+    resolvePermissionMode: async (sessionId, connectionId) => {
+      if (connectionId === 'local') {
+        const session = getSessionHost()?.getSession(sessionId) as { getCurrentPermissionMode?: () => string | null | undefined } | null | undefined
+        return session?.getCurrentPermissionMode?.()
+      }
+      try {
+        const { getEnvironmentHost } = await import('../environment/environment-host')
+        const remote = await getEnvironmentHost().getSession(connectionId, sessionId) as { permissionMode?: string | null } | null
+        return remote?.permissionMode
+      } catch {
+        return undefined
+      }
     },
   }
 }
@@ -370,6 +392,7 @@ export function createSuperoneMcpServer(sessionId: string, projectPath?: string)
   registerDeviceAgentTools(server, sessionId, executeDeviceAgentTool)
   // Fixed mini-app surface — no per-app dynamic MCP tools.
   registerMiniappTools(server, sessionId, miniappToolDepsForSurface())
+  registerMcpAppTools(server, sessionId, mcpAppToolDepsForSurface())
   const state: ProjectServerState = { server, registeredTools: new Map() }
 
   let set = sessionServers.get(sessionId)

@@ -19,3 +19,9 @@ export const WIDGET_LAYOUT_DESCRIPTION =
   + '"fluid" (default) reflows to the available width. '
   + '"fixed" lays the widget out at 680px and scales it down as a whole, keeping its proportions — '
   + 'use it for UI mockups, where the layout itself is what the user is reviewing.'
+
+export const WIDGET_SAVE_DESCRIPTION =
+  'Save a widget as a reusable template so it can be re-rendered later with widget_show({ template, data }). '
+  + 'Only call this when the user asks to keep a widget, or asks to change one that is already saved — '
+  + 'saving writes a file into their project, so it is their decision, not yours. '
+  + 'To edit a saved template, pass its existing id: read the file, change it, and save it back under the same id.'

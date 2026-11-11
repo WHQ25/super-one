@@ -14,10 +14,13 @@ Non-obvious upstream behaviors that SuperOne depends on.
 - **SuperOne code**: `apps/desktop/src/main/acp/acp-process.ts` (`onStdoutLine` filter), `apps/desktop/src/main/acp/antigravity-runtime-bridge.ts`, `apps/desktop/src/main/acp/antigravity-auth-service.ts`
 - **Guard**: `apps/desktop/src/main/acp/antigravity-protocol.test.ts`, `apps/desktop/src/main/acp/antigravity-auth-service.test.ts`
 
-## 3. Isolated `GEMINI_HOME` and per-process `TMPDIR` (observed in 1.3.0)
+## 3. Native `~/.gemini` & OS Keyring reuse, per-process `TMPDIR`, and ambient env stripping (observed in 1.3.0 / 1.5.3)
 
-- **Behavior**: `agy_acp_server.par` unpacks its self-extracting Python archive into `TMPDIR` and reads `GEMINI_HOME/.gemini/settings.json` plus `GEMINI_HOME/antigravity-acp/acp_token.json`. Ambient `GEMINI_*` / `GOOGLE_*` / `CLOUD_SHELL` variables can override the configured authentication method if not stripped.
-- **SuperOne code**: `apps/desktop/src/main/acp/antigravity-profile.ts`
+- **Behavior**:
+  1. `agy` `1.5.3` (`acpLanguageServer`) natively reads user customizations, MCP servers, skills, rules, brain transcripts, and conversation SQLite databases from `~/.gemini` (`~/.gemini/antigravity-cli/...`) and stores OAuth tokens in the OS Keyring (`keyringAuth` / `jetski-standalone-oauth-token`), ignoring `GEMINI_HOME` and `AGY_ACP_FORCE_FILE_STORAGE`.
+  2. SuperOne does **not** override `--gemini-dir` or `GEMINI_HOME`, so Antigravity ACP sessions reuse the user's native `~/.gemini` configuration and existing CLI Keyring login directly. Because Keyring-backed OAuth leaves no `oauth_creds.json` file on disk, `AntigravityAuthService` and `authenticateAntigravityRuntime` persist `oauthSignedIn` in `~/.superone/antigravity/auth-config.json` and abort session startup immediately (`ANTIGRAVITY_AUTH_REQUIRED`) if `authenticate` emits an interactive OAuth URL prompt on `stdout` or `stderr`.
+  3. Each spawned process still receives an isolated `TMPDIR` under `~/.superone/antigravity/tmp` and strips ambient `GEMINI_*` / `GOOGLE_*` / `CLOUD_SHELL` variables from `baseEnv` so unrelated shell credentials cannot override the configured authentication method.
+- **SuperOne code**: `apps/desktop/src/main/acp/antigravity-profile.ts`, `apps/desktop/src/main/acp/antigravity-oauth-url.ts`, `apps/desktop/src/main/acp/antigravity-auth-service.ts`, `apps/desktop/src/main/acp/antigravity-runtime-bridge.ts`, `apps/desktop/src/main/acp/antigravity-db-usage.ts`
 - **Guard**: `apps/desktop/src/main/acp/antigravity-auth-service.test.ts`
 
 ## 4. `interaction_*` and `agent_ask_user` permission request payload (observed in 1.3.0 / 1.4.5)
@@ -101,5 +104,14 @@ Non-obvious upstream behaviors that SuperOne depends on.
   2. On `tool_call_update(status: "completed" | "failed")`, `(*ACPServer).getToolOutput` omits `rawOutput` and `content` for `manage_task`, while writing the full `GENERIC` step output (Markdown task table, `Task: ...\nStatus: ...\nLog output:\n...`, cancellation/input confirmation, or step execution error) to `<brainRoot>/<sessionId>/.system_generated/logs/transcript_full.jsonl` (and `transcript.jsonl`). `normalizeAntigravitySessionUpdate` caches the open `ManageTask` input by `toolCallId` and resolves the completed `GENERIC` step output from the session transcript when `rawOutput` and `content` are empty.
 - **SuperOne code**: `apps/desktop/src/main/acp/antigravity-manage-task.ts`, `apps/desktop/src/main/acp/antigravity-protocol.ts`, `apps/desktop/src/main/acp/acp-event-map.ts`, `packages/acp/src/tool-normalization.ts`, `packages/shared/src/tool-ui.ts`
 - **Guard**: `apps/desktop/src/main/acp/antigravity-protocol.test.ts`
+
+## 13. Unadvertised Streamable HTTP MCP transport in `initialize` (observed in 1.5.3)
+
+- **Behavior**:
+  1. `agy acp` `1.5.3` omits `agentCapabilities.mcpCapabilities` in its `initialize` response (`agentCapabilities` contains only `loadSession`, `promptCapabilities`, and `_meta.antigravity`, alongside `agentInfo: { name: "Antigravity ACP Server", version: "1.5.3" }`).
+  2. Despite omitting `mcpCapabilities.http`, `acpLanguageServer` natively supports ACP `McpServerHttp` (`{ type: "http", name, url, headers }`) in `session/new` and `session/resume`, forwarding `Authorization` and `X-SuperOne-Session-Id` headers and maintaining stateful `mcp-session-id` across `initialize`, `notifications/initialized`, `tools/list`, and `tools/call` without spawning a per-session Node/Electron helper process.
+  3. `readAgentCapabilities` and `mcpTransportCapsFromAgent` enable `mcp.http = true` when Antigravity is identified via `agentCapabilities._meta.antigravity`, `agentInfo.name`, or `agentId === 'antigravity'`.
+- **SuperOne code**: `apps/desktop/src/main/acp/acp-capabilities.ts`, `apps/desktop/src/main/acp/acp-config.ts`, `apps/desktop/src/main/acp/acp-mcp.ts`
+- **Guard**: `apps/desktop/src/main/acp/acp-capabilities.test.ts`, `apps/desktop/src/main/acp/acp-mcp.test.ts`
 
 

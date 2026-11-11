@@ -1,7 +1,9 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { ClientConnection } from '@agentclientprotocol/sdk'
+import { ANTIGRAVITY_AUTH_REQUIRED } from '@superone/shared/antigravity-auth'
 
 vi.mock('electron', () => ({
   app: {
@@ -21,15 +23,26 @@ vi.mock('electron', () => ({
   },
 }))
 
+vi.mock('../harness/antigravity-launch', () => ({
+  resolveDesktopAntigravityLaunch: vi.fn(() => ({
+    command: '/usr/local/bin/agy',
+    args: ['acp'],
+  })),
+}))
+
 import { AntigravityAuthService } from './antigravity-auth-service'
 import {
   extractAntigravityAuthUrlFromStdoutLine,
   extractAntigravityAuthUrlsFromStderrChunk,
   prepareAntigravitySpawnContext,
-  resolveAntigravityTokenPath,
+  readAntigravityAuthConfig,
   validateAntigravityOAuthUrl,
   writeAntigravityAuthConfig,
 } from './antigravity-profile'
+import {
+  authenticateAntigravityRuntime,
+  prepareAntigravityProcessLaunch,
+} from './antigravity-runtime-bridge'
 
 describe('antigravity-profile & AntigravityAuthService', () => {
   let homeDir: string
@@ -42,11 +55,13 @@ describe('antigravity-profile & AntigravityAuthService', () => {
     rmSync(homeDir, { recursive: true, force: true })
   })
 
-  it('prepares isolated GEMINI_HOME, settings.json, and strips ambient Google env vars', () => {
+  it('reuses native ~/.gemini config without overriding GEMINI_HOME and strips ambient Google env vars', () => {
     const prevKey = process.env.GEMINI_API_KEY
     const prevProject = process.env.GOOGLE_CLOUD_PROJECT
+    const prevGeminiHome = process.env.GEMINI_HOME
     process.env.GEMINI_API_KEY = 'ambient-leak'
     process.env.GOOGLE_CLOUD_PROJECT = 'ambient-project'
+    process.env.GEMINI_HOME = '/tmp/ambient-gemini-home'
     try {
       writeAntigravityAuthConfig(
         {
@@ -62,15 +77,12 @@ describe('antigravity-profile & AntigravityAuthService', () => {
       try {
         expect(ctx.baseEnv.GEMINI_API_KEY).toBeUndefined()
         expect(ctx.baseEnv.GOOGLE_CLOUD_PROJECT).toBeUndefined()
-        expect(ctx.extraEnv.AGY_ACP_FORCE_FILE_STORAGE).toBe('1')
+        expect(ctx.baseEnv.GEMINI_HOME).toBeUndefined()
+        expect(ctx.extraEnv.GEMINI_HOME).toBeUndefined()
+        expect(ctx.extraEnv.AGY_ACP_FORCE_FILE_STORAGE).toBeUndefined()
         expect(ctx.extraEnv.GOOGLE_CLOUD_PROJECT).toBe('enterprise-proj-123')
         expect(ctx.extraEnv.GOOGLE_CLOUD_LOCATION).toBe('us-central1')
-        expect(ctx.extraEnv.GEMINI_HOME).toContain('antigravity')
-        const cliSettings = JSON.parse(
-          readFileSync(join(ctx.extraEnv.GEMINI_HOME!, 'antigravity-cli', 'settings.json'), 'utf8'),
-        )
-        expect(cliSettings.enableTerminalSandbox).toBe(true)
-        expect(cliSettings.auth).toEqual({ type: 'oauth-business' })
+        expect(ctx.extraEnv.TMPDIR).toContain('antigravity')
       } finally {
         ctx.cleanup()
       }
@@ -79,6 +91,8 @@ describe('antigravity-profile & AntigravityAuthService', () => {
       else process.env.GEMINI_API_KEY = prevKey
       if (prevProject === undefined) delete process.env.GOOGLE_CLOUD_PROJECT
       else process.env.GOOGLE_CLOUD_PROJECT = prevProject
+      if (prevGeminiHome === undefined) delete process.env.GEMINI_HOME
+      else process.env.GEMINI_HOME = prevGeminiHome
     }
   })
 
@@ -110,7 +124,7 @@ describe('antigravity-profile & AntigravityAuthService', () => {
     expect(fromStderr).toEqual([validUrl, v153Url])
   })
 
-  it('completes OAuth login with callback forwarding and supports logout', async () => {
+  it('completes Keyring-backed OAuth login without token files and supports logout', async () => {
     const validUrl =
       'https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id=abc&redirect_uri=http%3A%2F%2F127.0.0.1%3A43123%2F&state=state_abc'
     let finishAuthenticate: (() => void) | null = null
@@ -123,9 +137,6 @@ describe('antigravity-profile & AntigravityAuthService', () => {
       onAuthChanged: () => undefined,
       forwardCallback: async (callbackUrl, pending) => {
         forwarded.push({ callbackUrl, ...pending })
-        const tokenPath = resolveAntigravityTokenPath(homeDir)
-        mkdirSync(dirname(tokenPath), { recursive: true })
-        writeFileSync(tokenPath, JSON.stringify({ refresh_token: 'rt_123' }))
         finishAuthenticate?.()
       },
       openConnection: async ({ onAuthUrl }) => ({
@@ -163,5 +174,45 @@ describe('antigravity-profile & AntigravityAuthService', () => {
 
     const afterLogout = await service.handle({ action: 'logout' })
     expect(afterLogout.status).toBe('signed_out')
+  })
+
+  it('authenticates against native Keyring session and aborts immediately on interactive OAuth URL prompts', async () => {
+    const okConn = {
+      agent: {
+        request: vi.fn(async () => ({})),
+      },
+    } as unknown as ClientConnection
+
+    await authenticateAntigravityRuntime(okConn, homeDir)
+    expect(readAntigravityAuthConfig(homeDir).oauthSignedIn).toBe(true)
+
+    const launch = {
+      agentId: 'antigravity',
+      command: '',
+      args: [] as string[],
+      env: {},
+    }
+    const spawnOpts = await prepareAntigravityProcessLaunch(launch as never, { agentId: 'antigravity' })
+    try {
+      const pendingConn = {
+        agent: {
+          request: vi.fn(
+            () =>
+              new Promise<void>(() => {
+                spawnOpts.onStderrData?.(
+                  'Please visit the following URL to authorize: https://accounts.google.com/o/oauth2/v2/auth?response_type=code&client_id=abc&redirect_uri=http%3A%2F%2Flocalhost%3A43123%2Fauth%2Fcallback&state=s1\n',
+                )
+              }),
+          ),
+        },
+      } as unknown as ClientConnection
+
+      await expect(authenticateAntigravityRuntime(pendingConn, homeDir)).rejects.toThrow(
+        ANTIGRAVITY_AUTH_REQUIRED,
+      )
+      expect(readAntigravityAuthConfig(homeDir).oauthSignedIn).toBe(false)
+    } finally {
+      spawnOpts.onExit?.()
+    }
   })
 })

@@ -34,13 +34,14 @@ import {
   notifyDevAppReady,
 } from './superone-mcp-server'
 import type { SuperoneMcpToolDescriptor } from './superone-mcp-types'
-import { HOST_ACTION_WIDGET_DESCRIPTORS } from '@superone/shared/environment/host-action-widget-descriptors'
+import { HOST_ACTION_WIDGET_DESCRIPTORS, WIDGET_SAVE_DESCRIPTOR } from '@superone/shared/environment/host-action-widget-descriptors'
 import {
   executeMiniappFixedTool,
   getMiniappFixedToolDescriptors,
 } from './miniapp-mcp-tools'
 import {
   listWidgetTemplatesHandler,
+  executeWidgetSaveTool,
   executeWidgetShowTool,
 } from '../generative-ui/mcp-server'
 import {
@@ -55,6 +56,7 @@ import { AGENT_PROFILE_TOOL_NAMES } from './superone-mcp-builtin-defs'
 
 const WIDGET_LIST_TEMPLATES_NAME = 'widget_list_templates'
 const WIDGET_SHOW_NAME = 'widget_show'
+const WIDGET_SAVE_NAME = 'widget_save'
 
 export function listSuperoneMcpTools(sessionId: string): SuperoneMcpToolDescriptor[] {
   const browserAndComputerUseDenied = isCodexBrowserAndComputerUseDenied(sessionId)
@@ -65,6 +67,7 @@ export function listSuperoneMcpTools(sessionId: string): SuperoneMcpToolDescript
     ...getMiniappFixedToolDescriptors() as SuperoneMcpToolDescriptor[],
     // The same descriptors a remote node advertises, so the two cannot drift apart.
     ...HOST_ACTION_WIDGET_DESCRIPTORS,
+    WIDGET_SAVE_DESCRIPTOR,
   ]
   // Computer Use is opt-in (default off). P0 exposes the 6-tool contract only when enabled.
   if (!browserAndComputerUseDenied && isComputerUseEnabled()) {
@@ -195,6 +198,11 @@ async function runSuperoneMcpTool(
   if (toolName === WIDGET_LIST_TEMPLATES_NAME) {
     const projectPath = getSessionHost()?.getSession(sessionId)?.projectPath
     return listWidgetTemplatesHandler({ projectPath })
+  }
+
+  if (toolName === WIDGET_SAVE_NAME) {
+    const projectPath = getSessionHost()?.getSession(sessionId)?.projectPath
+    return executeWidgetSaveTool(args, { projectPath })
   }
 
   if (toolName === WIDGET_SHOW_NAME) {

@@ -235,6 +235,9 @@ describe('superone-mcp-stdio-ipc', () => {
     expect(names).toContain('config_read')
     expect(names).toContain('miniapp_list')
     expect(names).toContain('miniapp_call')
+    expect(names).toContain('widget_list_templates')
+    expect(names).toContain('widget_show')
+    expect(names).toContain('widget_save')
     expect(names).not.toContain('myapp__do_thing')
     expect(names).toContain('browser_snapshot')
     expect(names).toContain('browser_act')
@@ -348,6 +351,36 @@ describe('superone-mcp-stdio-ipc', () => {
     )
     expect(res.result?.content?.[0]?.text).toContain('"ok":true')
     client.close()
+  })
+
+  it('executes widget_save scoped to the session project directory', async () => {
+    const projectDir = join(tmpRoot, 'widget-proj')
+    const sessionId = 'sid-widget-proj'
+    setSessionHostProvider(() => ({
+      getSession: (id: string) => (id === sessionId ? { projectPath: projectDir } : null),
+      createSession: vi.fn(),
+      disposeSession: vi.fn(),
+    } as never))
+    createSuperoneMcpServer(sessionId)
+    const client = new TestClient(getEndpoint())
+    await client.ready()
+    try {
+      const res = await client.send('tools/call', getToken(sessionId), {
+        sessionId,
+        name: 'widget_save',
+        arguments: {
+          id: 'demo-card',
+          title: 'Demo Card',
+          code: '<div>Hello</div>',
+        },
+      })
+      expect(res.result?.content?.[0]?.text).toMatch(
+        /Saved widget template "demo-card-[a-f0-9]+" \(project scope, v1\)/,
+      )
+    } finally {
+      client.close()
+      disposeSuperoneMcpServer(sessionId)
+    }
   })
 })
 

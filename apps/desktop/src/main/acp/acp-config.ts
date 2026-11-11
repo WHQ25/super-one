@@ -3,12 +3,38 @@ import type {
   AcpConfigOption,
   AcpConfigSelectValue,
   AcpSessionCatalog,
-  EffortLevel,
   ModelOption,
 } from '@superone/shared/agent-types'
 import { isAcpEffortConfigOption } from '@superone/shared/effort-labels'
 import { withoutProjectScopedWorkflows } from '@superone/shared/workflow-commands'
 import type { SessionConfigOption } from '@agentclientprotocol/sdk'
+import {
+  asEffortLevel,
+  asGrokReasoningEffort,
+  extractModelsFromXaiSessionConfig,
+  extractModesFromXaiSessionConfig,
+  sortEffortModesAscending,
+} from './acp-xai-config'
+import {
+  ACP_SESSION_SET_MODEL,
+  type AcpAgentCapabilities,
+  type AcpSetModelOptions,
+  buildSetModelParams,
+  readAgentCapabilities,
+} from './acp-capabilities'
+
+export {
+  ACP_SESSION_SET_MODEL,
+  type AcpAgentCapabilities,
+  type AcpSetModelOptions,
+  asEffortLevel,
+  asGrokReasoningEffort,
+  buildSetModelParams,
+  extractModelsFromXaiSessionConfig,
+  extractModesFromXaiSessionConfig,
+  readAgentCapabilities,
+  sortEffortModesAscending,
+}
 
 export interface AcpModelConfig {
   /** ACP configId for session/set_config_option; null when agent uses non-standard model API. */
@@ -417,126 +443,6 @@ function parseModelEffortLevels(
   return out.length > 0 ? out : undefined
 }
 
-/** Options array from `_meta["x.ai/sessionConfig"].options`. */
-function xaiSessionConfigOptions(meta: unknown): unknown[] | null {
-  if (!meta || typeof meta !== 'object') return null
-  const sessionConfig = (meta as Record<string, unknown>)['x.ai/sessionConfig']
-  if (!sessionConfig || typeof sessionConfig !== 'object') return null
-  const options = (sessionConfig as Record<string, unknown>).options
-  return Array.isArray(options) ? options : null
-}
-
-/** Grok: `_meta["x.ai/sessionConfig"].options` with category model. */
-export function extractModelsFromXaiSessionConfig(meta: unknown): AcpModelConfig | null {
-  const options = xaiSessionConfigOptions(meta)
-  if (!options) return null
-
-  const models: ModelOption[] = []
-  let selected: string | null = null
-  for (const item of options) {
-    if (!item || typeof item !== 'object') continue
-    const o = item as Record<string, unknown>
-    if (o.category !== 'model') continue
-    const id = typeof o.id === 'string' ? o.id : null
-    const label = typeof o.label === 'string' ? o.label : id
-    if (!id || !label) continue
-    models.push({ id, name: label, description: typeof o.description === 'string' ? o.description : '' })
-    if (o.selected === true) selected = id
-  }
-  if (models.length === 0) return null
-  return {
-    configId: null,
-    models,
-    selectedModelId: selected && models.some((m) => m.id === selected) ? selected : (models[0]?.id ?? null),
-  }
-}
-
-/**
- * Grok agent often emits effort options high→low; the host slider is left→right
- * ascending (same as Claude/Codex: low … high). Unknown ids keep relative order at the end.
- */
-const EFFORT_ASC_RANK: Record<string, number> = {
-  minimal: 0,
-  low: 1,
-  medium: 2,
-  high: 3,
-  xhigh: 4,
-  max: 5,
-}
-
-/**
- * Narrow a raw ACP mode id to the host `EffortLevel` union. Grok ships reasoning
- * effort as a session *mode*, so ids arrive as free-form strings — anything the
- * host slider cannot represent (OpenCode ask/code, Grok `minimal`) must fall
- * back rather than masquerade as an effort.
- */
-export function asEffortLevel(raw: string | undefined | null): EffortLevel | undefined {
-  const value = raw?.trim().toLowerCase()
-  if (!value) return undefined
-  return value === 'low' || value === 'medium' || value === 'high' || value === 'xhigh' || value === 'max'
-    ? value
-    : undefined
-}
-
-/** Grok sessionConfig category=mode ids. Rejects OpenCode ask/code and empty. */
-export function asGrokReasoningEffort(raw: string | undefined | null): string | undefined {
-  const value = raw?.trim()
-  if (!value) return undefined
-  return value.toLowerCase() in EFFORT_ASC_RANK ? value : undefined
-}
-
-function effortRankKey(id: string, name: string): string {
-  const fromId = id.trim().toLowerCase()
-  if (fromId in EFFORT_ASC_RANK) return fromId
-  return name.trim().toLowerCase().replace(/\s+effort$/, '')
-}
-
-/** Sort reasoning-effort options ascending for slider/list UIs (low → high). */
-export function sortEffortModesAscending(modes: ModelOption[]): ModelOption[] {
-  return modes
-    .map((mode, index) => ({ mode, index, rank: EFFORT_ASC_RANK[effortRankKey(mode.id, mode.name)] }))
-    .sort((a, b) => {
-      if (a.rank != null && b.rank != null) return a.rank - b.rank
-      if (a.rank != null) return -1
-      if (b.rank != null) return 1
-      return a.index - b.index
-    })
-    .map(({ mode }) => mode)
-}
-
-/**
- * Grok: `_meta["x.ai/sessionConfig"].options` with category mode = reasoning effort.
- * These are NOT plan/permission modes — switching uses session/set_model + _meta.reasoningEffort.
- */
-export function extractModesFromXaiSessionConfig(meta: unknown): AcpModeConfig | null {
-  const options = xaiSessionConfigOptions(meta)
-  if (!options) return null
-
-  const modes: ModelOption[] = []
-  let selected: string | null = null
-  for (const item of options) {
-    if (!item || typeof item !== 'object') continue
-    const o = item as Record<string, unknown>
-    if (o.category !== 'mode') continue
-    const id = typeof o.id === 'string' ? o.id : null
-    const label = typeof o.label === 'string' ? o.label : id
-    if (!id || !label) continue
-    modes.push({
-      id,
-      name: label,
-      description: typeof o.description === 'string' ? o.description : '',
-    })
-    if (o.selected === true) selected = id
-  }
-  if (modes.length === 0) return null
-  const ordered = sortEffortModesAscending(modes)
-  return {
-    configId: null,
-    modes: ordered,
-    selectedModeId: selected && ordered.some((m) => m.id === selected) ? selected : (ordered[0]?.id ?? null),
-  }
-}
-
 /** Modes from session/new: Grok reasoning_effort, else session mode, else x.ai sessionConfig. */
 export function extractModesFromNewSessionResult(result: unknown): AcpModeConfig | null {
   if (!result || typeof result !== 'object') return null
@@ -551,40 +457,6 @@ export function coalesceModeConfig(...candidates: Array<AcpModeConfig | null | u
     if (c && c.modes.length > 0) return c
   }
   return null
-}
-
-/** ACP method name for model switch (not always present on typed SDK methods map). */
-export const ACP_SESSION_SET_MODEL = 'session/set_model'
-
-/**
- * Agent-declared capabilities from `initialize`. Only the fields SuperOne acts on.
- * Everything is optional — an agent that omits a flag does not support it.
- */
-export interface AcpAgentCapabilities {
-  loadSession: boolean
-  mcp: { http: boolean; sse: boolean; acp: boolean }
-  sessionCapabilities: { additionalDirectories: boolean }
-}
-
-export function readAgentCapabilities(result: unknown): AcpAgentCapabilities | null {
-  if (!result || typeof result !== 'object') return null
-  const caps = (result as Record<string, unknown>).agentCapabilities
-  if (!caps || typeof caps !== 'object') return null
-  const c = caps as Record<string, unknown>
-  const mcp = (c.mcpCapabilities ?? {}) as Record<string, unknown>
-  const session = (c.sessionCapabilities ?? {}) as Record<string, unknown>
-  return {
-    loadSession: c.loadSession === true,
-    mcp: {
-      http: mcp.http === true,
-      sse: mcp.sse === true,
-      acp: mcp.acp === true,
-    },
-    sessionCapabilities: {
-      // `{}` means supported; null/undefined means not.
-      additionalDirectories: !!session.additionalDirectories,
-    },
-  }
 }
 
 export function extractModelsFromInitializeResult(result: unknown): AcpModelConfig | null {
@@ -611,36 +483,4 @@ export function coalesceModelConfig(...candidates: Array<AcpModelConfig | null |
   const present = candidates.filter((c): c is AcpModelConfig => !!c && c.models.length > 0)
   if (present.length === 0) return null
   return mergeModelConfig(present[0]!, ...present.slice(1))
-}
-
-export interface AcpSetModelOptions {
-  /** Grok reasoning effort id (minimal|low|medium|high|xhigh|…). */
-  reasoningEffort?: string
-  /**
-   * Listed context window. Omitted means the agent keeps the current window.
-   * An unsupported number is sent as-is so the agent returns invalid_params.
-   */
-  contextWindow?: number
-}
-
-/**
- * Params for ACP session/set_model.
- * Grok also accepts `_meta.reasoningEffort` for effort switches on the same model.
- */
-export function buildSetModelParams(
-  sessionId: string,
-  modelId: string,
-  opts?: AcpSetModelOptions,
-): Record<string, unknown> {
-  const effort = opts?.reasoningEffort?.trim()
-  const meta: Record<string, unknown> = {}
-  if (effort) meta.reasoningEffort = effort
-  if (opts?.contextWindow != null && Number.isFinite(opts.contextWindow)) {
-    meta.contextWindow = opts.contextWindow
-  }
-  return {
-    sessionId,
-    modelId,
-    ...(Object.keys(meta).length > 0 ? { _meta: meta } : {}),
-  }
 }

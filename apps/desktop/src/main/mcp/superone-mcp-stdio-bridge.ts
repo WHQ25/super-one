@@ -1,7 +1,7 @@
 import net, { type Socket } from 'net'
 import { McpServer, type RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js'
-import { registerWidgetTools } from '../generative-ui/mcp-server'
+import { HOST_ACTION_WIDGET_DESCRIPTORS, WIDGET_SAVE_DESCRIPTOR } from '@superone/shared/environment/host-action-widget-descriptors'
 import { jsonSchemaToZodShape } from './json-schema-zod'
 import { BUILT_IN_SUPERONE_TOOL_DEFS } from './superone-mcp-builtin-defs'
 import {
@@ -211,7 +211,6 @@ async function main(): Promise<void> {
   )
 
   const server = new McpServer({ name: 'superone', version: '1.0.0' })
-  registerWidgetTools(server, { skipWidgetGate: true })
 
   const registeredTools = new Map<string, RegisteredTool>()
   const toolSignatures = new Map<string, string>()
@@ -280,7 +279,13 @@ async function main(): Promise<void> {
   // re-lists on `tools/list_changed`, so the snapshot must never be empty — even
   // if the IPC channel to the main process is briefly unavailable. App tools are
   // layered on top once IPC connects (refreshTools dedupes by signature).
-  for (const def of BUILT_IN_SUPERONE_TOOL_DEFS) registerTool(def)
+  for (const def of [
+    ...BUILT_IN_SUPERONE_TOOL_DEFS,
+    ...HOST_ACTION_WIDGET_DESCRIPTORS,
+    WIDGET_SAVE_DESCRIPTOR,
+  ]) {
+    registerTool(def)
+  }
 
   const transport = new StdioServerTransport()
   await startBridgeRuntime({

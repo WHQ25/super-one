@@ -49,9 +49,10 @@ export interface AcpMcpTransportCaps {
 
 export function mcpTransportCapsFromAgent(
   caps: AcpAgentCapabilities | null | undefined,
+  agentId?: string | null,
 ): AcpMcpTransportCaps {
   return {
-    http: caps?.mcp.http === true,
+    http: caps?.mcp.http === true || agentId === 'antigravity',
     sse: caps?.mcp.sse === true,
   }
 }
@@ -113,6 +114,7 @@ export function buildAcpSessionMcpServers(opts: {
   cwd: string
   superoneSessionId?: string
   agentCapabilities?: AcpAgentCapabilities | null
+  agentId?: string | null
   /** Inject for tests — defaults to listMcpConfigs(cwd). */
   listConfigs?: (cwd: string) => McpServerConfig[]
   /**
@@ -124,7 +126,7 @@ export function buildAcpSessionMcpServers(opts: {
 }): McpServer[] {
   const servers: McpServer[] = []
   const reserved = new Set<string>()
-  const caps = mcpTransportCapsFromAgent(opts.agentCapabilities)
+  const caps = mcpTransportCapsFromAgent(opts.agentCapabilities, opts.agentId)
 
   if (opts.superoneSessionId) {
     const superone = buildSuperoneAcpMcpServer(opts.superoneSessionId, caps)

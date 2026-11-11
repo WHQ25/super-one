@@ -297,18 +297,19 @@ function readNormalizedPlannerStepsForCurrentTurn(db: Database.Database): Curren
 
 function resolveAntigravityConversationDirs(customHome?: string): string[] {
   const profileDir = resolveAntigravityProfileDir(customHome)
-  const dirs = [
+  const legacyDirs = [
     join(profileDir, 'conversations'),
     join(profileDir, 'antigravity-acp', 'conversations'),
   ]
-  if (!customHome) {
-    const home = homedir()
-    dirs.push(
-      join(home, '.gemini', 'antigravity-cli', 'conversations'),
-      join(home, '.gemini', 'antigravity', 'conversations'),
-    )
+  if (customHome) {
+    return legacyDirs
   }
-  return dirs
+  const home = homedir()
+  return [
+    join(home, '.gemini', 'antigravity-cli', 'conversations'),
+    join(home, '.gemini', 'antigravity', 'conversations'),
+    ...legacyDirs,
+  ]
 }
 
 export function resolveAntigravityConversationDbPath(sessionId: string, customHome?: string): string {

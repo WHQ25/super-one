@@ -1,15 +1,29 @@
 import { randomUUID } from 'node:crypto'
-import { chmodSync, existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs'
-import * as http from 'node:http'
+import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
 import { homedir } from 'node:os'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { ANTIGRAVITY_AUTH_METHODS, type AntigravityAuthConfig, type AntigravityAuthMethod } from '@superone/shared/antigravity-auth'
 import { decryptSecret, encryptSecretIfAvailable } from '../crypto/secret-store'
 import { superoneHome } from '../superone-home'
+import {
+  ANTIGRAVITY_AUTH_BROWSER_MARKER,
+  ANTIGRAVITY_AUTH_STDERR_PREFIX,
+  ANTIGRAVITY_AUTH_STDOUT_PREFIX,
+  extractAntigravityAuthUrlFromStdoutLine,
+  extractAntigravityAuthUrlsFromStderrChunk,
+  forwardAntigravityCallbackUrl,
+  validateAntigravityOAuthUrl,
+} from './antigravity-oauth-url'
 
-export const ANTIGRAVITY_AUTH_STDOUT_PREFIX = 'Open the following link to authenticate the ACP server: '
-export const ANTIGRAVITY_AUTH_STDERR_PREFIX = 'Please visit the following URL to authorize: '
-export const ANTIGRAVITY_AUTH_BROWSER_MARKER = '__SUPERONE_ANTIGRAVITY_AUTH_URL__'
+export {
+  ANTIGRAVITY_AUTH_BROWSER_MARKER,
+  ANTIGRAVITY_AUTH_STDERR_PREFIX,
+  ANTIGRAVITY_AUTH_STDOUT_PREFIX,
+  extractAntigravityAuthUrlFromStdoutLine,
+  extractAntigravityAuthUrlsFromStderrChunk,
+  forwardAntigravityCallbackUrl,
+  validateAntigravityOAuthUrl,
+}
 
 const STRIPPED_ENV_KEYS = new Set([
   'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GOOGLE_APPLICATION_CREDENTIALS', 'GOOGLE_CLOUD_PROJECT',
@@ -24,22 +38,15 @@ const LINUX_SYSTEM_CA_BUNDLE_PATHS = [
   '/etc/ssl/ca-bundle.pem', '/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem', '/etc/ssl/cert.pem',
 ]
 
-const USER_SKILL_PATHS = [
-  ['config', 'skills'],
-  ['config', 'plugins'],
-  ['antigravity-cli', 'skills'],
-  ['antigravity-cli', 'builtin'],
-] as const
-
 const GCP_PROJECT_PATTERN = /^[a-z][a-z0-9.:-]{4,61}[a-z0-9]$/i
 const GCP_LOCATION_PATTERN = /^[a-z0-9][a-z0-9-]{1,62}$/i
-const LOOPBACK_REDIRECT_URI_PATTERN = /^http:\/\/(?:127\.0\.0\.1|localhost):([1-9][0-9]{0,4})\/(?:auth\/callback)?$/
 
 let prunedTempDirsThisProcess = false
 
 export interface StoredAntigravityAuthConfig extends AntigravityAuthConfig {
   apiKey?: string
   email?: string
+  oauthSignedIn?: boolean
 }
 
 export function resolveAntigravityRoot(customHome?: string): string { return join(customHome ?? superoneHome(), 'antigravity') }
@@ -47,11 +54,19 @@ export function resolveAntigravityProfileDir(customHome?: string): string { retu
 export function resolveAntigravityBrainRoots(customHome?: string, home = homedir()): string[] {
   const profileDir = resolveAntigravityProfileDir(customHome)
   const userGeminiDir = join(home, '.gemini')
+  if (customHome) {
+    return [
+      join(profileDir, 'antigravity-acp', 'brain'),
+      join(profileDir, 'brain'),
+      join(userGeminiDir, 'antigravity-cli', 'brain'),
+      join(userGeminiDir, 'antigravity', 'brain'),
+    ]
+  }
   return [
-    join(profileDir, 'antigravity-acp', 'brain'),
-    join(profileDir, 'brain'),
     join(userGeminiDir, 'antigravity-cli', 'brain'),
     join(userGeminiDir, 'antigravity', 'brain'),
+    join(profileDir, 'antigravity-acp', 'brain'),
+    join(profileDir, 'brain'),
   ]
 }
 export function resolveAntigravityTempParentDir(customHome?: string): string { return join(resolveAntigravityRoot(customHome), 'tmp') }
@@ -84,6 +99,7 @@ export function readAntigravityAuthConfig(customHome?: string): StoredAntigravit
     const gcpProject = trimNonEmpty(raw.gcpProject)
     const gcpLocation = trimNonEmpty(raw.gcpLocation)
     const email = trimNonEmpty(raw.email)
+    const oauthSignedIn = typeof raw.oauthSignedIn === 'boolean' ? raw.oauthSignedIn : undefined
     const decrypted =
       typeof raw.encryptedApiKey === 'string' && raw.encryptedApiKey
         ? decryptSecret(raw.encryptedApiKey).trim()
@@ -94,6 +110,7 @@ export function readAntigravityAuthConfig(customHome?: string): StoredAntigravit
       ...(gcpProject ? { gcpProject } : {}),
       ...(gcpLocation ? { gcpLocation } : {}),
       ...(email ? { email } : {}),
+      ...(oauthSignedIn !== undefined ? { oauthSignedIn } : {}),
       hasApiKey: Boolean(apiKey),
       ...(apiKey ? { apiKey } : {}),
     }
@@ -111,6 +128,7 @@ export function writeAntigravityAuthConfig(
     gcpLocation?: string
     email?: string
     clearEmail?: boolean
+    oauthSignedIn?: boolean
   },
   customHome?: string,
 ): StoredAntigravityAuthConfig {
@@ -130,6 +148,7 @@ export function writeAntigravityAuthConfig(
 
   const nextApiKey = input.clearApiKey ? undefined : (trimNonEmpty(input.apiKey) ?? prev.apiKey)
   const nextEmail = input.clearEmail ? undefined : (trimNonEmpty(input.email) ?? prev.email)
+  const nextOauthSignedIn = input.oauthSignedIn !== undefined ? input.oauthSignedIn : prev.oauthSignedIn
 
   const root = resolveAntigravityRoot(customHome)
   mkdirSync(root, { recursive: true, mode: 0o700 })
@@ -139,6 +158,7 @@ export function writeAntigravityAuthConfig(
     ...(gcpProject ? { gcpProject } : {}),
     ...(gcpLocation ? { gcpLocation } : {}),
     ...(nextEmail ? { email: nextEmail } : {}),
+    ...(nextOauthSignedIn !== undefined ? { oauthSignedIn: nextOauthSignedIn } : {}),
     ...(nextApiKey ? { encryptedApiKey: encryptSecretIfAvailable(nextApiKey) } : {}),
   }
   writeFileSync(configPath, `${JSON.stringify(payload, null, 2)}\n`, { mode: 0o600 })
@@ -175,10 +195,17 @@ function hasValidTokenFile(tokenPath: string): boolean {
 }
 
 export function hasStoredAntigravityOAuthToken(customHome?: string): boolean {
-  return (
+  if (readAntigravityAuthConfig(customHome).oauthSignedIn === true) return true
+  if (
     hasValidTokenFile(resolveAntigravityTokenPath(customHome)) ||
     hasValidTokenFile(resolveLegacyAntigravityTokenPath(customHome))
-  )
+  ) {
+    return true
+  }
+  if (!customHome) {
+    return hasValidTokenFile(join(homedir(), '.gemini', 'oauth_creds.json'))
+  }
+  return false
 }
 
 export function clearAntigravityOAuthToken(customHome?: string): void {
@@ -194,8 +221,11 @@ export function clearAntigravityOAuthToken(customHome?: string): void {
   }
   try {
     const prev = readAntigravityAuthConfig(customHome)
-    if (prev.email) {
-      writeAntigravityAuthConfig({ authMethod: prev.authMethod, clearEmail: true }, customHome)
+    if (prev.email || prev.oauthSignedIn) {
+      writeAntigravityAuthConfig(
+        { authMethod: prev.authMethod, clearEmail: true, oauthSignedIn: false },
+        customHome,
+      )
     }
   } catch {
     void 0
@@ -216,31 +246,8 @@ export function isAntigravityAuthSatisfied(customHome?: string): boolean {
   }
 }
 
-function linkUserSkills(geminiHomeDir: string): void {
-  const userGeminiRoot = join(homedir(), '.gemini')
-  for (const parts of USER_SKILL_PATHS) {
-    const source = join(userGeminiRoot, ...parts)
-    const target = join(geminiHomeDir, ...parts)
-    try {
-      const sourceExists = existsSync(source) && statSync(source).isDirectory()
-      try {
-        const dstStat = lstatSync(target)
-        if (!dstStat.isSymbolicLink()) continue
-        rmSync(target, { force: true })
-      } catch {
-        void 0
-      }
-      if (!sourceExists) continue
-      mkdirSync(dirname(target), { recursive: true, mode: 0o700 })
-      symlinkSync(source, target, process.platform === 'win32' ? 'junction' : 'dir')
-    } catch {
-      void 0
-    }
-  }
-}
-
-function ensureBrowserHelperScript(geminiHomeDir: string): string {
-  const binDir = join(geminiHomeDir, 'bin')
+function ensureBrowserHelperScript(rootDir: string): string {
+  const binDir = join(rootDir, 'bin')
   const helperPath = join(binDir, 'open-auth-url.cjs')
   mkdirSync(binDir, { recursive: true, mode: 0o700 })
   const script = [
@@ -255,60 +262,6 @@ function ensureBrowserHelperScript(geminiHomeDir: string): string {
 }
 
 const STALE_TEMP_DIR_MAX_AGE_MS = 6 * 60 * 60 * 1000
-
-function readExistingSettingsObject(filePath: string): Record<string, unknown> {
-  if (!existsSync(filePath)) return {}
-  try {
-    const parsed = JSON.parse(readFileSync(filePath, 'utf8'))
-    if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
-      return parsed as Record<string, unknown>
-    }
-  } catch {
-    void 0
-  }
-  return {}
-}
-
-function writeSettingsFile(filePath: string, payload: Record<string, unknown>): void {
-  mkdirSync(dirname(filePath), { recursive: true, mode: 0o700 })
-  writeFileSync(filePath, `${JSON.stringify(payload, null, 2)}\n`, { mode: 0o600 })
-  if (process.platform !== 'win32') {
-    chmodSync(filePath, 0o600)
-  }
-}
-
-function ensureProfileSettings(geminiHomeDir: string, cfg: StoredAntigravityAuthConfig): void {
-  const gcpBlock =
-    cfg.gcpProject || cfg.gcpLocation
-      ? {
-          gcp: {
-            ...(cfg.gcpProject ? { project: cfg.gcpProject } : {}),
-            ...(cfg.gcpLocation ? { location: cfg.gcpLocation } : {}),
-          },
-        }
-      : {}
-
-  const rootSettingsPath = join(geminiHomeDir, 'settings.json')
-  const existingRoot = readExistingSettingsObject(rootSettingsPath)
-  writeSettingsFile(rootSettingsPath, {
-    ...existingRoot,
-    selectedAuthType: cfg.authMethod,
-    auth: { type: cfg.authMethod },
-    enableTerminalSandbox: true,
-    ...gcpBlock,
-  })
-
-  for (const subdir of ['antigravity-acp', 'antigravity-cli']) {
-    const settingsPath = join(geminiHomeDir, subdir, 'settings.json')
-    const existing = readExistingSettingsObject(settingsPath)
-    writeSettingsFile(settingsPath, {
-      ...existing,
-      auth: { type: cfg.authMethod },
-      enableTerminalSandbox: true,
-      ...gcpBlock,
-    })
-  }
-}
 
 function createIsolatedProcessTempDir(customHome?: string): string {
   const parent = resolveAntigravityTempParentDir(customHome)
@@ -332,7 +285,7 @@ function createIsolatedProcessTempDir(customHome?: string): string {
       void 0
     }
   }
-  const runDir = join(parent, `run-${randomUUID()}`)
+  const runDir = join(parent, `run-${randomUUID().slice(0, 8)}`)
   mkdirSync(runDir, { recursive: true, mode: 0o700 })
   return runDir
 }
@@ -349,72 +302,6 @@ function resolveLinuxCaBundle(): string | undefined {
   return undefined
 }
 
-export function validateAntigravityOAuthUrl(rawUrl: string): {
-  authUrl: string
-  redirectUri: string
-  state: string
-} {
-  let parsed: URL
-  try {
-    parsed = new URL(rawUrl.trim())
-  } catch {
-    throw new Error('Antigravity returned an invalid Google OAuth URL')
-  }
-  if (
-    parsed.protocol !== 'https:' ||
-    parsed.hostname !== 'accounts.google.com' ||
-    parsed.pathname !== '/o/oauth2/v2/auth' ||
-    parsed.searchParams.get('response_type') !== 'code'
-  ) {
-    throw new Error('Antigravity returned an unexpected Google OAuth endpoint')
-  }
-  const state = parsed.searchParams.get('state')?.trim() ?? ''
-  if (!state) {
-    throw new Error('Antigravity Google OAuth URL is missing state')
-  }
-  const redirectUri = parsed.searchParams.get('redirect_uri')?.trim() ?? ''
-  const match = LOOPBACK_REDIRECT_URI_PATTERN.exec(redirectUri)
-  const port = match?.[1] ? Number(match[1]) : NaN
-  if (!Number.isInteger(port) || port < 1024 || port > 65535) {
-    throw new Error('Antigravity Google OAuth URL has an invalid loopback redirect URI')
-  }
-  return { authUrl: parsed.toString(), redirectUri, state }
-}
-
-export function extractAntigravityAuthUrlFromStdoutLine(line: string): string | null {
-  const trimmed = line.replace(/\r$/, '')
-  for (const prefix of [ANTIGRAVITY_AUTH_STDOUT_PREFIX, ANTIGRAVITY_AUTH_STDERR_PREFIX]) {
-    if (trimmed.startsWith(prefix)) {
-      const raw = trimmed.slice(prefix.length).trim()
-      return raw || null
-    }
-  }
-  return null
-}
-
-export function extractAntigravityAuthUrlsFromStderrChunk(chunk: string): string[] {
-  const urls: string[] = []
-  const pushUnique = (raw: string) => {
-    const trimmed = raw.trim()
-    if (trimmed && !urls.includes(trimmed)) urls.push(trimmed)
-  }
-  for (const line of chunk.split(/\r?\n/)) {
-    const markerIdx = line.indexOf(ANTIGRAVITY_AUTH_BROWSER_MARKER)
-    if (markerIdx >= 0) {
-      pushUnique(line.slice(markerIdx + ANTIGRAVITY_AUTH_BROWSER_MARKER.length))
-      continue
-    }
-    for (const prefix of [ANTIGRAVITY_AUTH_STDERR_PREFIX, ANTIGRAVITY_AUTH_STDOUT_PREFIX]) {
-      const prefixIdx = line.indexOf(prefix)
-      if (prefixIdx >= 0) {
-        pushUnique(line.slice(prefixIdx + prefix.length))
-        break
-      }
-    }
-  }
-  return urls
-}
-
 export interface AntigravitySpawnContext {
   authConfig: StoredAntigravityAuthConfig
   baseEnv: Record<string, string>
@@ -428,11 +315,9 @@ export function prepareAntigravitySpawnContext(opts: {
   extraEnv?: Record<string, string>
 } = {}): AntigravitySpawnContext {
   const authConfig = readAntigravityAuthConfig(opts.customHome)
-  const geminiHomeDir = resolveAntigravityProfileDir(opts.customHome)
-  mkdirSync(geminiHomeDir, { recursive: true, mode: 0o700 })
-  linkUserSkills(geminiHomeDir)
-  ensureProfileSettings(geminiHomeDir, authConfig)
-  const helperPath = ensureBrowserHelperScript(geminiHomeDir)
+  const rootDir = resolveAntigravityRoot(opts.customHome)
+  mkdirSync(rootDir, { recursive: true, mode: 0o700 })
+  const helperPath = ensureBrowserHelperScript(rootDir)
   const runTempDir = createIsolatedProcessTempDir(opts.customHome)
 
   const preserveAdc = authConfig.authMethod === 'agent-platform' && !authConfig.apiKey
@@ -455,10 +340,7 @@ export function prepareAntigravitySpawnContext(opts: {
 
   const extraEnv: Record<string, string> = {
     ...(opts.extraEnv ?? {}),
-    GEMINI_HOME: geminiHomeDir,
-    AGY_ACP_FORCE_FILE_STORAGE: '1',
     BROWSER: `${quoteArg(process.execPath)} ${quoteArg(helperPath)}`,
-    PYTHONUNBUFFERED: '1',
     ELECTRON_RUN_AS_NODE: '1',
     TMPDIR: runTempDir,
     TEMP: runTempDir,
@@ -499,71 +381,4 @@ export function prepareAntigravitySpawnContext(opts: {
       }
     },
   }
-}
-
-export async function forwardAntigravityCallbackUrl(
-  rawCallbackUrl: string,
-  pending: { redirectUri: string; state: string },
-): Promise<void> {
-  const trimmed = rawCallbackUrl.trim()
-  if (!trimmed || trimmed.length > 4096) {
-    throw new Error('Paste the complete localhost callback URL from the browser address bar')
-  }
-  let callbackUrl: URL
-  let expectedRedirect: URL
-  try {
-    callbackUrl = new URL(trimmed)
-    expectedRedirect = new URL(pending.redirectUri)
-  } catch {
-    throw new Error('Invalid localhost callback URL')
-  }
-  if (
-    callbackUrl.origin !== expectedRedirect.origin ||
-    callbackUrl.pathname !== expectedRedirect.pathname ||
-    callbackUrl.username !== '' ||
-    callbackUrl.password !== ''
-  ) {
-    throw new Error(
-      'Callback URL does not match the active Antigravity login attempt. Use the URL from the current browser tab.',
-    )
-  }
-  const state = callbackUrl.searchParams.get('state') ?? ''
-  const code = callbackUrl.searchParams.get('code')?.trim() ?? ''
-  const oauthError = callbackUrl.searchParams.get('error')?.trim() ?? ''
-  if (state !== pending.state || (!code && !oauthError)) {
-    throw new Error('Callback URL is missing the expected state or authorization code')
-  }
-
-  await new Promise<void>((resolve, reject) => {
-    const req = http.request(
-      {
-        protocol: callbackUrl.protocol,
-        hostname: callbackUrl.hostname,
-        port: callbackUrl.port,
-        path: `${callbackUrl.pathname}${callbackUrl.search}`,
-        method: 'GET',
-        agent: false,
-        headers: { Connection: 'close' },
-      },
-      (res) => {
-        res.resume()
-        res.once('end', () => {
-          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 400) {
-            resolve()
-          } else {
-            reject(
-              new Error(`Antigravity rejected the OAuth callback (HTTP ${res.statusCode ?? 0})`),
-            )
-          }
-        })
-      },
-    )
-    req.setTimeout(5000, () => {
-      req.destroy(new Error('Timed out delivering the OAuth callback to Antigravity'))
-    })
-    req.once('error', (err) => {
-      reject(new Error(`Failed to deliver OAuth callback to Antigravity: ${err.message}`))
-    })
-    req.end()
-  })
 }

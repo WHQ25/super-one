@@ -149,6 +149,35 @@ describe('buildAcpSessionMcpServers', () => {
     })
   })
 
+  it('uses Streamable HTTP MCP for antigravity even when mcpCapabilities is omitted', () => {
+    const servers = buildAcpSessionMcpServers({
+      cwd: '/proj',
+      superoneSessionId: 'sid-agy',
+      agentId: 'antigravity',
+      listConfigs: () => [
+        { name: 'remote-http', type: 'http', scope: 'user', url: 'https://mcp.example.com' },
+      ],
+    })
+
+    expect(servers).toEqual([
+      {
+        type: 'http',
+        name: 'superone',
+        url: 'http://127.0.0.1:3210/mcp',
+        headers: [
+          { name: 'Authorization', value: 'Bearer tok' },
+          { name: 'X-SuperOne-Session-Id', value: 'sid-agy' },
+        ],
+      },
+      {
+        type: 'http',
+        name: 'remote-http',
+        url: 'https://mcp.example.com',
+        headers: [],
+      },
+    ])
+  })
+
   it('works without superone session id', () => {
     const servers = buildAcpSessionMcpServers({
       cwd: '/proj',
@@ -209,5 +238,9 @@ describe('buildAcpSessionMcpServers', () => {
 describe('mcpTransportCapsFromAgent', () => {
   it('defaults to false when capabilities missing', () => {
     expect(mcpTransportCapsFromAgent(null)).toEqual({ http: false, sse: false })
+  })
+
+  it('enables http when agentId is antigravity', () => {
+    expect(mcpTransportCapsFromAgent(null, 'antigravity')).toEqual({ http: true, sse: false })
   })
 })

@@ -4,7 +4,7 @@ import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { z } from 'zod'
 import { checkCdnViolations } from '@superone/shared/generative-ui/cdn-allowlist'
 import { isNativeTemplateId, nativeTypeFromTemplateId, NATIVE_WIDGET_TYPES } from '@superone/shared/generative-ui/native-widgets'
-import { WIDGET_LAYOUT_DESCRIPTION, WIDGET_SHOW_DESCRIPTION } from '@superone/shared/generative-ui/widget-tool-descriptions'
+import { WIDGET_LAYOUT_DESCRIPTION, WIDGET_SAVE_DESCRIPTION, WIDGET_SHOW_DESCRIPTION } from '@superone/shared/generative-ui/widget-tool-descriptions'
 import { readWidgetShowArgs, widgetCdnWarning, widgetShowShortContent } from '@superone/shared/generative-ui/widget-data'
 import { buildWidgetPayload } from './widget-payload'
 import type { TemplateRoots } from './template-store'
@@ -135,6 +135,42 @@ export async function executeWidgetShowTool(
   return { content }
 }
 
+export async function executeWidgetSaveTool(
+  args: Record<string, unknown>,
+  opts?: WidgetToolsOptions,
+) {
+  const id = typeof args.id === 'string' ? args.id : ''
+  const title = typeof args.title === 'string' ? args.title : ''
+  const code = typeof args.code === 'string' ? args.code : ''
+  const description = typeof args.description === 'string' ? args.description : undefined
+  const inputSchema =
+    args.inputSchema && typeof args.inputSchema === 'object' && !Array.isArray(args.inputSchema)
+      ? (args.inputSchema as Record<string, unknown>)
+      : undefined
+  const layout = args.layout === 'fluid' || args.layout === 'fixed' ? args.layout : undefined
+  const scope = args.scope === 'project' || args.scope === 'user' ? args.scope : undefined
+  const roots = templateRoots(opts)
+  const target = scope ?? 'project'
+  if (target === 'project' && !roots.project) {
+    return { content: [{ type: 'text' as const, text: 'No project is open, so this template can only be saved with scope "user".' }], isError: true }
+  }
+  try {
+    const { allocateTemplateId, saveTemplate } = await import('./template-store')
+    const resolvedId = allocateTemplateId(roots, id, target)
+    const existed = resolvedId === id
+    const saved = saveTemplate(roots, { id: resolvedId, scope: target, code, title, description, inputSchema, layout })
+    return {
+      content: [{
+        type: 'text' as const,
+        text: `${existed ? 'Updated' : 'Saved'} widget template "${saved.id}" (${target} scope, v${saved.version}). `
+          + `Re-render it with widget_show({ template: "${saved.id}", data: { ... } }).`,
+      }],
+    }
+  } catch (err) {
+    return { content: [{ type: 'text' as const, text: `Could not save widget template: ${err instanceof Error ? err.message : String(err)}` }], isError: true }
+  }
+}
+
 export function registerWidgetTools(server: McpServer, opts?: WidgetToolsOptions): void {
   server.tool(
     'widget_list_templates',
@@ -181,10 +217,7 @@ export function registerWidgetTools(server: McpServer, opts?: WidgetToolsOptions
 
   server.tool(
     'widget_save',
-    'Save a widget as a reusable template so it can be re-rendered later with widget_show({ template, data }). ' +
-    'Only call this when the user asks to keep a widget, or asks to change one that is already saved — ' +
-    'saving writes a file into their project, so it is their decision, not yours. ' +
-    'To edit a saved template, pass its existing id: read the file, change it, and save it back under the same id.',
+    WIDGET_SAVE_DESCRIPTION,
     {
       id: z.string().describe(
         'Existing template id to update, or a short kebab-case name for a new one ' +
@@ -201,27 +234,6 @@ export function registerWidgetTools(server: McpServer, opts?: WidgetToolsOptions
         'project (default) stores it under the project so it can be shared through git; user makes it available everywhere.'
       ),
     },
-    async ({ id, title, code, description, inputSchema, layout, scope }) => {
-      const roots = templateRoots(opts)
-      const target = scope ?? 'project'
-      if (target === 'project' && !roots.project) {
-        return { content: [{ type: 'text' as const, text: 'No project is open, so this template can only be saved with scope "user".' }], isError: true }
-      }
-      try {
-        const { allocateTemplateId, saveTemplate } = await import('./template-store')
-        const resolvedId = allocateTemplateId(roots, id, target)
-        const existed = resolvedId === id
-        const saved = saveTemplate(roots, { id: resolvedId, scope: target, code, title, description, inputSchema, layout })
-        return {
-          content: [{
-            type: 'text' as const,
-            text: `${existed ? 'Updated' : 'Saved'} widget template "${saved.id}" (${target} scope, v${saved.version}). `
-              + `Re-render it with widget_show({ template: "${saved.id}", data: { ... } }).`,
-          }],
-        }
-      } catch (err) {
-        return { content: [{ type: 'text' as const, text: `Could not save widget template: ${err instanceof Error ? err.message : String(err)}` }], isError: true }
-      }
-    },
+    async (args) => executeWidgetSaveTool(args as Record<string, unknown>, opts),
   )
 }

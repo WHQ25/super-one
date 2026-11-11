@@ -355,6 +355,7 @@ export class AntigravityAuthService {
       if (generation !== this.generation) return
       await connection.authenticate(methodId)
       if (generation !== this.generation) return
+      writeAntigravityAuthConfig({ authMethod: methodId, oauthSignedIn: true }, this.customHome)
       const cfg = publicAuthConfig(this.customHome)
       this.state = {
         status: 'signed_in',

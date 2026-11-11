@@ -1,14 +1,14 @@
 # Antigravity (ACP) API surface
 
-Version: `1.4.5` (`@agentclientprotocol/sdk` `^1.4.0`)
+Version: `1.5.3` (`@agentclientprotocol/sdk` `^1.4.0`)
 
 ## Connection & Lifecycle
 
 | Name | Status | Usage | Code |
 |---|---|---|---|
-| `initialize` | `used` | Handshake with `protocolVersion: 1`; reads `authMethods` | `apps/desktop/src/main/acp/acp-runtime.ts` |
-| `authenticate` | `used` | Authenticates using configured `methodId` (`oauth-personal`, `oauth-business`, `gemini-api-key`, `agent-platform`) | `apps/desktop/src/main/acp/antigravity-runtime-bridge.ts#authenticateAntigravityRuntime` |
-| `session/new` | `used` | Starts an Antigravity session with workspace `cwd`, `additionalDirectories`, MCP servers, and `_meta.antigravity.systemPrompt.append`; extracts `models`, `modes`, and `configOptions` | `apps/desktop/src/main/acp/acp-runtime.ts`, `apps/desktop/src/main/acp/antigravity-protocol.ts` |
+| `initialize` | `used` | Handshake with `protocolVersion: 1`; reads `authMethods` and infers Streamable HTTP MCP support (`mcp.http`) from `_meta.antigravity` / `agentInfo` | `apps/desktop/src/main/acp/acp-runtime.ts`, `apps/desktop/src/main/acp/acp-capabilities.ts` |
+| `authenticate` | `used` | Authenticates using configured `methodId` (`oauth-personal`, `oauth-business`, `gemini-api-key`, `agent-platform`), reusing native `~/.gemini` and OS Keyring OAuth credentials while aborting interactive OAuth URL prompts during session startup | `apps/desktop/src/main/acp/antigravity-runtime-bridge.ts#authenticateAntigravityRuntime` |
+| `session/new` | `used` | Starts an Antigravity session with workspace `cwd`, `additionalDirectories`, Streamable HTTP `superone` + user MCP servers, and `_meta.antigravity.systemPrompt.append`; extracts `models`, `modes`, and `configOptions` | `apps/desktop/src/main/acp/acp-runtime.ts`, `apps/desktop/src/main/acp/acp-mcp.ts`, `apps/desktop/src/main/acp/antigravity-protocol.ts` |
 | `session/resume` / `session/load` | `used` | Resumes an existing session by `sessionId` when supported, preserving `_meta.antigravity.systemPrompt.append` | `apps/desktop/src/main/acp/antigravity-runtime-bridge.ts#resumeAntigravitySession` |
 | `session/prompt` | `used` | Sends text, slash commands (`/plan`, `/usage`, `/logout`, skills), and image content blocks for a turn; supports mid-turn steer-now (`sendNow`) by cancelling and settling the in-flight turn before dispatching the replacement prompt; extracts turn-end `PromptResponse.usage` (`inputTokens`, `outputTokens`, `thoughtTokens`, `cachedReadTokens`) | `apps/desktop/src/main/acp/acp-runtime.ts`, `apps/desktop/src/main/acp/antigravity-db-usage.ts` |
 | `session/cancel` | `used` | Interrupts an active turn (Stop or mid-turn `sendNow` replacement) and suppresses the synthetic `"Trajectory was cancelled."` `agent_message_chunk` | `apps/desktop/src/main/acp/acp-runtime.ts`, `apps/desktop/src/main/acp/antigravity-site-customize-helpers.ts` |

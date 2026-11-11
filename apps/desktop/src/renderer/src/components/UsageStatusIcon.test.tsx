@@ -59,6 +59,7 @@ vi.mock('react-i18next', () => ({
       if (key === 'usageGauge.noUsageInfo') return 'No usage information available'
       if (key === 'usageGauge.switchAccount') return 'Switch Subscription Account'
       if (key === 'usageGauge.allAccounts') return 'Subscriptions'
+      if (key === 'usageGauge.codexTitle') return 'Codex Usage'
       if (key === 'usageGauge.accountCount') return `${opts?.n} accounts`
       if (key === 'usageGauge.currentSession') return 'Current'
       if (key === 'usageGauge.otherAccount') return 'Viewing'
@@ -305,6 +306,71 @@ describe('UsageStatusIcon rate-limit tip', () => {
     expect(window.app.claudeListAccounts).not.toHaveBeenCalled()
     expect(window.app.codexGetRateLimits).not.toHaveBeenCalled()
     expect(window.app.acpGetRateLimits).not.toHaveBeenCalled()
+  })
+
+  it('treats a remote desktop default Codex login as the one managed account', async () => {
+    hoisted.chatState.activeProject = 'remote:node-1:/home/me/app'
+    hoisted.sessionState.sessionProvider = 'codex'
+    hoisted.sessionState.preferredProvider = 'codex'
+    hoisted.sessionState.apiProviderId = null
+    ;(window.app.codexGetAccountStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
+      signedIn: true, email: null, authMode: 'chatgpt', planType: 'pro',
+    })
+    ;(window.app.codexGetRateLimits as ReturnType<typeof vi.fn>).mockResolvedValue({
+      planType: 'pro',
+      primary: { windowDurationMins: 10080, usedPercent: 74, resetsAt: null },
+      secondary: null,
+    })
+    vi.stubGlobal('environment', { getUsage: vi.fn(async () => ({ accounts: [
+      { harness: 'codex', account: 'vensen@openai.test', apiProviderId: 'codex-account:work', isDefault: true, planType: 'Pro 200', windows: [{ label: '7d', usedPercent: 74, resetsAt: null }] },
+      { harness: 'grok', account: 'dev@x.ai', planType: 'SuperGrok Heavy', windows: [{ label: 'Weekly limit', usedPercent: 16, resetsAt: null }] },
+    ] })) })
+
+    render(<UsageStatusIcon />)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Switch Subscription Account' })) })
+
+    const account = screen.getByRole('button', { name: /vensen@openai.test/ })
+    expect(account).toHaveClass('border-primary/50')
+    expect(screen.getAllByRole('button', { name: /vensen@openai.test/ })).toHaveLength(1)
+    expect(screen.queryByText('Codex Usage')).not.toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /dev@x.ai/ })).toBeInTheDocument()
+  })
+
+  it('treats the only Codex row from an older node as the default login', async () => {
+    hoisted.chatState.activeProject = 'remote:node-1:/home/me/app'
+    hoisted.sessionState.sessionProvider = 'codex'
+    hoisted.sessionState.preferredProvider = 'codex'
+    ;(window.app.codexGetAccountStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
+      signedIn: true, email: null, authMode: 'chatgpt', planType: 'pro',
+    })
+    vi.stubGlobal('environment', { getUsage: vi.fn(async () => ({ accounts: [
+      { harness: 'codex', account: 'vensen@openai.test', apiProviderId: 'codex-account:work', planType: 'Pro 200', windows: [{ label: '7d', usedPercent: 74, resetsAt: null }] },
+    ] })) })
+
+    render(<UsageStatusIcon />)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Switch Subscription Account' })) })
+
+    expect(screen.getByRole('button', { name: /vensen@openai.test/ })).toHaveClass('border-primary/50')
+    expect(screen.queryByText('Codex Usage')).not.toBeInTheDocument()
+  })
+
+  it('keeps a separate Codex card when the remote session is not that node login', async () => {
+    hoisted.chatState.activeProject = 'remote:node-1:/home/me/app'
+    hoisted.sessionState.sessionProvider = 'codex'
+    hoisted.sessionState.preferredProvider = 'codex'
+    hoisted.sessionState.apiProviderId = 'codex-account:other'
+    ;(window.app.codexGetAccountStatus as ReturnType<typeof vi.fn>).mockResolvedValue({
+      signedIn: true, email: null, authMode: 'chatgpt', planType: 'pro',
+    })
+    vi.stubGlobal('environment', { getUsage: vi.fn(async () => ({ accounts: [
+      { harness: 'codex', account: 'vensen@openai.test', apiProviderId: 'codex-account:work', isDefault: true, planType: 'Pro 200', windows: [{ label: '7d', usedPercent: 74, resetsAt: null }] },
+    ] })) })
+
+    render(<UsageStatusIcon />)
+    await act(async () => { fireEvent.click(screen.getByRole('button', { name: 'Switch Subscription Account' })) })
+
+    expect(screen.getByRole('button', { name: /vensen@openai.test/ })).not.toHaveClass('border-primary/50')
+    expect(screen.getByText('Codex Usage')).toBeInTheDocument()
   })
 
   it('ignores a late subscription list from a node after switching to another node', async () => {

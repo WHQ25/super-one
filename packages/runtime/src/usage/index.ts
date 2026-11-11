@@ -39,6 +39,8 @@ export interface CodexUsageAccount {
   home?: string
   label: string | null
   apiProviderId?: string | null
+  /** The account a session reaches by omitting `apiProviderId`. */
+  isDefault?: boolean
 }
 
 export interface SubscriptionUsageOptions {
@@ -49,7 +51,7 @@ export interface SubscriptionUsageOptions {
   log?: UsageLog
 }
 
-interface UsageSource { label: string | null; apiProviderId?: string | null }
+interface UsageSource { label: string | null; apiProviderId?: string | null; isDefault?: boolean }
 
 const defaultLogin: UsageSource = { label: null }
 
@@ -65,6 +67,7 @@ function row(harness: SubscriptionHarness, source: UsageSource, reading: UsageRe
     apiProviderId: source.apiProviderId ?? null,
     planType: reading.value?.planType ?? null,
     windows: reading.value?.windows.map(({ label, usedPercent, resetsAt }) => ({ label, usedPercent, resetsAt })) ?? [],
+    ...(source.isDefault ? { isDefault: true } : {}),
     ...(reading.error ? { error: reading.error } : {}),
   }]
 }

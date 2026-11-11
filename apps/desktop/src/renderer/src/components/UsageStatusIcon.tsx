@@ -321,6 +321,20 @@ function subscriptionHubKey(row: SubscriptionUsage): string {
   return SUBSCRIPTION_HUB_KEY[row.harness](row)
 }
 
+/**
+ * A Codex session that omits its account id spends the node's default login.
+ * That login is still reported as `codex-account:…`, so the hub key alone misses it
+ * and the list draws a second OpenAI card with no email.
+ * An older node omits `isDefault`; the only Codex row is that login.
+ */
+function nodeRowIsCurrentSession(row: SubscriptionUsage, activeAccountKey: string, accounts: readonly SubscriptionUsage[]): boolean {
+  if (subscriptionHubKey(row) === activeAccountKey) return true
+  if (row.harness !== 'codex' || activeAccountKey !== codexHubKey(null)) return false
+  if (row.isDefault) return true
+  const codex = accounts.filter((item) => item.harness === 'codex')
+  return codex.length === 1 && row.isDefault == null && codex[0] === row
+}
+
 function PanelHeight({ open, children }: { open: boolean; children: ReactNode }) {
   const reduceMotion = useReducedMotion()
   return (
@@ -867,7 +881,7 @@ function RateLimitGauge({
   const isAcpActiveInList = ACP_HUB_AGENTS.some(
     (agent) => activeAccountKey === agent.key && (Boolean(acpMeters[agent.key]?.limits) || Boolean(acpMeters[agent.key]?.loading) || hasUsage),
   )
-  const isNodeActiveInList = isRemoteProject && nodeUsage.accounts.some((row) => subscriptionHubKey(row) === activeAccountKey)
+  const isNodeActiveInList = isRemoteProject && nodeUsage.accounts.some((row) => nodeRowIsCurrentSession(row, activeAccountKey, nodeUsage.accounts))
   const showCurrentSessionGroup = isRemoteProject
     ? !isNodeActiveInList
     : !isClaudeActiveInList && !isCodexActiveInList && !isAcpActiveInList
@@ -972,7 +986,9 @@ function RateLimitGauge({
                             >
                               {accounts.map((row) => {
                                 const key = subscriptionHubKey(row)
-                                const isSelected = (selectedAccountKey ?? activeAccountKey) === key
+                                const isSelected = selectedAccountKey != null
+                                  ? selectedAccountKey === key
+                                  : nodeRowIsCurrentSession(row, activeAccountKey, nodeUsage.accounts)
                                 return (
                                   <button
                                     key={key}

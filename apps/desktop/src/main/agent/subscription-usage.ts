@@ -25,6 +25,7 @@ export async function codexUsageAccounts(): Promise<CodexUsageAccount[]> {
     home: store.home(account.id),
     label: account.email,
     apiProviderId: codexAccountProviderId(account.id),
+    ...(account.isDefault ? { isDefault: true } : {}),
   }))
 }
 

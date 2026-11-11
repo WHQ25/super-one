@@ -29,16 +29,16 @@ describe('readSubscriptionUsage', () => {
     const rows = await readSubscriptionUsage({
       claudeAccounts: [{ credentialDir: '/claude/b', label: 'b@example.com', apiProviderId: 'claude-account:/claude/b' }],
       codexAccounts: [
-        { home: '/codex/a', label: 'a@example.com', apiProviderId: 'codex-account:a' },
+        { home: '/codex/a', label: 'a@example.com', apiProviderId: 'codex-account:a', isDefault: true },
         { home: '/codex/b', label: 'b@example.com', apiProviderId: 'codex-account:b' },
       ],
     })
 
     expect(mocks.codex.mock.calls.map(([opts]) => opts.home)).toEqual(['/codex/a', '/codex/b'])
-    expect(rows.map(({ harness, account, apiProviderId }) => ({ harness, account, apiProviderId }))).toEqual([
-      { harness: 'claude', account: 'b@example.com', apiProviderId: 'claude-account:/claude/b' },
-      { harness: 'codex', account: 'a@example.com', apiProviderId: 'codex-account:a' },
-      { harness: 'codex', account: 'b@example.com', apiProviderId: 'codex-account:b' },
+    expect(rows.map(({ harness, account, apiProviderId, isDefault }) => ({ harness, account, apiProviderId, isDefault }))).toEqual([
+      { harness: 'claude', account: 'b@example.com', apiProviderId: 'claude-account:/claude/b', isDefault: undefined },
+      { harness: 'codex', account: 'a@example.com', apiProviderId: 'codex-account:a', isDefault: true },
+      { harness: 'codex', account: 'b@example.com', apiProviderId: 'codex-account:b', isDefault: undefined },
     ])
   })
 

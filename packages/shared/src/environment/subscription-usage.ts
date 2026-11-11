@@ -20,6 +20,12 @@ export interface SubscriptionUsage {
   apiProviderId?: string | null
   planType: string | null
   windows: ClaudeRateLimitWindow[]
+  /**
+   * This login is the one a launch uses when it omits `apiProviderId`.
+   * A Codex session does that for the node's default account, whose row still
+   * carries `codex-account:…`.
+   */
+  isDefault?: boolean
   /** Why the windows are missing or stale: an expired login, a failed request. */
   error?: string
 }

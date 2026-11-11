@@ -147,7 +147,7 @@ export const ReadyManaged: Story = withScenario('Ready (managed runtime)', {
 export const ExternalCliMissingGrok: Story = withScenario(
   'External CLI missing — Grok (click ▶ to install)',
   {
-    select: 'acp',
+    select: 'acp-grok',
     section: 'account',
     focusKey: 'acp-grok',
     catalog: baseCatalog({
@@ -164,7 +164,7 @@ export const ExternalCliMissingGrok: Story = withScenario(
 export const ExternalCliMissingAntigravity: Story = withScenario(
   'External CLI missing — Antigravity (click ▶ to install)',
   {
-    select: 'acp',
+    select: 'acp-antigravity',
     section: 'account',
     focusKey: 'acp-antigravity',
     catalog: baseCatalog({
@@ -197,7 +197,7 @@ export const ExternalCliMissingOpenCode: Story = withScenario(
 export const ExternalCliInstallingStreaming: Story = withScenario(
   'External CLI installing (streaming output)',
   {
-    select: 'acp',
+    select: 'acp-antigravity',
     section: 'account',
     focusKey: 'acp-antigravity',
     catalog: baseCatalog({
@@ -223,7 +223,7 @@ export const ExternalCliInstallingStreaming: Story = withScenario(
 export const ExternalCliInstallErrorRetry: Story = withScenario(
   'External CLI install error & retry',
   {
-    select: 'acp',
+    select: 'acp-grok',
     section: 'account',
     focusKey: 'acp-grok',
     failCliInstallCode: 6,
@@ -251,7 +251,7 @@ export const ExternalCliInstallErrorRetry: Story = withScenario(
 export const ExternalCliNarrow: Story = withScenario(
   'External CLI missing — narrow window',
   {
-    select: 'acp',
+    select: 'acp-antigravity',
     section: 'account',
     focusKey: 'acp-antigravity',
     width: 720,
@@ -279,7 +279,7 @@ export const OpenCodePreferences: Story = withScenario('OpenCode (session defaul
 })
 
 export const GrokPreferences: Story = withScenario('Grok (session defaults only)', {
-  select: 'acp',
+  select: 'acp-grok',
   catalog: baseCatalog({
     'acp-grok': {
       enabled: true,
@@ -339,7 +339,7 @@ export const CodexPreferences: Story = withScenario(
 )
 
 export const GrokAccount: Story = withScenario('Grok Account', {
-  select: 'acp',
+  select: 'acp-grok',
   section: 'account',
   catalog: baseCatalog({
     'acp-grok': {

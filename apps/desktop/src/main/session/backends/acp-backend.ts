@@ -8,7 +8,7 @@ import type {
   SandboxInfo,
   SendMessageRequest,
 } from '@superone/shared/agent-types'
-import { isAntigravityAcpAgent } from '@superone/shared/acp-brand'
+import { acpAgentIdForHarness, isAntigravityAcpAgent } from '@superone/shared/acp-brand'
 import { buildAnsweredQuestionInput } from '@superone/shared/ask-user-question'
 import { MonitorSessionHold } from '@superone/shared/monitor-session-hold'
 import { isAcpEffortConfigId } from '@superone/shared/effort-labels'
@@ -149,7 +149,15 @@ function liveTaskIdsFromToolResultSummary(summary: string | undefined): string[]
 }
 
 export class AcpBackend implements SessionBackend {
-  readonly kind: HarnessId = 'acp'
+  readonly kind: 'acp-grok' | 'acp-antigravity'
+
+  constructor(kind: 'acp-grok' | 'acp-antigravity' = 'acp-grok') {
+    this.kind = kind
+  }
+
+  private pinnedConfig(raw: unknown): AcpBackendConfig {
+    return { ...readConfig(raw), agentId: acpAgentIdForHarness(this.kind) }
+  }
 
   hasActiveRuntime(): boolean {
     return Boolean(this.runtime || this.ensureRuntimePromise)
@@ -315,7 +323,7 @@ export class AcpBackend implements SessionBackend {
 
   /** Agent id/command change OR working directory change requires a new ACP process. */
   private needsRuntimeRestart(opts: BackendStartOptions): boolean {
-    if (this.isLaunchChanged(readConfig(opts.config))) return true
+    if (this.isLaunchChanged(this.pinnedConfig(opts.config))) return true
     if (!this.runtime && !this.ensureRuntimePromise) return false
     const nextCwd = this.effectiveCwd(opts)
     if (this.runtimeCwd && this.runtimeCwd !== nextCwd) return true
@@ -344,7 +352,7 @@ export class AcpBackend implements SessionBackend {
 
   async start(opts: BackendStartOptions): Promise<void> {
     if (this.disposed) throw new Error('AcpBackend already disposed')
-    const next = readConfig(opts.config)
+    const next = this.pinnedConfig(opts.config)
     const restart = this.needsRuntimeRestart(opts) || this.isLaunchChanged(next)
     this.startOpts = opts
     this.config = next
@@ -367,7 +375,7 @@ export class AcpBackend implements SessionBackend {
   async rebuild(opts: BackendStartOptions): Promise<void> {
     await this.teardownRuntime()
     this.startOpts = opts
-    this.config = readConfig(opts.config)
+    this.config = this.pinnedConfig(opts.config)
     this.started = true
     this.disposed = false
     log.info(
@@ -384,7 +392,7 @@ export class AcpBackend implements SessionBackend {
 
   prewarm(opts: BackendStartOptions): void {
     if (this.disposed) return
-    const next = readConfig(opts.config)
+    const next = this.pinnedConfig(opts.config)
     const restart = this.needsRuntimeRestart(opts)
     if (restart && (this.runtime || this.ensureRuntimePromise)) {
       void this.teardownRuntime().then(() => {

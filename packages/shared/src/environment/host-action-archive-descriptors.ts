@@ -185,6 +185,8 @@ export const HOST_ACTION_ARCHIVE_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
           "enum": [
             "claude",
             "codex",
+            "acp-grok",
+            "acp-antigravity",
             "acp",
             "opencode"
           ],
@@ -280,6 +282,8 @@ export const HOST_ACTION_ARCHIVE_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
           "enum": [
             "claude",
             "codex",
+            "acp-grok",
+            "acp-antigravity",
             "acp",
             "opencode"
           ]

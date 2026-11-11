@@ -29,23 +29,27 @@ describe('NodeHarnessId', () => {
     expect(isNodeHarnessId('unknown')).toBe(false)
   })
 
-  it('maps legacy session acp to acp-grok and back to wire acp', () => {
+  it('maps legacy session acp onto the concrete harness and keeps catalog ids', () => {
     expect(sessionHarnessIdToNodeHarnessId('acp')).toBe('acp-grok')
+    expect(sessionHarnessIdToNodeHarnessId('acp', { acpAgentId: 'antigravity' })).toBe('acp-antigravity')
+    expect(sessionHarnessIdToNodeHarnessId('acp', { providerId: 'acp-antigravity' })).toBe('acp-antigravity')
     expect(sessionHarnessIdToNodeHarnessId('acp-grok')).toBe('acp-grok')
     expect(sessionHarnessIdToNodeHarnessId('acp-antigravity')).toBe('acp-antigravity')
     expect(sessionHarnessIdToNodeHarnessId('cursor')).toBe('cursor')
     expect(sessionHarnessIdToNodeHarnessId('dsh')).toBe('dsh')
-    expect(nodeHarnessIdToSessionHarnessId('acp-grok')).toBe('acp')
-    expect(nodeHarnessIdToSessionHarnessId('acp-antigravity')).toBe('acp')
+    expect(nodeHarnessIdToSessionHarnessId('acp-grok')).toBe('acp-grok')
+    expect(nodeHarnessIdToSessionHarnessId('acp-antigravity')).toBe('acp-antigravity')
     expect(nodeHarnessIdToSessionHarnessId('codex')).toBe('codex')
     expect(nodeHarnessIdToSessionHarnessId('cursor')).toBe('cursor')
     expect(nodeHarnessIdToSessionHarnessId('dsh')).toBe('dsh')
   })
 
-  it('normalizes session wire ids so Grok and Antigravity always persist as acp in Stage 1', () => {
-    expect(normalizeSessionHarnessId('acp-grok')).toBe('acp')
-    expect(normalizeSessionHarnessId('acp-antigravity')).toBe('acp')
-    expect(normalizeSessionHarnessId('acp')).toBe('acp')
+  it('normalizes session wire ids to concrete harness ids and still reads legacy acp', () => {
+    expect(normalizeSessionHarnessId('acp-grok')).toBe('acp-grok')
+    expect(normalizeSessionHarnessId('acp-antigravity')).toBe('acp-antigravity')
+    expect(normalizeSessionHarnessId('acp')).toBe('acp-grok')
+    expect(normalizeSessionHarnessId('acp', { acpAgentId: 'grok-build' })).toBe('acp-grok')
+    expect(normalizeSessionHarnessId('acp', { acpAgentId: 'antigravity' })).toBe('acp-antigravity')
     expect(normalizeSessionHarnessId('codex')).toBe('codex')
     expect(normalizeSessionHarnessId('cursor')).toBe('cursor')
     expect(normalizeSessionHarnessId('dsh')).toBe('dsh')
@@ -113,7 +117,7 @@ describe('readySessionHarnessIds', () => {
         command: '/usr/local/bin/agy',
       },
     ]
-    expect(readySessionHarnessIds(statuses)).toEqual(['claude', 'acp', 'acp-antigravity'])
+    expect(readySessionHarnessIds(statuses)).toEqual(['claude', 'acp-grok', 'acp-antigravity'])
   })
 
   it('advertises Antigravity by catalog id and does not pretend Grok is ready', () => {

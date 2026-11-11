@@ -118,7 +118,7 @@ export function synthesizeHostWorkflowCard(
     status: 'complete',
     content: [toolUse, toolResult],
     createdAt: new Date(now).toISOString(),
-    providerId: session.sessionProvider ?? session.preferredProvider ?? 'acp',
+    providerId: session.sessionProvider ?? session.preferredProvider ?? 'acp-grok',
   }
   return [...session.messages, message]
 }

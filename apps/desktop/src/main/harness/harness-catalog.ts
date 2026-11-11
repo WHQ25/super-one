@@ -35,7 +35,7 @@ export interface HarnessCatalog {
 }
 
 /** Harnesses whose models come from their cache row; ACP lists agents, not models. */
-const CACHED_MODEL_HARNESSES = new Set<string>(['opencode', 'cursor', 'dsh'] satisfies Exclude<HarnessId, 'acp'>[])
+const CACHED_MODEL_HARNESSES = new Set<string>(['opencode', 'cursor', 'dsh'] satisfies Exclude<HarnessId, 'acp-grok' | 'acp-antigravity'>[])
 
 export function createHarnessCatalog(codex: CodexExperimentService): HarnessCatalog {
   /** Codex catalog cache key: the runtime binary plus the provider/auth it serves. */
@@ -224,7 +224,7 @@ export function createHarnessCatalog(codex: CodexExperimentService): HarnessCata
     async listModels(harnessId, apiProviderId) {
       if (harnessId === 'claude') return (await catalog.connectClaude(false, apiProviderId)).models
       if (harnessId === 'codex') return catalog.listCodexModels(app.getPath('userData'), apiProviderId)
-      return CACHED_MODEL_HARNESSES.has(harnessId) ? cachedHarnessModels(harnessId as Exclude<HarnessId, 'acp'>) : []
+      return CACHED_MODEL_HARNESSES.has(harnessId) ? cachedHarnessModels(harnessId as Exclude<HarnessId, 'acp-grok' | 'acp-antigravity'>) : []
     },
   }
   return catalog

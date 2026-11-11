@@ -13,6 +13,7 @@ import type {
   UserQuestion,
 } from './agent-types'
 import { asQuestionPreviewFormat } from './ask-user-question'
+import { resolveLegacyHarnessId } from './harness/acp-brand'
 
 export type NodeTranscriptBlock = {
   id?: string
@@ -326,9 +327,6 @@ export function nodeStatusToAgentStatus(
 }
 
 /** Normalize node harnessId into a chat session provider id. */
-export function nodeHarnessToProviderId(harnessId: string | undefined | null): string {
-  if (harnessId === 'claude' || harnessId === 'codex' || harnessId === 'acp' || harnessId === 'opencode') {
-    return harnessId
-  }
-  return harnessId || 'claude'
+export function nodeHarnessToProviderId(harnessId: string | undefined | null, acpAgentId?: string | null): string {
+  return resolveLegacyHarnessId(harnessId, { acpAgentId }) ?? harnessId ?? 'claude'
 }

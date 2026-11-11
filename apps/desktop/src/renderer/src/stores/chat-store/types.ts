@@ -440,7 +440,8 @@ export interface ChatStore {
   harnessResources: {
     claude: ClaudeResources | null
     codex: CodexResources | null
-    acp: AcpResources | null
+    'acp-grok': AcpResources | null
+    'acp-antigravity': AcpResources | null
     opencode?: OpenCodeResources | null
     cursor?: CursorResources | null
     dsh?: DeepseekResources | null

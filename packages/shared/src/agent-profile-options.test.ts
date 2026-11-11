@@ -32,7 +32,7 @@ describe('agentProfileOptionRows', () => {
   })
 
   it('lists choices with a user-default entry, and one row per Cursor parameter', () => {
-    const rows = agentProfileOptionRows('acp', GROK, 'grok-4', { contextWindow: 1_000_000 }, undefined, LABELS)
+    const rows = agentProfileOptionRows('acp-grok', GROK, 'grok-4', { contextWindow: 1_000_000 }, undefined, LABELS)
     expect(rows.map((row) => [row.id, row.selected, row.values.map((value) => value.value)])).toEqual([
       ['contextWindow', '1000000', ['', '256000', '1000000']],
       ['mode', '', ['', 'plan']],
@@ -55,7 +55,8 @@ describe('setAgentProfileOptionRow', () => {
 
 describe('agentProfileOptionsForModel', () => {
   it('drops what the new model cannot carry and keeps harness-wide options', () => {
-    expect(agentProfileOptionsForModel('acp', GROK, 'grok-code', { contextWindow: 1_000_000, mode: 'plan' })).toEqual({ mode: 'plan' })
+    expect(agentProfileOptionsForModel('acp-grok', GROK, 'grok-code', { contextWindow: 1_000_000, mode: 'plan' })).toEqual({ mode: 'plan' })
+    expect(agentProfileOptionsForModel('acp-antigravity', GROK, 'grok-code', { contextWindow: 1_000_000, mode: 'plan' })).toEqual({ mode: 'plan' })
     expect(agentProfileOptionsForModel('claude', CLAUDE, 'sonnet', { ultracode: true })).toBeUndefined()
     expect(agentProfileOptionsForModel('claude', CLAUDE, 'unlisted', { ultracode: true })).toEqual({ ultracode: true })
   })

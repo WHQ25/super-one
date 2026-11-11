@@ -5,7 +5,7 @@ import { applyEventToSession } from './reducer'
 describe('session_agents', () => {
   it('updates host controls independently of the native catalog', () => {
     const session = { ...createDefaultChatCoreSession(), sessionAgents: [{ id: 'agent', name: 'Native agent' }] }
-    const capabilities = { harnessId: 'acp' as const, supportsQueuedSteer: false, supportsQueuedSteerSoon: false }
+    const capabilities = { harnessId: 'acp-grok' as const, supportsQueuedSteer: false, supportsQueuedSteerSoon: false }
     expect(applyEventToSession(session, { type: 'session_capabilities', capabilities })).toEqual({ runtimeCapabilities: capabilities })
   })
 

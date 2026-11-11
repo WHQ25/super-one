@@ -85,8 +85,8 @@ export async function dispatchNodeRewind(args: {
   }
   if (session.harnessId === 'claude' && args.claude) return args.claude(session, method, input, host)
   if (session.harnessId === 'codex' && args.codex) return args.codex(session, method, input, host)
-  if (session.harnessId === 'acp') {
-    if (isAntigravityAcpAgent(session.acpAgentId)) return refused('Antigravity does not support rewind')
+  if (session.harnessId === 'acp-grok' || session.harnessId === 'acp-antigravity' || session.harnessId === 'acp') {
+    if (session.harnessId === 'acp-antigravity' || isAntigravityAcpAgent(session.acpAgentId)) return refused('Antigravity does not support rewind')
     const mode = grokMode(method, input.mode)
     if (!mode) return refused('Invalid rewind mode', true)
     const promptIndex = grokPromptIndexForCheckpoint(host.messages ?? [], String(input.checkpointId ?? ''))

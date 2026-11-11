@@ -75,7 +75,8 @@ describe('session-provider-repo', () => {
     it('listByHarness filters by harness', () => {
       expect(listByHarness('claude').map((p) => p.id)).toEqual(['claude-base'])
       expect(listByHarness('codex').map((p) => p.id)).toEqual(['codex-base'])
-      expect(listByHarness('acp').map((p) => p.id)).toEqual(['acp-grok', 'acp-antigravity'])
+      expect(listByHarness('acp-grok').map((p) => p.id)).toEqual(['acp-grok'])
+      expect(listByHarness('acp-antigravity').map((p) => p.id)).toEqual(['acp-antigravity'])
     })
 
     it('get returns null for unknown id', () => {
@@ -85,7 +86,8 @@ describe('session-provider-repo', () => {
     it('getBaseProvider returns the seeded base', () => {
       expect(getBaseProvider('claude').isBase).toBe(true)
       expect(getBaseProvider('codex').isBase).toBe(true)
-      expect(getBaseProvider('acp').isBase).toBe(true)
+      expect(getBaseProvider('acp-grok').isBase).toBe(true)
+      expect(getBaseProvider('acp-antigravity').isBase).toBe(true)
     })
   })
 

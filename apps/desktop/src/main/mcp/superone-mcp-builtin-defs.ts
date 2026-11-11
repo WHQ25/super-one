@@ -579,7 +579,7 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
       properties: {
         environmentId: { type: 'string', description: ARCHIVE_ENVIRONMENT_DESCRIPTION },
         query: { type: 'string', description: 'Case-insensitive title substring filter.' },
-        harness: { type: 'string', enum: ['claude', 'codex', 'acp', 'opencode'], description: 'Filter by harness.' },
+        harness: { type: 'string', enum: ['claude', 'codex', 'acp', 'acp-grok', 'acp-antigravity', 'opencode'], description: 'Filter by harness. `acp` matches both ACP harnesses.' },
         includeHidden: { type: 'boolean', description: 'Include hidden sessions. Default false.' },
         includePinnedOnly: { type: 'boolean', description: 'Only pinned sessions. Default false.' },
         parentOnly: { type: 'boolean', description: 'Exclude collab child sessions. Default false.' },
@@ -633,7 +633,7 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
       properties: {
         environmentId: { type: 'string', description: ARCHIVE_ENVIRONMENT_DESCRIPTION },
         query: { type: 'string', minLength: 1, description: 'Search terms (AND). Matches title and message text.' },
-        harness: { type: 'string', enum: ['claude', 'codex', 'acp', 'opencode'] },
+        harness: { type: 'string', enum: ['claude', 'codex', 'acp', 'acp-grok', 'acp-antigravity', 'opencode'] },
         sessionIds: {
           type: 'array',
           items: { type: 'string' },

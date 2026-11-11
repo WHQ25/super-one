@@ -17,7 +17,7 @@
 
 import { COMPUTER_USE_TOOL_NAMES, normalizeComputerUseToolName } from './tools'
 
-export const COMPUTER_USE_HARNESS_IDS = ['claude', 'codex', 'acp', 'opencode'] as const
+export const COMPUTER_USE_HARNESS_IDS = ['claude', 'codex', 'acp-grok', 'acp-antigravity', 'opencode'] as const
 export type ComputerUseHarnessId = (typeof COMPUTER_USE_HARNESS_IDS)[number]
 
 /** Qualified Claude-style names: mcp__superone__computer_apps, … */
@@ -48,7 +48,7 @@ export function harnessRecoveryForComputerUseToggle(harnessId: string): {
   // tools/list_changed for the thread snapshot, so markNeedsRebuild is required
   // so the next user turn rebuilds and re-snapshots. Claude/OpenCode bake tools
   // into createSuperoneMcpServer at start — same rebuild flag.
-  const known = (COMPUTER_USE_HARNESS_IDS as readonly string[]).includes(harnessId)
+  const known = (COMPUTER_USE_HARNESS_IDS as readonly string[]).includes(harnessId) || harnessId === 'acp'
   return {
     markNeedsRebuild: known,
     closeHttpSessions: known,

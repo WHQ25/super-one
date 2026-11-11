@@ -1,4 +1,5 @@
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
+import { isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import { toast } from 'sonner'
 import type {
   PermissionMode,
@@ -280,7 +281,7 @@ export function respondToPlanApprovalImpl(
     // ACP plan exit is independent of yolo baseline. Forcing `default` here
     // would notify Grok `permission_mode: ask` and wipe Auto / Always Approve.
     // Claude still leaves plan into acceptEdits / default via the post-approve toggle.
-    if (approved && session.sessionProvider !== 'acp') {
+    if (approved && !isAcpProtocolHarness(session.sessionProvider)) {
       const nextMode: PermissionMode = postApprovalMode ?? 'default'
       void patchSessionSettings(activeProject, targetSid, session, { permissionMode: nextMode })
         .catch((error) => console.warn('[chat] setPermissionMode after plan approval failed:', error))
@@ -290,7 +291,7 @@ export function respondToPlanApprovalImpl(
     const perSessionUpdate = commitPerSession(s, target, () => ({
       pendingPlanApproval: null,
       planApprovalOutcome: { approved, feedback },
-      ...(approved && session.sessionProvider !== 'acp' && {
+      ...(approved && !isAcpProtocolHarness(session.sessionProvider) && {
         permissionMode: (postApprovalMode ?? 'default') as PermissionMode,
       }),
     }))

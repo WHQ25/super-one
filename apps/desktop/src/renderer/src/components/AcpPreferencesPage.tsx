@@ -3,9 +3,10 @@ import { ChevronDown, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
 import { acpModeCatalog } from '@superone/shared/harness/acp-mode-catalog'
-import { isAntigravityAcpAgent } from '@superone/shared/acp-brand'
+import { acpAgentIdForHarness, isAntigravityAcpAgent } from '@superone/shared/acp-brand'
 import { formatEffortOptionLabel } from '@superone/shared/effort-labels'
 import { acpAgentDefaultsFor, acpAgentPreferencePatch } from '@superone/shared/harness/session-defaults'
+import { acpHarnessForAgent, type AcpHarnessId } from '@/stores/chat-store/harness/acp-slots'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
@@ -16,22 +17,28 @@ import { invalidateDefaultAcpPreferencesCache, useChatStore } from '@/stores/cha
 import { SettingsRow } from '@/components/settings/SettingsSection'
 import { settingsSelectTriggerClassName } from '@/components/settings/select-trigger-class'
 
-export function AcpDefaultModelRows({ acpAgentId }: { acpAgentId?: string | null }) {
+export function AcpDefaultModelRows({
+  acpAgentId,
+  harnessId,
+}: {
+  acpAgentId?: string | null
+  harnessId?: AcpHarnessId
+}) {
   const { t } = useTranslation()
-  const acpResources = useChatStore((s) => s.harnessResources.acp)
-  const catalogRefresh = useHarnessCatalogRefresh('acp', true)
+  const slot: AcpHarnessId = harnessId ?? acpHarnessForAgent(acpAgentId)
+  const acpResources = useChatStore((s) => s.harnessResources[slot])
+  const catalogRefresh = useHarnessCatalogRefresh(slot, true)
   const initializeHarness = useChatStore((s) => s.initializeHarness)
   const setHarnessResources = useChatStore((s) => s.setHarnessResources)
 
   const [defaultModel, setDefaultModel] = useState<string>('')
   const [defaultEffort, setDefaultEffort] = useState<string>('')
-  const [fallbackAgentId, setFallbackAgentId] = useState<string | null>(null)
   const [loading, setLoading] = useState(true)
   const [saving, setSaving] = useState(false)
   const [modelOpen, setModelOpen] = useState(false)
   const [effortOpen, setEffortOpen] = useState(false)
 
-  const resolvedAgentId = acpAgentId ?? fallbackAgentId ?? acpResources?.selectedAgentId ?? 'grok-build'
+  const resolvedAgentId = acpAgentId ?? acpAgentIdForHarness(slot)
   const isAntigravity = isAntigravityAcpAgent(resolvedAgentId)
 
   const localizedEffortLabels = useMemo<Record<string, string>>(() => ({
@@ -43,17 +50,15 @@ export function AcpDefaultModelRows({ acpAgentId }: { acpAgentId?: string | null
   }), [t])
 
   useEffect(() => {
-    void initializeHarness('acp')
-  }, [initializeHarness])
+    void initializeHarness(slot)
+  }, [initializeHarness, slot])
 
   useEffect(() => {
     let mounted = true
     setLoading(true)
     window.app.getAppSettings().then((settings) => {
       if (!mounted) return
-      const targetAgentId = acpAgentId ?? settings.agentPreference.acp?.selectedAgentId ?? 'grok-build'
-      setFallbackAgentId(settings.agentPreference.acp?.selectedAgentId ?? null)
-      const defaults = acpAgentDefaultsFor(settings.agentPreference.acp, targetAgentId)
+      const defaults = acpAgentDefaultsFor(settings.agentPreference, slot)
       setDefaultModel(defaults.defaultModel)
       setDefaultEffort(defaults.defaultEffort)
     }).finally(() => {
@@ -62,7 +67,7 @@ export function AcpDefaultModelRows({ acpAgentId }: { acpAgentId?: string | null
     return () => {
       mounted = false
     }
-  }, [acpAgentId])
+  }, [slot])
 
   const catalog = useMemo(
     () => getCachedAcpCatalog(acpResources, resolvedAgentId),
@@ -74,13 +79,13 @@ export function AcpDefaultModelRows({ acpAgentId }: { acpAgentId?: string | null
     let cancelled = false
     void window.app.refreshAcpModels?.(resolvedAgentId).then((fresh) => {
       if (!cancelled && fresh) {
-        setHarnessResources('acp', fresh)
+        setHarnessResources(slot, fresh)
       }
     }).catch(() => {})
     return () => {
       cancelled = true
     }
-  }, [catalog?.models.length, resolvedAgentId, setHarnessResources])
+  }, [catalog?.models.length, resolvedAgentId, setHarnessResources, slot])
 
   const rawModels = catalog?.models ?? []
 
@@ -141,11 +146,8 @@ export function AcpDefaultModelRows({ acpAgentId }: { acpAgentId?: string | null
     if (saving) return
     setSaving(true)
     try {
-      const acpPatch = acpAgentPreferencePatch(resolvedAgentId, patch)
       await window.app.saveAppSettings({
-        agentPreference: {
-          acp: acpPatch,
-        },
+        agentPreference: acpAgentPreferencePatch(slot, patch),
       })
       if (patch.defaultModel !== undefined) setDefaultModel(patch.defaultModel)
       if (patch.defaultEffort !== undefined) setDefaultEffort(patch.defaultEffort)

@@ -10,7 +10,7 @@ import { useAppStore } from '@/stores/app'
 import type { McpServerInfo, McpServerMeta } from '@superone/shared/agent-types'
 import type { McpbInstalledEntry } from '@superone/shared/mcpb-types'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
-import { acpAgentDisplayName, isGrokAcpAgent } from '@superone/shared/acp-brand'
+import { isAcpProtocolHarness, isGrokAcpAgent } from '@superone/shared/acp-brand'
 
 function ServerIcon({ name, meta, bundle }: { name: string; meta?: McpServerMeta; bundle?: McpbInstalledEntry }) {
   const src = meta?.icons?.[0]?.src ?? bundle?.iconDataUrl
@@ -229,13 +229,7 @@ export function McpSlashPopup({ onClose }: { onClose: () => void }) {
     navigateTo('settings')
   }, [onClose, setSettingsProvider, setSettingsTab, navigateTo, harness])
 
-  const harnessLabel = useMemo(() => {
-    if (harness === 'acp') {
-      if (isGrokAcpAgent(acpAgentId)) return 'Grok'
-      return acpAgentId ? acpAgentDisplayName(acpAgentId) : HARNESS_CAPABILITIES.acp.displayName
-    }
-    return HARNESS_CAPABILITIES[harness]?.displayName ?? 'Claude'
-  }, [harness, acpAgentId])
+  const harnessLabel = HARNESS_CAPABILITIES[harness]?.displayName ?? 'Claude'
 
   const servers = liveFromStore.length > 0 ? liveFromStore : state.servers
   const mode: Mode = liveFromStore.length > 0 ? 'live' : state.mode
@@ -323,7 +317,7 @@ export function McpSlashPopup({ onClose }: { onClose: () => void }) {
             const canAuthenticate = canAuthenticateHost && mode === 'live'
               && server.status === 'needs-auth'
               && server.name !== 'superone'
-              && (harness === 'opencode' || (harness === 'acp' && isGrokAcpAgent(acpAgentId)))
+              && (harness === 'opencode' || (isAcpProtocolHarness(harness) && isGrokAcpAgent(acpAgentId)))
             const isAuthenticating = authenticatingServer === server.name
             return (
               <div key={`${server.scope ?? 'local'}:${server.name}`} className="px-1">

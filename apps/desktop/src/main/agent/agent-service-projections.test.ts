@@ -232,7 +232,7 @@ describe('AgentService phone projections', () => {
     const session = makeMockSession({
       id: 'sid-1',
       projectPath: '/p',
-      snapshot: { harnessId: 'acp' },
+      snapshot: { harnessId: 'acp-grok' },
       send,
       dispatchBackendCommand,
     })
@@ -753,7 +753,7 @@ describe('AgentService phone projections', () => {
     const service = new AgentService()
     await captureValue(respond, 'sys-acp', () => nativePhoneProjection(service, 'harness.systemInfo', {
       projectId: '/p',
-      harnessId: 'acp',
+      harnessId: 'acp-antigravity',
       acpAgentId: 'antigravity',
     }))
 

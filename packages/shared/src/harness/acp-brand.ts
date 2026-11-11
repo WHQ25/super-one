@@ -3,6 +3,43 @@
  * brandKey is used for icons / labels — e.g. `acp-grok`.
  */
 
+import type { HarnessId } from './harness-id'
+
+const CONCRETE_HARNESS_IDS = ['claude', 'codex', 'opencode', 'cursor', 'acp-grok', 'acp-antigravity', 'dsh'] as const
+
+export function isConcreteHarnessId(value: string | null | undefined): value is HarnessId {
+  return !!value && (CONCRETE_HARNESS_IDS as readonly string[]).includes(value)
+}
+
+export function isAcpProtocolHarness(id: string | null | undefined): id is 'acp-grok' | 'acp-antigravity' {
+  return id === 'acp-grok' || id === 'acp-antigravity'
+}
+
+export function acpAgentIdForHarness(id: 'acp-grok' | 'acp-antigravity'): 'grok-build' | 'antigravity' {
+  return id === 'acp-antigravity' ? 'antigravity' : 'grok-build'
+}
+
+export interface LegacyHarnessHint {
+  acpAgentId?: string | null
+  providerId?: string | null
+}
+
+export function resolveLegacyHarnessId(
+  raw: string | null | undefined,
+  hint?: LegacyHarnessHint,
+): HarnessId | null {
+  if (!raw) return null
+  const value = raw.trim()
+  if (!value) return null
+  if (isConcreteHarnessId(value)) return value
+  if (value !== 'acp') return null
+  const providerId = hint?.providerId?.trim() || null
+  const agent = hint?.acpAgentId?.trim() || null
+  if (providerId === 'acp-antigravity' || isAntigravityAcpAgent(agent)) return 'acp-antigravity'
+  if (isOpenCodeAcpAgent(agent)) return 'opencode'
+  return 'acp-grok'
+}
+
 export function isGrokAcpAgent(agentId: string | null | undefined): boolean {
   if (!agentId) return false
   const id = agentId.toLowerCase()
@@ -25,15 +62,7 @@ export function resolveHarnessBrandKey(
   acpAgentId?: string | null,
 ): string {
   if (!harnessId) return 'claude'
-  if (harnessId !== 'acp') return harnessId
-  if (isGrokAcpAgent(acpAgentId)) return 'acp-grok'
-  if (isAntigravityAcpAgent(acpAgentId)) return 'acp-antigravity'
-  if (isOpenCodeAcpAgent(acpAgentId)) return 'acp-opencode'
-  if (acpAgentId?.trim()) {
-    const short = acpAgentId.trim().toLowerCase().replace(/-build$/, '').replace(/[^a-z0-9]+/g, '-')
-    return short ? `acp-${short}` : 'acp'
-  }
-  return 'acp'
+  return resolveLegacyHarnessId(harnessId, { acpAgentId }) ?? harnessId
 }
 
 /** Short human name for collab titles (`Name - Role`). */

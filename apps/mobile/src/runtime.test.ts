@@ -418,7 +418,7 @@ describe('ChatRuntime', () => {
     const client = fakeClient()
     const paint = vi.fn()
     const runtime = new ChatRuntime(client as never, paint)
-    const id = await runtime.create('/p', { provider: 'acp', acpAgentId: 'grok-build' })
+    const id = await runtime.create('/p', { provider: 'acp-grok', acpAgentId: 'grok-build' })
     client.dispatch.mockImplementation(async (cmd: { method: string }) => {
       client.sent.push(cmd)
       if (cmd.method === 'session.recap') return { ok: true }
@@ -442,7 +442,7 @@ describe('ChatRuntime', () => {
     const client = fakeClient()
     const onSessionRecap = vi.fn()
     const runtime = new ChatRuntime(client as never, vi.fn(), { onSessionRecap })
-    const id = await runtime.create('/p', { provider: 'acp', acpAgentId: 'grok-build' })
+    const id = await runtime.create('/p', { provider: 'acp-grok', acpAgentId: 'grok-build' })
     runtime.ingest([{ type: 'session_recap', summary: 'We wired recap.', auto: true }])
     expect(onSessionRecap).toHaveBeenCalledWith(id)
   })
@@ -450,7 +450,7 @@ describe('ChatRuntime', () => {
   it('clears the recap spinner when the host skips the RPC', async () => {
     const client = fakeClient()
     const runtime = new ChatRuntime(client as never, vi.fn())
-    await runtime.create('/p', { provider: 'acp', acpAgentId: 'grok-build' })
+    await runtime.create('/p', { provider: 'acp-grok', acpAgentId: 'grok-build' })
     client.dispatch.mockResolvedValue({ ok: false })
 
     await expect(runtime.requestRecap()).resolves.toBe(false)
@@ -462,7 +462,7 @@ describe('ChatRuntime', () => {
     const runtime = new ChatRuntime(client as never, vi.fn())
 
     await runtime.create('/p', {
-      provider: 'acp',
+      provider: 'acp-grok',
       acpAgentId: 'grok-build',
       model: 'grok-4',
       effort: 'deep',
@@ -470,7 +470,7 @@ describe('ChatRuntime', () => {
 
     expect(client.sent).toContainEqual(expect.objectContaining({
       method: 'session.create',
-      harnessId: 'acp',
+      harnessId: 'acp-grok',
       acpAgentId: 'grok-build',
       model: 'grok-4',
       effort: 'deep',

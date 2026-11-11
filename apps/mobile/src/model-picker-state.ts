@@ -63,7 +63,6 @@ export function groupModels(
 ): ModelGroup[] {
   const query = options.query?.trim().toLowerCase() ?? ''
   const slashGrouped = options.harness === 'opencode'
-    || (options.harness === 'acp' && options.acpAgentId === 'opencode')
   const groups = new Map<string, ModelOption[]>()
   const rows = options.harness === 'claude' ? claudeRows(models, options.modelEnv) : models
   for (const entry of rows) {

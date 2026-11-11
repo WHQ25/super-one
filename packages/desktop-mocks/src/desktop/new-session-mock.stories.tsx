@@ -59,7 +59,7 @@ export const ControlledDeepSeek: Story = {
 }
 
 export const ControlledGrokAcp: Story = {
-  args: { harness: "acp" },
+  args: { harness: "acp-grok" },
 }
 
 export const CustomPlaceholder: Story = {

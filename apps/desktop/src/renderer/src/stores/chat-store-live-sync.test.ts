@@ -220,7 +220,7 @@ function makeSnapshotEntry(overrides: Partial<{
   projectPath: string
   isActive: boolean
   isStreaming: boolean
-  harnessId: 'claude' | 'codex' | 'acp' | 'opencode'
+  harnessId: 'claude' | 'codex' | 'acp-grok' | 'acp-antigravity' | 'opencode'
   permissionMode: string
   messages: ChatMessage[]
   currentMessageId: string | null
@@ -602,7 +602,7 @@ describe('syncLiveSnapshots', () => {
   it('carries snapshot acpAgentId so mini-window brands Grok/ACP sessions correctly', async () => {
     mockGetLiveSnapshots.mockResolvedValueOnce([
       makeSnapshotEntry({
-        harnessId: 'acp',
+        harnessId: 'acp-grok',
         messages: [makeMessage('m1', 'hi', 1)],
         acpAgentId: 'grok-build',
         isStreaming: false,
@@ -612,15 +612,15 @@ describe('syncLiveSnapshots', () => {
 
     await useChatStore.getState().syncLiveSnapshots()
     const session = useChatStore.getState().projectSessions['/p']._sessions['sid-1']
-    expect(session.sessionProvider).toBe('acp')
-    expect(session.preferredProvider).toBe('acp')
+    expect(session.sessionProvider).toBe('acp-grok')
+    expect(session.preferredProvider).toBe('acp-grok')
     expect(session.acpAgentId).toBe('grok-build')
   })
 
   it('carries snapshot selectedModel and replays acp_models for mini-window model labels', async () => {
     mockGetLiveSnapshots.mockResolvedValueOnce([
       makeSnapshotEntry({
-        harnessId: 'acp',
+        harnessId: 'acp-grok',
         messages: [makeMessage('m1', 'hi', 1)],
         acpAgentId: 'grok-build',
         selectedModel: 'grok-4.5',
@@ -651,7 +651,7 @@ describe('syncLiveSnapshots', () => {
   it('applies uiSettings for permission mode, effort, and codex presets', async () => {
     mockGetLiveSnapshots.mockResolvedValueOnce([
       makeSnapshotEntry({
-        harnessId: 'acp',
+        harnessId: 'acp-grok',
         messages: [makeMessage('m1', 'hi', 1)],
         acpAgentId: 'grok-build',
         permissionMode: 'plan',
@@ -686,8 +686,8 @@ describe('syncLiveSnapshots', () => {
             'sid-1': {
               ...createDefaultPerSessionState(),
               acpAgentId: 'grok-build',
-              preferredProvider: 'acp',
-              sessionProvider: 'acp',
+              preferredProvider: 'acp-grok',
+              sessionProvider: 'acp-grok',
             },
           },
         } as never,
@@ -696,7 +696,7 @@ describe('syncLiveSnapshots', () => {
 
     mockGetLiveSnapshots.mockResolvedValueOnce([
       makeSnapshotEntry({
-        harnessId: 'acp',
+        harnessId: 'acp-grok',
         messages: [makeMessage('m1', 'hi', 1)],
         acpAgentId: null,
         isStreaming: false,

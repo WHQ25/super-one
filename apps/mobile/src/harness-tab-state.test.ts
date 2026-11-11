@@ -2,13 +2,13 @@ import { describe, expect, it } from 'vitest'
 import type { HarnessId, RemoteHarnessOption } from '@superone/shared/agent-types'
 import { harnessTabSlots } from './harness-tab-state'
 
-const option = (key: string, label: string, provider: HarnessId = 'claude'): RemoteHarnessOption => ({
-  key, label, provider, acpAgentId: provider === 'acp' ? key.replace('acp:', '') : null,
+const option = (key: string, label: string, provider: HarnessId = 'claude', acpAgentId: string | null = null): RemoteHarnessOption => ({
+  key, label, provider, acpAgentId,
 })
 
 const claude = option('claude', 'Claude Code')
 const codex = option('codex', 'Codex', 'codex')
-const grok = option('acp:grok-build', 'Grok Build', 'acp')
+const grok = option('acp-grok', 'Grok Build', 'acp-grok', 'grok-build')
 
 describe('harnessTabSlots', () => {
   it('returns null when there is nothing to switch between', () => {
@@ -22,14 +22,14 @@ describe('harnessTabSlots', () => {
   })
 
   it('names the active option in the second slot when it lives there', () => {
-    const slots = harnessTabSlots({ options: [claude, codex, grok], activeKey: 'acp:grok-build' })
+    const slots = harnessTabSlots({ options: [claude, codex, grok], activeKey: 'acp-grok' })
     expect(slots?.menuTab).toEqual(grok)
     expect(slots?.menuActive).toBe(true)
   })
 
   it('falls back to the remembered pick while the fixed slot is active', () => {
     const slots = harnessTabSlots({
-      options: [claude, codex, grok], activeKey: 'claude', rememberedKey: 'acp:grok-build',
+      options: [claude, codex, grok], activeKey: 'claude', rememberedKey: 'acp-grok',
     })
     expect(slots?.menuTab).toEqual(grok)
     expect(slots?.menuActive).toBe(false)
@@ -37,7 +37,7 @@ describe('harnessTabSlots', () => {
 
   it('ignores a remembered pick the host no longer offers', () => {
     const slots = harnessTabSlots({
-      options: [claude, codex], activeKey: 'claude', rememberedKey: 'acp:grok-build',
+      options: [claude, codex], activeKey: 'claude', rememberedKey: 'acp-grok',
     })
     expect(slots?.menuTab).toEqual(codex)
   })
@@ -48,9 +48,9 @@ describe('harnessTabSlots', () => {
     expect(slots).toEqual({ fixed: claude, menu: [codex], menuTab: codex, menuActive: true })
   })
 
-  it('keeps one row per ACP agent rather than collapsing them onto `acp`', () => {
-    const kimi = option('acp:kimi', 'Kimi', 'acp')
-    const slots = harnessTabSlots({ options: [claude, grok, kimi], activeKey: 'claude' })
-    expect(slots?.menu.map((row) => row.label)).toEqual(['Grok Build', 'Kimi'])
+  it('keeps Grok and Antigravity as separate rows', () => {
+    const antigravity = option('acp-antigravity', 'Antigravity', 'acp-antigravity', 'antigravity')
+    const slots = harnessTabSlots({ options: [claude, grok, antigravity], activeKey: 'claude' })
+    expect(slots?.menu.map((row) => row.label)).toEqual(['Grok Build', 'Antigravity'])
   })
 })

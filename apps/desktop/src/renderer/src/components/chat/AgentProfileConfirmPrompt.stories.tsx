@@ -84,11 +84,11 @@ const GROK_MODELS = [
   { id: 'grok-4', name: 'Grok 4', contextWindows: [256_000, 1_000_000] },
   { id: 'grok-code', name: 'Grok Code', contextWindows: [256_000] },
 ]
-const GROK_AGENT = agent('acp', GROK_MODELS, { model: 'grok-4', effort: 'high', permissionMode: 'default' }, { acpAgentId: 'grok-build', brandKey: 'acp-grok', efforts: ['low', 'high'] })
+const GROK_AGENT = agent('acp-grok', GROK_MODELS, { model: 'grok-4', effort: 'high', permissionMode: 'default' }, { acpAgentId: 'grok-build', brandKey: 'acp-grok', efforts: ['low', 'high'] })
 
 /** Every runtime field left to the user's default: the controls show what a launch would start with. */
 const CREATE_DEFAULTS = create(
-  { harnessId: 'acp', acpAgentId: 'grok-build', name: 'Grok Scout', description: 'Fast codebase exploration and summaries.', unsupported: ['mode'] },
+  { harnessId: 'acp-grok', acpAgentId: 'grok-build', name: 'Grok Scout', description: 'Fast codebase exploration and summaries.', unsupported: ['mode'] },
   { name: 'Grok Scout', description: 'Fast codebase exploration and summaries.' },
   GROK_AGENT,
   GROK_MODELS,
@@ -270,7 +270,7 @@ export const ReadOnlyCodexDefaults: Story = {
 export const LegacyAcpApproval: Story = {
   args: { payload: {
     operation: 'update',
-    profiles: [{ harnessId: 'acp', acpAgentId: 'grok-build', name: 'Legacy Implementer', description: 'Implement scoped tasks using the selected ACP agent.', instructions: 'Preserve unrelated changes and report validation results.' }],
+    profiles: [{ harnessId: 'acp-grok', acpAgentId: 'grok-build', name: 'Legacy Implementer', description: 'Implement scoped tasks using the selected ACP agent.', instructions: 'Preserve unrelated changes and report validation results.' }],
     changes: [],
     collaborationApproval: { baseConfig: GROK_AGENT.defaultConfig, config: GROK_AGENT.defaultConfig },
   } },

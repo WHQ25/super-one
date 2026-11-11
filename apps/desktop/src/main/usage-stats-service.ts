@@ -5,6 +5,7 @@ import type {
   ModelUsageInfo,
   UsageInfo,
 } from '@superone/shared/agent-types'
+import { isAcpProtocolHarness, resolveLegacyHarnessId } from '@superone/shared/acp-brand'
 import { getDb } from './database'
 export {
   backfillFromHistory,
@@ -13,6 +14,14 @@ export {
 } from './usage-stats-backfill'
 
 export type HarnessKind = 'claude' | 'codex' | 'grok' | 'antigravity' | 'cursor' | 'opencode'
+
+export function activityHarnessKind(provider: string | null | undefined, acpAgentId?: string | null): HarnessKind | null {
+  const resolved = resolveLegacyHarnessId(provider, { acpAgentId })
+  if (resolved === 'acp-grok') return 'grok'
+  if (resolved === 'acp-antigravity') return 'antigravity'
+  if (resolved === 'claude' || resolved === 'codex' || resolved === 'cursor' || resolved === 'opencode') return resolved
+  return null
+}
 
 export interface UsageDailyRow {
   day: string
@@ -312,20 +321,12 @@ export function queryUsage(range: UsageQueryRange = {}): UsageQueryResult {
   return { rows: Array.from(byModel.values()) }
 }
 
-const HARNESS_PROVIDERS = new Set<HarnessId>(['claude', 'codex', 'acp', 'opencode', 'cursor'])
-
-function normalizeSessionProvider(raw: string | null | undefined): HarnessId {
-  const value = (raw ?? '').trim().toLowerCase()
-  if (HARNESS_PROVIDERS.has(value as HarnessId)) return value as HarnessId
-  return 'claude'
+function normalizeSessionProvider(raw: string | null | undefined, acpAgentId?: string | null): HarnessId {
+  return resolveLegacyHarnessId(raw, { acpAgentId }) ?? 'claude'
 }
 
 export function harnessSessionRankKey(provider: HarnessId, acpAgentId?: string | null): string {
-  if (provider === 'acp') {
-    const agent = acpAgentId?.trim()
-    return agent ? `acp:${agent}` : 'acp'
-  }
-  return provider
+  return resolveLegacyHarnessId(provider, { acpAgentId }) ?? provider
 }
 
 /**
@@ -360,8 +361,8 @@ export function queryHarnessSessionRanks(days = 7): HarnessSessionRank[] {
 
   const byKey = new Map<string, HarnessSessionRank>()
   for (const row of rows) {
-    const provider = normalizeSessionProvider(row.provider)
-    const acpAgentId = provider === 'acp' ? (row.acp_agent_id?.trim() || null) : null
+    const provider = normalizeSessionProvider(row.provider, row.acp_agent_id)
+    const acpAgentId = isAcpProtocolHarness(provider) ? (row.acp_agent_id?.trim() || null) : null
     const key = harnessSessionRankKey(provider, acpAgentId)
     const existing = byKey.get(key)
     const sessionCount = Number(row.session_count) || 0

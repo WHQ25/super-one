@@ -81,7 +81,7 @@ describe('harness branch ratchet', () => {
   it('counts both comparison orders and case labels, ignoring other literals', () => {
     const probe = [
       "if (h === 'codex') {}",
-      "if ('acp' !== h) {}",
+      "if ('acp-grok' !== h) {}",
       'if (h === `cursor`) {}',
       'const ok = h\n  === "opencode"',
       "switch (h) { case 'dsh': break; case 'other': break }",

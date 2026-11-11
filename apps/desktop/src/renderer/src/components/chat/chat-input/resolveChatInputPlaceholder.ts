@@ -10,7 +10,11 @@ const PLACEHOLDER_KEYS = {
     ask: 'chat.placeholder.codexAsk',
     plan: 'chat.placeholder.codexPlan',
   },
-  acp: {
+  'acp-grok': {
+    ask: 'chat.placeholder.acpAsk',
+    plan: 'chat.placeholder.acpPlan',
+  },
+  'acp-antigravity': {
     ask: 'chat.placeholder.acpAsk',
     plan: 'chat.placeholder.acpPlan',
   },

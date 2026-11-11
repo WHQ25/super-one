@@ -375,7 +375,8 @@ describe('light brand fills use the per-hue sRGB ceiling', () => {
 describe('vivid() caps the requested chroma at the sRGB ceiling', () => {
   it('lets wide hues spend the full BRAND_HUE_CHROMA', () => {
     // Violet at L 0.55 has room for 0.24; it should not be trimmed below it.
-    expect(HARNESS_DEFAULT_TOKENS.acp['--primary'].c).toBeCloseTo(BRAND_HUE_CHROMA, 4)
+    expect(HARNESS_DEFAULT_TOKENS['acp-grok']['--primary'].c).toBeCloseTo(BRAND_HUE_CHROMA, 4)
+    expect(HARNESS_DEFAULT_TOKENS['acp-antigravity']['--primary'].c).toBeCloseTo(BRAND_HUE_CHROMA, 4)
   })
 
   it('trims narrow hues instead of handing Chromium an unpaintable colour', () => {

@@ -24,16 +24,18 @@ import type {
 } from '@superone/shared/agent-types'
 import { DEFAULT_NOTIFICATION_SETTINGS, NOTIFICATION_KINDS, normalizeNotificationSettings } from '@superone/shared/notifications'
 import { DEFAULT_SESSION_CONTINUATION_HINT, readSessionContinuationHint } from '@superone/shared/session-continuation'
+import { acpAgentIdForHarness, isAcpProtocolHarness, resolveLegacyHarnessId } from '@superone/shared/acp-brand'
 import { readHarnessBrandPreference } from '@superone/shared/harness-brand'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { explicitClaudeModelId } from '@superone/claude'
-import { ANTIGRAVITY_PERMISSION_MODES, HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
+import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
+import { canonicalSuggestionHarnessKey, suggestionPreferenceFromKey } from '@superone/shared/suggestion-harness-order'
 
 export type { AppSettings, AppSettingsPatch }
 
 type ClaudePref = AppSettings['agentPreference']['claude']
 type CodexPref = AppSettings['agentPreference']['codex']
-type AcpPref = AppSettings['agentPreference']['acp']
+type AcpSlot = AppSettings['agentPreference']['acp-grok']
 type BrandOnlyPref = AppSettings['agentPreference']['dsh']
 
 function readEnabledExperimentalAgents(raw: unknown): string[] {
@@ -181,18 +183,21 @@ const defaults: AppSettings = {
       darkBrandHue: null,
       tokenOverrides: {}, darkTokenOverrides: {},
     },
-    acp: {
-      enabled: false,
+    'acp-grok': {
       brandHue: null,
       darkBrandHue: null,
       tokenOverrides: {}, darkTokenOverrides: {},
-      selectedAgentId: null,
       defaultModel: '',
       defaultEffort: '',
       defaultPermissionMode: '',
-      antigravityDefaultModel: '',
-      antigravityDefaultEffort: '',
-      antigravityDefaultPermissionMode: '',
+    },
+    'acp-antigravity': {
+      brandHue: null,
+      darkBrandHue: null,
+      tokenOverrides: {}, darkTokenOverrides: {},
+      defaultModel: '',
+      defaultEffort: '',
+      defaultPermissionMode: '',
     },
     cursor: { brandHue: null, darkBrandHue: null, tokenOverrides: {}, darkTokenOverrides: {}, defaultPermissionMode: '', defaultSandboxMode: '' },
     dsh: { brandHue: null, darkBrandHue: null, tokenOverrides: {}, darkTokenOverrides: {}, defaultPermissionMode: '' },
@@ -207,53 +212,38 @@ function isHarnessId(value: string): value is HarnessId {
 }
 
 function readSuggestionHarness(value: unknown): SuggestionHarnessPreference | null {
+  if (typeof value === 'string') return suggestionPreferenceFromKey(value)
   if (value == null || typeof value !== 'object' || Array.isArray(value)) return null
   const raw = value as Record<string, unknown>
   const provider = typeof raw.provider === 'string' ? raw.provider.trim() : ''
-  if (!isHarnessId(provider)) return null
+  if (!provider) return null
   const acpAgentId = typeof raw.acpAgentId === 'string' && raw.acpAgentId.trim()
     ? raw.acpAgentId.trim()
     : null
-  if (provider === 'acp' && !acpAgentId) return null
+  const resolved = resolveLegacyHarnessId(provider, { acpAgentId })
+  if (!resolved) return null
   return {
-    provider,
-    acpAgentId: provider === 'acp' ? acpAgentId : null,
+    provider: resolved,
+    acpAgentId: isAcpProtocolHarness(resolved) ? (acpAgentId ?? acpAgentIdForHarness(resolved)) : null,
   }
 }
 
-/** Serialize a harness preference for config tools / UI keys (`claude`, `acp:grok-build`). */
 export function serializeSuggestionHarness(pref: SuggestionHarnessPreference | null): string | null {
   if (!pref) return null
-  if (pref.provider === 'acp') {
-    const agent = pref.acpAgentId?.trim()
-    return agent ? `acp:${agent}` : null
-  }
-  return pref.provider
+  return resolveLegacyHarnessId(pref.provider, { acpAgentId: pref.acpAgentId })
 }
 
-/**
- * Parse a harness key from settings UI / config tools.
- * Accepts object form, `"auto"`/`null`/empty for Auto, a non-ACP harness id, or `acp:<id>`.
- */
 export function parseSuggestionHarnessKey(value: unknown): SuggestionHarnessPreference | null {
   if (value == null || value === '' || value === 'auto') return null
   if (typeof value === 'object') return readSuggestionHarness(value)
   if (typeof value !== 'string') return null
   const key = value.trim()
   if (!key || key === 'auto') return null
-  if (key !== 'acp' && isHarnessId(key)) {
-    return { provider: key, acpAgentId: null }
-  }
-  if (key.startsWith('acp:')) {
-    const agent = key.slice(4).trim()
-    return agent ? { provider: 'acp', acpAgentId: agent } : null
-  }
-  return null
+  return suggestionPreferenceFromKey(key)
 }
 
-/** Valid order keys: a non-ACP harness id or `acp:<agentId>`. */
 export function isHarnessOrderKey(key: string): boolean {
-  return parseSuggestionHarnessKey(key) != null
+  return canonicalSuggestionHarnessKey(key) != null
 }
 
 export function readHarnessOrder(value: unknown): string[] {
@@ -262,8 +252,8 @@ export function readHarnessOrder(value: unknown): string[] {
   const seen = new Set<string>()
   for (const item of value) {
     if (typeof item !== 'string') continue
-    const key = item.trim()
-    if (!key || seen.has(key) || !isHarnessOrderKey(key)) continue
+    const key = canonicalSuggestionHarnessKey(item.trim())
+    if (!key || seen.has(key)) continue
     seen.add(key)
     out.push(key)
   }
@@ -272,11 +262,12 @@ export function readHarnessOrder(value: unknown): string[] {
 
 /** Move `key` to `index` (clamped), creating the list if needed. */
 export function moveHarnessOrderKey(order: string[], key: string, index: number): string[] {
-  if (!isHarnessOrderKey(key)) return order
-  const without = order.filter((k) => k !== key)
+  const canonical = canonicalSuggestionHarnessKey(key)
+  if (!canonical) return order
+  const without = order.filter((entry) => entry !== canonical)
   const next = [...without]
   const at = Math.max(0, Math.min(index, next.length))
-  next.splice(at, 0, key)
+  next.splice(at, 0, canonical)
   return next
 }
 
@@ -603,40 +594,34 @@ function readCodexPreference(data: Record<string, unknown>): CodexPref {
   }
 }
 
-function readAcpPreference(data: Record<string, unknown>): AcpPref {
+function legacyAcpPreference(data: Record<string, unknown>): Record<string, unknown> | undefined {
   const agentPreference = data.agentPreference && typeof data.agentPreference === 'object'
     ? data.agentPreference as Record<string, unknown>
     : undefined
-  const acpPreference = agentPreference?.acp && typeof agentPreference.acp === 'object'
-    ? agentPreference.acp as Record<string, unknown>
-    : undefined
+  const acp = agentPreference?.acp
+  return acp && typeof acp === 'object' ? acp as Record<string, unknown> : undefined
+}
 
+function readAcpHarnessPreference(
+  data: Record<string, unknown>,
+  harnessId: 'acp-grok' | 'acp-antigravity',
+): AcpSlot {
+  const slot = readAgentPreferenceSlot(data, harnessId)
+  const legacy = legacyAcpPreference(data)
+  const modelKey = harnessId === 'acp-antigravity' ? 'antigravityDefaultModel' : 'defaultModel'
+  const effortKey = harnessId === 'acp-antigravity' ? 'antigravityDefaultEffort' : 'defaultEffort'
+  const model = slot?.defaultModel ?? legacy?.[modelKey]
+  const effort = slot?.defaultEffort ?? legacy?.[effortKey]
+  const permission = slot ?? (
+    harnessId === 'acp-antigravity'
+      ? { defaultPermissionMode: legacy?.antigravityDefaultPermissionMode }
+      : legacy
+  )
   return {
-    enabled: typeof acpPreference?.enabled === 'boolean'
-      ? acpPreference.enabled
-      : defaults.agentPreference.acp.enabled,
-    ...readHarnessBrandPreference(acpPreference),
-    selectedAgentId: typeof acpPreference?.selectedAgentId === 'string'
-      ? acpPreference.selectedAgentId
-      : defaults.agentPreference.acp.selectedAgentId,
-    defaultModel: typeof acpPreference?.defaultModel === 'string'
-      ? acpPreference.defaultModel
-      : defaults.agentPreference.acp.defaultModel,
-    defaultEffort: typeof acpPreference?.defaultEffort === 'string'
-      ? acpPreference.defaultEffort
-      : defaults.agentPreference.acp.defaultEffort,
-    defaultPermissionMode: readHarnessPermissionMode(acpPreference, 'acp'),
-    antigravityDefaultModel: typeof acpPreference?.antigravityDefaultModel === 'string'
-      ? acpPreference.antigravityDefaultModel
-      : defaults.agentPreference.acp.antigravityDefaultModel,
-    antigravityDefaultEffort: typeof acpPreference?.antigravityDefaultEffort === 'string'
-      ? acpPreference.antigravityDefaultEffort
-      : defaults.agentPreference.acp.antigravityDefaultEffort,
-    antigravityDefaultPermissionMode:
-      typeof acpPreference?.antigravityDefaultPermissionMode === 'string'
-      && (ANTIGRAVITY_PERMISSION_MODES as readonly string[]).includes(acpPreference.antigravityDefaultPermissionMode)
-        ? acpPreference.antigravityDefaultPermissionMode as PermissionMode
-        : '',
+    ...readHarnessBrandPreference(slot ?? legacy),
+    defaultModel: typeof model === 'string' ? model : '',
+    defaultEffort: typeof effort === 'string' ? effort : '',
+    defaultPermissionMode: readHarnessPermissionMode(permission, harnessId),
   }
 }
 
@@ -688,7 +673,7 @@ export function readAppSettings(): AppSettings {
       powerMode: readPowerMode(data),
       experimentalAgentsEnabled: typeof data.experimentalAgentsEnabled === 'boolean'
         ? data.experimentalAgentsEnabled
-        : readAcpPreference(data).enabled,
+        : legacyAcpPreference(data)?.enabled === true,
       enabledExperimentalAgents: readEnabledExperimentalAgents(data.enabledExperimentalAgents),
       experimentalClaudeOpenAiChatEnabled: typeof data.experimentalClaudeOpenAiChatEnabled === 'boolean'
         ? data.experimentalClaudeOpenAiChatEnabled
@@ -778,7 +763,8 @@ export function readAppSettings(): AppSettings {
       agentPreference: {
         claude: readClaudePreference(data),
         codex: readCodexPreference(data),
-        acp: readAcpPreference(data),
+        'acp-grok': readAcpHarnessPreference(data, 'acp-grok'),
+        'acp-antigravity': readAcpHarnessPreference(data, 'acp-antigravity'),
         cursor: readCursorPreference(data),
         dsh: readBrandOnlyPreference(data, 'dsh'),
         opencode: readBrandOnlyPreference(data, 'opencode'),
@@ -843,7 +829,8 @@ export function readAppSettings(): AppSettings {
       agentPreference: {
         claude: { ...defaults.agentPreference.claude },
         codex: { ...defaults.agentPreference.codex },
-        acp: { ...defaults.agentPreference.acp },
+        'acp-grok': { ...defaults.agentPreference['acp-grok'] },
+        'acp-antigravity': { ...defaults.agentPreference['acp-antigravity'] },
         cursor: { ...defaults.agentPreference.cursor },
         dsh: { ...defaults.agentPreference.dsh },
         opencode: { ...defaults.agentPreference.opencode },
@@ -896,10 +883,6 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     suggestionHarness
     && secondaryHarness
     && suggestionHarness.provider === secondaryHarness.provider
-    && (
-      suggestionHarness.provider !== 'acp'
-      || (suggestionHarness.acpAgentId ?? null) === (secondaryHarness.acpAgentId ?? null)
-    )
   ) {
     secondaryHarness = null
     if (harnessOrder.length > 1) {
@@ -915,7 +898,6 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     notifications: mergeNotificationSettings(current.notifications, patch.notifications),
     powerMode: patch.powerMode ?? current.powerMode,
     experimentalAgentsEnabled: patch.experimentalAgentsEnabled
-      ?? patch.agentPreference?.acp?.enabled
       ?? current.experimentalAgentsEnabled,
     enabledExperimentalAgents: patch.enabledExperimentalAgents !== undefined
       ? readEnabledExperimentalAgents(patch.enabledExperimentalAgents)
@@ -1016,9 +998,13 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
           : (readCodexRealtimeVoice(patch.agentPreference.codex.realtimeVoice)
               ?? current.agentPreference.codex.realtimeVoice),
       },
-      acp: {
-        ...current.agentPreference.acp,
-        ...patch.agentPreference?.acp,
+      'acp-grok': {
+        ...current.agentPreference['acp-grok'],
+        ...patch.agentPreference?.['acp-grok'],
+      },
+      'acp-antigravity': {
+        ...current.agentPreference['acp-antigravity'],
+        ...patch.agentPreference?.['acp-antigravity'],
       },
       cursor: {
         ...current.agentPreference.cursor,

@@ -8,6 +8,7 @@ import { PermissionActionsLayout } from './PermissionActionsLayout'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { checkAutoModeEligibility } from '@/lib/auto-mode-eligibility'
 import type { PermissionMode } from '@superone/shared/agent-types'
+import { isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import {
   formatApprovedPlanReviewMessage,
   formatPlanFeedback,
@@ -48,7 +49,7 @@ export function PlanApprovalPrompt() {
   const fileName = planFilePath.split('/').pop() ?? ''
 
   /** Grok/ACP: approve may carry review comments via a follow-up user turn. Claude: reject only. */
-  const approveCanCarryFeedback = sessionProvider === 'acp'
+  const approveCanCarryFeedback = isAcpProtocolHarness(sessionProvider)
   /** Claude-only post-approve permission switch. */
   const showPostApprovalModeToggle = sessionProvider === 'claude' || sessionProvider == null
 

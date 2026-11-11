@@ -387,11 +387,11 @@ const acpInfo: RemoteSystemInfo = {
 
 test('opening an ACP session restores its mode over the catalog default', async () => {
   const { result } = await mount()
-  await act(async () => { result.current.resetForProvider('acp') })
+  await act(async () => { result.current.resetForProvider('acp-grok') })
   await act(async () => {
-    result.current.applySystemInfo('acp', acpInfo, { model: 'grok-4', selectedModeId: 'code' })
+    result.current.applySystemInfo('acp-grok', acpInfo, { model: 'grok-4', selectedModeId: 'code' })
   })
-  await act(async () => { result.current.applySystemInfo('acp', acpInfo) })
+  await act(async () => { result.current.applySystemInfo('acp-grok', acpInfo) })
 
   expect(result.current.selectedModeId).toBe('code')
 })
@@ -495,9 +495,9 @@ test('catalogReady is false from a harness reset until its catalog lands', async
 test('switching between ACP agents updates selectedAcpAgentIdRef synchronously and replaces the model catalog', async () => {
   const { result } = await mount()
   await act(async () => {
-    result.current.resetForProvider('acp', 'antigravity')
+    result.current.resetForProvider('acp-antigravity', 'antigravity')
     expect(result.current.selectedAcpAgentIdRef.current).toBe('antigravity')
-    result.current.applySystemInfo('acp', {
+    result.current.applySystemInfo('acp-antigravity', {
       models: [{ id: 'gemini-3-pro', name: 'Gemini 3 Pro', description: '' }],
       defaults: { model: 'gemini-3-pro' },
     })
@@ -506,10 +506,10 @@ test('switching between ACP agents updates selectedAcpAgentIdRef synchronously a
   expect(result.current.models.map((m) => m.id)).toEqual(['gemini-3-pro'])
 
   await act(async () => {
-    result.current.resetForProvider('acp', 'grok-build')
+    result.current.resetForProvider('acp-grok', 'grok-build')
     // Must be updated synchronously before React commits so async openSession callers read the new ACP agent ID.
     expect(result.current.selectedAcpAgentIdRef.current).toBe('grok-build')
-    result.current.applySystemInfo('acp', {
+    result.current.applySystemInfo('acp-grok', {
       models: [{ id: 'grok-4.20', name: 'Grok 4.20', description: '' }],
       defaults: { model: 'grok-4.20' },
     })

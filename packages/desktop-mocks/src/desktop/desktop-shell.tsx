@@ -187,7 +187,7 @@ const DEFAULT_PROJECTS: MockProject[] = [
       { id: "s3", title: "Polish miniapp permissions", status: "background", provider: "cursor" },
       { id: "s4", title: "Worktree merge experiment", status: "idle", isWorktree: true, provider: "opencode" },
       { id: "s5", title: "Mobile pairing QR flow", status: "remote", provider: "dsh" },
-      { id: "s6", title: "Weekly changelog draft", status: "automation", provider: "acp" },
+      { id: "s6", title: "Weekly changelog draft", status: "automation", provider: "acp-grok" },
     ],
     hasMore: true,
   },

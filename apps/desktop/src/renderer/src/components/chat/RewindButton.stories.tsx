@@ -31,7 +31,7 @@ export const HiddenForAntigravity: Story = {
       projectSessions: {
         '/storybook': {
           ...project,
-          _sessions: { session: { ...session, sessionProvider: 'acp', acpAgentId: 'antigravity' } },
+          _sessions: { session: { ...session, sessionProvider: 'acp-grok', acpAgentId: 'antigravity' } },
         },
       },
     })

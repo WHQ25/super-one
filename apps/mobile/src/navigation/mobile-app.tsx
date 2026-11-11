@@ -13,6 +13,7 @@ import { setComposerConnection } from '../widget-composer-client'
 import { findMcpAppAttachment } from '@superone/shared/mcp-apps-state'
 import { invokeModUi } from '../mod-ui'
 import { mobileModClientId } from '@superone/shared/mod-ui'
+import { isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { composerMode } from '@superone/shared/composer-mode'
 import type { CodexReasoningEffort } from '@superone/shared/agent-types'
@@ -1436,7 +1437,7 @@ export function MobileApp() {
     if (!client || !p) return
     const request = ++systemInfoRequestRef.current
     const shellRequest = ++shellDetailsRequestRef.current
-    const details = await fetchShellDetails(client, p.path, provider, refreshCatalog, includeWorktreeDirty, provider === 'acp' ? (acpAgentId ?? null) : null)
+    const details = await fetchShellDetails(client, p.path, provider, refreshCatalog, includeWorktreeDirty, isAcpProtocolHarness(provider) ? (acpAgentId ?? null) : null)
     if (shellRequest !== shellDetailsRequestRef.current || clientRef.current !== client) return
     replaceGitInfo(details.git)
     setWorkspaceDirs(details.workspaceDirs)
@@ -1493,7 +1494,7 @@ export function MobileApp() {
       const activeProvider = harnessSelection.selectedProviderRef.current
       const activeAcpAgentId = harnessSelection.selectedAcpAgentIdRef.current
       if (clientRef.current !== client || path !== project.path || provider !== activeProvider) return
-      if (provider === 'acp' && activeAcpAgentId && acpAgentId !== activeAcpAgentId) return
+      if (isAcpProtocolHarness(provider) && activeAcpAgentId && acpAgentId !== activeAcpAgentId) return
       if (type === 'get_system_info') applySystemInfo(activeProvider, value as RemoteSystemInfo)
       else setWorkspaceDirs((value as { workspaceDirs?: string[] }).workspaceDirs ?? [])
     })
@@ -1594,7 +1595,7 @@ export function MobileApp() {
     restoreSelection = false,
     acpAgentId: string | null | undefined = harnessSelection.selectedAcpAgentIdRef.current,
   ) => {
-    const targetAcpAgentId = provider === 'acp' ? (runtime.session.acpAgentId ?? acpAgentId ?? null) : null
+    const targetAcpAgentId = isAcpProtocolHarness(provider) ? (runtime.session.acpAgentId ?? acpAgentId ?? null) : null
     const request = ++systemInfoRequestRef.current
     refreshSessionCatalog(() => runtime.loadSystemInfo(provider, targetAcpAgentId),
       () => request === systemInfoRequestRef.current && runtimeRef.current === runtime,
@@ -2988,7 +2989,7 @@ export function MobileApp() {
               openAdditionalDirs()
               return
             }
-            if (command === 'workflows' && (selectedProvider === 'claude' || selectedProvider === 'acp')) {
+            if (command === 'workflows' && (selectedProvider === 'claude' || isAcpProtocolHarness(selectedProvider))) {
               writeCommandLine('')
               openWorkflows()
               return

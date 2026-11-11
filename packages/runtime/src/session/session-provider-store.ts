@@ -6,6 +6,7 @@
 
 import { randomUUID } from 'node:crypto'
 import type { HarnessId } from '@superone/shared/session-types'
+import { resolveLegacyHarnessId } from '@superone/shared/acp-brand'
 import { BASE_SESSION_PROVIDER_DEFINITIONS, baseSessionProviderId } from '@superone/shared/session-provider-definitions'
 import { parseAgentProfileSpec, providerLaunchRuntime } from '@superone/shared/agent-profile'
 import type { SqliteDatabase } from '../sqlite'
@@ -65,6 +66,12 @@ function profileWriteRefused(): Error {
   )
 }
 
+function configAgentId(config: unknown): string | null {
+  if (!config || typeof config !== 'object' || Array.isArray(config)) return null
+  const agentId = (config as { agentId?: unknown }).agentId
+  return typeof agentId === 'string' && agentId.trim() ? agentId.trim() : null
+}
+
 function rowToProvider(row: SessionProviderRow): SessionProviderRecord {
   let config: unknown = {}
   try {
@@ -72,9 +79,13 @@ function rowToProvider(row: SessionProviderRow): SessionProviderRecord {
   } catch {
     config = {}
   }
+  const harnessId = resolveLegacyHarnessId(row.harness_id, {
+    acpAgentId: configAgentId(config),
+    providerId: row.id,
+  }) ?? (VALID_HARNESS_IDS.has(row.harness_id) ? row.harness_id as HarnessId : 'claude')
   return {
     id: row.id,
-    harnessId: row.harness_id as HarnessId,
+    harnessId,
     name: row.name,
     isBase: row.is_base === 1,
     config,
@@ -228,11 +239,9 @@ export function createSessionProviderStore(
   const listByHarness = (harnessId: string): SessionProviderRecord[] => {
     const id = assertHarnessId(harnessId)
     const rows = db
-      .prepare(
-        'SELECT * FROM session_providers WHERE harness_id = ? ORDER BY is_base DESC, created_at',
-      )
-      .all(id) as SessionProviderRow[]
-    return rows.map(rowToProvider)
+      .prepare('SELECT * FROM session_providers ORDER BY is_base DESC, created_at')
+      .all() as SessionProviderRow[]
+    return rows.map(rowToProvider).filter((provider) => provider.harnessId === id)
   }
 
   const get = (id: string): SessionProviderRecord | null => {

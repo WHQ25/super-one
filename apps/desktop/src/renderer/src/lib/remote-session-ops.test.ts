@@ -56,7 +56,7 @@ describe('hydrateRemoteSession: adopting a node session', () => {
     openRemoteSession.mockResolvedValue({ sessionId: 's', state: {}, messages: [], before: null, cursor: { sequence: '0', epoch: 'e', version: 0 } })
   })
   it('keeps ACP model display names from the node snapshot', async () => {
-    getSession.mockResolvedValueOnce({ sessionId: 'acp-named', harnessId: 'acp', providerId: 'grok', acpAgentId: 'grok-build', status: 'idle', transcript: [], model: 'grok-4.5' })
+    getSession.mockResolvedValueOnce({ sessionId: 'acp-named', harnessId: 'acp-grok', providerId: 'grok', acpAgentId: 'grok-build', status: 'idle', transcript: [], model: 'grok-4.5' })
     openRemoteSession.mockResolvedValueOnce({
       sessionId: 'acp-named',
       messages: [],
@@ -78,16 +78,16 @@ describe('hydrateRemoteSession: adopting a node session', () => {
   })
 
   it('preserves ACP and its agent identity instead of coercing remote sessions to Claude', async () => {
-    getSession.mockResolvedValueOnce({ sessionId: 'acp-session', harnessId: 'acp', providerId: 'grok', acpAgentId: 'grok-build', status: 'idle', transcript: [], model: 'grok-model', permissionMode: 'auto' })
+    getSession.mockResolvedValueOnce({ sessionId: 'acp-session', harnessId: 'acp-grok', providerId: 'grok', acpAgentId: 'grok-build', status: 'idle', transcript: [], model: 'grok-model', permissionMode: 'auto' })
     const { hydrated } = await hydrateRemoteSession('remote:env-1:/work/app', 'acp-session', null, { adoptSession: true })
-    expect(hydrated).toMatchObject({ sessionProvider: 'acp', preferredProvider: 'acp', acpAgentId: 'grok-build', selectedModel: 'grok-model', permissionMode: 'auto' })
+    expect(hydrated).toMatchObject({ sessionProvider: 'acp-grok', preferredProvider: 'acp-grok', acpAgentId: 'grok-build', selectedModel: 'grok-model', permissionMode: 'auto' })
   })
 
   it('keeps a brand the window already holds when session.get names no agent', async () => {
-    getSession.mockResolvedValueOnce({ sessionId: 'acp-session', harnessId: 'acp', acpAgentId: null, status: 'idle', transcript: [] })
-    const previous = { messages: [], status: 'idle', sessionProvider: 'acp', acpAgentId: 'grok-build' }
+    getSession.mockResolvedValueOnce({ sessionId: 'acp-session', harnessId: 'acp-grok', acpAgentId: null, status: 'idle', transcript: [] })
+    const previous = { messages: [], status: 'idle', sessionProvider: 'acp-grok', acpAgentId: 'grok-build' }
     const { hydrated } = await hydrateRemoteSession('remote:env-1:/work/app', 'acp-session', previous as never)
-    expect(hydrated).toMatchObject({ sessionProvider: 'acp', acpAgentId: 'grok-build' })
+    expect(hydrated).toMatchObject({ sessionProvider: 'acp-grok', acpAgentId: 'grok-build' })
   })
 
   it('keeps a cursor session on cursor', async () => {
@@ -236,7 +236,7 @@ describe('hydrateRemoteSession', () => {
   it('starts the window read beside session.get on first adopt', async () => {
     openRemoteSession.mockClear()
     openRemoteSession.mockResolvedValue({
-      sessionId: 's', messages: [], state: { sessionProvider: 'acp' }, before: null,
+      sessionId: 's', messages: [], state: { sessionProvider: 'acp-grok' }, before: null,
       cursor: { sequence: '1', epoch: 'e', version: 1 },
     })
     let releaseGet!: (value: unknown) => void
@@ -245,9 +245,9 @@ describe('hydrateRemoteSession', () => {
     await Promise.resolve()
     expect(openRemoteSession).toHaveBeenCalledWith('env-1', expect.objectContaining({ transcript: true, providerId: 'claude' }))
     expect(openRemoteSession.mock.calls[0][1]).not.toHaveProperty('limit')
-    releaseGet({ sessionId: 's', harnessId: 'acp', providerId: 'grok', acpAgentId: 'grok-build', status: 'idle', transcript: [] })
+    releaseGet({ sessionId: 's', harnessId: 'acp-grok', providerId: 'grok', acpAgentId: 'grok-build', status: 'idle', transcript: [] })
     const { hydrated } = await pending
-    expect(hydrated.sessionProvider).toBe('acp')
+    expect(hydrated.sessionProvider).toBe('acp-grok')
   })
 
   it('keeps the harness a draft picked when the node has no row yet', async () => {
@@ -256,15 +256,15 @@ describe('hydrateRemoteSession', () => {
     const previous = {
       messages: [],
       status: 'idle',
-      sessionProvider: 'acp',
-      preferredProvider: 'acp',
+      sessionProvider: 'acp-grok',
+      preferredProvider: 'acp-grok',
       acpAgentId: 'grok-build',
       harnessUserChosen: true,
     }
     const { hydrated } = await hydrateRemoteSession('remote:env-1:/work/app', 'draft', previous as never)
     expect(hydrated).toMatchObject({
-      sessionProvider: 'acp',
-      preferredProvider: 'acp',
+      sessionProvider: 'acp-grok',
+      preferredProvider: 'acp-grok',
       acpAgentId: 'grok-build',
     })
     expect(openRemoteSession).not.toHaveBeenCalled()
@@ -273,7 +273,7 @@ describe('hydrateRemoteSession', () => {
   it('does not open a draft the node has never seen', async () => {
     openRemoteSession.mockClear()
     getSession.mockResolvedValueOnce(null)
-    const previous = { messages: [msg('a1', 'local')], status: 'idle', sessionProvider: 'acp', hostSessionOwned: false }
+    const previous = { messages: [msg('a1', 'local')], status: 'idle', sessionProvider: 'acp-grok', hostSessionOwned: false }
     const { hydrated } = await hydrateRemoteSession('remote:env-1:/work/app', 'draft', previous as never)
     expect(hydrated.messages).toEqual(previous.messages)
     expect(openRemoteSession).not.toHaveBeenCalled()
@@ -333,15 +333,15 @@ describe('keepRendererOwnedState', () => {
 
   it('keeps an empty draft harness click that raced the node row', () => {
     const applied = keepRendererOwnedState(
-      { messages: [], draftText: '', queuedMessages: [], sessionProvider: 'acp', preferredProvider: 'acp', acpAgentId: 'grok-build', harnessUserChosen: true } as never,
+      { messages: [], draftText: '', queuedMessages: [], sessionProvider: 'acp-grok', preferredProvider: 'acp-grok', acpAgentId: 'grok-build', harnessUserChosen: true } as never,
       { messages: [], draftText: '', queuedMessages: [], sessionProvider: 'claude', preferredProvider: 'claude', acpAgentId: null } as never,
     )
-    expect(applied).toMatchObject({ sessionProvider: 'acp', preferredProvider: 'acp', acpAgentId: 'grok-build' })
+    expect(applied).toMatchObject({ sessionProvider: 'acp-grok', preferredProvider: 'acp-grok', acpAgentId: 'grok-build' })
   })
 
   it('does not retarget a node session that already has messages', () => {
     const applied = keepRendererOwnedState(
-      { messages: [], draftText: '', queuedMessages: [], sessionProvider: 'acp', preferredProvider: 'acp', harnessUserChosen: true } as never,
+      { messages: [], draftText: '', queuedMessages: [], sessionProvider: 'acp-grok', preferredProvider: 'acp-grok', harnessUserChosen: true } as never,
       { messages: [{ id: 'a1' }], draftText: '', queuedMessages: [], sessionProvider: 'claude', preferredProvider: 'claude' } as never,
     )
     expect(applied.sessionProvider).toBe('claude')

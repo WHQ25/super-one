@@ -20,7 +20,6 @@ import {
 import { DoubaoCallController, type DoubaoCallCommand, type DoubaoPlaybackFrame } from '@superone/shared/doubao-call'
 import type { VoiceIdentity, VoiceStatus } from '@superone/shared/realtime-voice'
 import type { VoiceLink } from '@superone/shared/realtime-voice-admission'
-import { isAntigravityAcpAgent } from '@superone/shared/harness/acp-brand'
 import log from '../logger'
 import { enqueueSessionQueueOp, queuedSteerCommand } from './session-queue'
 import { loadRealtimeTimeline } from './realtime-timeline-repo'
@@ -369,7 +368,7 @@ export class DoubaoVoiceHost {
   }
 
   private steerStartsAnotherTurn(call: ActiveCall): boolean {
-    return call.session.snapshot.harnessId === 'acp' && isAntigravityAcpAgent(call.session.snapshot.acpAgentId)
+    return call.session.snapshot.harnessId === 'acp-antigravity'
   }
 
   private ready(call: ActiveCall, dialogId: string): void {

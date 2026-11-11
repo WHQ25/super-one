@@ -29,7 +29,6 @@ import { DesktopModUi } from '@/lib/mod-ui/DesktopModUi'
 import { ModPaneDockSync } from './mod/ModSurfaces'
 import { dateSeparators } from '@superone/chat-view/presenters/message-time'
 import { HARNESS_CAPABILITIES, resolveHarnessCapabilities } from '@superone/shared/harness/harness-capabilities'
-import { isAntigravityAcpAgent } from '@superone/shared/acp-brand'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { DetailScopeProvider } from '@superone/chat-view/detail-scope'
 import { desktopDetailClient } from '@/lib/desktop-detail-client'
@@ -80,7 +79,7 @@ function ChatTranscript({
     messages, isCompacting, compactingStartedAt, isRecapping, compactError, apiRetry,
     displayedSessionId, historyHydrated,
     sessionStatus, lastAssistantMessageId, queuedMessages, awaitingAssistantReply, acpModels,
-    sessionProvider, preferredProvider, acpAgentId, runtimeCapabilities,
+    sessionProvider, preferredProvider, runtimeCapabilities,
     draftId, sideChatParentId, providerSessionId,
   } = useActiveSession(useShallow((s) => ({
     messages: s.messages,
@@ -102,7 +101,6 @@ function ChatTranscript({
     providerSessionId: s._providerSessionId,
     sessionProvider: s.sessionProvider,
     preferredProvider: s.preferredProvider,
-    acpAgentId: s.acpAgentId,
   })))
 
   const { editQueuedMessage, deleteQueuedMessage, steerQueuedMessage, startQueuedMessages, dismissCompactError } = useChatStore(useShallow((s) => ({
@@ -136,7 +134,6 @@ function ChatTranscript({
     && sessionStatus === 'streaming'
   const canSteerQueueSoon = canSteerQueue
     && queueCapabilities.supportsQueuedSteerSoon
-    && (queueProvider !== 'acp' || isAntigravityAcpAgent(acpAgentId))
   const isLocalCodexQueue = canHostStartQueued && queueProvider === 'codex'
   const canStartCodexQueue = isLocalCodexQueue && sessionStatus !== 'streaming'
   // ChatTranscript doubles as the backing-thread view (see `showRealtime`). That view

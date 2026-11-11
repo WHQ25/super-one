@@ -1,4 +1,4 @@
-import { isGrokAcpAgent } from '@superone/shared/acp-brand'
+import { isGrokAcpAgent, resolveLegacyHarnessId } from '@superone/shared/acp-brand'
 import type { HarnessId } from '@superone/shared/agent-types'
 
 /** Exact `/recap` after trim — the desktop send interceptor's same gate. */
@@ -11,5 +11,6 @@ export function shouldInterceptGrokRecap(
   provider: HarnessId | string | undefined,
   acpAgentId: string | null | undefined,
 ): boolean {
-  return provider === 'acp' && isGrokAcpAgent(acpAgentId)
+  const resolved = resolveLegacyHarnessId(provider, { acpAgentId })
+  return resolved === 'acp-grok' && (acpAgentId == null || isGrokAcpAgent(acpAgentId))
 }

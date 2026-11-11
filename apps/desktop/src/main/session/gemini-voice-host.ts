@@ -33,7 +33,6 @@ import {
 } from '@superone/shared/voice-delegation'
 import type { VoiceIdentity, VoiceStatus } from '@superone/shared/realtime-voice'
 import type { VoiceLink } from '@superone/shared/realtime-voice-admission'
-import { isAntigravityAcpAgent } from '@superone/shared/harness/acp-brand'
 import log from '../logger'
 import { enqueueSessionQueueOp, queuedSteerCommand } from './session-queue'
 import { getGeminiSpeechKey, getGeminiVoice } from '../gemini/gemini-speech-settings'
@@ -479,7 +478,7 @@ export class GeminiVoiceHost {
   }
 
   private steerStartsAnotherTurn(call: ActiveCall): boolean {
-    return call.session.snapshot.harnessId === 'acp' && isAntigravityAcpAgent(call.session.snapshot.acpAgentId)
+    return call.session.snapshot.harnessId === 'acp-antigravity'
   }
 
   private partialInterim(call: ActiveCall, incoming: string): void {

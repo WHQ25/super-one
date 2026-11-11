@@ -12,11 +12,12 @@ describe('harness preference key helpers', () => {
     expect(keyToHarnessPreference('claude')).toEqual({ provider: 'claude', acpAgentId: null })
     expect(keyToHarnessPreference('dsh')).toEqual({ provider: 'dsh', acpAgentId: null })
     expect(keyToHarnessPreference('acp:grok-build')).toEqual({
-      provider: 'acp',
+      provider: 'acp-grok',
       acpAgentId: 'grok-build',
     })
     expect(harnessPreferenceToKey({ provider: 'codex', acpAgentId: null })).toBe('codex')
-    expect(harnessPreferenceToKey({ provider: 'acp', acpAgentId: 'grok-build' })).toBe('acp:grok-build')
+    expect(harnessPreferenceToKey({ provider: 'acp', acpAgentId: 'grok-build' })).toBe('acp-grok')
+    expect(harnessPreferenceToKey({ provider: 'acp-grok', acpAgentId: 'grok-build' })).toBe('acp-grok')
   })
 
   it('treats null/auto/empty as Auto', () => {
@@ -28,12 +29,12 @@ describe('harness preference key helpers', () => {
 
   it('compares preferences including ACP agent ids', () => {
     expect(harnessPreferencesEqual(
-      { provider: 'acp', acpAgentId: 'grok-build' },
-      { provider: 'acp', acpAgentId: 'grok-build' },
+      { provider: 'acp-grok', acpAgentId: 'grok-build' },
+      { provider: 'acp-grok', acpAgentId: 'grok-build' },
     )).toBe(true)
     expect(harnessPreferencesEqual(
-      { provider: 'acp', acpAgentId: 'grok-build' },
-      { provider: 'acp', acpAgentId: 'other' },
+      { provider: 'acp-grok', acpAgentId: 'grok-build' },
+      { provider: 'acp-grok', acpAgentId: 'other' },
     )).toBe(false)
     expect(harnessPreferencesEqual(null, null)).toBe(true)
   })

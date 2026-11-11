@@ -13,9 +13,9 @@ import { COMPUTER_USE_TOOL_NAMES } from '../tools'
  * contract.test.ts + listSuperoneMcpTools when the feature flag is on.
  */
 describe('Computer Use harness surface', () => {
-  it('covers all four SuperOne harnesses', () => {
+  it('covers every computer-use harness', () => {
     expect([...COMPUTER_USE_HARNESS_IDS].sort()).toEqual(
-      ['acp', 'claude', 'codex', 'opencode'].sort(),
+      ['acp-antigravity', 'acp-grok', 'claude', 'codex', 'opencode'].sort(),
     )
   })
 

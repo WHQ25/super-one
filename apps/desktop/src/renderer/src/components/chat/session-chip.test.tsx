@@ -10,7 +10,7 @@ import type { SessionLinkMetadataResult } from '@superone/shared/session-link'
 vi.mock('@superone/ui/components/harness/resolve-session-icon', () => ({ resolveSessionIcon: (harness: string, agent: string) => () => <span data-testid="brand">{harness}:{agent}</span> }))
 vi.stubGlobal('IntersectionObserver', undefined)
 afterEach(() => { cleanup(); window.getSelection()?.removeAllRanges() })
-function ports(lookup = async (refs: Array<{ environmentId: string; sessionId: string }>): Promise<SessionLinkMetadataResult[]> => refs.map(ref => ({ status: 'ok', metadata: { ref, harness: 'acp', acpAgentId: 'grok-build' } }))) {
+function ports(lookup = async (refs: Array<{ environmentId: string; sessionId: string }>): Promise<SessionLinkMetadataResult[]> => refs.map(ref => ({ status: 'ok', metadata: { ref, harness: 'acp-grok', acpAgentId: 'grok-build' } }))) {
   return { cache: createSessionLinkCache(lookup), open: vi.fn(async () => {}), onError: vi.fn() }
 }
 describe('SessionChip', () => {

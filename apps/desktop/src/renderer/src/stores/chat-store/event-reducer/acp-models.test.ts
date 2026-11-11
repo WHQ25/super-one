@@ -27,8 +27,8 @@ describe('applyEventToSession: acp_models', () => {
   it('hydrates models and default selection when agent matches', () => {
     const session = {
       ...createDefaultPerSessionState(),
-      preferredProvider: 'acp' as const,
-      sessionProvider: 'acp' as const,
+      preferredProvider: 'acp-grok' as const,
+      sessionProvider: 'acp-grok' as const,
       acpAgentId: 'opencode',
     }
     const patch = applyEventToSession(session, {
@@ -48,8 +48,8 @@ describe('applyEventToSession: acp_models', () => {
   it('drops catalogs from a different ACP agent (stale prewarm race)', () => {
     const session = {
       ...createDefaultPerSessionState(),
-      preferredProvider: 'acp' as const,
-      sessionProvider: 'acp' as const,
+      preferredProvider: 'acp-grok' as const,
+      sessionProvider: 'acp-grok' as const,
       acpAgentId: 'opencode',
       acpModels: openCodeModels,
       acpModelsStatus: 'ready' as const,
@@ -109,8 +109,8 @@ describe('applyEventToSession: acp_models', () => {
   it('does not wipe ready cache while a loading event arrives', () => {
     const session = {
       ...createDefaultPerSessionState(),
-      preferredProvider: 'acp' as const,
-      sessionProvider: 'acp' as const,
+      preferredProvider: 'acp-grok' as const,
+      sessionProvider: 'acp-grok' as const,
       acpAgentId: 'opencode',
       acpModels: openCodeModels,
       acpModelsStatus: 'ready' as const,
@@ -130,8 +130,8 @@ describe('applyEventToSession: acp_models', () => {
   it('preserves user-chosen model when still in the catalog', () => {
     const session = {
       ...createDefaultPerSessionState(),
-      preferredProvider: 'acp' as const,
-      sessionProvider: 'acp' as const,
+      preferredProvider: 'acp-grok' as const,
+      sessionProvider: 'acp-grok' as const,
       acpAgentId: 'opencode',
       selectedModel: 'openai/gpt-5.4',
       modelUserChosen: true,
@@ -151,8 +151,8 @@ describe('applyEventToSession: acp_models', () => {
   it('keeps the current model and marks it when the catalog drops it', () => {
     const session = {
       ...createDefaultPerSessionState(),
-      preferredProvider: 'acp' as const,
-      sessionProvider: 'acp' as const,
+      preferredProvider: 'acp-grok' as const,
+      sessionProvider: 'acp-grok' as const,
       acpAgentId: 'opencode',
       selectedModel: 'stale-model',
       modelUserChosen: true,
@@ -172,8 +172,8 @@ describe('applyEventToSession: acp_models', () => {
   it('keeps context windows when a later catalog omits them', () => {
     const session = {
       ...createDefaultPerSessionState(),
-      preferredProvider: 'acp' as const,
-      sessionProvider: 'acp' as const,
+      preferredProvider: 'acp-grok' as const,
+      sessionProvider: 'acp-grok' as const,
       acpAgentId: 'grok-build',
       selectedModel: 'grok-4.7',
       modelUserChosen: true,
@@ -201,8 +201,8 @@ describe('applyEventToSession: acp_models', () => {
   it('drops a window list when the model catalog reports one window', () => {
     const session = {
       ...createDefaultPerSessionState(),
-      preferredProvider: 'acp' as const,
-      sessionProvider: 'acp' as const,
+      preferredProvider: 'acp-grok' as const,
+      sessionProvider: 'acp-grok' as const,
       acpAgentId: 'grok-build',
       selectedModel: 'grok-4.7',
       modelUserChosen: true,

@@ -21,6 +21,7 @@ import {
 import { getDb } from '../database'
 import { loadSessionState } from '../db-sessions'
 import { getProjectId, getProjectPathById, getRecentFolders } from '../recent-folders'
+import { isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import { deriveHarnessId } from '../session/session-repo'
 import {
   countTools,
@@ -35,6 +36,10 @@ import {
 } from '../session/session-transcript-view'
 import type { BuiltInSuperoneToolDeps } from './superone-mcp-builtins'
 import { toolResult, clampLimit, type ArchiveSessionRow } from './session-archive-shared'
+
+function harnessFilterMatches(filter: string, harnessId: string): boolean {
+  return filter === 'acp' ? isAcpProtocolHarness(harnessId) : harnessId === filter
+}
 
 // --- Limits ---
 
@@ -264,7 +269,7 @@ function listArchiveSessions(
 
   if (opts.harness) {
     const h = opts.harness.toLowerCase()
-    rows = rows.filter((r) => deriveHarnessId(r) === h)
+    rows = rows.filter((r) => harnessFilterMatches(h, deriveHarnessId(r)))
     rows = rows.slice(opts.offset, opts.offset + opts.limit)
   }
 
@@ -516,7 +521,7 @@ export function sessionSearchHandler(args: SessionSearchArgs, deps: BuiltInSuper
     if (sessionIdFilter && !sessionIdFilter.has(row.session_id)) continue
     if (role !== 'any' && row.role !== role) continue
     const harness = deriveHarnessId(row)
-    if (harnessFilter && harness !== harnessFilter) continue
+    if (harnessFilter && !harnessFilterMatches(harnessFilter, harness)) continue
 
     // Parse content for real text match (avoid matching tool JSON noise when possible).
     let text = ''

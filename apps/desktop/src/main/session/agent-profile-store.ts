@@ -11,6 +11,7 @@ import { readAgentProfile, validateAgentProfileRuntime, type AgentProfileCatalog
 import type { AgentProfileListChoice } from '@superone/shared/agent-profile-options'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import log from '../logger'
+import { isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import { profileResources, resolveAcpAgentId } from './agent-profiles'
 import { deleteProviderRow, listSessionProviders, sessionProviderStore } from './session-provider-repo'
 import type { SessionProvider } from './types'
@@ -42,7 +43,7 @@ async function deepseekPresetChoices(): Promise<AgentProfileListChoice[] | undef
 export async function agentProfileCatalog(row: SessionProvider): Promise<AgentProfileCatalog> {
   const agentPreset = row.harnessId === 'dsh' ? await deepseekPresetChoices() : undefined
   return profileResources(row, {
-    acpAgentId: row.harnessId === 'acp' ? resolveAcpAgentId(row) : null,
+    acpAgentId: isAcpProtocolHarness(row.harnessId) ? resolveAcpAgentId(row) : null,
     ...(agentPreset ? { lists: { agentPreset } } : {}),
   }).catalog
 }

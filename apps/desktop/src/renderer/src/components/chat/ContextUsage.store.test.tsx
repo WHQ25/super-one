@@ -31,7 +31,7 @@ const WIN_PATH = 'C:\\Users\\chenyue\\Projects\\demo'
 
 function seedSession(tokens = 0): void {
   useChatStore.setState({
-    harnessResources: { claude: null, codex: null, acp: null, opencode: null, cursor: null },
+    harnessResources: { claude: null, codex: null, 'acp-grok': null, 'acp-antigravity': null, opencode: null, cursor: null },
     claudeResourcesLoading: false,
   })
   useChatStore.getState().ensureSession(WIN_PATH)
@@ -105,8 +105,8 @@ describe('ContextUsage when switching an empty session to another harness', () =
                 ...project._sessions,
                 [sid]: {
                   ...project._sessions[sid],
-                  sessionProvider: 'acp',
-                  preferredProvider: 'acp',
+                  sessionProvider: 'acp-grok',
+                  preferredProvider: 'acp-grok',
                   acpAgentId: 'grok-build',
                 },
               },
@@ -160,8 +160,8 @@ describe('ContextUsage when switching an empty session to another harness', () =
               ...project._sessions,
               [sid]: {
                 ...project._sessions[sid],
-                sessionProvider: 'acp',
-                preferredProvider: 'acp',
+                sessionProvider: 'acp-grok',
+                preferredProvider: 'acp-grok',
                 acpAgentId: 'grok-build',
               },
             },

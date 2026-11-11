@@ -39,7 +39,7 @@ export function effortOptionsForModel(
   // provider that actually remaps models. A credential with no mapping still
   // runs the Claude catalog, and the desktop keeps effort for it.
   if (harnessId === 'claude' && selectedProviderModelEnv(info, providerId)) return []
-  if (harnessId === 'acp') return info.efforts ?? []
+  if (harnessId === 'acp-grok' || harnessId === 'acp-antigravity') return info.efforts ?? []
 
   const model: ModelOption | undefined = info.models?.find((candidate) => candidate.id === modelId)
   if (!model) return []

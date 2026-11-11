@@ -1,5 +1,5 @@
 import type { AgentStatus, ChatMessage, HarnessId } from '@superone/shared/agent-types'
-import { isAntigravityAcpAgent } from '@superone/shared/acp-brand'
+import { isAcpProtocolHarness, resolveLegacyHarnessId } from '@superone/shared/acp-brand'
 import { resolveHarnessCapabilities } from '@superone/shared/harness/harness-capabilities'
 import type { HarnessRuntimeCapabilities } from '@superone/shared/harness/session-catalog'
 
@@ -13,7 +13,7 @@ import type { HarnessRuntimeCapabilities } from '@superone/shared/harness/sessio
  */
 export function shouldQueueComposerSend(status: AgentStatus, harness: HarnessId): boolean {
   if (status !== 'streaming') return false
-  return harness === 'claude' || harness === 'acp' || harness === 'opencode' || harness === 'codex' || harness === 'dsh'
+  return harness === 'claude' || isAcpProtocolHarness(harness) || harness === 'opencode' || harness === 'codex' || harness === 'dsh'
 }
 
 export type ComposerSendKind = 'send' | 'steer' | 'soon'
@@ -41,11 +41,11 @@ export function canSteerQueued(harness: HarnessId, runtime?: HarnessRuntimeCapab
   return resolveHarnessCapabilities(harness, runtime).supportsQueuedSteer === true
 }
 
-export function canSteerQueuedSoon(harness: HarnessId, acpAgentId?: string | null, runtime?: HarnessRuntimeCapabilities): boolean {
-  // Grok steer is x.ai/interject, so the queue has no second "soon" action.
-  // Antigravity keeps soon: its steer now still cancels the live turn.
-  if (harness === 'acp' && !isAntigravityAcpAgent(acpAgentId)) return false
-  return resolveHarnessCapabilities(harness, runtime).supportsQueuedSteerSoon === true
+export function canSteerQueuedSoon(harness: HarnessId | string, acpAgentId?: string | null, runtime?: HarnessRuntimeCapabilities): boolean {
+  const resolved = resolveLegacyHarnessId(String(harness), { acpAgentId })
+  if (!resolved) return false
+  if (resolved === 'acp-grok') return false
+  return resolveHarnessCapabilities(resolved, runtime).supportsQueuedSteerSoon === true
 }
 
 export function queuedMessageText(message: ChatMessage): string {

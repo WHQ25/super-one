@@ -13,7 +13,8 @@ describe('message dialect registry', () => {
   it('routes codex to the codex reducer and everything else to claude', () => {
     expect(messageDialectFor('codex')).toBe('codex')
     expect(messageDialectFor('claude')).toBe('claude')
-    expect(messageDialectFor('acp')).toBe('claude')
+    expect(messageDialectFor('acp-grok')).toBe('claude')
+    expect(messageDialectFor('acp-antigravity')).toBe('claude')
     expect(messageDialectFor('cursor')).toBe('claude')
     expect(messageDialectFor('opencode')).toBe('claude')
     // dsh emits message_start → content_delta* → message_complete.

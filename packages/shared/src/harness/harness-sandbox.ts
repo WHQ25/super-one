@@ -101,6 +101,6 @@ export function resolveSandboxMode(input: {
     const preset = input.codexPreset ?? codexPresetForPermissionMode(input.permissionMode)
     return CODEX_PERMISSION_PRESETS[preset].sandboxMode === 'danger-full-access' ? 'off' : 'on'
   }
-  if (harnessId === 'acp') return sandboxModeFromInfo(input.sandboxInfo)
+  if (harnessId === 'acp-grok' || harnessId === 'acp-antigravity') return sandboxModeFromInfo(input.sandboxInfo)
   return 'off'
 }

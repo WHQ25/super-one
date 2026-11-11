@@ -15,7 +15,7 @@ export function handleSessionGet(payload: unknown, ctx: RpcContext): RpcResult {
   const session = ctx.sessions.get(sessionId)
   if (!session) return { result: null }
   const { transcript, acpAgentId: recordedAgentId, ...metadata } = session
-  const configAgentId = session.harnessId === 'acp'
+  const configAgentId = session.harnessId === 'acp-grok' || session.harnessId === 'acp-antigravity' || session.harnessId === 'acp'
     ? (ctx.sessionProviders?.get(session.providerId)?.config as { agentId?: string } | undefined)?.agentId
     : undefined
   // A missing agent is omitted. Writing null here makes a controller replace

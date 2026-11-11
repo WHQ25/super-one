@@ -56,7 +56,7 @@ function PendingSendPreview({ narrow = false, failed = false, local = false, har
         ...createDefaultProjectState(), _activeSessionId: SESSION, _sessions: { [SESSION]: {
           ...createDefaultPerSessionState(), messages: hasAssistant ? [user, assistant] : [user], awaitingAssistantReply: !hasAssistant,
           status: runtime === 'exhausted' ? 'idle' : 'streaming',
-          sessionProvider: harness, acpAgentId: harness === 'acp' ? 'grok-build' : null, cwd: '/work/app',
+          sessionProvider: harness, acpAgentId: harness === 'acp-grok' ? 'grok-build' : null, cwd: '/work/app',
         } },
       },
     } })
@@ -146,7 +146,7 @@ const checkRetry: Story['play'] = async ({ canvasElement }) => {
 }
 export const ClaudeRetry: Story = { args: { runtime: 'retrying', harness: 'claude' }, play: checkRetry }
 export const CodexRetry: Story = { args: { runtime: 'retrying', harness: 'codex' }, play: checkRetry }
-export const GrokRetry: Story = { args: { runtime: 'retrying', harness: 'acp' }, play: checkRetry }
+export const GrokRetry: Story = { args: { runtime: 'retrying', harness: 'acp-grok' }, play: checkRetry }
 export const LocalRetryBeforeReply: Story = { args: { runtime: 'before-reply', local: true }, play: checkRetry }
 export const RetryExhausted: Story = {
   args: { runtime: 'exhausted' },

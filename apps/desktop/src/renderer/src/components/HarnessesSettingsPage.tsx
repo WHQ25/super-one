@@ -22,8 +22,8 @@ import {
 } from '@dnd-kit/core'
 import { arrayMove } from '@dnd-kit/sortable'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
-import { isAntigravityAcpAgent, isGrokAcpAgent } from '@superone/shared/acp-brand'
-import type { AcpAgentDescriptor, SettingsProvider } from '@superone/shared/agent-types'
+import { acpAgentIdForHarness, isAcpProtocolHarness, isAntigravityAcpAgent, isGrokAcpAgent, resolveLegacyHarnessId } from '@superone/shared/acp-brand'
+import type { AcpAgentDescriptor } from '@superone/shared/agent-types'
 import type { ExternalCliHarnessId } from '@superone/shared/environment/external-cli-install'
 import { suggestionHarnessKey } from '@superone/shared/suggestion-harness-order'
 import { refreshAcpResourcesAfterToggle } from '@/harness-ui/acp/refresh-after-toggle'
@@ -57,14 +57,8 @@ import {
 
 const EMPTY_ACP: AcpAgentDescriptor[] = []
 
-/**
- * Catalog list key for a nested-config `settingsProvider`.
- * Grok is `acp` in the store and `acp-grok` in the list; every other
- * first-party harness uses the same id in both places.
- */
-export function listKeyForSettingsProvider(provider: SettingsProvider): string {
-  if (provider === 'acp') return 'acp-grok'
-  return provider
+export function listKeyForSettingsProvider(provider: string): string {
+  return resolveLegacyHarnessId(provider) ?? provider
 }
 
 /** True when the nested harness tab is one of Cursor's config pages. */
@@ -79,11 +73,7 @@ function isCursorSettingsSection(section: HarnessConfigSection): section is Curs
 
 /** Suggestion-key used for harnessOrder / ChatSuggestions ranking. */
 function orderKeyForItem(item: ListItem): string {
-  if (item.provider === 'acp') {
-    const agentId = item.kind === 'catalog' ? item.acpAgentId : item.acpAgentId
-    return suggestionHarnessKey('acp', agentId)
-  }
-  return item.provider
+  return suggestionHarnessKey(item.provider)
 }
 
 /**
@@ -123,11 +113,10 @@ function HarnessBrandTitle({
   if (provider === 'dsh') {
     return wrap(<DeepSeek.Text size={size} />)
   }
-  if (provider === 'acp' && isGrokAcpAgent(acpAgentId)) {
-    return wrap(<Grok.Text size={size} />)
-  }
-  if (provider === 'acp' && isAntigravityAcpAgent(acpAgentId)) {
-    return wrap(<Antigravity.Text size={size} />)
+  if (isAcpProtocolHarness(provider)) {
+    const agentId = acpAgentId ?? acpAgentIdForHarness(provider)
+    if (isGrokAcpAgent(agentId)) return wrap(<Grok.Text size={size} />)
+    if (isAntigravityAcpAgent(agentId)) return wrap(<Antigravity.Text size={size} />)
   }
   return (
     <span
@@ -157,7 +146,6 @@ export function HarnessesSettingsPage() {
     savingOrder,
     refreshCatalog,
     isItemEnabled,
-    setExperimentalAgentEnabled,
     installExternalCli,
     persistEnabledOrder,
   } = useHarnessesCatalogState(orderKeyForItem)
@@ -167,7 +155,8 @@ export function HarnessesSettingsPage() {
     return focusKey ?? listKeyForSettingsProvider(provider)
   })
 
-  const acpAgents = useChatStore((s) => s.harnessResources.acp?.agents ?? EMPTY_ACP)
+  const grokAgents = useChatStore((s) => s.harnessResources['acp-grok']?.agents ?? EMPTY_ACP)
+  const antiAgents = useChatStore((s) => s.harnessResources['acp-antigravity']?.agents ?? EMPTY_ACP)
   const initializeHarness = useChatStore((s) => s.initializeHarness)
   const settingsProvider = useAppStore((s) => s.settingsProvider)
   const setSettingsProvider = useAppStore((s) => s.setSettingsProvider)
@@ -180,21 +169,15 @@ export function HarnessesSettingsPage() {
   )
 
   useEffect(() => {
-    void initializeHarness('acp')
+    void initializeHarness('acp-grok')
+    void initializeHarness('acp-antigravity')
   }, [initializeHarness])
 
   // Deep links (MCP popup / sandbox → preferences) land with a config section;
-  // keep the list selection aligned with settingsProvider. Grok (`acp`) and
-  // OpenCode must not fall through to Claude — that snapped their detail pane
-  // back to the Claude Code page on every click.
+  // keep the list selection aligned with settingsProvider.
   useEffect(() => {
     if (!harnessConfigSection) return
-    setSelectedKey((prev) => {
-      if (settingsProvider === 'acp' && (prev === 'acp-grok' || prev === 'acp-antigravity')) {
-        return prev
-      }
-      return listKeyForSettingsProvider(settingsProvider)
-    })
+    setSelectedKey(listKeyForSettingsProvider(settingsProvider))
   }, [harnessConfigSection, settingsProvider])
 
   // Chat "Re-enable" (and similar) open this page with a specific row focused.
@@ -205,9 +188,9 @@ export function HarnessesSettingsPage() {
   }, [harnessListFocusKey])
 
   const items = useMemo((): ListItem[] => {
-    const agents = acpAgents.filter((a) => a.id !== 'opencode')
-    return buildHarnessListItems(acpAgents, agents, t)
-  }, [acpAgents, t])
+    const agents = [...grokAgents, ...antiAgents].filter((a) => a.id !== 'opencode')
+    return buildHarnessListItems(agents, t)
+  }, [antiAgents, grokAgents, t])
 
   const enabledItems = useMemo(
     () => sortHarnessItemsByOrder(items.filter(isItemEnabled), harnessOrder, orderKeyForItem),
@@ -225,35 +208,17 @@ export function HarnessesSettingsPage() {
     setBusyKey(item.key)
     setError('')
     try {
-      if (item.kind === 'catalog') {
-        if (enabled) {
-          await window.app.enableHarness({ harnessId: item.catalogId })
-          toast.success(t('settings.harnesses.enabled', { id: item.label }))
-        } else {
-          await window.app.disableHarness(item.catalogId)
-          toast.success(t('settings.harnesses.disabled', { id: item.label }))
-        }
-        await refreshCatalog()
-        const refreshedAcp = await refreshAcpResourcesAfterToggle(item.provider, item.acpAgentId, enabled)
-        if (!refreshedAcp && enabled) {
-          void useChatStore.getState().initializeHarness(item.provider, { force: true })
-        }
+      if (enabled) {
+        await window.app.enableHarness({ harnessId: item.catalogId })
+        toast.success(t('settings.harnesses.enabled', { id: item.label }))
       } else {
-        await setExperimentalAgentEnabled(item.acpAgentId, enabled)
-        toast.success(
-          t(enabled ? 'settings.harnesses.enabled' : 'settings.harnesses.disabled', {
-            id: item.label,
-          }),
-        )
-        if (enabled && item.acpAgentId) {
-          void window.app.refreshAcpModels?.(item.acpAgentId)
-            .then((fresh) => {
-              if (fresh) useChatStore.getState().setHarnessResources('acp', fresh)
-            })
-            .catch(() => {
-              /* best-effort */
-            })
-        }
+        await window.app.disableHarness(item.catalogId)
+        toast.success(t('settings.harnesses.disabled', { id: item.label }))
+      }
+      await refreshCatalog()
+      const refreshedAcp = await refreshAcpResourcesAfterToggle(item.provider, item.acpAgentId, enabled)
+      if (!refreshedAcp && enabled) {
+        void useChatStore.getState().initializeHarness(item.provider, { force: true })
       }
       // Keep explicit order: newly enabled keys append; disabled keys stay so
       // re-enable restores rank. Only when the user has set a manual order.
@@ -270,7 +235,6 @@ export function HarnessesSettingsPage() {
       const msg = err instanceof Error ? err.message : String(err)
       // Catalog enable/disable already surfaces the message via install progress
       // + catalog diagnostic in the detail pane — only toast here to avoid triplicates.
-      if (item.kind !== 'catalog') setError(msg)
       toast.error(msg)
       await refreshCatalog()
     } finally {
@@ -392,7 +356,7 @@ function HarnessDetail({
   onRefresh?: () => void
 }) {
   const { t } = useTranslation()
-  const acpAgentId = item.kind === 'catalog' ? item.acpAgentId : item.acpAgentId
+  const acpAgentId = item.acpAgentId
   const configTabs = configTabsFor(item.configProvider)
   const activeTab =
     configTabs && configSection && configTabs.includes(configSection)
@@ -401,7 +365,7 @@ function HarnessDetail({
 
   // SDK harnesses (claude/codex/opencode): runtime path is internal. ACP harnesses
   // (Grok, experimental agents): show launch command for verify/debug.
-  const showCommand = !!catalog?.command && item.provider === 'acp'
+  const showCommand = !!catalog?.command && isAcpProtocolHarness(item.provider)
 
   return (
     <div className="flex flex-col gap-5">
@@ -463,7 +427,7 @@ function HarnessDetail({
                 {section === 'preferences' && (
                   <PreferencesPage provider={item.configProvider} acpAgentId={acpAgentId} />
                 )}
-                {section === 'account' && item.configProvider === 'acp' && (
+                {section === 'account' && item.configProvider && isAcpProtocolHarness(item.configProvider) && (
                   isAntigravityAcpAgent(acpAgentId)
                     ? <AntigravityAuthSettings key={authRefreshSeq} onAuthChanged={onRefresh} />
                     : <GrokAuthSettings key={authRefreshSeq} onAuthChanged={onRefresh} />

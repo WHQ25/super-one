@@ -5,14 +5,14 @@ import { SessionLease } from '../session/session-lease'
 import { runWindowControl } from '../session/control-context'
 import type { Session } from '../session/types'
 
-function fixture(harnessId: 'claude' | 'codex' | 'acp' = 'claude') {
+function fixture(harnessId: 'claude' | 'codex' | 'acp-grok' = 'claude') {
   const authority = { ...controlLeaseAuthority(), names: {
     controller: (id: string) => id === 'controller-a' ? 'Desktop A' : null,
     phone: (id: string) => id === 'a' ? 'iPhone A' : null,
   } }
   const lease = new SessionLease('s', authority)
   const session = { id: 's', projectPath: '/project', lease,
-    snapshot: { harnessId, acpAgentId: harnessId === 'acp' ? 'grok-build' : null, worktreePath: '/checkout', gitBranch: 'topic' },
+    snapshot: { harnessId, acpAgentId: harnessId === 'acp-grok' ? 'grok-build' : null, worktreePath: '/checkout', gitBranch: 'topic' },
     onLifecycle: lease.onLifecycle.bind(lease) } as unknown as Session
   const broadcast = vi.fn()
   const disposeSource = vi.fn()
@@ -21,11 +21,11 @@ function fixture(harnessId: 'claude' | 'codex' | 'acp' = 'claude') {
 }
 
 describe('native session control presence', () => {
-  it.each(['claude', 'codex', 'acp'] as const)('projects the authoritative %s proof and session identity', harnessId => {
+  it.each(['claude', 'codex', 'acp-grok'] as const)('projects the authoritative %s proof and session identity', harnessId => {
     const f = fixture(harnessId)
     const grant = acquirePhoneControl(f.authority, 's', 'a')
     expect(f.broadcast).toHaveBeenCalledWith({ type: 'session_control_changed', projectPath: '/project', sessionId: 's', lease: grant,
-      holder: { kind: 'phone', label: 'iPhone A' }, harnessId, acpAgentId: harnessId === 'acp' ? 'grok-build' : null, worktreePath: '/checkout', gitBranch: 'topic' })
+      holder: { kind: 'phone', label: 'iPhone A' }, harnessId, acpAgentId: harnessId === 'acp-grok' ? 'grok-build' : null, worktreePath: '/checkout', gitBranch: 'topic' })
     expect(f.broadcast).toHaveBeenCalledTimes(1)
     acquirePhoneControl(f.authority, 's', 'a')
     expect(f.broadcast).toHaveBeenCalledTimes(1)

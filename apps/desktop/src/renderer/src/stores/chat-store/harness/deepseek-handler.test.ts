@@ -29,7 +29,7 @@ function storeWithHarnessResources(): ChatStore {
     harnessResources: {
       claude: existingClaude,
       codex: null,
-      acp: null,
+      'acp-grok': null, 'acp-antigravity': null,
       opencode: null,
       cursor: existingCursor,
     },
@@ -49,7 +49,7 @@ describe('deepseek-handler', () => {
     expect(patch.harnessResources).toEqual({
       claude: existingClaude,
       codex: null,
-      acp: null,
+      'acp-grok': null, 'acp-antigravity': null,
       opencode: null,
       cursor: existingCursor,
       dsh: resources,

@@ -9,9 +9,14 @@ export interface ApiKeyDefault {
  * The built-in account an API-key picker lists before any saved key, for the
  * harnesses that run on third-party keys (`consumerForHarness`).
  */
-const API_KEY_DEFAULTS: Partial<Record<HarnessId, ApiKeyDefault>> = {
+const API_KEY_DEFAULTS: Record<HarnessId, ApiKeyDefault | undefined> = {
   claude: { brand: 'claude', labelKey: 'resources.providers.defaultLabelClaude' },
   codex: { brand: 'openai', labelKey: 'resources.providers.defaultLabelCodex' },
+  'acp-grok': undefined,
+  'acp-antigravity': undefined,
+  opencode: undefined,
+  cursor: undefined,
+  dsh: undefined,
 }
 
 /** Undefined: the harness has no API-key picker. */

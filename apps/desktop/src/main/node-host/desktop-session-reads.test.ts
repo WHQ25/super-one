@@ -100,8 +100,8 @@ describe('DesktopSessionReads.list', () => {
 
   it('serves the row harness and the session ACP agent', () => {
     const cursor = { ...row('cursor-1'), harnessId: 'cursor' as const, providerId: 'cursor-base' }
-    const cold = { ...row('cold-grok'), harnessId: 'acp' as const, acpAgentId: 'grok-build' }
-    const liveRow = { ...row('live-grok'), harnessId: 'acp' as const, acpAgentId: 'stored' }
+    const cold = { ...row('cold-grok'), harnessId: 'acp-grok' as const, acpAgentId: 'grok-build' }
+    const liveRow = { ...row('live-grok'), harnessId: 'acp-grok' as const, acpAgentId: 'stored' }
     const reads = new Reads({
       environmentId: 'desktop',
       sessions: {

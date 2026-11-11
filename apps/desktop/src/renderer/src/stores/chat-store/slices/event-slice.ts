@@ -12,8 +12,6 @@ import type {
   SessionSettingsPatch,
 } from '@superone/shared/agent-types'
 import { withCodexContents } from '@superone/shared/codex-content'
-import { isAcpEffortConfigId, isAcpEffortConfigOption } from '@superone/shared/effort-labels'
-import { withoutProjectScopedWorkflows } from '@superone/shared/workflow-commands'
 import { markTerminalBoundSlashCommands } from '@superone/shared/slash-commands'
 import { goalComposerAction } from '@superone/shared/session-goal'
 import { useAppStore } from '../../app'
@@ -38,6 +36,7 @@ import { isContextUsageHeld, releaseContextUsageHold } from '../helpers/context-
 import { applyCachedCodexPermissionPreset } from '../helpers/prefs-cache'
 import { startBashOutputLive } from '../helpers/bash-output-live'
 import { HARNESS_STRATEGIES } from '@/harness-ui/strategies'
+import { patchAcpResourcesFromEvent } from '../harness/acp-event-patch'
 import { omitCodexSelectionReplay } from '../helpers/codex-selection-replay'
 import {
   _computeHasPendingInteraction,
@@ -648,183 +647,8 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
         (event.type === 'acp_models' || event.type === 'acp_modes' || event.type === 'acp_commands')
         && (event.type === 'acp_commands' || event.status === 'ready' || !event.status)
       ) {
-        const agentId = event.agentId ?? updatedSession.acpAgentId
-        const acp = s.harnessResources.acp
-        const hasContent = event.type === 'acp_models'
-          ? event.models.length > 0
-          : event.type === 'acp_modes'
-            ? event.modes.length > 0
-            : true
-        if (
-          agentId
-          && acp
-          && hasContent
-          && (!updatedSession.acpAgentId || !event.agentId || event.agentId === updatedSession.acpAgentId)
-        ) {
-          const prevConfig = acp.configByAgentId?.[agentId]
-          const prevOptions = [...(prevConfig?.configOptions ?? [])]
-          const now = new Date().toISOString()
-
-          if (event.type === 'acp_models') {
-            const modelId = event.configId ?? 'model'
-            const modelOpt = {
-              id: modelId,
-              name: 'Model',
-              category: 'model' as const,
-              type: 'select' as const,
-              currentValue: event.selectedModelId,
-              options: event.models.map((m) => ({
-                value: m.id,
-                name: m.name,
-                description: m.description || null,
-              })),
-            }
-            const withoutModel = prevOptions.filter((o) => o.category !== 'model' && o.id !== 'model' && o.id !== modelId)
-            const configOptions = event.configId
-              ? [...withoutModel, modelOpt]
-              : prevOptions
-            harnessUpdate = {
-              harnessResources: {
-                ...s.harnessResources,
-                acp: {
-                  ...acp,
-                  modelsByAgentId: {
-                    ...(acp.modelsByAgentId ?? {}),
-                    [agentId]: {
-                      models: event.models,
-                      selectedModelId: event.selectedModelId,
-                      configId: event.configId,
-                      updatedAt: now,
-                    },
-                  },
-                  configByAgentId: {
-                    ...(acp.configByAgentId ?? {}),
-                    [agentId]: {
-                      configOptions,
-                      extraModels: event.configId ? prevConfig?.extraModels : event.models,
-                      selectedModelId: event.selectedModelId,
-                      modelConfigId: event.configId,
-                      extraModes: prevConfig?.extraModes,
-                      selectedModeId: prevConfig?.selectedModeId,
-                      modeConfigId: prevConfig?.modeConfigId,
-                      slashCommands: prevConfig?.slashCommands,
-                      updatedAt: now,
-                    },
-                  },
-                },
-              },
-            }
-          } else if (event.type === 'acp_modes') {
-            // Grok effort: configId null (legacy x.ai) or `reasoning_effort`
-            // (thought_level). Keep it as extraModes so the model slider still
-            // treats it as effort. Real session modes: any other configId,
-            // stored as configOptions category=mode.
-            if (isAcpEffortConfigId(event.configId)) {
-              const withoutEffort = prevOptions.filter(
-                (o) => o.category !== 'mode' && o.id !== 'mode' && !isAcpEffortConfigOption(o),
-              )
-              const configOptions = event.configId
-                ? [...withoutEffort, {
-                    id: event.configId,
-                    name: 'Reasoning Effort',
-                    category: 'thought_level' as const,
-                    type: 'select' as const,
-                    currentValue: event.selectedModeId,
-                    options: event.modes.map((m) => ({
-                      value: m.id,
-                      name: m.name,
-                      description: m.description || null,
-                    })),
-                  }]
-                : withoutEffort
-              harnessUpdate = {
-                harnessResources: {
-                  ...s.harnessResources,
-                  acp: {
-                    ...acp,
-                    configByAgentId: {
-                      ...(acp.configByAgentId ?? {}),
-                      [agentId]: {
-                        configOptions,
-                        extraModels: prevConfig?.extraModels,
-                        selectedModelId: prevConfig?.selectedModelId ?? null,
-                        modelConfigId: prevConfig?.modelConfigId ?? null,
-                        extraModes: event.modes,
-                        selectedModeId: event.selectedModeId,
-                        modeConfigId: event.configId,
-                        slashCommands: prevConfig?.slashCommands,
-                        updatedAt: now,
-                      },
-                    },
-                  },
-                },
-              }
-            } else if (event.configId) {
-              const modeId = event.configId
-              const modeOpt = {
-                id: modeId,
-                name: 'Session Mode',
-                category: 'mode' as const,
-                type: 'select' as const,
-                currentValue: event.selectedModeId,
-                options: event.modes.map((m) => ({
-                  value: m.id,
-                  name: m.name,
-                  description: m.description || null,
-                })),
-              }
-              const withoutMode = prevOptions.filter(
-                (o) => o.category !== 'mode' && o.id !== 'mode' && o.id !== modeId && !isAcpEffortConfigOption(o),
-              )
-              harnessUpdate = {
-                harnessResources: {
-                  ...s.harnessResources,
-                  acp: {
-                    ...acp,
-                    configByAgentId: {
-                      ...(acp.configByAgentId ?? {}),
-                      [agentId]: {
-                        configOptions: [...withoutMode, modeOpt],
-                        extraModels: prevConfig?.extraModels,
-                        selectedModelId: prevConfig?.selectedModelId ?? null,
-                        modelConfigId: prevConfig?.modelConfigId ?? null,
-                        // Drop stale Grok effort extras when real session modes arrive.
-                        extraModes: undefined,
-                        selectedModeId: event.selectedModeId,
-                        modeConfigId: modeId,
-                        slashCommands: prevConfig?.slashCommands,
-                        updatedAt: now,
-                      },
-                    },
-                  },
-                },
-              }
-            }
-          } else {
-            harnessUpdate = {
-              harnessResources: {
-                ...s.harnessResources,
-                acp: {
-                  ...acp,
-                  configByAgentId: {
-                    ...(acp.configByAgentId ?? {}),
-                    [agentId]: {
-                      configOptions: prevConfig?.configOptions ?? [],
-                      extraModels: prevConfig?.extraModels,
-                      selectedModelId: prevConfig?.selectedModelId ?? null,
-                      modelConfigId: prevConfig?.modelConfigId ?? null,
-                      extraModes: prevConfig?.extraModes,
-                      selectedModeId: prevConfig?.selectedModeId,
-                      modeConfigId: prevConfig?.modeConfigId,
-                      slashCommands: withoutProjectScopedWorkflows(event.commands),
-                      updatedAt: now,
-                    },
-                  },
-                },
-              },
-            }
-          }
-        }
+        const nextResources = patchAcpResourcesFromEvent(s.harnessResources, event, updatedSession.acpAgentId)
+        if (nextResources) harnessUpdate = { harnessResources: { ...s.harnessResources, ...nextResources } }
       }
 
       return {

@@ -1,3 +1,4 @@
+import { isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import type { HarnessId } from '@superone/shared/session-types'
 import { useChatStore } from '@/stores/chat'
 
@@ -12,17 +13,17 @@ export async function refreshAcpResourcesAfterToggle(
   acpAgentId: string | null,
   enabled: boolean,
 ): Promise<boolean> {
-  if (provider !== 'acp') return false
+  if (!isAcpProtocolHarness(provider)) return false
   try {
     const listed = await window.app.listAcpAgents?.()
-    if (listed) useChatStore.getState().setHarnessResources('acp', listed)
+    if (listed) useChatStore.getState().setHarnessResources(provider, listed)
   } catch {
     /* best-effort */
   }
   if (enabled && acpAgentId) {
     void window.app.refreshAcpModels?.(acpAgentId)
       .then((fresh) => {
-        if (fresh) useChatStore.getState().setHarnessResources('acp', fresh)
+        if (fresh) useChatStore.getState().setHarnessResources(provider, fresh)
       })
       .catch(() => {
         /* best-effort */

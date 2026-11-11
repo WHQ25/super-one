@@ -24,7 +24,7 @@ function storeWithCursorSession(session: {
   selectedEffort?: EffortLevel
 }): ChatStore {
   return {
-    harnessResources: { claude: null, codex: null, acp: null, opencode: null, cursor: null },
+    harnessResources: { claude: null, codex: null, 'acp-grok': null, 'acp-antigravity': null, opencode: null, cursor: null },
     projectSessions: {
       '/project': {
         _activeSessionId: 'session',

@@ -8,7 +8,7 @@ const noop = () => {}
 const harnessOptions: NewSessionLandingProps['harnessOptions'] = [
   { key: 'claude', provider: 'claude', acpAgentId: null, label: 'Claude Code' },
   { key: 'codex', provider: 'codex', acpAgentId: null, label: 'Codex' },
-  { key: 'acp:grok-build', provider: 'acp', acpAgentId: 'grok-build', label: 'Grok Build' },
+  { key: 'acp-grok', provider: 'acp-grok', acpAgentId: 'grok-build', label: 'Grok Build' },
 ]
 
 const base: NewSessionLandingProps = {
@@ -75,11 +75,11 @@ export const PoweredByCodex = {
 export const Antigravity = {
   name: 'Antigravity · mark stays in the icon slot',
   args: {
-    provider: 'acp' as const,
-    activeHarnessKey: 'acp:antigravity',
+    provider: 'acp-antigravity',
+    activeHarnessKey: 'acp-antigravity',
     harnessOptions: [
       ...harnessOptions,
-      { key: 'acp:antigravity', provider: 'acp' as const, acpAgentId: 'antigravity', label: 'Antigravity' },
+      { key: 'acp-antigravity', provider: 'acp-antigravity', acpAgentId: 'antigravity', label: 'Antigravity' },
     ],
   },
 }

@@ -33,7 +33,8 @@ function settings(permissionModes: PermissionModes = {}): AppSettings {
         defaultReasoningEffort: 'high',
         defaultPermissionPreset: 'full-access',
       },
-      acp: { selectedAgentId: 'grok-build', defaultPermissionMode: permissionModes.acp ?? '' },
+      'acp-grok': { defaultModel: '', defaultEffort: '', defaultPermissionMode: permissionModes['acp-grok'] ?? '', brandHue: null, tokenOverrides: {} },
+      'acp-antigravity': { defaultModel: '', defaultEffort: '', defaultPermissionMode: permissionModes['acp-antigravity'] ?? '', brandHue: null, tokenOverrides: {} },
       cursor: { defaultPermissionMode: permissionModes.cursor ?? '', defaultSandboxMode: '' },
       dsh: { defaultPermissionMode: permissionModes.dsh ?? '' },
       opencode: { defaultPermissionMode: permissionModes.opencode ?? '' },
@@ -88,8 +89,8 @@ describe('remote harness system info', () => {
   })
 
   it('projects the selected ACP agent model, effort, and slash catalog', async () => {
-    const info = await buildRemoteHarnessSystemInfo('/project', 'acp', dependencies({
-      acp: {
+    const info = await buildRemoteHarnessSystemInfo('/project', 'acp-grok', dependencies({
+      'acp-grok': {
         agents: [{ id: 'grok-build', name: 'Grok', installed: true, commandPreview: 'grok' }],
         selectedAgentId: 'grok-build',
         configByAgentId: {
@@ -118,12 +119,12 @@ describe('remote harness system info', () => {
     expect(info.efforts?.map((entry) => entry.value)).toEqual(['fast', 'deep'])
     expect(info.defaults).toMatchObject({ model: 'grok-model', effort: 'deep' })
     expect(info.slashCommands?.map((entry) => entry.name)).toEqual(['web'])
-    expect(info.permissionModes).toEqual(HARNESS_LAUNCH_OPTIONS.acp.permissionModes)
+    expect(info.permissionModes).toEqual(HARNESS_LAUNCH_OPTIONS['acp-grok'].permissionModes)
   })
 
   it('honors an explicit acpAgentId and projects Antigravity permission modes without redundant session modes', async () => {
     const deps = dependencies({
-      acp: {
+      'acp-antigravity': {
         agents: [
           { id: 'grok-build', name: 'Grok', installed: true, commandPreview: 'grok' },
           { id: 'antigravity', name: 'Antigravity', installed: true, commandPreview: 'agy' },
@@ -148,11 +149,10 @@ describe('remote harness system info', () => {
           },
         },
       },
-    }, { acp: 'plan' })
+    }, { 'acp-antigravity': 'auto' })
     deps.acpAgentId = 'antigravity'
-    deps.settings.agentPreference.acp.antigravityDefaultPermissionMode = 'auto'
 
-    const info = await buildRemoteHarnessSystemInfo('/project', 'acp', deps)
+    const info = await buildRemoteHarnessSystemInfo('/project', 'acp-antigravity', deps)
 
     expect(info.acpAgentId).toBe('antigravity')
     expect(info.models?.map((entry) => entry.id)).toEqual(['gemini-3.1-pro-high'])
@@ -168,13 +168,13 @@ describe('remote harness system info', () => {
    * be right for the harness it was written for.
    */
   it.each([
-    ['acp', 'auto'],
+    ['acp-grok', 'auto'],
     ['opencode', 'acceptEdits'],
     ['dsh', 'plan'],
     ['cursor', 'agent'],
   ] as const)('carries %s its own configured permission mode', async (harnessId, mode) => {
     const resources = {
-      acp: {
+      'acp-grok': {
         agents: [{ id: 'grok-build', name: 'Grok', installed: true, commandPreview: 'grok' }],
         selectedAgentId: 'grok-build',
         configByAgentId: {

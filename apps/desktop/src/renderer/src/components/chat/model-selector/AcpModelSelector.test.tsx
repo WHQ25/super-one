@@ -41,7 +41,7 @@ function seed(models: ModelOption[], selected = models[0]?.id ?? ''): void {
   useChatStore.setState({
     projectSessions: {},
     activeProject: null,
-    harnessResources: { claude: null, codex: null, acp: null, opencode: null, cursor: null, dsh: null },
+    harnessResources: { claude: null, codex: null, 'acp-grok': null, 'acp-antigravity': null, opencode: null, cursor: null, dsh: null },
   })
   useChatStore.getState().ensureSession(PROJECT)
   useChatStore.setState({ activeProject: PROJECT })
@@ -57,8 +57,8 @@ function seed(models: ModelOption[], selected = models[0]?.id ?? ''): void {
           ...project._sessions,
           [sessionId]: {
             ...project._sessions[sessionId]!,
-            preferredProvider: 'acp',
-            sessionProvider: 'acp',
+            preferredProvider: 'acp-grok',
+            sessionProvider: 'acp-grok',
             acpAgentId: 'grok-build',
             acpModelsStatus: 'ready',
             acpModels: models,

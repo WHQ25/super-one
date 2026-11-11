@@ -87,9 +87,9 @@ vi.mock('../session/agent-profiles', () => ({
   resolveAcpAgentId: (row: SessionProvider) => (row.config as { agentId?: string }).agentId ?? state.acpAgentId,
   resolveProviderRowId: (agentId: string) => agentId,
   profileResources: (row: SessionProvider) => {
-    const models = row.harnessId === 'claude' ? CLAUDE_MODELS : row.harnessId === 'codex' ? CODEX_MODELS : row.harnessId === 'acp' ? GROK_MODELS : []
+    const models = row.harnessId === 'claude' ? CLAUDE_MODELS : row.harnessId === 'codex' ? CODEX_MODELS : row.harnessId === 'acp-grok' ? GROK_MODELS : []
     const host = { lists: { mode: [] } }
-    return { models, efforts: [], catalog: { models, efforts: row.harnessId === 'acp' ? ['low', 'high'] : undefined, host }, defaultConfig: { model: models[0]?.id } }
+    return { models, efforts: [], catalog: { models, efforts: row.harnessId === 'acp-grok' ? ['low', 'high'] : undefined, host }, defaultConfig: { model: models[0]?.id } }
   },
 }))
 
@@ -108,7 +108,7 @@ const GROK_MODELS = [{ id: 'grok-4', name: 'Grok 4', contextWindows: [256_000, 1
 function seed() {
   state.rows.clear()
   state.nextId = 1
-  for (const harnessId of ['claude', 'codex', 'acp'] as const) {
+  for (const harnessId of ['claude', 'codex', 'acp-grok'] as const) {
     state.rows.set(`${harnessId}-base`, { id: `${harnessId}-base`, harnessId, name: harnessId, isBase: true, config: {}, createdAt: 0, updatedAt: 0 })
   }
   state.rows.set('claude-reviewer', {
@@ -267,18 +267,18 @@ describe('agent_profile_apply create', () => {
   it('shows each harness only its own option rows, with the ones a model lacks as unsupported', async () => {
     const { deps, requests } = makeDeps()
     const run = agentProfileApplyHandler({
-      action: 'create', harnessId: 'acp', name: 'Scout', description: 'Explores.', model: 'grok-4', options: { contextWindow: 1_000_000 },
+      action: 'create', harnessId: 'acp-grok', name: 'Scout', description: 'Explores.', model: 'grok-4', options: { contextWindow: 1_000_000 },
     }, deps)
     await vi.waitFor(() => expect(requests).toHaveLength(1))
     expect(requests[0]?.agentProfileConfirm?.profiles[0]).toMatchObject({
-      harnessId: 'acp', model: 'grok-4', options: { contextWindow: '1M' }, unsupported: ['mode'],
+      harnessId: 'acp-grok', model: 'grok-4', options: { contextWindow: '1M' }, unsupported: ['mode'],
     })
     await answer(run, requests, 'decline')
   })
 
   it('pins the ACP agent the user runs today', async () => {
     const { deps, requests } = makeDeps()
-    const run = agentProfileApplyHandler({ action: 'create', harnessId: 'acp', name: 'Groker', description: 'Grok helper.' }, deps)
+    const run = agentProfileApplyHandler({ action: 'create', harnessId: 'acp-grok', name: 'Groker', description: 'Grok helper.' }, deps)
     await answer(run, requests, 'accept')
     expect(requests[0]?.agentProfileConfirm?.profiles[0]).toMatchObject({ acpAgentId: 'grok-build' })
     expect(profiles.create).toHaveBeenCalledWith(expect.objectContaining({
@@ -525,7 +525,7 @@ describe('agent_profile_delete', () => {
 describe('Profile creation collaboration consent', () => {
   it('requires another review if a legacy ACP Profile resolves to a different agent during confirmation', async () => {
     const row = state.rows.get('claude-reviewer')!
-    state.rows.set(row.id, { ...row, harnessId: 'acp', config: { profile: { ...REVIEWER_PROFILE, runtime: undefined } } })
+    state.rows.set(row.id, { ...row, harnessId: 'acp-grok', config: { profile: { ...REVIEWER_PROFILE, runtime: undefined } } })
     const { deps, requests } = makeDeps()
     const pending = agentProfileApplyHandler({ action: 'update', id: row.id }, deps)
     await vi.waitFor(() => expect(requests).toHaveLength(1))

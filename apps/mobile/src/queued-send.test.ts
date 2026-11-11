@@ -12,7 +12,8 @@ describe('queued composer send', () => {
   it('queues the same harnesses the desktop composer parks mid-turn', () => {
     expect(shouldQueueComposerSend('streaming', 'claude')).toBe(true)
     expect(shouldQueueComposerSend('streaming', 'codex')).toBe(true)
-    expect(shouldQueueComposerSend('streaming', 'acp')).toBe(true)
+    expect(shouldQueueComposerSend('streaming', 'acp-grok')).toBe(true)
+    expect(shouldQueueComposerSend('streaming', 'acp-antigravity')).toBe(true)
     expect(shouldQueueComposerSend('streaming', 'opencode')).toBe(true)
     expect(shouldQueueComposerSend('streaming', 'dsh')).toBe(true)
     expect(shouldQueueComposerSend('streaming', 'cursor')).toBe(false)
@@ -20,10 +21,10 @@ describe('queued composer send', () => {
   })
 
   it('tags a live send with a client id so the runtime can park the bubble', () => {
-    expect(composerQueuedSendFields('streaming', 'acp', 'send')).toEqual({
+    expect(composerQueuedSendFields('streaming', 'acp-grok', 'send')).toEqual({
       queue: true, needsClientMessageId: true,
     })
-    expect(composerQueuedSendFields('idle', 'acp', 'send')).toEqual({
+    expect(composerQueuedSendFields('idle', 'acp-grok', 'send')).toEqual({
       queue: false, needsClientMessageId: false,
     })
     expect(composerQueuedSendFields('streaming', 'cursor', 'send')).toEqual({
@@ -37,7 +38,8 @@ describe('queued composer send', () => {
   it('offers steer on Claude, Codex and Grok, and soon on Claude and Antigravity', () => {
     expect(canSteerQueued('claude')).toBe(true)
     expect(canSteerQueued('codex')).toBe(true)
-    expect(canSteerQueued('acp')).toBe(true)
+    expect(canSteerQueued('acp-grok')).toBe(true)
+    expect(canSteerQueued('acp-antigravity')).toBe(true)
     expect(canSteerQueued('opencode')).toBe(false)
     expect(canSteerQueuedSoon('claude')).toBe(true)
     expect(canSteerQueuedSoon('acp')).toBe(false)

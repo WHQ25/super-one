@@ -58,11 +58,11 @@ describe('session activity from a paired machine', () => {
   })
 
   it('brands an unhydrated placeholder with the host harness and ACP agent', () => {
-    const running = apply(store(), activity({ status: 'streaming', provider: 'acp', acpAgentId: 'grok-build' }))
+    const running = apply(store(), activity({ status: 'streaming', provider: 'acp-grok', acpAgentId: 'grok-build' }))
     expect(projectOf(running)._sessions.s1).toMatchObject({
       status: 'streaming',
-      sessionProvider: 'acp',
-      preferredProvider: 'acp',
+      sessionProvider: 'acp-grok',
+      preferredProvider: 'acp-grok',
       acpAgentId: 'grok-build',
       _historyHydrated: false,
     })
@@ -71,9 +71,9 @@ describe('session activity from a paired machine', () => {
   })
 
   it('does not clear an ACP agent when the activity names none', () => {
-    const state = store({ s1: { status: 'idle', _historyHydrated: false, sessionProvider: 'acp', acpAgentId: 'grok-build' } })
-    const next = apply(state, activity({ status: 'streaming', provider: 'acp', acpAgentId: null }))
-    expect(projectOf(next)._sessions.s1).toMatchObject({ status: 'streaming', sessionProvider: 'acp', acpAgentId: 'grok-build' })
+    const state = store({ s1: { status: 'idle', _historyHydrated: false, sessionProvider: 'acp-grok', acpAgentId: 'grok-build' } })
+    const next = apply(state, activity({ status: 'streaming', provider: 'acp-grok', acpAgentId: null }))
+    expect(projectOf(next)._sessions.s1).toMatchObject({ status: 'streaming', sessionProvider: 'acp-grok', acpAgentId: 'grok-build' })
   })
 
   it('keeps the title and spawn parent without loading a remote transcript', () => {

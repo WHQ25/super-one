@@ -133,7 +133,7 @@ const SESSIONS = [
   {
     id: 'c3d4e5f6-3333-4000-8000-cccccccccccc',
     title: 'Grok design review',
-    harness: 'acp',
+    harness: 'acp-grok',
     acpAgentId: 'grok-build',
     messageCount: 15,
     createdAt: '2026-08-07T16:40:00.000Z',

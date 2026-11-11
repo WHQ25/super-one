@@ -14,7 +14,7 @@ export function profileManagementFixture() {
     }
     details.set(base.id, {
       id: base.id, name, harnessId: base.harnessId, description: '', followsDefaults: true, available: true, approved: true,
-      ...(base.harnessId === 'acp' ? { acpAgentId: 'grok-build' } : {}),
+      ...(base.harnessId === 'acp-grok' ? { acpAgentId: 'grok-build' } : {}),
       spec: { version: 1, identity: { name, description: '' } },
       catalog: { models: [{ id: model, supportedEffortLevels: ['low', 'high'], supportedReasoningEfforts: [{ value: 'low' }, { value: 'high' }] }] },
       agent: { id: base.id, name, harnessId: base.harnessId, description: '', defaultConfig: config,

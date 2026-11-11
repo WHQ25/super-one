@@ -39,7 +39,7 @@ function seed(harness: HarnessId, empty: boolean, scopedCatalog: boolean): void 
   }
   useChatStore.setState({
     activeProject: PROJECT,
-    harnessResources: (empty ? { claude: null, codex: null, acp: null } : { ...CATALOGS, acp: null }) as unknown as ChatStore['harnessResources'],
+    harnessResources: (empty ? { claude: null, codex: null, 'acp-grok': null, 'acp-antigravity': null } : { ...CATALOGS, 'acp-grok': null, 'acp-antigravity': null }) as unknown as ChatStore['harnessResources'],
     projectSessions: {
       [PROJECT]: {
         ...project,
@@ -87,7 +87,7 @@ type Story = StoryObj<typeof meta>
 export const Claude: Story = { args: { harness: 'claude' } }
 export const Codex: Story = { args: { harness: 'codex' } }
 /** ACP: permission baseline plus the agent's own session modes. */
-export const Acp: Story = { args: { harness: 'acp' } }
+export const Acp: Story = { args: { harness: 'acp-grok' } }
 /** OpenCode has no permission modes; its agent picker takes the slot. */
 export const OpenCode: Story = { args: { harness: 'opencode' } }
 export const OpenCodeNodeCredential: Story = { args: { harness: 'opencode', scopedCatalog: true } }
@@ -95,11 +95,11 @@ export const OpenCodeNodeCredentialNarrow: Story = { args: { harness: 'opencode'
 export const Cursor: Story = { args: { harness: 'cursor' } }
 export const DeepSeek: Story = { args: { harness: 'dsh' } }
 /** Catalogs not loaded yet: each control shows its own empty state. */
-export const EmptyCatalogs: Story = { args: { harness: 'acp', empty: true } }
+export const EmptyCatalogs: Story = { args: { harness: 'acp-grok', empty: true } }
 /** Narrow composer: permission controls collapse to their compact trigger. */
 export const Compact: Story = { args: { harness: 'cursor', compact: true } }
 
-const LAUNCH_HARNESSES: HarnessId[] = ['claude', 'codex', 'acp', 'opencode', 'cursor', 'dsh']
+const LAUNCH_HARNESSES: HarnessId[] = ['claude', 'codex', 'acp-grok', 'opencode', 'cursor', 'dsh']
 const ACP_RESOURCES = {
   agents: [],
   selectedAgentId: 'grok-build',
@@ -149,7 +149,7 @@ function LaunchPreview({ remote = false, empty = false }: { remote?: boolean; em
     useChatStore.setState({
       activeProject: PROJECT,
       harnessResources: (empty
-        ? { claude: null, codex: null, acp: null }
+        ? { claude: null, codex: null, 'acp-grok': null, 'acp-antigravity': null }
         : { ...CATALOGS, acp: ACP_RESOURCES }) as unknown as ChatStore['harnessResources'],
     })
     setReady(true)
@@ -177,10 +177,10 @@ export const PickerIcons: Story = {
     <div className="flex items-end gap-6">
       {LAUNCH_HARNESSES.map((harness) => {
         const { PickerIcon } = HARNESS_CONTROLS[harness]
-        return <PickerIcon key={harness} size={48} acpAgentId={harness === 'acp' ? 'grok-build' : null} />
+        return <PickerIcon key={harness} size={48} acpAgentId={harness === 'acp-grok' ? 'grok-build' : null} />
       })}
       {(() => {
-        const { PickerIcon } = HARNESS_CONTROLS.acp
+        const { PickerIcon } = HARNESS_CONTROLS['acp-grok']
         return <PickerIcon size={48} acpAgentId="gemini" />
       })()}
     </div>

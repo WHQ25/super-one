@@ -403,7 +403,7 @@ export const AcpAlwaysAllow: Story = {
   decorators: [(Story) => (
     <>
       <SeedPermission
-        sessionProvider="acp"
+        sessionProvider="acp-grok"
         request={{
           requestId: 'p-acp-always',
           toolName: 'Bash',
@@ -424,7 +424,7 @@ export const AcpAllowOnce: Story = {
   decorators: [(Story) => (
     <>
       <SeedPermission
-        sessionProvider="acp"
+        sessionProvider="acp-grok"
         request={{
           requestId: 'p-acp-once',
           toolName: 'Edit',
@@ -496,7 +496,7 @@ export const AcpElicitation: Story = {
   decorators: [(Story) => (
     <>
       <SeedPermission
-        sessionProvider="acp"
+        sessionProvider="acp-grok"
         request={{
           requestId: 'p-acp-elicit',
           toolName: 'github',

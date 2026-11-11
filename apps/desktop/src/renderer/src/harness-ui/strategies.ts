@@ -1,6 +1,6 @@
 import type { HarnessId } from '@superone/shared/agent-types'
 import type { PerSessionState } from '@/stores/chat-store/types'
-import { acpStrategy } from './acp/strategy'
+import { acpAntigravityStrategy, acpGrokStrategy } from './acp/strategy'
 import { claudeStrategy } from './claude/strategy'
 import { codexStrategy } from './codex/strategy'
 import { cursorStrategy } from './cursor/strategy'
@@ -11,7 +11,8 @@ import type { HarnessStrategy, PlanModeFields, SeedContext } from './strategy'
 export const HARNESS_STRATEGIES: { [H in HarnessId]: HarnessStrategy } = {
   claude: claudeStrategy,
   codex: codexStrategy,
-  acp: acpStrategy,
+  'acp-grok': acpGrokStrategy,
+  'acp-antigravity': acpAntigravityStrategy,
   opencode: opencodeStrategy,
   cursor: cursorStrategy,
   dsh: dshStrategy,

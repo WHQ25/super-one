@@ -4,9 +4,9 @@ import log from '../logger'
 import { getProjectId } from '../recent-folders'
 import { flushPendingRealtimeTimeline } from './realtime-timeline-repo'
 import { notifySessionList } from '../session-list-watch'
-import { recordSessionStarted, recordMessageCounts, type HarnessKind } from '../usage-stats-service'
+import { activityHarnessKind, recordSessionStarted, recordMessageCounts } from '../usage-stats-service'
 import { explicitClaudeModelId } from '@superone/claude'
-import { isGrokAcpAgent } from '@superone/shared/acp-brand'
+import { acpAgentIdForHarness, isConcreteHarnessId, resolveLegacyHarnessId } from '@superone/shared/acp-brand'
 import { sealCodexMetadata, sealStreamingTools } from '@superone/shared/content-delta'
 import type { ChatMessage, ContentBlock, EffortLevel, ImageAttachment, ChatMessageContext } from '@superone/shared/agent-types'
 import { BASE_SESSION_PROVIDER_DEFINITIONS } from '@superone/shared/session-provider-definitions'
@@ -201,9 +201,10 @@ function rowToRecord(row: SessionRow, projectPath: string): SessionRecord {
   }
 }
 
-function inferLegacyProviderId(row: { provider?: string | null }): string {
-  return BASE_SESSION_PROVIDER_DEFINITIONS.find(({ harnessId }) => harnessId === row.provider)?.id
-    ?? 'claude-base'
+function inferLegacyProviderId(row: { provider?: string | null; acp_agent_id?: string | null }): string {
+  const resolved = resolveLegacyHarnessId(row.provider, { acpAgentId: row.acp_agent_id })
+  if (resolved) return BASE_SESSION_PROVIDER_DEFINITIONS.find(({ harnessId }) => harnessId === resolved)?.id ?? 'claude-base'
+  return 'claude-base'
 }
 
 /** Map a session_providers id (or legacy base id) to its harness. */
@@ -219,9 +220,26 @@ export function harnessIdFromProviderId(providerId: string): HarnessId {
  * both are absent. Shared by session-repo and db-sessions so there is exactly
  * one place that maps a persisted row to a harness.
  */
-export function deriveHarnessId(row: { provider_id?: string | null; provider?: string | null }): HarnessId {
-  const providerId = row.provider_id ?? inferLegacyProviderId(row)
-  return harnessIdFromProviderId(providerId)
+export function deriveHarnessId(row: {
+  provider_id?: string | null
+  provider?: string | null
+  acp_agent_id?: string | null
+}): HarnessId {
+  const providerId = row.provider_id?.trim() || ''
+  const provider = row.provider?.trim() || ''
+  const acpAgentId = row.acp_agent_id?.trim() || null
+  if (providerId && providerId !== 'acp' && providerId !== 'acp-base') {
+    if (providerId.startsWith('acp-antigravity')) return 'acp-antigravity'
+    if (providerId.startsWith('acp-grok')) return 'acp-grok'
+    if (BASE_SESSION_PROVIDER_DEFINITIONS.some(({ harnessId }) => providerId.startsWith(harnessId))) {
+      return harnessIdFromProviderId(providerId)
+    }
+  }
+  if (provider === 'acp' || providerId === 'acp' || providerId === 'acp-base') {
+    return resolveLegacyHarnessId('acp', { acpAgentId, providerId: providerId || null }) ?? 'acp-grok'
+  }
+  if (isConcreteHarnessId(provider)) return provider
+  return harnessIdFromProviderId(providerId || inferLegacyProviderId(row))
 }
 
 /**
@@ -232,9 +250,8 @@ export function deriveHarnessId(row: { provider_id?: string | null; provider?: s
  */
 export function deriveAcpAgentId(row: { acp_agent_id?: string | null; provider_id?: string | null; provider?: string | null }): string | null {
   if (typeof row.acp_agent_id === 'string' && row.acp_agent_id.trim()) return row.acp_agent_id.trim()
-  const providerId = row.provider_id ?? inferLegacyProviderId(row)
-  if (providerId === 'acp-grok') return 'grok-build'
-  if (providerId === 'acp-antigravity') return 'antigravity'
+  const harnessId = deriveHarnessId(row)
+  if (harnessId === 'acp-grok' || harnessId === 'acp-antigravity') return acpAgentIdForHarness(harnessId)
   return null
 }
 
@@ -467,15 +484,7 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
 
   const deleteMsgById = db.prepare('DELETE FROM chat_messages WHERE session_id = ? AND id = ?')
 
-  const harness: HarnessKind | null =
-    legacyProvider === 'codex'
-    || legacyProvider === 'claude'
-    || legacyProvider === 'cursor'
-    || legacyProvider === 'opencode'
-      ? legacyProvider
-      : legacyProvider === 'acp' && isGrokAcpAgent(input.acpAgentId)
-        ? 'grok'
-        : null
+  const harness = activityHarnessKind(legacyProvider, input.acpAgentId)
   const newlyCountedMessages: Array<{ role: string; createdAt: string }> = []
   let countSessionStarted = false
   let sessionCreatedAt = now

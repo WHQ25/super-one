@@ -1,4 +1,5 @@
 import type { ClaudeSteerPriority } from '@superone/shared/agent-types'
+import { isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import type { BackendCommand } from './types'
 
 const operations = new Map<string, Promise<unknown>>()
@@ -19,7 +20,7 @@ export function queuedSteerCommand(
   priority: ClaudeSteerPriority,
 ): Extract<BackendCommand, { kind: 'claude.steer_queued' | 'acp.steer_queued' | 'codex.steer_queued' | 'dsh.steer_queued' | 'opencode.steer_queued' }> | null {
   if (harnessId === 'claude') return { kind: 'claude.steer_queued', clientMessageId, priority }
-  if (harnessId === 'acp') return { kind: 'acp.steer_queued', clientMessageId, priority }
+  if (isAcpProtocolHarness(harnessId)) return { kind: 'acp.steer_queued', clientMessageId, priority }
   // Codex's queue cannot steer at the next boundary without interrupting.
   if (harnessId === 'codex' && priority !== 'next') return { kind: 'codex.steer_queued', clientMessageId }
   if (harnessId === 'opencode') return { kind: 'opencode.steer_queued', clientMessageId }

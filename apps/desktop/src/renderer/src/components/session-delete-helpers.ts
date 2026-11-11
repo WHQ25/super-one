@@ -1,3 +1,4 @@
+import { isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import type { HarnessId } from '@superone/shared/agent-types'
 
 export type SessionProvider = HarnessId
@@ -22,7 +23,7 @@ export function getDeleteSessionRecovery(provider: SessionProvider, sessionId: s
       resumeCommand: `codex resume ${sessionId}`,
     }
   }
-  if (provider === 'acp') {
+  if (isAcpProtocolHarness(provider)) {
     return {
       cliName: 'ACP agent',
       resumeCommand: sessionId,

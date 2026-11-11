@@ -25,6 +25,7 @@ import { windowControlIpc } from '../session/control-context'
 import { WarmupManager } from './warmup-manager'
 import { fetchModels } from './claude-models'
 import { AgentIpcChannels, type AgentEvent, type AgentPrewarmHint, type CodexPermissionPreset, type CodexReasoningEffort, type McpToolPermission, type ModelOption, type PermissionMode, type ResourceScope, type SandboxMode, type SendMessageRequest } from '@superone/shared/agent-types';
+import { acpAgentIdForHarness, isAcpProtocolHarness, resolveLegacyHarnessId } from '@superone/shared/acp-brand'
 import { baseSessionProviderId } from '@superone/shared/session-provider-definitions'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import { localSessionEnvironmentId } from '../environment/session-identity'
@@ -81,6 +82,7 @@ function getGitRoot(cwd: string): string {
   }
 }
 import { createSession, createAutomationSession, loadSessionMessage, readSessionHarnessId } from '../db-sessions';
+import { updateAcpAgentId } from '../session/session-repo';
 import { getSessionRecord } from '../session/session-repo'
 import { worktreeExists } from '../git/worktree-alive'
 import { listMcpConfigs, saveMcpConfig, deleteMcpConfig, toggleMcpConfig, listMcpToolPermissions, setMcpToolPermission } from '../mcp-config-service'
@@ -253,7 +255,7 @@ export class AgentService {
 
   /**
    * Spawn an automation-owned session via SessionManager and send the prompt.
-   * Works for every harness (claude / codex / acp / opencode) through providerId `*-base`.
+   * Works for every harness through its base provider. `AcpRunConfig.type` stays `acp`.
    */
   async runAutomationSession(projectPath: string, options: {
     content: string
@@ -263,14 +265,22 @@ export class AgentService {
   }): Promise<{ sessionId: string }> {
     const mgr = this.requireSessionManager()
     const cfg = options.agentConfig
-    const harnessId = cfg.type
-    const providerId = `${harnessId}-base`
-    const sessionId = harnessId === 'codex' ? `codex-auto-${randomUUID()}` : randomUUID()
+    const listedAgent = cfg.type === 'acp' ? cfg.acpAgentId?.trim() || null : null
+    const runHarnessId = cfg.type === 'acp'
+      ? (resolveLegacyHarnessId('acp', { acpAgentId: listedAgent }) ?? 'acp-grok')
+      : cfg.type
+    const acpAgentId = cfg.type !== 'acp'
+      ? null
+      : listedAgent ?? (isAcpProtocolHarness(runHarnessId) ? acpAgentIdForHarness(runHarnessId) : null)
+    const providerId = baseSessionProviderId(runHarnessId, acpAgentId)
+    const sessionId = runHarnessId === 'codex' ? `codex-auto-${randomUUID()}` : randomUUID()
     const title = `[Auto] ${options.automationName ?? 'Automation'}`
+    const automationProvider = runHarnessId
 
     if (options.automationId) {
       try {
-        createAutomationSession(projectPath, sessionId, title, options.automationId, harnessId)
+        createAutomationSession(projectPath, sessionId, title, options.automationId, automationProvider)
+        if (acpAgentId) updateAcpAgentId(sessionId, acpAgentId)
       } catch { /* ignore — session row may already exist on retry */ }
     }
 
@@ -287,7 +297,6 @@ export class AgentService {
     let sandboxMode: SandboxMode | undefined
     let permissionPreset: CodexPermissionPreset | undefined
     let apiProviderId: string | null | undefined
-    let acpAgentId: string | null | undefined
 
     if (cfg.type === 'claude') {
       permissionMode = cfg.permissionMode ?? 'bypassPermissions'
@@ -307,7 +316,6 @@ export class AgentService {
       apiProviderId = cfg.apiProviderId
     } else if (cfg.type === 'acp') {
       permissionMode = cfg.permissionMode ?? 'bypassPermissions'
-      acpAgentId = cfg.acpAgentId ?? null
       apiProviderId = cfg.apiProviderId
     } else {
       // Only the legacy Plan selection seeds an agent; permissions are native.
@@ -513,12 +521,12 @@ export class AgentService {
     acpAgentId?: string | null,
   ): Promise<import('@superone/shared/agent-types').RemoteSystemInfo> {
     const settings = readAppSettings()
-    if (provider === 'acp' && force) {
+    if (isAcpProtocolHarness(provider) && force) {
       try {
         const { refreshAcpDetectedAgents, refreshAcpModelsOnce } = await import('../acp/acp-model-cache')
         await refreshAcpDetectedAgents()
-        const targetAgentId = acpAgentId?.trim() || settings.agentPreference.acp.selectedAgentId?.trim()
-        await refreshAcpModelsOnce({ ...(targetAgentId ? { agentIds: [targetAgentId] } : {}), force: true })
+        const targetAgentId = acpAgentId?.trim() || acpAgentIdForHarness(provider)
+        await refreshAcpModelsOnce({ agentIds: [targetAgentId], force: true })
       } catch (err) {
         log.warn('[get_system_info] acp model refresh failed: %s', err instanceof Error ? err.message : String(err))
       }
@@ -651,22 +659,17 @@ export class AgentService {
     await ensureShellPath()
     const catalog = listHarnessInstallations()
     const catalogOn = (id: string) => catalog.some((row) => row.id === id && row.enabled)
-    // Same visibility rules as the desktop `ChatSuggestions`: OpenCode has
-    // its own harness row, Grok and Antigravity map to their catalog entries,
-    // and any other ACP agent needs the experimental opt-in that names it.
+    // Same visibility as desktop ChatSuggestions: OpenCode, Grok, and Antigravity follow their catalog rows.
     const acpAgents = (await detectBuiltinAgents())
-      .filter((agent) => agent.id !== 'opencode' && (isGrokAcpAgent(agent.id)
-        ? catalogOn('acp-grok')
-        : isAntigravityAcpAgent(agent.id)
-          ? catalogOn('acp-antigravity')
-          : settings.experimentalAgentsEnabled || settings.enabledExperimentalAgents.includes(agent.id)))
+      .filter((agent) => (isGrokAcpAgent(agent.id) && catalogOn('acp-grok'))
+        || (isAntigravityAcpAgent(agent.id) && catalogOn('acp-antigravity')))
       .map((agent) => ({ id: agent.id, name: agent.name }))
     const options = orderSuggestionHarnesses({
       ranks: queryHarnessSessionRanks(7),
       acpAgents,
       includeClaude: catalogOn('claude'),
       includeCodex: catalogOn('codex'),
-      includeOpenCode: catalogOn('opencode') || settings.experimentalAgentsEnabled,
+      includeOpenCode: catalogOn('opencode'),
       includeCursor: catalogOn('cursor'),
       includeDeepseek: catalogOn('dsh'),
       harnessOrder: settings.harnessOrder,

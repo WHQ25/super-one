@@ -6,7 +6,7 @@ import { loadStoredSessionState } from '../db-sessions'
 export const desktopRestorePorts: DesktopRestorePorts = {
   prepare: async (session) => {
     await whenHighlighterReady()
-    return session?.snapshot.harnessId === 'acp'
+    return session?.snapshot.harnessId === 'acp-grok'
       ? import('../acp/grok-sandbox').then(m => m.currentGrokSandbox()).catch(() => undefined)
       : undefined
   },

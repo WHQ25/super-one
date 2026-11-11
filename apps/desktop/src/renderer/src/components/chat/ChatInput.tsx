@@ -55,7 +55,7 @@ import type { MentionNodeAttrs } from './mention-node'
 import type { SlashCommandInfo, ImageAttachment } from '@superone/shared/agent-types'
 import { goalComposerAction } from '@superone/shared/session-goal'
 import { resolveGoalCapability } from '@superone/shared/harness/harness-capabilities'
-import { acpAgentDisplayName, isGrokAcpAgent } from '@superone/shared/acp-brand'
+import { acpAgentDisplayName, isAcpProtocolHarness, isGrokAcpAgent } from '@superone/shared/acp-brand'
 import type { InputSegment } from '@/stores/chat-store/types'
 import { fuzzyMatch } from '@/lib/fuzzy-match'
 import { toMentionPath } from './chat-input-utils'
@@ -445,18 +445,19 @@ export function ChatInput({
     const acpAgentId = useActiveSession((s) => s.acpAgentId)
     const sessionGoal = useActiveSession((s) => s.sessionGoal)
     const pluginStatus = useActiveSession((s) => s.pluginStatus)
-    const acpAgents = useChatStore((s) => s.harnessResources?.acp?.agents)
+    const grokAgents = useChatStore((s) => s.harnessResources?.['acp-grok']?.agents)
+    const antiAgents = useChatStore((s) => s.harnessResources?.['acp-antigravity']?.agents)
     const ensureAcpSlashCommands = useChatStore((s) => s.ensureAcpSlashCommands)
     // Catalog may be empty in a fresh mini-window; fall back to id-derived brand name.
-    const acpAgentName = acpAgents?.find((a) => a.id === acpAgentId)?.name
+    const acpAgentName = [...(grokAgents ?? []), ...(antiAgents ?? [])].find((a) => a.id === acpAgentId)?.name
       ?? (acpAgentId ? acpAgentDisplayName(acpAgentId) : null)
 
     // `null` here is the single gate for the whole goal surface: command row,
     // composer interception, goal mode and indicator all hang off it.
     const goalCapability = resolveGoalCapability(activeProviderForResources, acpAgentId)
     // ACP is a container, so the brand a goal belongs to is the agent's.
-    const goalHarnessName = activeProviderForResources === 'acp'
-      ? acpAgentName ?? HARNESS_CAPABILITIES.acp.displayName
+    const goalHarnessName = isAcpProtocolHarness(activeProviderForResources)
+      ? acpAgentName ?? HARNESS_CAPABILITIES[activeProviderForResources].displayName
       : HARNESS_CAPABILITIES[activeProviderForResources].displayName
     const acpSlashCommands = useMemo<SlashCommandInfo[]>(() => {
       const local: SlashCommandInfo[] = [
@@ -598,7 +599,8 @@ export function ChatInput({
         const base = resolveSlashCommandsForProvider(activeProviderForResources, {
           claude: slashCommands,
           codex: codexSlashCommands,
-          acp: acpSlashCommands,
+          'acp-grok': acpSlashCommands,
+          'acp-antigravity': acpSlashCommands,
           opencode: openCodeSlashCommands,
           cursor: cursorSlashCommands,
           dsh: deepseekSlashCommands,
@@ -645,7 +647,7 @@ export function ChatInput({
 
     // Lazy-load ACP slash commands only when the user opens the / popup.
     const acpSlashPopupOpen =
-      activeProviderForResources === 'acp'
+      isAcpProtocolHarness(activeProviderForResources)
       && text.startsWith('/')
       && !slashDismissed
     useEffect(() => {
@@ -654,7 +656,7 @@ export function ChatInput({
     }, [acpSlashPopupOpen, ensureAcpSlashCommands, acpAgentId])
 
     const acpSlashInitialLoading =
-      activeProviderForResources === 'acp'
+      isAcpProtocolHarness(activeProviderForResources)
       && acpSlashCommandsStatus === 'loading'
       && acpSlashCommandsFromAgent.length === 0
     const showSlashPopup =

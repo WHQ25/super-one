@@ -8,7 +8,7 @@
     "reason": "settings/resource IPC per harness (separate track)"
   },
   "components/AutomationDialog.tsx": {
-    "count": 15,
+    "count": 11,
     "reason": "automation agent config is the per-harness AgentRunConfig union"
   },
   "components/CursorAuthSettings.tsx": {
@@ -16,7 +16,7 @@
     "reason": "settings/resource IPC per harness (separate track)"
   },
   "components/HarnessesSettingsPage.tsx": {
-    "count": 15,
+    "count": 8,
     "reason": "settings/resource IPC per harness, including the Grok and Antigravity ACP rows"
   },
   "components/HooksPage.tsx": {
@@ -56,7 +56,7 @@
     "reason": "usage sources per harness account"
   },
   "components/UsageStatusIcon.tsx": {
-    "count": 5,
+    "count": 4,
     "reason": "usage sources per harness account (Claude OAuth, Codex, Grok)"
   },
   "components/activity/activity-launch-types.ts": {
@@ -64,27 +64,23 @@
     "reason": "dsh activity launch"
   },
   "components/chat/AutomationConfirmPrompt.tsx": {
-    "count": 12,
+    "count": 8,
     "reason": "automation run config is the per-harness AgentRunConfig union"
   },
   "components/chat/ChatContent.tsx": {
-    "count": 6,
+    "count": 5,
     "reason": "Codex realtime timeline and durable queue; Grok-only queued start"
   },
   "components/chat/ChatInput.tsx": {
-    "count": 10,
+    "count": 7,
     "reason": "owning features: Codex thread, realtime voice, plan reject hint, dirs-next-turn and review; Claude agent mentions; ACP agent name and lazy slash load"
   },
-  "components/chat/ChatSuggestions.tsx": {
-    "count": 14,
-    "reason": "ACP agents are picker options of their own (agent pick, separators, install hint)"
-  },
   "components/chat/ContextUsage.tsx": {
-    "count": 3,
+    "count": 1,
     "reason": "context window sources differ (Cursor, ACP, Claude fallback)"
   },
   "components/chat/McpSlashPopup.tsx": {
-    "count": 5,
+    "count": 3,
     "reason": "MCP popup opens the harness's MCP settings (settings/resource IPC per harness (separate track))"
   },
   "components/chat/PermissionPrompt.tsx": {
@@ -92,11 +88,11 @@
     "reason": "Codex MCP elicitation forms"
   },
   "components/chat/PlanApprovalPrompt.tsx": {
-    "count": 2,
+    "count": 1,
     "reason": "plan approval protocol differs (ACP feedback, Claude post-approval mode)"
   },
   "components/chat/chat-status-bar/StatusBarDerivedSandbox.tsx": {
-    "count": 3,
+    "count": 1,
     "reason": "ACP observed sandbox and Codex preset-derived chip"
   },
   "components/chat/model-selector/ClaudeModelSelector.tsx": {
@@ -108,7 +104,7 @@
     "reason": "Claude and Codex account rosters"
   },
   "components/chat/permission-prompt/permission-prompt-config.ts": {
-    "count": 2,
+    "count": 1,
     "reason": "Codex and ACP permission prompt options"
   },
   "components/dev/HarnessAnimBench.tsx": {
@@ -116,7 +112,7 @@
     "reason": "dev-only icon bench"
   },
   "components/harness-config-tabs.ts": {
-    "count": 6,
+    "count": 5,
     "reason": "settings/resource IPC per harness (separate track)"
   },
   "components/onboarding/OnboardingDiscover.tsx": {
@@ -124,24 +120,20 @@
     "reason": "onboarding pins the managed SDK harnesses"
   },
   "components/preferences/SessionDefaultsSection.tsx": {
-    "count": 2,
+    "count": 1,
     "reason": "settings/resource IPC per harness (separate track)"
   },
   "components/session-delete-helpers.ts": {
-    "count": 3,
+    "count": 2,
     "reason": "transcript deletion per harness (settings/resource IPC per harness (separate track))"
   },
   "components/settings/HarnessPreferencePicker.tsx": {
-    "count": 19,
+    "count": 4,
     "reason": "settings/resource IPC per harness (separate track)"
   },
   "components/sidebar/SessionRow.tsx": {
     "count": 1,
     "reason": "Codex realtime voice"
-  },
-  "lib/harness-visibility.ts": {
-    "count": 6,
-    "reason": "catalog ids of Settings > Harnesses"
   },
   "lib/provider-resolve.ts": {
     "count": 1,
@@ -152,19 +144,15 @@
     "reason": "settings/resource IPC per harness (separate track)"
   },
   "lib/remote-session-ops.ts": {
-    "count": 2,
+    "count": 1,
     "reason": "remote snapshot carries Codex and ACP fields"
   },
   "lib/session-menu-items.ts": {
-    "count": 5,
+    "count": 4,
     "reason": "session menu labels (\"Claude Code\", \"Grok (ACP)\" vocabulary)"
   },
-  "stores/app.ts": {
-    "count": 5,
-    "reason": "settings/resource IPC per harness (separate track)"
-  },
   "stores/chat-store/helpers/agent-defaults.ts": {
-    "count": 3,
+    "count": 2,
     "reason": "agent preference defaults are per-harness settings"
   },
   "stores/chat-store/helpers/codex-helpers.ts": {
@@ -175,20 +163,16 @@
     "count": 1,
     "reason": "Codex draft settings"
   },
-  "stores/chat-store/helpers/harness-selection.ts": {
-    "count": 5,
-    "reason": "ACP agent switching and catalog hydration"
-  },
   "stores/chat-store/helpers/interaction.ts": {
-    "count": 4,
+    "count": 2,
     "reason": "Codex async questions and account switch; ACP plan approval protocol"
   },
   "stores/chat-store/helpers/provider-routing.ts": {
-    "count": 2,
+    "count": 1,
     "reason": "experimental-agent rule (non-Grok ACP, OpenCode)"
   },
   "stores/chat-store/helpers/send-message.ts": {
-    "count": 9,
+    "count": 7,
     "reason": "Codex commands, login and MCP tool sync; Grok and Antigravity ACP provider ids"
   },
   "stores/chat-store/helpers/session-lifecycle.ts": {
@@ -196,11 +180,11 @@
     "reason": "Codex and Cursor resource refresh on session switch"
   },
   "stores/chat-store/index.ts": {
-    "count": 5,
+    "count": 2,
     "reason": "ACP model probe refresh, Codex cwd, ACP and OpenCode agent restore"
   },
   "stores/chat-store/slices/claude-slice.ts": {
-    "count": 10,
+    "count": 6,
     "reason": "model setter side effects: ACP context window, Cursor model params"
   },
   "stores/chat-store/slices/event-slice.ts": {

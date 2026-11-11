@@ -15,7 +15,7 @@ const { createDefaultPerSessionState } = await import('../defaults')
 const { reduceLifecycle } = await import('./lifecycle')
 
 function msg(id: string, role: 'user' | 'assistant', status: ChatMessage['status'] = 'complete'): ChatMessage {
-  return { id, role, status, content: [], createdAt: '', providerId: 'acp' }
+  return { id, role, status, content: [], createdAt: '', providerId: 'acp-grok' }
 }
 
 describe('reduceLifecycle: status_change with leftover queued messages', () => {

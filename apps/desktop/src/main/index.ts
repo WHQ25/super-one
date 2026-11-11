@@ -146,9 +146,10 @@ import type { SessionProvider } from './session/types'
 import { expandProviderModelEnv, REMOTE_CHANNEL_SCHEME } from '@superone/shared/agent-types'
 import { randomBytes } from 'node:crypto'
 import { claudeThirdPartyEnv, PROXY_TRANSFORMERS_ENV } from '@superone/shared/platform-registry'
+import { acpAgentIdForHarness, isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import { detectBuiltinAgents } from './acp/acp-detect'
 import { getBuiltinAgent } from './acp/agent-catalog'
-import { readAcpResourcesCache, writeAcpResourcesCache, refreshAcpDetectedAgents, refreshAcpModelsOnce } from './acp/acp-model-cache'
+import { readAcpHarnessResources, refreshAcpDetectedAgents, refreshAcpModelsOnce } from './acp/acp-model-cache'
 import {
   AgentIpcChannels,
   type ModelOption,
@@ -400,15 +401,12 @@ bindAutomationService(automationService)
 function resolveBaseProviderConfig(provider: SessionProvider, apiProviderId: string | null = null): unknown {
   if (!provider.isBase) return provider.config
   if (provider.harnessId === 'opencode' || provider.harnessId === 'cursor' || provider.harnessId === 'dsh') return provider.config
-  if (provider.harnessId === 'acp') {
+  if (isAcpProtocolHarness(provider.harnessId)) {
     const base = (provider.config && typeof provider.config === 'object')
       ? provider.config as Record<string, unknown>
       : {}
-    const selected = readAppSettings().agentPreference.acp?.selectedAgentId
-    const agentId = (typeof selected === 'string' && selected)
-      || (typeof base.agentId === 'string' && base.agentId)
-      || 'grok-build'
-    return { ...base, agentId }
+    const configured = typeof base.agentId === 'string' ? base.agentId : ''
+    return { ...base, agentId: configured || acpAgentIdForHarness(provider.harnessId) }
   }
   if (provider.harnessId === 'claude') {
     const account = claudeAccountConfig(apiProviderId)
@@ -546,13 +544,13 @@ const sessionManager = new SessionManagerImpl({
     }
   },
   getActiveProvider: (harnessId, apiProviderId) => {
-    if (harnessId === 'acp' || harnessId === 'opencode' || harnessId === 'cursor' || harnessId === 'dsh') return null
+    if (isAcpProtocolHarness(harnessId) || harnessId === 'opencode' || harnessId === 'cursor' || harnessId === 'dsh') return null
     return buildRemoteActiveService(resolveChatService(harnessId, apiProviderId ?? null, {
       experimentalClaudeOpenAiChatEnabled: readAppSettings().experimentalClaudeOpenAiChatEnabled,
     }), harnessId)
   },
   getActiveDefaultApiProviderId: (harnessId) => {
-    if (harnessId === 'acp' || harnessId === 'opencode' || harnessId === 'cursor' || harnessId === 'dsh') return null
+    if (isAcpProtocolHarness(harnessId) || harnessId === 'opencode' || harnessId === 'cursor' || harnessId === 'dsh') return null
     return getBinding(harnessId === 'codex' ? 'chat:codex' : 'chat:claude')?.credentialId
       ?? (harnessId === 'codex' ? codexAccountStore().defaultProviderId() : claudeAccountStore().defaultProviderId())
   },
@@ -4944,21 +4942,23 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.GET_STARTUP_DATA, (): StartupData => {
     const claude = getCachedHarnessResources('claude')
     const codex = getCachedHarnessResources('codex')
-    const acp = getCachedHarnessResources('acp') ? readAcpResourcesCache() : null
+    const acpGrok = readAcpHarnessResources('acp-grok')
+    const acpAntigravity = readAcpHarnessResources('acp-antigravity')
     const opencode = getCachedHarnessResources('opencode')
     const cursor = getCachedHarnessResources('cursor')
     const sandboxCapability = getSandboxCapability()
     log.info(
-      '[GET_STARTUP_DATA] cached: claude=%s codex=%s acp=%s opencode=%s cursor=%s sandbox=%s',
+      '[GET_STARTUP_DATA] cached: claude=%s codex=%s acp-grok=%s acp-antigravity=%s opencode=%s cursor=%s sandbox=%s',
       claude ? `${claude.models?.length ?? 0} models` : 'null',
       codex ? `${codex.models?.length ?? 0} models` : 'null',
-      acp ? `${acp.agents?.length ?? 0} agents` : 'null',
+      acpGrok ? `${acpGrok.agents?.length ?? 0} agents` : 'null',
+      acpAntigravity ? `${acpAntigravity.agents?.length ?? 0} agents` : 'null',
       opencode ? `${opencode.models?.length ?? 0} models` : 'null',
       cursor ? `${cursor.models?.length ?? 0} models` : 'null',
       sandboxCapability.supportLevel,
     )
     return {
-      cached: { claude, codex, acp, opencode, cursor },
+      cached: { claude, codex, 'acp-grok': acpGrok, 'acp-antigravity': acpAntigravity, opencode, cursor },
       sandboxCapability,
       appVersion: app.getVersion(),
       variant: variantId(),

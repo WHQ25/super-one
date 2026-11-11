@@ -7,7 +7,7 @@
  * - If `listHarnesses` has not returned yet (catalog null), nothing is visible
  */
 
-import { isAntigravityAcpAgent, isGrokAcpAgent } from '@superone/shared/acp-brand'
+import { acpAgentIdForHarness, isAcpProtocolHarness, isAntigravityAcpAgent, isGrokAcpAgent, resolveLegacyHarnessId } from '@superone/shared/acp-brand'
 import type { HarnessId } from '@superone/shared/agent-types'
 import { NODE_HARNESS_DEFINITIONS, sessionHarnessIdToNodeHarnessId } from '@superone/shared/environment/harness-installation'
 import { isExperimentalAgentProvider } from '@/stores/chat-store/helpers/provider-routing'
@@ -46,7 +46,7 @@ export function isCatalogHarnessDisabled(
 export function catalogFromHarnessIds(harnessIds: readonly string[]): HarnessCatalogStatus[] {
   // Legacy `acp` advertises Grok, not every agent that speaks ACP. Preserve
   // concrete catalog identities when a host supplies them.
-  const catalogIds = new Set(harnessIds.map(sessionHarnessIdToNodeHarnessId))
+  const catalogIds = new Set(harnessIds.map((id) => sessionHarnessIdToNodeHarnessId(id)))
   return NODE_HARNESS_DEFINITIONS.map((def) => {
     const runnable = catalogIds.has(def.id)
     return { id: def.id, enabled: runnable, state: runnable ? 'ready' : 'disabled' }
@@ -57,15 +57,7 @@ export function catalogIdForSessionProvider(
   provider: string,
   acpAgentId?: string | null,
 ): string | null {
-  if (provider === 'claude' || provider === 'codex' || provider === 'opencode' || provider === 'cursor' || provider === 'dsh') {
-    return provider
-  }
-  if (provider === 'acp') {
-    if (!acpAgentId || isGrokAcpAgent(acpAgentId)) return 'acp-grok'
-    if (isAntigravityAcpAgent(acpAgentId)) return 'acp-antigravity'
-    return null
-  }
-  return null
+  return sessionHarnessIdToNodeHarnessId(provider, { acpAgentId })
 }
 
 export function isExperimentalAcpAgentEnabled(
@@ -132,9 +124,14 @@ export function isPickerHarnessEnabled(
   agentId: string | null | undefined,
   opts: { enabledExperimentalAgents: string[]; legacyExperimentalAgentsEnabled?: boolean },
 ): boolean {
+  const resolved = resolveLegacyHarnessId(provider, { acpAgentId: agentId })
+  if (agentId && resolved && isAcpProtocolHarness(resolved)) {
+    const canonical = acpAgentIdForHarness(resolved)
+    if (agentId !== canonical && !isGrokAcpAgent(agentId) && !isAntigravityAcpAgent(agentId)) return false
+  }
   const catalogId = catalogIdForSessionProvider(provider, agentId)
-  if (!catalogId) return !!agentId && isExperimentalAcpAgentEnabled(agentId, opts)
-  if (!agentId && catalogId === 'acp-grok') {
+  if (!catalogId) return false
+  if (!agentId && isAcpProtocolHarness(catalogId) && acpAgentIdForHarness(catalogId) === 'grok-build') {
     if (catalog == null) return true
     return catalogEntryOn(catalog, catalogId)
   }

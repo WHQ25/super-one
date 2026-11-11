@@ -20,7 +20,8 @@ export type MessageDialect = 'claude' | 'codex'
  */
 export const MESSAGE_DIALECT_BY_HARNESS: Record<HarnessId, MessageDialect> = {
   claude: 'claude',
-  acp: 'claude',
+  'acp-grok': 'claude',
+  'acp-antigravity': 'claude',
   cursor: 'claude',
   opencode: 'claude',
   dsh: 'claude',

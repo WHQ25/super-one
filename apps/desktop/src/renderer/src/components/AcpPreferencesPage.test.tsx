@@ -38,7 +38,7 @@ const mockAcpResources = {
 
 vi.mock('@/stores/chat', () => ({
   useChatStore: (selector: (s: unknown) => unknown) => selector({
-    harnessResources: { acp: mockAcpResources },
+    harnessResources: { 'acp-antigravity': mockAcpResources },
     initializeHarness,
     setHarnessResources,
   }),
@@ -70,13 +70,10 @@ beforeEach(() => {
   vi.clearAllMocks()
   getAppSettings.mockResolvedValue({
     agentPreference: {
-      acp: {
-        defaultModel: '',
+      'acp-antigravity': {
+        defaultModel: 'gemini-4-argon',
         defaultEffort: '',
-        defaultPermissionMode: '',
-        antigravityDefaultModel: 'gemini-4-argon',
-        antigravityDefaultEffort: '',
-        antigravityDefaultPermissionMode: 'auto',
+        defaultPermissionMode: 'auto',
       },
     },
   })
@@ -118,7 +115,7 @@ describe('AcpDefaultModelRows', () => {
     await waitFor(() => {
       expect(saveAppSettings).toHaveBeenCalledWith({
         agentPreference: {
-          acp: { antigravityDefaultEffort: 'high' },
+          'acp-antigravity': { defaultEffort: 'high' },
         },
       })
     })

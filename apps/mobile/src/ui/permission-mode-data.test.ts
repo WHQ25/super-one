@@ -7,7 +7,8 @@ describe('harness-specific permission presentation', () => {
     expect(permissionModeLabel('plan', 'dsh')).toBe('Read-only')
     expect(permissionModeLabel('default', 'dsh')).toBe('Workspace write')
     expect(permissionModeLabel('agent', 'cursor')).toBe('Agent')
-    expect(permissionModeLabel('default', 'acp')).toBe('Ask')
+    expect(permissionModeLabel('default', 'acp-grok')).toBe('Ask')
+    expect(permissionModeLabel('default', 'acp-antigravity')).toBe('Ask')
   })
   it('maps Codex wire modes to desktop preset labels without changing wire values', () => {
     expect(permissionPresentation('codex', 'auto').label).toBe('Approve for Me')
@@ -18,6 +19,6 @@ describe('harness-specific permission presentation', () => {
   it('never inserts an unsupported desktop mode into a remote catalog', () => {
     expect(orderedPermissionModes('claude', ['plan', 'default'])).toEqual(['default', 'plan'])
     expect(orderedPermissionModes('codex', ['default', 'auto'])).not.toContain('read-only')
-    expect(permissionModeLabel('custom-agent-policy', 'acp')).toBe('custom-agent-policy')
+    expect(permissionModeLabel('custom-agent-policy', 'acp-grok')).toBe('custom-agent-policy')
   })
 })

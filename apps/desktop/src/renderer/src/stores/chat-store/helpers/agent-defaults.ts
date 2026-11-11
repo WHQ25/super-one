@@ -1,10 +1,11 @@
-import type { AcpResources, EffortLevel, ModelOption } from '@superone/shared/agent-types'
+import type { AcpResources, EffortLevel, HarnessId, ModelOption } from '@superone/shared/agent-types'
 import { getDefaultEffortForModel } from '../defaults'
 import { HARNESS_STRATEGIES } from '@/harness-ui/strategies'
 import { getCachedAcpCatalog, sessionPatchFromAcpCatalog, sessionUsesAcpHarness } from '../harness/acp-handler'
 import { resolveDefaultCodexSelection, useChatStore } from '../index'
 import type { PerSessionState, ProjectState } from '../types'
 import { defaultPrefsCache, sessionDefaultsFor } from './prefs-cache'
+import { isClaudeHarness } from '@/harness-ui/claude/is-claude-harness'
 import { resolveProvider } from './provider-routing'
 import { isUnsentSession } from './session-liveness'
 
@@ -51,7 +52,7 @@ export function applySessionAgentDefaults(
 
 export function _computeClaudeDefaultPatch(sess: PerSessionState, models: ModelOption[]): Partial<PerSessionState> | null {
   // selectedModel is shared across harnesses — never reapply Claude defaults onto ACP/OpenCode/Codex.
-  if (resolveProvider(sess) !== 'claude') return null
+  if (!isClaudeHarness(resolveProvider(sess))) return null
   if (sess.modelUserChosen && sess.effortUserChosen) return null
   if (models.length === 0) return null
   const patch: Partial<PerSessionState> = {}
@@ -88,7 +89,9 @@ export function _computeCodexDefaultPatch(sess: PerSessionState, models: ModelOp
 export function _computeAcpDefaultPatch(
   sess: PerSessionState,
   acpResources: AcpResources | null | undefined,
+  harnessId?: HarnessId,
 ): Partial<PerSessionState> | null {
+  if (harnessId && resolveProvider(sess) !== harnessId) return null
   if (!sessionUsesAcpHarness(sess) || !sess.acpAgentId) return null
   if (sess.modelUserChosen && sess.effortUserChosen) return null
   const catalog = getCachedAcpCatalog(acpResources, sess.acpAgentId)
@@ -136,10 +139,9 @@ export function _reapplyPermissionDefaultsToUnsentSessions(): void {
   if (changed) useChatStore.setState({ projectSessions: nextProjects })
 }
 
-export function _reapplyAgentDefaultsToSessions(kind: 'claude' | 'codex' | 'acp'): void {
+export function _reapplyAgentDefaultsToSessions(kind: 'claude' | 'codex' | 'acp-grok' | 'acp-antigravity'): void {
   const state = useChatStore.getState()
   const localClaudeModels = state.harnessResources.claude?.models ?? []
-  const acpResources = state.harnessResources.acp
   const nextProjects: Record<string, ProjectState> = { ...state.projectSessions }
   let changed = false
   for (const [projectPath, project] of Object.entries(state.projectSessions)) {
@@ -148,12 +150,11 @@ export function _reapplyAgentDefaultsToSessions(kind: 'claude' | 'codex' | 'acp'
     let projectChanged = false
     const nextSessions: Record<string, PerSessionState> = { ...project._sessions }
     for (const [sid, sess] of Object.entries(project._sessions)) {
-      const patch = kind === 'claude'
+      const patch = isClaudeHarness(kind)
         ? _computeClaudeDefaultPatch(sess, localClaudeModels)
-        : ({
-            codex: () => _computeCodexDefaultPatch(sess, codexModels),
-            acp: () => _computeAcpDefaultPatch(sess, acpResources),
-          })[kind]()
+        : kind === 'codex'
+          ? _computeCodexDefaultPatch(sess, codexModels)
+          : _computeAcpDefaultPatch(sess, state.harnessResources[kind], kind)
       if (patch) {
         nextSessions[sid] = { ...sess, ...patch }
         projectChanged = true

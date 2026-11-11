@@ -100,7 +100,7 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
     harnessResources: {
       claude: null,
       codex: null,
-      acp: { agents: [], selectedAgentId: null },
+      'acp-grok': { agents: [], selectedAgentId: null },
       opencode: { models: [], agents: [], commands: [] },
     },
     ensureAcpSlashCommands: vi.fn(),
@@ -636,8 +636,8 @@ describe('ChatInput', () => {
   })
 
   it('enters Grok goal mode from a bare /goal, then sends the draft as the goal', async () => {
-    activeSessionState.preferredProvider = 'acp'
-    activeSessionState.sessionProvider = 'acp'
+    activeSessionState.preferredProvider = 'acp-grok'
+    activeSessionState.sessionProvider = 'acp-grok'
     activeSessionState.acpAgentId = 'grok-build'
     activeSessionState.draftText = '/goal'
     editorState.text = '/goal'
@@ -662,8 +662,8 @@ describe('ChatInput', () => {
   })
 
   it('sets a Grok goal typed inline without a detour through goal mode', async () => {
-    activeSessionState.preferredProvider = 'acp'
-    activeSessionState.sessionProvider = 'acp'
+    activeSessionState.preferredProvider = 'acp-grok'
+    activeSessionState.sessionProvider = 'acp-grok'
     activeSessionState.acpAgentId = 'grok-build'
     activeSessionState.draftText = '/goal Ship login'
     editorState.text = '/goal Ship login'
@@ -676,8 +676,8 @@ describe('ChatInput', () => {
   })
 
   it('leaves goal mode on Escape and keeps the draft', async () => {
-    activeSessionState.preferredProvider = 'acp'
-    activeSessionState.sessionProvider = 'acp'
+    activeSessionState.preferredProvider = 'acp-grok'
+    activeSessionState.sessionProvider = 'acp-grok'
     activeSessionState.acpAgentId = 'grok-build'
     activeSessionState.draftText = '/goal'
     editorState.text = '/goal'
@@ -696,8 +696,8 @@ describe('ChatInput', () => {
   })
 
   it('edits a live Grok goal by re-entering goal mode with the objective in the composer', () => {
-    activeSessionState.preferredProvider = 'acp'
-    activeSessionState.sessionProvider = 'acp'
+    activeSessionState.preferredProvider = 'acp-grok'
+    activeSessionState.sessionProvider = 'acp-grok'
     activeSessionState.acpAgentId = 'grok-build'
     activeSessionState.sessionGoal = { objective: 'Ship login', status: 'active' }
 
@@ -731,8 +731,8 @@ describe('ChatInput', () => {
   })
 
   it('sends Grok /goal pause through as a prompt', async () => {
-    activeSessionState.preferredProvider = 'acp'
-    activeSessionState.sessionProvider = 'acp'
+    activeSessionState.preferredProvider = 'acp-grok'
+    activeSessionState.sessionProvider = 'acp-grok'
     activeSessionState.acpAgentId = 'grok-build'
     activeSessionState.draftText = '/goal pause'
     editorState.text = '/goal pause'
@@ -747,8 +747,8 @@ describe('ChatInput', () => {
   })
 
   it('shows a live Grok goal next to the model controls', () => {
-    activeSessionState.preferredProvider = 'acp'
-    activeSessionState.sessionProvider = 'acp'
+    activeSessionState.preferredProvider = 'acp-grok'
+    activeSessionState.sessionProvider = 'acp-grok'
     activeSessionState.acpAgentId = 'grok-build'
     activeSessionState.sessionGoal = { objective: 'Ship login', status: 'active' }
 
@@ -760,8 +760,8 @@ describe('ChatInput', () => {
   })
 
   it('pauses a live Grok goal with interrupt instead of posting /goal pause', async () => {
-    activeSessionState.preferredProvider = 'acp'
-    activeSessionState.sessionProvider = 'acp'
+    activeSessionState.preferredProvider = 'acp-grok'
+    activeSessionState.sessionProvider = 'acp-grok'
     activeSessionState.acpAgentId = 'grok-build'
     activeSessionState.status = 'streaming'
     activeSessionState.sessionGoal = { objective: 'Ship login', status: 'active' }
@@ -774,8 +774,8 @@ describe('ChatInput', () => {
   })
 
   it('posts /goal pause from the chip only when the Grok turn is idle', async () => {
-    activeSessionState.preferredProvider = 'acp'
-    activeSessionState.sessionProvider = 'acp'
+    activeSessionState.preferredProvider = 'acp-grok'
+    activeSessionState.sessionProvider = 'acp-grok'
     activeSessionState.acpAgentId = 'grok-build'
     activeSessionState.status = 'idle'
     activeSessionState.sessionGoal = { objective: 'Ship login', status: 'active' }
@@ -1203,8 +1203,8 @@ describe('ChatInput slash command grouping', () => {
   })
 
   it('offers add-dir to ACP, which also accepts extra working roots', () => {
-    activeSessionState.preferredProvider = 'acp'
-    activeSessionState.sessionProvider = 'acp'
+    activeSessionState.preferredProvider = 'acp-grok'
+    activeSessionState.sessionProvider = 'acp-grok'
 
     const { rerender } = render(<ChatInput />)
     typeInEditor('/')
@@ -1339,8 +1339,8 @@ describe('ChatInput slash command grouping', () => {
   })
 
   it('does not show Claude project skills/commands when provider is ACP', () => {
-    activeSessionState.preferredProvider = 'acp'
-    activeSessionState.sessionProvider = 'acp'
+    activeSessionState.preferredProvider = 'acp-grok'
+    activeSessionState.sessionProvider = 'acp-grok'
     activeSessionState.slashCommands = [
       { name: 'compact', description: 'Claude compact', argumentHint: '', isSkill: false },
       { name: 'tdd', description: 'Claude skill', argumentHint: '', isSkill: true },
@@ -1368,8 +1368,8 @@ describe('ChatInput slash command grouping', () => {
   })
 
   it('shows host /recap for Grok ACP and hides it for other ACP agents', () => {
-    activeSessionState.preferredProvider = 'acp'
-    activeSessionState.sessionProvider = 'acp'
+    activeSessionState.preferredProvider = 'acp-grok'
+    activeSessionState.sessionProvider = 'acp-grok'
     activeSessionState.acpAgentId = 'grok-build'
     activeSessionState.acpSlashCommands = []
 
@@ -1433,7 +1433,7 @@ describe('ChatInput slash command grouping', () => {
   it.each([
     ['claude', 'clear'],
     ['claude', 'workflows'],
-    ['acp', 'workflows'],
+    [ 'acp-grok', 'workflows'],
     ['cursor', 'clear'],
   ] as const)('runs the %s host command /%s from the popup instead of writing it', (harness, name) => {
     activeSessionState.preferredProvider = harness

@@ -2,26 +2,26 @@
  * Sidebar row for a session listed by a remote node.
  *
  * Every current harness id is listed on purpose: a new HarnessId fails this
- * file's typecheck until it is mapped. `acp-grok` is the catalog id whose
- * session harness is `acp`; only that literal implies `grok-build`. A custom
- * ACP agent stays unnamed until the row carries its own agent id.
+ * file's typecheck until it is mapped. Incoming `acp` resolves to a concrete id.
  */
 import type { HarnessId, SessionHistoryEntry } from '@superone/shared/agent-types'
+import { acpAgentIdForHarness, isAcpProtocolHarness, resolveLegacyHarnessId } from '@superone/shared/acp-brand'
 import { providerSessionIdFromResume } from '@superone/shared/environment'
 import { parseTagsJson } from '@superone/shared/session-tags'
 
 const REMOTE_LISTED_HARNESS = {
   claude: true,
   codex: true,
-  acp: true,
+  'acp-grok': true,
+  'acp-antigravity': true,
   opencode: true,
   cursor: true,
   dsh: true,
 } satisfies Record<HarnessId, true>
 
-function listedProvider(rawHarness: string): HarnessId {
-  if (rawHarness === 'acp-grok' || rawHarness === 'acp-antigravity') return 'acp'
-  return Object.hasOwn(REMOTE_LISTED_HARNESS, rawHarness) ? rawHarness as HarnessId : 'claude'
+function listedProvider(rawHarness: string, acpAgentId: string | null, providerId: string | null): HarnessId {
+  return resolveLegacyHarnessId(rawHarness, { acpAgentId, providerId })
+    ?? (Object.hasOwn(REMOTE_LISTED_HARNESS, rawHarness) ? rawHarness as HarnessId : 'claude')
 }
 
 /** Map a node session record (or gateway list item) to the sidebar history row. */
@@ -70,13 +70,9 @@ export function mapRemoteSessionRow(raw: unknown): SessionHistoryEntry {
   const listedAgentId = typeof s.acpAgentId === 'string' && s.acpAgentId.trim()
     ? s.acpAgentId.trim()
     : null
-  const acpAgentId = listedAgentId ?? (
-    rawHarness === 'acp-grok'
-      ? 'grok-build'
-      : rawHarness === 'acp-antigravity'
-        ? 'antigravity'
-        : null
-  )
+  const providerId = typeof s.providerId === 'string' ? s.providerId : null
+  const provider = listedProvider(rawHarness, listedAgentId, providerId)
+  const acpAgentId = listedAgentId ?? (isAcpProtocolHarness(provider) ? acpAgentIdForHarness(provider) : null)
   const tags = parseTagsJson(s.tags)
   const parentSessionId = typeof s.parentSessionId === 'string' && s.parentSessionId.trim()
     ? s.parentSessionId.trim()
@@ -85,7 +81,7 @@ export function mapRemoteSessionRow(raw: unknown): SessionHistoryEntry {
     sessionId,
     title: (s.title && String(s.title).trim()) || 'New session',
     lastActiveAt: new Date(ts).toISOString(),
-    provider: listedProvider(rawHarness),
+    provider,
     messageCount,
     isPinned: Boolean(s.isPinned),
     isHidden: Boolean(s.isHidden),

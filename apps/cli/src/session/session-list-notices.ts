@@ -6,7 +6,7 @@ import type { PendingInteraction, NodeSessionRecord } from '@superone/runtime/se
 import type { RpcContext } from '@superone/runtime/server'
 import { VersionedTopicLog } from '@superone/runtime/stream'
 
-const SIDEBAR_HARNESSES = new Set<HarnessId>(['claude', 'codex', 'acp', 'opencode', 'cursor', 'dsh'])
+const SIDEBAR_HARNESSES = new Set<HarnessId>(['claude', 'codex', 'acp-grok', 'acp-antigravity', 'opencode', 'cursor', 'dsh'])
 
 /** Durable session events that change the sidebar row's running state or pending chip. */
 const ACTIVITY_EVENTS = new Set<string>([

@@ -5,7 +5,7 @@ import { Loader2 } from 'lucide-react'
 import { Badge } from '@superone/ui/components/ui/badge'
 import { Switch } from '@superone/ui/components/ui/switch'
 import { cn } from '@superone/ui/lib/utils'
-import { acpAgentDisplayName, isAntigravityAcpAgent, isGrokAcpAgent } from '@superone/shared/acp-brand'
+import { acpAgentIdForHarness, isAcpProtocolHarness, isAntigravityAcpAgent, isGrokAcpAgent } from '@superone/shared/acp-brand'
 import type { AcpAgentDescriptor, SettingsProvider } from '@superone/shared/agent-types'
 import {
   isExternalCliHarnessId,
@@ -33,28 +33,17 @@ export interface CatalogRow {
   diagnostic?: { code: string; message: string }
 }
 
-export type ListItem =
-  | {
-      key: string
-      kind: 'catalog'
-      catalogId: NodeHarnessId
-      label: string
-      provider: HarnessId
-      acpAgentId: string | null
-      experimental: boolean
-      description: string
-      configProvider?: SettingsProvider
-    }
-  | {
-      key: string
-      kind: 'experimental-acp'
-      acpAgentId: string
-      label: string
-      provider: 'acp'
-      experimental: true
-      description: string
-      configProvider?: undefined
-    }
+export type ListItem = {
+  key: string
+  kind: 'catalog'
+  catalogId: NodeHarnessId
+  label: string
+  provider: HarnessId
+  acpAgentId: string | null
+  experimental: boolean
+  description: string
+  configProvider?: SettingsProvider
+}
 
 export interface ProgressState {
   received: number
@@ -101,18 +90,18 @@ export const CATALOG_HARNESS_META = {
     configProvider: 'cursor',
   },
   'acp-grok': {
-    provider: 'acp',
+    provider: 'acp-grok',
     labelKey: 'settings.harnesses.ids.acp-grok',
     descriptionKey: 'settings.harnesses.desc.acpGrok',
     experimental: false,
-    configProvider: 'acp',
+    configProvider: 'acp-grok',
   },
   'acp-antigravity': {
-    provider: 'acp',
+    provider: 'acp-antigravity',
     labelKey: 'settings.harnesses.ids.acp-antigravity',
     descriptionKey: 'settings.harnesses.desc.acpAntigravity',
     experimental: true,
-    configProvider: 'acp',
+    configProvider: 'acp-antigravity',
   },
   dsh: {
     provider: 'dsh',
@@ -129,51 +118,28 @@ export function catalogIsOn(row: CatalogRow | undefined): boolean {
 }
 
 export function buildHarnessListItems(
-  acpAgents: AcpAgentDescriptor[],
   nonOpenCodeAgents: AcpAgentDescriptor[],
   t: (key: string) => string,
 ): ListItem[] {
-  const grok = nonOpenCodeAgents.find((a) => isGrokAcpAgent(a.id))
-  const antigravity = nonOpenCodeAgents.find((a) => isAntigravityAcpAgent(a.id))
-  const rest = nonOpenCodeAgents.filter((a) => !isGrokAcpAgent(a.id) && !isAntigravityAcpAgent(a.id))
-  const list: ListItem[] = NODE_HARNESS_IDS.map((catalogId) => {
+  const grok = nonOpenCodeAgents.find((agent) => isGrokAcpAgent(agent.id))
+  const antigravity = nonOpenCodeAgents.find((agent) => isAntigravityAcpAgent(agent.id))
+  return NODE_HARNESS_IDS.map((catalogId) => {
     const meta: CatalogHarnessMeta = CATALOG_HARNESS_META[catalogId]
+    const acp = isAcpProtocolHarness(catalogId)
+    const agentId = acp ? acpAgentIdForHarness(catalogId) : null
+    const catalogName = agentId && isAntigravityAcpAgent(agentId) ? antigravity?.name : grok?.name
     return {
       key: catalogId,
-      kind: 'catalog',
+      kind: 'catalog' as const,
       catalogId,
-      label:
-        catalogId === 'acp-grok'
-          ? (grok?.name || t(meta.labelKey))
-          : catalogId === 'acp-antigravity'
-            ? (antigravity?.name || t(meta.labelKey))
-            : t(meta.labelKey),
+      label: acp ? (catalogName || t(meta.labelKey)) : t(meta.labelKey),
       provider: meta.provider,
-      acpAgentId:
-        catalogId === 'acp-grok'
-          ? (grok?.id ?? 'grok-build')
-          : catalogId === 'acp-antigravity'
-            ? (antigravity?.id ?? 'antigravity')
-            : null,
+      acpAgentId: agentId,
       experimental: meta.experimental,
       description: t(meta.descriptionKey),
       configProvider: meta.configProvider,
     }
   })
-
-  for (const agent of rest) {
-    list.push({
-      key: `acp:${agent.id}`,
-      kind: 'experimental-acp',
-      acpAgentId: agent.id,
-      label: agent.name || acpAgentDisplayName(agent.id),
-      provider: 'acp',
-      experimental: true,
-      description: t('settings.harnesses.desc.experimentalAcp'),
-    })
-  }
-  void acpAgents
-  return list
 }
 
 export function HarnessDetailHeaderAndStatus({
@@ -300,14 +266,6 @@ export function HarnessDetailHeaderAndStatus({
       </p>,
     )
   }
-  if (item.kind === 'experimental-acp') {
-    statusRows.push(
-      <p key="experimental" className={cn(settingsRowClassName, 'text-xs text-muted-foreground')}>
-        {t('settings.harnesses.experimentalAcpHint')}
-      </p>,
-    )
-  }
-
   return (
     <>
       <div className="flex items-start justify-between gap-4">

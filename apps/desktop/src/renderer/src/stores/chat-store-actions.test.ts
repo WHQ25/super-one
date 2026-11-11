@@ -135,7 +135,7 @@ function resetStore() {
     activeProject: null,
     remoteSessions: {},
     _previousFocusedSession: null,
-    harnessResources: { claude: null, codex: null, acp: null, opencode: null, cursor: null },
+    harnessResources: { claude: null, codex: null, 'acp-grok': null, 'acp-antigravity': null, opencode: null, cursor: null },
     initializedHarnesses: new Set(),
     isOpen: false,
     corner: 'br',
@@ -608,11 +608,11 @@ describe('cyclePermissionMode + togglePlanModeShortcut', () => {
 
   it('togglePlanModeShortcut toggles plan vs default for ACP sessions', () => {
     setupProject()
-    patchSession({ sessionProvider: 'acp', permissionMode: 'default', hostSessionOwned: true })
+    patchSession({ sessionProvider: 'acp-grok', permissionMode: 'default', hostSessionOwned: true })
     useChatStore.getState().togglePlanModeShortcut()
     expect(mockWindowEnvironment.patchSessionSettings).toHaveBeenCalledWith('local', expect.any(String), { permissionMode: 'plan' })
     mockWindowEnvironment.patchSessionSettings.mockClear()
-    patchSession({ sessionProvider: 'acp', permissionMode: 'plan' })
+    patchSession({ sessionProvider: 'acp-grok', permissionMode: 'plan' })
     useChatStore.getState().togglePlanModeShortcut()
     expect(mockWindowEnvironment.patchSessionSettings).toHaveBeenCalledWith('local', expect.any(String), { permissionMode: 'default' })
   })

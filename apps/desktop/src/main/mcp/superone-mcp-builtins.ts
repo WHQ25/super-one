@@ -744,7 +744,7 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
       inputSchema: {
         environmentId: z.string().optional().describe(ARCHIVE_ENVIRONMENT_DESCRIPTION),
         query: z.string().optional().describe('Case-insensitive title substring filter.'),
-        harness: z.enum(['claude', 'codex', 'acp', 'opencode']).optional().describe('Filter by harness.'),
+        harness: z.enum(['claude', 'codex', 'acp', 'acp-grok', 'acp-antigravity', 'opencode']).optional().describe('Filter by harness. `acp` matches both ACP harnesses.'),
         includeHidden: z.boolean().optional().describe('Include hidden sessions. Default false.'),
         includePinnedOnly: z.boolean().optional().describe('Only pinned sessions. Default false.'),
         parentOnly: z.boolean().optional().describe('Exclude collab child sessions. Default false.'),
@@ -780,7 +780,7 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
       inputSchema: {
         environmentId: z.string().optional().describe(ARCHIVE_ENVIRONMENT_DESCRIPTION),
         query: z.string().min(1).describe('Search terms (AND). Matches title and message text.'),
-        harness: z.enum(['claude', 'codex', 'acp', 'opencode']).optional(),
+        harness: z.enum(['claude', 'codex', 'acp', 'acp-grok', 'acp-antigravity', 'opencode']).optional(),
         sessionIds: z.array(z.string()).max(32).optional().describe('Optional: restrict search to these session ids.'),
         role: z.enum(['user', 'assistant', 'any']).optional().describe('Message role filter. Default any.'),
         tags: z.array(z.string()).max(8).optional().describe(SESSION_TAGS_FILTER_DESCRIPTION),

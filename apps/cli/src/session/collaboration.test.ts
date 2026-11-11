@@ -84,7 +84,7 @@ describe('collaboration grants + mailbox', () => {
     const calls = (harness: string) => probe.mock.calls.filter((call) => call[0]?.harness === harness).length
     try {
       const profiles = await collab.discoverProfiles()
-      const grok = profiles.find(profile => profile.harnessId === 'acp')
+      const grok = profiles.find(profile => profile.harnessId === 'acp-grok')
       const claude = profiles.find(profile => profile.id === 'claude-base')
       const codex = profiles.find(profile => profile.id === 'codex-base')
       expect(grok?.models).toEqual([expect.objectContaining({ id: 'grok-full', name: 'Full' })])
@@ -196,7 +196,7 @@ describe('collaboration grants + mailbox', () => {
     const { collab } = bootCollab()
     const acp = collab.listProfiles().find((p) => p.id === 'acp-grok')
     expect(acp).toMatchObject({
-      harnessId: 'acp',
+      harnessId: 'acp-grok',
       acpAgentId: 'grok-build',
       brandKey: 'acp-grok',
       name: 'Grok',

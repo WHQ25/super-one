@@ -22,6 +22,7 @@ import { formatEnvironmentMentionReminder } from '@superone/shared/environment-m
 import { expandPathRefTagsForAgent } from '@superone/shared/miniapp-prompt-tags'
 import { isBuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
 import { sendStartsStreaming, shouldQueueUserSend } from './session-send-request'
+import { isAcpProtocolHarness, isAntigravityAcpAgent } from '@superone/shared/acp-brand'
 import { resolveProvider } from './provider-routing'
 import { applyPendingWorktree, deliverSessionTurn, ensureHostSession, sessionTurnRequest } from './session-turn'
 import { resolveEffectiveProviderId } from '@/lib/provider-resolve'
@@ -246,7 +247,7 @@ export async function sendMessageImpl(
   let agentContent = expandPathRefTagsForAgent(rawContent)
   if (
     /^\/workflow\s+\S+/i.test(agentContent) &&
-    !(effectiveProvider === 'acp' && session.acpAgentId === 'antigravity')
+    !(isAcpProtocolHarness(effectiveProvider) && isAntigravityAcpAgent(session.acpAgentId))
   ) {
     const { rewriteWorkflowCommandForAgent } = await import(
       '../../../components/chat/workflow-cli-args'
@@ -471,7 +472,7 @@ export async function sendMessageImpl(
   if (slashName) {
     const slash = HARNESS_STRATEGIES[effectiveProvider].slash
     const isBlockedWorkflow =
-      slashName === 'workflows' && effectiveProvider === 'acp' && session.acpAgentId === 'antigravity'
+      slashName === 'workflows' && isAcpProtocolHarness(effectiveProvider) && isAntigravityAcpAgent(session.acpAgentId)
     const hostCommand =
       !isBlockedWorkflow && slash.hostCommands.includes(slashName)
         ? CLAUDE_INTERCEPTED_COMMANDS[slashName]

@@ -1,5 +1,6 @@
 import type { HarnessCatalogReader } from '@superone/runtime/harness'
 import { resolveProductionAcpLaunch } from './acp-launch'
+import { acpAgentIdForHarness, isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import type { HarnessId } from '@superone/shared/session-types'
 import { NODE_HARNESS_DEFINITIONS } from '@superone/shared/environment/harness-installation'
 import { createSimulatedTurnRunner, type TurnRunner } from '@superone/runtime/session'
@@ -40,7 +41,8 @@ export function createHarnessRunner(harnessId: HarnessId, opts?: { delayMs?: num
         delayMs,
         chunks: ['[claude] ', 'done'],
       })
-    case 'acp':
+    case 'acp-grok':
+    case 'acp-antigravity':
       return createSimulatedAcpTurnRunner({ delayMs })
     case 'opencode':
       return createSimulatedOpenCodeTurnRunner({ delayMs })
@@ -110,19 +112,18 @@ export function createAcpOpenCodeProductionRouter(opts?: {
   })
   const runner: TurnRunner = async (input) => {
     const harnessId = input.session.harnessId || 'codex'
-    if (harnessId === 'acp') {
-      // Catalog enable and command changes happen after the node process starts.
-      // Resolve on the turn so the first ACP call sees the current grok binary.
+    if (isAcpProtocolHarness(harnessId) || harnessId === 'acp') {
       const acpLaunch = resolveProductionAcpLaunch({
         harnesses: opts?.harnesses,
         acpBinaryPath: opts?.acpBinaryPath,
       })
+      const pinnedAgent = isAcpProtocolHarness(harnessId) ? acpAgentIdForHarness(harnessId) : undefined
       const acp = createAcpTurnRunner({
         allowSimulatedFallback: allowSim,
         resolveProjectPath: opts?.resolveProjectPath,
         binaryPath: acpLaunch.binaryPath,
         args: opts?.acpArgs ?? acpLaunch.args,
-        agentId: opts?.acpAgentId ?? acpLaunch.agentId,
+        agentId: opts?.acpAgentId ?? pinnedAgent ?? acpLaunch.agentId,
         clientVersion: opts?.clientVersion ?? resolveCliReleaseVersion(),
         getMcpServers: opts?.getAcpMcpServers
           ? (sessionId) => opts.getAcpMcpServers!(sessionId) ?? []
@@ -148,19 +149,11 @@ export function createAcpOpenCodeProductionRouter(opts?: {
   return runner
 }
 
-/**
- * Session wire harness ids for a simulated turn of each harness.
- * Order matches NODE_HARNESS_DEFINITIONS. Grok and Antigravity both persist as `acp`,
- * so this list has one `acp` entry. The descriptor adds `acp-antigravity` beside it.
- */
 export const PHASE4_HARNESS_IDS: HarnessId[] = [
   ...new Set(NODE_HARNESS_DEFINITIONS.map(({ sessionHarnessId }) => sessionHarnessId)),
 ]
 
-/** Descriptor ids when every catalog row is ready. */
-export const PHASE4_ADVERTISED_HARNESS_IDS: readonly string[] = PHASE4_HARNESS_IDS.flatMap((id) =>
-  id === 'acp' ? [id, 'acp-antigravity'] : [id],
-)
+export const PHASE4_ADVERTISED_HARNESS_IDS: readonly string[] = PHASE4_HARNESS_IDS
 
 // Re-export for production turn runner wiring.
 export { createCursorTurnRunner }

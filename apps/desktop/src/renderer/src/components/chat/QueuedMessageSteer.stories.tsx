@@ -44,7 +44,7 @@ const queuedMessages: ChatMessage[] = [
   },
 ]
 
-type SteerProvider = 'claude' | 'codex' | 'opencode' | 'acp'
+type SteerProvider = 'claude' | 'codex' | 'opencode' | 'acp-grok'
 
 const projectKey = (remote = false) => remote ? 'remote:queue-node:/work/app' : STORY_PROJECT
 
@@ -63,8 +63,8 @@ function seedQueuedMessages(provider: SteerProvider, nativeV2 = false, remote = 
     }],
     lastAssistantMessageId: 'active-assistant',
     queuedMessages,
-    ...(remote ? { runtimeCapabilities: { harnessId: provider, supportsQueuedSteer: provider !== 'acp', supportsQueuedSteerSoon: provider === 'claude' } } : {}),
-    ...(provider === 'acp' ? { acpAgentId: 'grok-build' } : {}),
+    ...(remote ? { runtimeCapabilities: { harnessId: provider, supportsQueuedSteer: provider !== 'acp-grok', supportsQueuedSteerSoon: provider === 'claude' } } : {}),
+    ...(provider === 'acp-grok' ? { acpAgentId: 'grok-build' } : {}),
     ...(provider === 'opencode' ? { runtimeCapabilities: { harnessId: 'opencode' as const, supportsQueuedSteer: nativeV2, supportsQueuedSteerSoon: false } } : {}),
   }
 
@@ -144,12 +144,12 @@ function QueueSteerDemo({ provider, nativeV2, remote, narrow }: { provider: Stee
   return (
     <div className={narrow ? "flex w-[360px] flex-col gap-2" : "flex w-[720px] flex-col gap-2"}>
       <p className="text-xs text-muted-foreground">
-        Hover a queued message to steer the active {provider === 'claude' ? 'Claude' : provider === 'codex' ? 'Codex' : provider === 'acp' ? 'Grok' : 'OpenCode'} turn.
+        Hover a queued message to steer the active {provider === 'claude' ? 'Claude' : provider === 'codex' ? 'Codex' : provider === 'acp-grok' ? 'Grok' : 'OpenCode'} turn.
         {remote && ' Remote node queue; Edit and Delete withdraw the input from its host.'}
-        {remote && provider === 'acp' ? ' This node supports the queue without advertising native steering.' : provider === 'claude'
+        {remote && provider === 'acp-grok' ? ' This node supports the queue without advertising native steering.' : provider === 'claude'
           ? ' Claude offers both: the chevrons-up icon delivers at the next step boundary, the ship wheel interrupts the tool in flight.'
           : provider === 'codex' ? ' Codex offers only the interrupting steer (ship wheel) — its Core queue has no non-aborting variant.'
-          : provider === 'acp' ? ' Grok offers only the ship wheel. It calls x.ai/interject and leaves the live turn running.'
+          : provider === 'acp-grok' ? ' Grok offers only the ship wheel. It calls x.ai/interject and leaves the live turn running.'
           : nativeV2 ? ' OpenCode V2 admits the input at its next safe point without cancelling the running tool.' : ' OpenCode V1 keeps messages queued for the next turn.'}
       </p>
       <div className="@container flex h-[460px] overflow-hidden rounded-xl border border-border bg-card shadow-sm">
@@ -192,7 +192,7 @@ export const StreamingClaude: Story = {
 }
 export const OpenCodeV2: Story = { args: { provider: 'opencode', nativeV2: true }, globals: { harness: 'opencode' } }
 export const OpenCodeV1: Story = { args: { provider: 'opencode', nativeV2: false }, globals: { harness: 'opencode' } }
-export const StreamingGrok: Story = { args: { provider: 'acp' }, globals: { harness: 'acp' } }
+export const StreamingGrok: Story = { args: { provider: 'acp-grok' }, globals: { harness: 'acp-grok' } }
 
 
 const steerActiveReply = (soon = false): NonNullable<Story['play']> => async ({ canvasElement }) => {
@@ -215,7 +215,7 @@ const steerActiveReply = (soon = false): NonNullable<Story['play']> => async ({ 
 export const RemoteCodex: Story = { args: { provider: 'codex', remote: true }, globals: { harness: 'codex' }, play: steerActiveReply() }
 export const RemoteClaude: Story = { args: { provider: 'claude', remote: true }, globals: { harness: 'claude' } }
 export const RemoteClaudeSoon: Story = { ...RemoteClaude, play: steerActiveReply(true) }
-export const RemoteQueueWithoutSteer: Story = { args: { provider: 'acp', remote: true }, globals: { harness: 'acp' } }
+export const RemoteQueueWithoutSteer: Story = { args: { provider: 'acp-grok', remote: true }, globals: { harness: 'acp-grok' } }
 export const RemoteCodexDark: Story = { ...RemoteCodex, globals: { harness: 'codex', theme: 'dark' } }
 export const RemoteCodexNarrow: Story = { ...RemoteCodex, args: { provider: 'codex', remote: true, narrow: true } }
 export const RemoteCodexDarkChinese: Story = { ...RemoteCodexNarrow, globals: { harness: 'codex', theme: 'dark', locale: 'zh' } }

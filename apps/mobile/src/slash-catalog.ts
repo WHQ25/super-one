@@ -116,9 +116,9 @@ function buildCatalog(
   return withHostCommand(
     withHostCommand(
       withHostCommand(
-        withHostCommand(catalog, WORKFLOWS_COMMAND, provider === 'acp'),
+        withHostCommand(catalog, WORKFLOWS_COMMAND, provider === 'acp-grok' || provider === 'acp-antigravity'),
         RECAP_COMMAND,
-        provider === 'acp' && isGrokAcpAgent(acpAgentId),
+        provider === 'acp-grok' && (acpAgentId == null || isGrokAcpAgent(acpAgentId)),
       ),
       ADD_DIR_COMMAND,
       harnessSupportsAdditionalDirs(provider),

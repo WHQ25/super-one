@@ -66,7 +66,7 @@ describe('AcpBackend', () => {
 
   it('starts and reports kind acp', async () => {
     const backend = new AcpBackend()
-    expect(backend.kind).toBe('acp')
+    expect(backend.kind).toBe('acp-grok')
     await backend.start(startOpts({ agentId: 'grok-build' }))
     await backend.close()
   })
@@ -407,8 +407,8 @@ describe('AcpBackend', () => {
         },
       })
     })
-    const backend = new AcpBackend()
-    await backend.start(startOpts({ agentId: 'opencode' }))
+    const backend = new AcpBackend('acp-antigravity')
+    await backend.start(startOpts({ agentId: 'antigravity' }))
     await backend.send({ content: 'run', assistantMessageId: 'a1' })
     sessionEvent?.({
       type: 'task_progress',
@@ -1070,15 +1070,16 @@ describe('AcpBackend', () => {
     await backend.close()
   })
 
-  it('emits message_error when agent is not configured', async () => {
+  it('pins grok-build when start config omits agentId', async () => {
+    let captured: AcpRuntimeOptions | undefined
+    setAcpRuntimeFactory(async (opts) => {
+      captured = opts
+      return mockRuntime()
+    })
     const backend = new AcpBackend()
     await backend.start(startOpts({}))
-    const events: AgentEvent[] = []
-    backend.onEvent((e) => events.push(e))
     await backend.send({ content: 'hi' })
-    expect(events.some((e) => e.type === 'message_error')).toBe(true)
-    const err = events.find((e) => e.type === 'message_error')
-    expect(err && err.type === 'message_error' ? err.error : '').toMatch(/No ACP agent configured/)
+    expect(captured?.launch.agentId).toBe('grok-build')
     await backend.close()
   })
 
@@ -1869,22 +1870,15 @@ describe('AcpBackend', () => {
     await backend.close()
   })
 
-  it('does not publish models from a superseded agent when switching mid-prewarm', async () => {
-    let resolveGrok!: (r: AcpRuntime) => void
-    const grokGate = new Promise<AcpRuntime>((r) => { resolveGrok = r })
-    let createN = 0
+  it('keeps the pinned grok agent when a later prewarm names another agent', async () => {
+    const seen: string[] = []
     setAcpRuntimeFactory(async (opts) => {
-      createN += 1
-      const agentId = opts.launch.agentId ?? 'custom'
-      if (agentId === 'grok-build') {
-        return grokGate
-      }
+      seen.push(opts.launch.agentId ?? '')
       return mockRuntime({
-        sessionId: 'opencode-sess',
         getModelConfig: () => ({
-          configId: 'model',
-          selectedModelId: 'oc-1',
-          models: [{ id: 'oc-1', name: 'OpenCode 1', description: '' }],
+          configId: null,
+          selectedModelId: 'grok-4.5',
+          models: [{ id: 'grok-4.5', name: 'Grok 4.5', description: '' }],
         }),
         getConfigOptions: () => [],
       })
@@ -1893,31 +1887,15 @@ describe('AcpBackend', () => {
     const backend = new AcpBackend()
     const events: AgentEvent[] = []
     backend.onEvent((e) => events.push(e))
-
     backend.prewarm(startOpts({ agentId: 'grok-build' }))
-    await new Promise((r) => setTimeout(r, 5))
     backend.prewarm(startOpts({ agentId: 'opencode', command: 'opencode' }))
-    await new Promise((r) => setTimeout(r, 20))
-
-    resolveGrok(mockRuntime({
-      sessionId: 'grok-sess',
-      getModelConfig: () => ({
-        configId: null,
-        selectedModelId: 'grok-4.5',
-        models: [{ id: 'grok-4.5', name: 'Grok 4.5', description: '' }],
-      }),
-      getConfigOptions: () => [],
-    }))
-    await new Promise((r) => setTimeout(r, 20))
-
-    const ready = events.filter((e) => e.type === 'acp_models' && e.status === 'ready')
-    const withModels = ready.filter((e) => e.type === 'acp_models' && e.models.length > 0) as Array<
-      Extract<AgentEvent, { type: 'acp_models' }>
-    >
-    expect(withModels.every((e) => e.agentId === 'opencode')).toBe(true)
-    expect(withModels.some((e) => e.models.some((m) => m.id === 'oc-1'))).toBe(true)
-    expect(withModels.some((e) => e.models.some((m) => m.id === 'grok-4.5'))).toBe(false)
-    expect(createN).toBeGreaterThanOrEqual(2)
+    await vi.waitFor(() => {
+      const ready = events.filter((e) => e.type === 'acp_models' && e.status === 'ready' && e.models.length > 0)
+      expect(ready.length).toBeGreaterThan(0)
+    })
+    const withModels = events.filter((e) => e.type === 'acp_models' && e.models.length > 0)
+    expect(withModels.every((e) => e.type === 'acp_models' && e.agentId === 'grok-build')).toBe(true)
+    expect(seen.every((id) => id === 'grok-build')).toBe(true)
     await backend.close()
   })
 
@@ -1946,7 +1924,7 @@ describe('AcpBackend', () => {
       compactConversation: compact,
       prompt: async (text) => { prompts.push(text) },
     }))
-    const backend = new AcpBackend()
+    const backend = new AcpBackend('acp-antigravity')
     await backend.start(startOpts({ agentId: 'antigravity' }))
     await backend.send({ content: '/compact keep the auth notes' })
     expect(compact).not.toHaveBeenCalled()
@@ -1999,7 +1977,7 @@ describe('AcpBackend', () => {
       rewindPoints: points,
       rewindExecute: execute,
     }))
-    const backend = new AcpBackend()
+    const backend = new AcpBackend('acp-antigravity')
     await backend.start(startOpts({ agentId: 'antigravity' }))
     await expect(backend.rewindFiles('1', { dryRun: true })).resolves.toMatchObject({
       canRewind: false,

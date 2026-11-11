@@ -2,17 +2,19 @@ import { describe, it, expect } from 'vitest'
 import { HARNESS_CAPABILITIES, resolveGoalCapability } from './harness-capabilities'
 
 describe('HARNESS_CAPABILITIES', () => {
-  it('marks ACP host as supporting MCP, plan approval, and todos', () => {
-    const acp = HARNESS_CAPABILITIES.acp
-    expect(acp.supportsMcp).toBe(true)
-    expect(acp.supportsPlanMode).toBe(true)
-    expect(acp.supportsTodos).toBe(true)
-    // Not yet: host enter-plan does not require subagents/compact flags.
-    expect(acp.supportsSubagents).toBe(false)
-    expect(acp.supportsCompact).toBe(true)
-    expect(acp.supportsQueuedSteer).toBe(true)
-    expect(acp.supportsQueuedSteerSoon).toBe(true)
-    expect(acp.supportsFork).toBe(true)
+  it('marks ACP hosts as supporting MCP, plan approval, and todos', () => {
+    for (const id of ['acp-grok', 'acp-antigravity'] as const) {
+      const acp = HARNESS_CAPABILITIES[id]
+      expect(acp.supportsMcp).toBe(true)
+      expect(acp.supportsPlanMode).toBe(true)
+      expect(acp.supportsTodos).toBe(true)
+      expect(acp.supportsSubagents).toBe(false)
+      expect(acp.supportsCompact).toBe(true)
+      expect(acp.supportsQueuedSteer).toBe(true)
+      expect(acp.supportsFork).toBe(true)
+    }
+    expect(HARNESS_CAPABILITIES['acp-grok'].supportsQueuedSteerSoon).toBe(false)
+    expect(HARNESS_CAPABILITIES['acp-antigravity'].supportsQueuedSteerSoon).toBe(true)
   })
 
   it('keeps Claude full-stack capabilities', () => {
@@ -42,10 +44,12 @@ describe('resolveGoalCapability', () => {
     expect(resolveGoalCapability('opencode')).toBeNull()
   })
 
-  it('only grants ACP a goal when the agent is Grok', () => {
+  it('grants a goal to Grok and not to Antigravity', () => {
+    expect(resolveGoalCapability('acp-grok')?.canPause).toBe(true)
     expect(resolveGoalCapability('acp', 'grok-build')?.canPause).toBe(true)
-    expect(resolveGoalCapability('acp', 'gemini')).toBeNull()
-    expect(resolveGoalCapability('acp', null)).toBeNull()
+    expect(resolveGoalCapability('acp', null)?.canPause).toBe(true)
+    expect(resolveGoalCapability('acp-antigravity')).toBeNull()
+    expect(resolveGoalCapability('acp', 'antigravity')).toBeNull()
   })
 
   it('has no goal surface without a harness', () => {

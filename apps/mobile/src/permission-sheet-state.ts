@@ -39,7 +39,7 @@ export type PermissionSheetPresentation = {
 
 function launchConfigurationItems(config: SessionAgentLaunchConfig, harnessId?: HarnessId, acpAgentId?: string): PermissionSheetItem[] {
   return [
-    ...(harnessId === 'acp' ? [{ title: 'ACP agent', label: true, subtitle: acpAgentId ?? 'Unresolved (launch approval required)' }] : []),
+    ...(harnessId === 'acp-grok' || harnessId === 'acp-antigravity' ? [{ title: 'ACP agent', label: true, subtitle: acpAgentId ?? 'Unresolved (launch approval required)' }] : []),
     ...(config.model ? [{ title: 'Model', label: true, subtitle: config.model }] : []),
     ...(config.effort ? [{ title: 'Effort', label: true, subtitle: config.effort }] : []),
     { title: 'Permission', label: true, subtitle: config.codexPermissionPreset === 'read-only' ? 'Read-only' : harnessId ? permissionModeLabel(config.permissionMode ?? 'default', harnessId) : config.permissionMode ?? 'default' },

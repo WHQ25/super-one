@@ -88,7 +88,8 @@ const mockWindowApp = {
     agentPreference: {
       claude: { defaultModel: '', defaultEffort: '', defaultPermissionMode: '', defaultSandboxMode: '' },
       codex: { defaultModel: '', defaultReasoningEffort: '', defaultPermissionPreset: '' },
-      acp: { selectedAgentId: null },
+      'acp-grok': { defaultModel: '', defaultEffort: '', defaultPermissionMode: '' },
+      'acp-antigravity': { defaultModel: '', defaultEffort: '', defaultPermissionMode: '' },
     },
   }),
   saveAppSettings: vi.fn().mockResolvedValue(undefined),
@@ -132,7 +133,7 @@ function resetStore() {
     activeProject: null,
     remoteSessions: {},
     _previousFocusedSession: null,
-    harnessResources: { claude: null, codex: null, acp: null, opencode: null, cursor: null, dsh: null },
+    harnessResources: { claude: null, codex: null, 'acp-grok': null, 'acp-antigravity': null, opencode: null, cursor: null, dsh: null },
     initializedHarnesses: new Set(),
     _bashOutputs: {},
   })
@@ -164,7 +165,7 @@ function seedGrokAcpCache(opts?: { selectedAgentId?: string | null }) {
   useChatStore.setState((s) => ({
     harnessResources: {
       ...s.harnessResources,
-      acp: {
+      'acp-grok': {
         agents: [
           { id: 'grok-build', name: 'Grok Build', installed: true, commandPreview: 'grok agent stdio' },
         ],
@@ -303,8 +304,8 @@ describe('focusProjectImpl', () => {
     setupProject('/from')
     patchSession({
       draftText: '',
-      preferredProvider: 'acp',
-      sessionProvider: 'acp',
+      preferredProvider: 'acp-grok',
+      sessionProvider: 'acp-grok',
       acpAgentId: 'grok-build',
       harnessUserChosen: true,
     }, '/from')
@@ -322,8 +323,8 @@ describe('focusProjectImpl', () => {
     const carriedSid = dest._activeSessionId!
     expect(carriedSid).not.toBe(oldToSid)
     expect(dest._sessions[carriedSid]).toMatchObject({
-      preferredProvider: 'acp',
-      sessionProvider: 'acp',
+      preferredProvider: 'acp-grok',
+      sessionProvider: 'acp-grok',
       acpAgentId: 'grok-build',
       harnessUserChosen: true,
       _historyHydrated: true,
@@ -336,8 +337,8 @@ describe('focusProjectImpl', () => {
   it('marks harnessUserChosen and clears rateLimitInfo when manually switching ACP agents on an empty draft', () => {
     setupProject()
     patchSession({
-      preferredProvider: 'acp',
-      sessionProvider: 'acp',
+      preferredProvider: 'acp-grok',
+      sessionProvider: 'acp-grok',
       acpAgentId: 'grok-build',
       harnessUserChosen: false,
       rateLimitInfo: { status: 'allowed_warning', utilization: 0.9 },
@@ -470,8 +471,8 @@ describe('resetSessionImpl', () => {
       ],
     })
     patchSession({
-      sessionProvider: 'acp',
-      preferredProvider: 'acp',
+      sessionProvider: 'acp-grok',
+      preferredProvider: 'acp-grok',
       acpAgentId: 'grok-build',
       selectedModel: 'grok-4.5',
       acpModels: [{ id: 'grok-4.5', name: 'Grok 4.5', description: '' }],
@@ -492,8 +493,8 @@ describe('resetSessionImpl', () => {
     const newSid = activeProjectState()._activeSessionId
     expect(newSid).not.toBe(oldSid)
     const sess = activeSession()
-    expect(sess.sessionProvider).toBe('acp')
-    expect(sess.preferredProvider).toBe('acp')
+    expect(sess.sessionProvider).toBe('acp-grok')
+    expect(sess.preferredProvider).toBe('acp-grok')
     expect(sess.acpAgentId).toBe('grok-build')
     expect(sess.acpModels.map((m) => m.id)).toEqual(['grok-4.5', 'grok-4.20'])
     expect(sess.selectedModel).toBe('grok-4.5')
@@ -510,8 +511,8 @@ describe('resetSessionImpl', () => {
     setupProject()
     seedGrokAcpCache({ selectedAgentId: 'grok-build' })
     patchSession({
-      sessionProvider: 'acp',
-      preferredProvider: 'acp',
+      sessionProvider: 'acp-grok',
+      preferredProvider: 'acp-grok',
       acpAgentId: null,
       selectedModel: '',
       acpModels: [],
@@ -603,8 +604,8 @@ describe('resetSessionForWorktreeSwitchImpl', () => {
     setupProject()
     seedGrokAcpCache()
     patchSession({
-      sessionProvider: 'acp',
-      preferredProvider: 'acp',
+      sessionProvider: 'acp-grok',
+      preferredProvider: 'acp-grok',
       acpAgentId: 'grok-build',
       selectedModel: 'grok-4.20',
       acpModels: [{ id: 'grok-4.20', name: 'Grok 4.20', description: '' }],
@@ -615,7 +616,7 @@ describe('resetSessionForWorktreeSwitchImpl', () => {
     useChatStore.getState().resetSessionForWorktreeSwitch(PATH, { wtPath: '/wt', gitBranch: 'feat' })
 
     const sess = activeSession()
-    expect(sess.sessionProvider).toBe('acp')
+    expect(sess.sessionProvider).toBe('acp-grok')
     expect(sess.acpAgentId).toBe('grok-build')
     expect(sess.acpModels.map((m) => m.id)).toEqual(['grok-4.5', 'grok-4.20'])
     expect(sess.selectedModel).toBe('grok-4.20')
@@ -648,7 +649,7 @@ describe('setPreferredProviderImpl', () => {
   it.each([
     ['claude', 'codex', 'claude-account:cli'],
     ['codex', 'claude', 'codex-account:cli'],
-    ['claude', 'acp', 'shared-key'],
+    ['claude', 'acp-grok', 'shared-key'],
   ] as const)('drops the %s provider binding when switching an empty draft to %s', (source, provider, apiProviderId) => {
     setupProject()
     patchSession({ sessionProvider: source, preferredProvider: source, apiProviderId })
@@ -688,11 +689,11 @@ describe('setPreferredProviderImpl', () => {
     expect(mockSeedFromCurrent).not.toHaveBeenCalled()
   })
 
-  it.each(['claude', 'codex', 'opencode', 'cursor', 'dsh', 'acp'] as const)(
+  it.each(['claude', 'codex', 'opencode', 'cursor', 'dsh', 'acp-grok'] as const)(
     'drops prior runtime usage and cached breakdown when switching an empty draft to %s',
     (provider) => {
       setupProject()
-      const source = provider === 'acp' ? 'codex' : 'acp'
+      const source = provider === 'acp-grok' ? 'codex' : 'acp-grok'
       const codexUsage = {
         totalInputTokens: 1359, totalCachedInputTokens: 0, totalOutputTokens: 10,
         lastInputTokens: 1359, lastCachedInputTokens: 0, lastOutputTokens: 10,
@@ -758,8 +759,8 @@ describe('setPreferredProviderImpl', () => {
   it('clears providerSessionId and resets the runtime when switching empty draft harness', () => {
     setupProject()
     patchSession({
-      sessionProvider: 'acp',
-      preferredProvider: 'acp',
+      sessionProvider: 'acp-grok',
+      preferredProvider: 'acp-grok',
       _providerSessionId: '019fa-stale',
       status: 'idle',
     })
@@ -793,8 +794,8 @@ describe('setPreferredProviderImpl', () => {
       },
     }))
     patchSession({
-      sessionProvider: 'acp',
-      preferredProvider: 'acp',
+      sessionProvider: 'acp-grok',
+      preferredProvider: 'acp-grok',
       selectedModel: 'grok-4.5',
       modelUserChosen: true,
       acpModels: [{ id: 'grok-4.5', name: 'Grok 4.5', description: '' }],
@@ -840,8 +841,8 @@ describe('setPreferredProviderImpl', () => {
     })
     expect(activeProjectState().slashCommands).toEqual([])
     patchSession({
-      sessionProvider: 'acp',
-      preferredProvider: 'acp',
+      sessionProvider: 'acp-grok',
+      preferredProvider: 'acp-grok',
       acpAgentId: 'opencode',
       acpSlashCommands: [{ name: 'web', description: 'ACP web', argumentHint: '', isSkill: false }],
       acpSlashCommandsStatus: 'ready',
@@ -860,40 +861,24 @@ describe('setPreferredProviderImpl', () => {
     expect(activeSession().acpSlashCommands).toEqual([])
   })
 
-  it('hydrates OpenCode models from cache when switching ACP agent', () => {
+  it('hydrates OpenCode models from the opencode catalog when switching agents', () => {
     setupProject()
     useChatStore.setState((s) => ({
       harnessResources: {
         ...s.harnessResources,
-        acp: {
-          agents: [
-            { id: 'grok-build', name: 'Grok Build', installed: true, commandPreview: 'grok agent stdio' },
-            { id: 'opencode', name: 'OpenCode', installed: true, commandPreview: 'opencode acp' },
+        opencode: {
+          models: [
+            { id: 'openai/gpt-5.4', name: 'OpenAI/GPT-5.4', description: '' },
+            { id: 'opencode/big-pickle', name: 'OpenCode Zen/Big Pickle', description: '', isDefault: true },
           ],
-          selectedAgentId: 'grok-build',
-          modelsByAgentId: {
-            'grok-build': {
-              models: [{ id: 'grok-4.5', name: 'Grok 4.5', description: '' }],
-              selectedModelId: 'grok-4.5',
-              configId: null,
-              updatedAt: '2026-01-01T00:00:00.000Z',
-            },
-            opencode: {
-              models: [
-                { id: 'openai/gpt-5.4', name: 'OpenAI/GPT-5.4', description: '' },
-                { id: 'opencode/big-pickle', name: 'OpenCode Zen/Big Pickle', description: '' },
-              ],
-              selectedModelId: 'opencode/big-pickle',
-              configId: 'model',
-              updatedAt: '2026-01-01T00:00:00.000Z',
-            },
-          },
+          agents: [],
+          commands: [],
         },
       },
     }))
     patchSession({
-      sessionProvider: 'acp',
-      preferredProvider: 'acp',
+      sessionProvider: 'acp-grok',
+      preferredProvider: 'acp-grok',
       acpAgentId: 'grok-build',
       selectedModel: 'grok-4.5',
       acpModels: [{ id: 'grok-4.5', name: 'Grok 4.5', description: '' }],
@@ -903,19 +888,19 @@ describe('setPreferredProviderImpl', () => {
     useChatStore.getState().setAcpAgentId('opencode')
 
     const sess = activeSession()
-    expect(sess.acpAgentId).toBe('opencode')
+    expect(sess.sessionProvider).toBe('opencode')
+    expect(sess.preferredProvider).toBe('opencode')
+    expect(sess.acpAgentId).toBeNull()
     expect(sess.contextTokens).toBe(0)
     expect(sess.contextWindow).toBeNull()
-    expect(sess.acpModels.map((m) => m.id)).toEqual(['openai/gpt-5.4', 'opencode/big-pickle'])
     expect(sess.selectedModel).toBe('opencode/big-pickle')
-    expect(sess.acpModelsStatus).toBe('ready')
   })
 
   it('drops Grok initialization usage when an empty draft switches to Antigravity', () => {
     setupProject()
     patchSession({
-      sessionProvider: 'acp',
-      preferredProvider: 'acp',
+      sessionProvider: 'acp-grok',
+      preferredProvider: 'acp-grok',
       acpAgentId: 'grok-build',
       contextTokens: 1359,
       contextWindow: 500_000,
@@ -981,8 +966,8 @@ describe('setPreferredProviderImpl', () => {
   it('keeps context usage when the ACP agent changes after the first message', () => {
     setupProject()
     patchSession({
-      sessionProvider: 'acp',
-      preferredProvider: 'acp',
+      sessionProvider: 'acp-grok',
+      preferredProvider: 'acp-grok',
       acpAgentId: 'grok-build',
       messages: [userMsg('u1')],
       contextTokens: 1359,

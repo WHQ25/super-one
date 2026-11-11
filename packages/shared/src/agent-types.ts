@@ -3459,7 +3459,8 @@ export interface DeepseekPresetRoster {
 export interface HarnessResourcesMap {
   claude: ClaudeResources
   codex: CodexResources
-  acp: AcpResources
+  'acp-grok': AcpResources
+  'acp-antigravity': AcpResources
   opencode: OpenCodeResources
   cursor: CursorResources
   dsh: DeepseekResources
@@ -3473,7 +3474,8 @@ export interface StartupData {
   cached: {
     claude: ClaudeResources | null
     codex: CodexResources | null
-    acp: AcpResources | null
+    'acp-grok': AcpResources | null
+    'acp-antigravity': AcpResources | null
     opencode?: OpenCodeResources | null
     cursor?: CursorResources | null
     dsh?: DeepseekResources | null
@@ -5943,8 +5945,8 @@ export interface AppSettings {
    */
   speechVoices: Record<string, string>
   /**
-   * Explicit ChatSuggestions / picker harness order (suggestion keys:
-   * `claude` | `codex` | `opencode` | `acp:<agentId>`).
+   * Explicit ChatSuggestions / picker harness order. Keys are harness ids
+   * (`claude`, `codex`, `acp-grok`, `acp-antigravity`, …).
    * Index 0 = default (fixed tab), 1 = secondary (menu default), then the rest.
    * Empty = no full manual order; fall back to `suggestionHarness` /
    * `secondaryHarness` pins + recent parent-session counts.
@@ -6007,14 +6009,13 @@ export interface AppSettings {
       /** Empty string follows the Codex app-server default voice. */
       realtimeVoice: string
     } & HarnessBrandPreference
-    acp: BrandOnlyAgentPreference & {
-      enabled: boolean
-      selectedAgentId: string | null
+    'acp-grok': BrandOnlyAgentPreference & {
       defaultModel: string
       defaultEffort: string
-      antigravityDefaultModel: string
-      antigravityDefaultEffort: string
-      antigravityDefaultPermissionMode: PermissionMode | ''
+    }
+    'acp-antigravity': BrandOnlyAgentPreference & {
+      defaultModel: string
+      defaultEffort: string
     }
     /** Cursor owns a real sandbox toggle, so it stores one of its own. */
     cursor: BrandOnlyAgentPreference & { defaultSandboxMode: SandboxMode | '' }
@@ -6026,13 +6027,13 @@ export interface AppSettings {
 /** ChatSuggestions fixed/dropdown harness identity. */
 export interface SuggestionHarnessPreference {
   provider: HarnessId
-  /** Required when provider is `acp`; ignored otherwise. */
+  /** Protocol agent id for an ACP harness (`grok-build`, `antigravity`). */
   acpAgentId?: string | null
 }
 
 /** Last-N-days session counts grouped for ChatSuggestions harness ranking. */
 export interface HarnessSessionRank {
-  /** Stable key: `claude` | `codex` | `opencode` | `acp:<agentId>`. */
+  /** Stable key: a harness id (`claude`, `acp-grok`, `acp-antigravity`, …). */
   key: string
   provider: HarnessId
   acpAgentId: string | null
@@ -6177,7 +6178,8 @@ export interface AppSettingsPatch {
   agentPreference?: {
     claude?: Partial<AppSettings['agentPreference']['claude']>
     codex?: Partial<AppSettings['agentPreference']['codex']>
-    acp?: Partial<AppSettings['agentPreference']['acp']>
+    'acp-grok'?: Partial<AppSettings['agentPreference']['acp-grok']>
+    'acp-antigravity'?: Partial<AppSettings['agentPreference']['acp-antigravity']>
     cursor?: Partial<BrandOnlyAgentPreference>
     dsh?: Partial<BrandOnlyAgentPreference>
     opencode?: Partial<BrandOnlyAgentPreference>

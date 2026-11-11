@@ -77,7 +77,7 @@ describe('activity launcher entries', () => {
     expect(await launchIds()).toEqual(['browser', 'terminal', 'device', 'trajectory'])
   })
 
-  it.each(['claude', 'codex', 'acp', 'opencode', 'cursor'])(
+  it.each(['claude', 'codex', 'acp-grok', 'opencode', 'cursor'])(
     'hides Trajectory entirely on a %s session',
     async (provider) => {
       activeHarness(provider)

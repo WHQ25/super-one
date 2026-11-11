@@ -13,6 +13,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@superone/ui/components/ui/button'
 import { cn } from '@superone/ui/lib/utils'
+import { acpAgentIdForHarness, isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
 import { useAppStore } from '@/stores/app'
 
@@ -34,15 +35,12 @@ type ProgressState = {
 
 const ORDER: CatalogId[] = ['claude', 'codex', 'opencode', 'cursor', 'acp-grok', 'acp-antigravity']
 
-function providerOf(id: CatalogId): 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp' {
-  if (id === 'acp-grok' || id === 'acp-antigravity') return 'acp'
+function providerOf(id: CatalogId): CatalogId {
   return id
 }
 
 function acpAgentOf(id: CatalogId): string | null {
-  if (id === 'acp-grok') return 'grok-build'
-  if (id === 'acp-antigravity') return 'antigravity'
-  return null
+  return isAcpProtocolHarness(id) ? acpAgentIdForHarness(id) : null
 }
 
 export function OnboardingDiscover(): React.JSX.Element {

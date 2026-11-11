@@ -3,7 +3,7 @@ import { mapRemoteSessionRow } from './remote-session-row'
 
 describe('mapRemoteSessionRow', () => {
   it('keeps every harness id, including cursor and deepseek', () => {
-    for (const harnessId of ['claude', 'codex', 'acp', 'opencode', 'cursor', 'dsh'] as const) {
+    for (const harnessId of ['claude', 'codex', 'acp-grok', 'acp-antigravity', 'opencode', 'cursor', 'dsh'] as const) {
       expect(mapRemoteSessionRow({ sessionId: harnessId, harnessId }).provider).toBe(harnessId)
     }
     expect(mapRemoteSessionRow({ sessionId: 'x', harnessId: 'pi' }).provider).toBe('claude')
@@ -11,18 +11,24 @@ describe('mapRemoteSessionRow', () => {
 
   it('names grok and antigravity from their acp catalog ids and keeps a session agent ahead of that default', () => {
     expect(mapRemoteSessionRow({ sessionId: 'g', harnessId: 'acp-grok' })).toMatchObject({
-      provider: 'acp',
+      provider: 'acp-grok',
       acpAgentId: 'grok-build',
     })
     expect(mapRemoteSessionRow({ sessionId: 'a', harnessId: 'acp-antigravity' })).toMatchObject({
-      provider: 'acp',
+      provider: 'acp-antigravity',
       acpAgentId: 'antigravity',
     })
     expect(mapRemoteSessionRow({ sessionId: 'g', harnessId: 'acp-grok', acpAgentId: 'custom' })).toMatchObject({
-      provider: 'acp',
+      provider: 'acp-grok',
       acpAgentId: 'custom',
     })
-    expect(mapRemoteSessionRow({ sessionId: 'g', harnessId: 'acp' })).not.toHaveProperty('acpAgentId')
+    expect(mapRemoteSessionRow({ sessionId: 'g', harnessId: 'acp-grok', acpAgentId: 'antigravity' }).provider).toBe('acp-grok')
+    expect(mapRemoteSessionRow({ sessionId: 'g', harnessId: 'acp' })).toMatchObject({
+      provider: 'acp-grok',
+      acpAgentId: 'grok-build',
+    })
+    expect(mapRemoteSessionRow({ sessionId: 'g', harnessId: 'acp', acpAgentId: 'antigravity' }).provider).toBe('acp-antigravity')
+    expect(mapRemoteSessionRow({ sessionId: 'g', harnessId: 'acp', providerId: 'acp-antigravity' }).provider).toBe('acp-antigravity')
     expect(mapRemoteSessionRow({ sessionId: 'g', harnessId: 'acp', acpAgentId: ' grok-build ' }).acpAgentId).toBe('grok-build')
   })
 

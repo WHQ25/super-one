@@ -36,7 +36,7 @@ const chatMock = vi.hoisted(() => ({
 
 vi.mock('@/stores/chat', () => {
   const state = {
-    harnessResources: { acp: { agents: [] } },
+    harnessResources: { 'acp-grok': { agents: [] } },
     initializeHarness: chatMock.initializeHarness,
     setHarnessResources: chatMock.setHarnessResources,
   }
@@ -218,11 +218,7 @@ describe('first-party harness settings entries', () => {
         await user.click(screen.getByRole('tab', { name: /Preferences/i }))
         view.rerender(<HarnessesSettingsPage />)
       }
-      expect(
-        screen.getByText(
-          harnessId === 'opencode' ? 'preferences-for-opencode' : 'preferences-for-acp',
-        ),
-      ).toBeInTheDocument()
+      expect(screen.getByText(`preferences-for-${harnessId}`)).toBeInTheDocument()
     },
   )
 
@@ -258,8 +254,8 @@ describe('first-party harness settings entries', () => {
       expect(hoisted.enableHarness).toHaveBeenCalledWith({ harnessId: 'acp-antigravity' })
       expect(listAcpAgents).toHaveBeenCalled()
       expect(refreshAcpModels).toHaveBeenCalledWith('antigravity')
-      expect(chatMock.setHarnessResources).toHaveBeenCalledWith('acp', listedResources)
-      expect(chatMock.setHarnessResources).toHaveBeenCalledWith('acp', refreshedResources)
+      expect(chatMock.setHarnessResources).toHaveBeenCalledWith('acp-antigravity', listedResources)
+      expect(chatMock.setHarnessResources).toHaveBeenCalledWith('acp-antigravity', refreshedResources)
     })
   })
 

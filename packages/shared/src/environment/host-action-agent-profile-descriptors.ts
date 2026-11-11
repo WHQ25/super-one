@@ -23,7 +23,7 @@ export const AGENT_PROFILE_APPLY_INPUT_SCHEMA = {
     id: { type: 'string', description: 'Required for update. Profile id from agent_profile_list.' },
     harnessId: {
       type: 'string',
-      enum: ['claude', 'codex', 'acp', 'opencode', 'cursor', 'dsh'],
+      enum: ['claude', 'codex', 'acp-grok', 'acp-antigravity', 'opencode', 'cursor', 'dsh'],
       description: 'Required for create; fixed afterwards.',
     },
     name: { type: 'string', description: 'Display name and @-mention label. Required for create.' },

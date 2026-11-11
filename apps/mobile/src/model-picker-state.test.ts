@@ -102,7 +102,7 @@ describe('keeping the menu open after a model switch', () => {
       efforts: [{ value: 'low', label: 'Low' }, { value: 'high', label: 'High' }],
     }
 
-    expect(keepsOpenAfterModelSelect('acp', acp, 'grok')).toBe(true)
+    expect(keepsOpenAfterModelSelect('acp-grok', acp, 'grok')).toBe(true)
   })
 })
 
@@ -240,15 +240,15 @@ describe('option params', () => {
   })
 })
 
-describe('OpenCode reached through ACP', () => {
+describe('OpenCode model groups', () => {
   it('groups the slash-prefixed catalog the way the desktop does', () => {
-    const groups = groupModels(openCodeModels, { harness: 'acp', acpAgentId: 'opencode' })
+    const groups = groupModels(openCodeModels, { harness: 'opencode' })
 
     expect(groups.map((group) => group.name)).toEqual(['anthropic', 'openai'])
   })
 
   it('leaves another ACP agent under one heading', () => {
-    expect(groupModels(openCodeModels, { harness: 'acp', acpAgentId: 'grok' })).toHaveLength(1)
+    expect(groupModels(openCodeModels, { harness: 'acp-grok' })).toHaveLength(1)
   })
 })
 

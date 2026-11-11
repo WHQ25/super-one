@@ -46,7 +46,7 @@ function seedStore(model: unknown): void {
     harnessResources: {
       claude: null,
       codex: null,
-      acp: null,
+      'acp-grok': null, 'acp-antigravity': null,
       opencode: null,
       cursor: { models: [model] } as never,
     },

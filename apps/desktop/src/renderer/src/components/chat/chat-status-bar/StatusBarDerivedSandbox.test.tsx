@@ -129,26 +129,26 @@ describe('the chip as a whole', () => {
 describe('Grok observed sandbox', () => {
   it('reports off when Grok has no profile configured', async () => {
     stubAcpSandbox({ enabled: false, autoAllowBash: false })
-    renderChip('acp')
+    renderChip('acp-grok')
     await waitFor(() => expect(screen.getByLabelText('Sandbox Off')).toBeInTheDocument())
   })
 
   // The regression this whole path exists for: Grok confined while the chip said off.
   it('reports on when Grok actually applied a profile', async () => {
     stubAcpSandbox({ enabled: true, autoAllowBash: false })
-    renderChip('acp')
+    renderChip('acp-grok')
     await waitFor(() => expect(screen.getByLabelText('Sandbox')).toBeInTheDocument())
   })
 
   it('reports auto when the profile also auto-allows bash', async () => {
     stubAcpSandbox({ enabled: true, autoAllowBash: true })
-    renderChip('acp')
+    renderChip('acp-grok')
     await waitFor(() => expect(screen.getByLabelText('Sandbox Auto')).toBeInTheDocument())
   })
 
   it('falls back to off when the observation fails', async () => {
     stubAcpSandbox(new Error('ipc down'))
-    renderChip('acp')
+    renderChip('acp-grok')
     await waitFor(() => expect(screen.getByLabelText('Sandbox Off')).toBeInTheDocument())
   })
 })

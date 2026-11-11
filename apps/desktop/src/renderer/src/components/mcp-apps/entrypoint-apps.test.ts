@@ -186,7 +186,7 @@ describe('openMcpAppFromDrawer', () => {
   })
 
   it('replaces a prewarmed draft on another harness for a pure thread entrypoint and applies async host toolResult updates', async () => {
-    env.getSession.mockResolvedValueOnce({ sessionId: 'sess-draft-codex', harnessId: 'acp' })
+    env.getSession.mockResolvedValueOnce({ sessionId: 'sess-draft-codex', harnessId: 'acp-grok' })
 
     const codexDraftContext: ActiveMcpAppDrawerContext = {
       projectPath: '/proj',

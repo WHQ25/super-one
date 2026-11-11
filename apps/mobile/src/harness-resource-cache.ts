@@ -1,6 +1,7 @@
 import type { PersistedWorkspace } from './persisted-workspace'
 import type { MobileRpcClient } from './runtime-session-rpc'
 import type { RemoteSystemInfo } from '@superone/shared/agent-types'
+import { acpAgentIdForHarness, isAcpProtocolHarness, resolveLegacyHarnessId } from '@superone/shared/acp-brand'
 
 export type HarnessResourceClient = Pick<MobileRpcClient, 'rpc' | 'resolveProject'>
 type Client = HarnessResourceClient
@@ -31,14 +32,14 @@ function splitProviderKey(type: keyof Resources, provider: string, acpAgentId?: 
   acpAgentId: string | null
   cacheProvider: string
 } {
-  if (provider.startsWith('acp:')) {
-    const agent = provider.slice(4).trim() || null
-    const cacheProvider = type === 'get_system_info' && agent ? `acp:${agent}` : 'acp'
-    return { harnessId: 'acp', acpAgentId: agent, cacheProvider }
-  }
-  const agent = provider === 'acp' ? (acpAgentId?.trim() || null) : null
-  const cacheProvider = type === 'get_system_info' && agent ? `acp:${agent}` : provider
-  return { harnessId: provider, acpAgentId: agent, cacheProvider }
+  const fromKey = provider.startsWith('acp:') ? provider.slice(4).trim() || null : null
+  const hintedAgent = fromKey ?? acpAgentId?.trim() ?? null
+  const resolved = resolveLegacyHarnessId(fromKey ? 'acp' : provider, { acpAgentId: hintedAgent }) ?? provider
+  const agent = isAcpProtocolHarness(resolved)
+    ? (hintedAgent || acpAgentIdForHarness(resolved))
+    : null
+  const cacheProvider = type === 'get_system_info' && agent ? `acp:${agent}` : resolved
+  return { harnessId: resolved, acpAgentId: agent, cacheProvider }
 }
 
 const keyFor = (type: keyof Resources, projectPath: string, cacheProvider: string) => JSON.stringify([type, projectPath, cacheProvider])

@@ -244,14 +244,14 @@ describe('loadSessionState provider authority (provider_id is the source of trut
     expect(loadSessionState('bare')!.provider).toBe('claude')
   })
 
-  it('restores ACP session as acp when provider_id=acp-base even if legacy provider column is claude', () => {
+  it('restores a legacy acp-base row as acp-grok even if the provider column is claude', () => {
     getDbMock.mockReturnValue(mockDbWithSessionRow({
       title: 't', total_cost_usd: 0, context_tokens: 0,
       is_worktree: 0, git_branch: null, worktree_path: null,
       provider: 'claude', provider_id: 'acp-base', api_provider_id: null, acp_agent_id: null,
     }))
 
-    expect(loadSessionState('acp-mismatch')!.provider).toBe('acp')
+    expect(loadSessionState('acp-mismatch')!.provider).toBe('acp-grok')
   })
 
   it('falls back to legacy provider=acp when provider_id is NULL', () => {
@@ -261,7 +261,7 @@ describe('loadSessionState provider authority (provider_id is the source of trut
       provider: 'acp', provider_id: null, api_provider_id: null, acp_agent_id: null,
     }))
 
-    expect(loadSessionState('legacy-acp')!.provider).toBe('acp')
+    expect(loadSessionState('legacy-acp')!.provider).toBe('acp-grok')
   })
 
   it('restores acpAgentId from sessions.acp_agent_id', () => {
@@ -272,7 +272,7 @@ describe('loadSessionState provider authority (provider_id is the source of trut
     }))
 
     const restored = loadSessionState('acp-agent')
-    expect(restored!.provider).toBe('acp')
+    expect(restored!.provider).toBe('opencode')
     expect(restored!.acpAgentId).toBe('opencode')
   })
 })

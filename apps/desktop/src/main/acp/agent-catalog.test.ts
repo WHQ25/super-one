@@ -20,8 +20,8 @@ describe('agent-catalog', () => {
     expect(launch.args[0]).toBe('-y')
   })
 
-  it('throws when custom has no command', () => {
-    expect(() => resolveAcpLaunch({ agentId: 'custom', defaultCwd: '/p' })).toThrow(/command/)
+  it('rejects an unknown custom agent', () => {
+    expect(() => resolveAcpLaunch({ agentId: 'custom', defaultCwd: '/p' })).toThrow(/Unknown ACP agent "custom"/)
   })
 
   it('lists builtin agents without retired gemini-cli', () => {

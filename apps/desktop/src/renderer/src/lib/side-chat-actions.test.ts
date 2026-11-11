@@ -102,7 +102,7 @@ describe('who may open a side chat', () => {
   })
 
   it('accepts acp now that x.ai/session/fork copies Grok transcript', () => {
-    seed({ provider: 'acp' })
+    seed({ provider: 'acp-grok' })
     expect(resolveSideChatTarget()).toEqual({ projectPath: PROJECT, sessionId: 'sid' })
   })
 

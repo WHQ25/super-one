@@ -14,9 +14,9 @@ describe('suggestionHarnessKey', () => {
     expect(suggestionHarnessKey('dsh')).toBe('dsh')
   })
 
-  it('keys ACP agents per agent id', () => {
-    expect(suggestionHarnessKey('acp', 'grok-build')).toBe('acp:grok-build')
-    expect(suggestionHarnessKey('acp', null)).toBe('acp')
+  it('keys ACP harnesses by their concrete ids', () => {
+    expect(suggestionHarnessKey('acp-grok', 'grok-build')).toBe('acp-grok')
+    expect(suggestionHarnessKey('acp-antigravity', 'antigravity')).toBe('acp-antigravity')
   })
 })
 
@@ -26,7 +26,7 @@ describe('orderSuggestionHarnesses', () => {
     { id: 'other-agent', name: 'Other' },
   ]
 
-  it('defaults to claude, codex, then grok ACP when all counts are zero', () => {
+  it('defaults to claude, codex, then grok when all counts are zero', () => {
     const ordered = orderSuggestionHarnesses({
       ranks: [],
       acpAgents: agents,
@@ -35,8 +35,7 @@ describe('orderSuggestionHarnesses', () => {
     expect(ordered.map((o) => o.key)).toEqual([
       'claude',
       'codex',
-      'acp:grok-build',
-      'acp:other-agent',
+      'acp-grok',
     ])
   })
 
@@ -45,16 +44,15 @@ describe('orderSuggestionHarnesses', () => {
       ranks: [
         { key: 'codex', provider: 'codex', acpAgentId: null, sessionCount: 12 },
         { key: 'claude', provider: 'claude', acpAgentId: null, sessionCount: 3 },
-        { key: 'acp:grok-build', provider: 'acp', acpAgentId: 'grok-build', sessionCount: 8 },
+        { key: 'acp:grok-build', provider: 'acp-grok', acpAgentId: 'grok-build', sessionCount: 8 },
       ],
       acpAgents: agents,
       experimentalAgentsEnabled: false,
     })
     expect(ordered.map((o) => o.key)).toEqual([
       'codex',
-      'acp:grok-build',
+      'acp-grok',
       'claude',
-      'acp:other-agent',
     ])
     expect(ordered[0]?.sessionCount).toBe(12)
   })
@@ -64,18 +62,17 @@ describe('orderSuggestionHarnesses', () => {
       ranks: [
         { key: 'codex', provider: 'codex', acpAgentId: null, sessionCount: 12 },
         { key: 'claude', provider: 'claude', acpAgentId: null, sessionCount: 3 },
-        { key: 'acp:grok-build', provider: 'acp', acpAgentId: 'grok-build', sessionCount: 8 },
+        { key: 'acp:grok-build', provider: 'acp-grok', acpAgentId: 'grok-build', sessionCount: 8 },
       ],
       acpAgents: agents,
       experimentalAgentsEnabled: false,
       defaultHarness: { provider: 'claude', acpAgentId: null },
-      secondaryHarness: { provider: 'acp', acpAgentId: 'grok-build' },
+      secondaryHarness: { provider: 'acp-grok', acpAgentId: 'grok-build' },
     })
     expect(ordered.map((o) => o.key)).toEqual([
       'claude',
-      'acp:grok-build',
+      'acp-grok',
       'codex',
-      'acp:other-agent',
     ])
   })
 
@@ -92,10 +89,9 @@ describe('orderSuggestionHarnesses', () => {
       secondaryHarness: { provider: 'claude', acpAgentId: null },
     })
     expect(ordered.map((o) => o.key)).toEqual([
-      'acp:other-agent',
       'claude',
       'codex',
-      'acp:grok-build',
+      'acp-grok',
     ])
   })
 
@@ -111,8 +107,7 @@ describe('orderSuggestionHarnesses', () => {
     expect(ordered.map((o) => o.key)).toEqual([
       'claude',
       'codex',
-      'acp:grok-build',
-      'acp:other-agent',
+      'acp-grok',
     ])
   })
 
@@ -139,14 +134,12 @@ describe('orderSuggestionHarnesses', () => {
       acpAgents: agents,
       experimentalAgentsEnabled: false,
       defaultHarness: null,
-      secondaryHarness: { provider: 'acp', acpAgentId: 'grok-build' },
+      secondaryHarness: { provider: 'acp-grok', acpAgentId: 'grok-build' },
     })
-    // Auto top by count (claude), then pinned secondary, then rest by count.
     expect(ordered.map((o) => o.key)).toEqual([
       'claude',
-      'acp:grok-build',
+      'acp-grok',
       'codex',
-      'acp:other-agent',
     ])
   })
 
@@ -206,7 +199,7 @@ describe('orderSuggestionHarnesses', () => {
       includeCodex: false,
       includeOpenCode: false,
     })
-    expect(ordered.map((o) => o.key)).toEqual(['acp:grok-build'])
+    expect(ordered.map((o) => o.key)).toEqual(['acp-grok'])
   })
 
   it('breaks ties with product default order', () => {
@@ -214,12 +207,12 @@ describe('orderSuggestionHarnesses', () => {
       ranks: [
         { key: 'codex', provider: 'codex', acpAgentId: null, sessionCount: 5 },
         { key: 'claude', provider: 'claude', acpAgentId: null, sessionCount: 5 },
-        { key: 'acp:grok-build', provider: 'acp', acpAgentId: 'grok-build', sessionCount: 5 },
+        { key: 'acp:grok-build', provider: 'acp-grok', acpAgentId: 'grok-build', sessionCount: 5 },
       ],
-      acpAgents: [{ id: 'grok-build', name: 'Grok Build' }],
+      acpAgents: [{ id: 'grok-build', name: 'Grok Build' }, { id: 'antigravity', name: 'Antigravity' }],
       experimentalAgentsEnabled: false,
     })
-    expect(ordered.map((o) => o.key)).toEqual(['claude', 'codex', 'acp:grok-build'])
+    expect(ordered.map((o) => o.key)).toEqual(['claude', 'codex', 'acp-grok', 'acp-antigravity'])
   })
 })
 
@@ -227,8 +220,8 @@ describe('resolveMenuTabOption', () => {
   const menu: SuggestionHarnessOption[] = [
     { key: 'codex', provider: 'codex', acpAgentId: null, label: 'Codex', sessionCount: 2 },
     {
-      key: 'acp:grok-build',
-      provider: 'acp',
+      key: 'acp-grok',
+      provider: 'acp-grok',
       acpAgentId: 'grok-build',
       label: 'Grok Build',
       sessionCount: 1,
@@ -238,10 +231,10 @@ describe('resolveMenuTabOption', () => {
   it('prefers the currently active menu harness', () => {
     const option = resolveMenuTabOption({
       menuHarnesses: menu,
-      activeKey: 'acp:grok-build',
+      activeKey: 'acp-grok',
       rememberedMenu: { provider: 'codex', acpAgentId: null },
     })
-    expect(option?.key).toBe('acp:grok-build')
+    expect(option?.key).toBe('acp-grok')
   })
 
   it('keeps the last menu pick after switching to the fixed slot', () => {
@@ -249,9 +242,9 @@ describe('resolveMenuTabOption', () => {
     const option = resolveMenuTabOption({
       menuHarnesses: menu,
       activeKey: 'claude',
-      rememberedMenu: { provider: 'acp', acpAgentId: 'grok-build' },
+      rememberedMenu: { provider: 'acp-grok', acpAgentId: 'grok-build' },
     })
-    expect(option?.key).toBe('acp:grok-build')
+    expect(option?.key).toBe('acp-grok')
   })
 
   it('falls back to rank #2 when there is no remembered menu pick', () => {
@@ -267,7 +260,7 @@ describe('resolveMenuTabOption', () => {
     const option = resolveMenuTabOption({
       menuHarnesses: menu,
       activeKey: 'claude',
-      rememberedMenu: { provider: 'acp', acpAgentId: 'grok-build' },
+      rememberedMenu: { provider: 'acp-grok', acpAgentId: 'grok-build' },
       secondaryPinned: true,
     })
     // Rank #2 is first menu entry (codex), not the remembered Grok pick.

@@ -14,10 +14,9 @@ jest.mock('../ui', () => ({
 
 const options: RemoteHarnessOption[] = [
   { key: 'claude', provider: 'claude', acpAgentId: null, label: 'Claude Code' },
-  { key: 'acp:grok-build', provider: 'acp', acpAgentId: 'grok-build', label: 'Grok Build' },
-  { key: 'acp:antigravity', provider: 'acp', acpAgentId: 'antigravity', label: 'Antigravity' },
-  { key: 'acp:opencode', provider: 'acp', acpAgentId: 'opencode', label: 'OpenCode' },
-  { key: 'acp:custom', provider: 'acp', acpAgentId: 'custom', label: 'Custom agent' },
+  { key: 'acp-grok', provider: 'acp-grok', acpAgentId: 'grok-build', label: 'Grok Build' },
+  { key: 'acp-antigravity', provider: 'acp-antigravity', acpAgentId: 'antigravity', label: 'Antigravity' },
+  { key: 'opencode', provider: 'opencode', acpAgentId: null, label: 'OpenCode' },
 ]
 
 it.each(options)('passes the selected $label identity to the landing icon', async (option) => {

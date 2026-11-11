@@ -22,7 +22,7 @@ export async function listNodeLiveHarnessModels({ store, harness, apiProviderId,
     options,
   )
   if (fromProvider.length > 0) return fromProvider
-  if (harness === 'acp') {
+  if (harness === 'acp-grok' || harness === 'acp-antigravity' || harness === 'acp') {
     const launch = resolveProductionAcpLaunch({ harnesses: harnesses as HarnessManager | undefined })
     if (!launch.binaryPath) return []
     return probeAcpModels({ launch: { command: launch.binaryPath, args: launch.args, agentId: launch.agentId },

@@ -267,7 +267,7 @@ describe('PermissionPrompt', () => {
   })
 
   it('shows Always on an ACP prompt when the agent offers allow_always', () => {
-    activeSessionState.sessionProvider = 'acp'
+    activeSessionState.sessionProvider = 'acp-grok'
     renderInChat(<PermissionPrompt />)
 
     expect(screen.getByRole('button', { name: /allow for this session/i })).toBeTruthy()
@@ -276,7 +276,7 @@ describe('PermissionPrompt', () => {
   })
 
   it('sends alwaysAllow on ACP Shift+Enter without flipping yolo', () => {
-    activeSessionState.sessionProvider = 'acp'
+    activeSessionState.sessionProvider = 'acp-grok'
     renderInChat(<PermissionPrompt />)
 
     fireEvent.keyDown(window, { key: 'Enter', shiftKey: true })
@@ -286,7 +286,7 @@ describe('PermissionPrompt', () => {
   })
 
   it('keeps ACP elicitation off the four-button Always row', () => {
-    activeSessionState.sessionProvider = 'acp'
+    activeSessionState.sessionProvider = 'acp-grok'
     activeSessionState.pendingPermissions = [{
       requestId: 'elicit-1',
       toolName: 'github',

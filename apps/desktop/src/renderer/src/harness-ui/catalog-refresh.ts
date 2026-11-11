@@ -1,6 +1,7 @@
 import { useCallback, useState } from 'react'
 import type { HarnessId } from '@superone/shared/agent-types'
 import { useChatStore } from '@/stores/chat'
+import { isClaudeHarness } from './claude/is-claude-harness'
 
 /** Which refresh button a launch model list shows. A remote snapshot uses the parent's. */
 export function pickLaunchRefresh(
@@ -28,7 +29,7 @@ export function useHarnessCatalogRefresh(harnessId: Exclude<HarnessId, 'codex'>,
   const claudeLoading = useChatStore((state) => state.claudeResourcesLoading)
   const [loading, setLoading] = useState(false)
   const refresh = useCallback(() => {
-    if (harnessId === 'claude') {
+    if (isClaudeHarness(harnessId)) {
       void refreshClaudeResources(true)
       return
     }
@@ -38,6 +39,6 @@ export function useHarnessCatalogRefresh(harnessId: Exclude<HarnessId, 'codex'>,
   if (!enabled) return {}
   return {
     onRefreshModels: refresh,
-    modelsLoading: harnessId === 'claude' ? claudeLoading : loading,
+    modelsLoading: isClaudeHarness(harnessId) ? claudeLoading : loading,
   }
 }

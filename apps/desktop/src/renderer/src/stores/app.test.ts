@@ -100,7 +100,7 @@ const mockWindowApp = {
   selectFolder: vi.fn(),
   getRecentFolders: vi.fn().mockResolvedValue([]),
   getProjectId: vi.fn().mockResolvedValue(null),
-  getStartupData: vi.fn().mockResolvedValue({ cached: { claude: null, codex: null, acp: null, opencode: null, cursor: null } }),
+  getStartupData: vi.fn().mockResolvedValue({ cached: { claude: null, codex: null, 'acp-grok': null, 'acp-antigravity': null, opencode: null, cursor: null } }),
   getAppSettings: vi.fn().mockResolvedValue({ onboardingCompletedAt: 1, onboardingEpoch: 1 }),
   saveAppSettings: vi.fn().mockResolvedValue({ onboardingCompletedAt: Date.now(), onboardingEpoch: 1 }),
   alignEnabledHarnesses: vi.fn().mockResolvedValue({ aligned: [], failed: [] }),
@@ -291,7 +291,7 @@ describe('continueToMain', () => {
     mockWindowApp.getStartupData.mockResolvedValue({
       appVersion: '0.1.0',
       sandboxCapability: null,
-      cached: { claude: null, codex: null, acp: null },
+      cached: { claude: null, codex: null, 'acp-grok': null, 'acp-antigravity': null },
     })
     resetStore({ recentFolders: [] })
 
@@ -310,7 +310,7 @@ describe('continueToMain', () => {
     mockWindowApp.getStartupData.mockResolvedValue({
       appVersion: '0.1.0',
       sandboxCapability: null,
-      cached: { claude: null, codex: null, acp: null },
+      cached: { claude: null, codex: null, 'acp-grok': null, 'acp-antigravity': null },
     })
     resetStore({ recentFolders: folders })
     seedActiveSession('/proj', 'claude')
@@ -337,7 +337,7 @@ describe('continueToMain', () => {
     mockWindowApp.getStartupData.mockResolvedValue({
       appVersion: '0.1.0',
       sandboxCapability: null,
-      cached: { claude: null, codex: null, acp: null },
+      cached: { claude: null, codex: null, 'acp-grok': null, 'acp-antigravity': null },
     })
     resetStore({ recentFolders: folders })
     seedActiveSession('/proj', 'codex')
@@ -361,7 +361,7 @@ describe('continueToMain', () => {
     mockWindowApp.getStartupData.mockResolvedValue({
       appVersion: '0.1.0',
       sandboxCapability: null,
-      cached: { claude: null, codex: null, acp: null },
+      cached: { claude: null, codex: null, 'acp-grok': null, 'acp-antigravity': null },
     })
     resetStore({ recentFolders: folders, currentFolder: null })
 
@@ -381,7 +381,7 @@ describe('continueToMain', () => {
     mockWindowApp.getStartupData.mockResolvedValue({
       appVersion: '0.1.0',
       sandboxCapability: null,
-      cached: { claude: null, codex: null, acp: null },
+      cached: { claude: null, codex: null, 'acp-grok': null, 'acp-antigravity': null },
     })
     resetStore({ recentFolders: [] })
 
@@ -923,7 +923,7 @@ describe('settings harness config navigation', () => {
     useAppStore.getState().openHarnessSettings('acp-grok')
 
     expect(useAppStore.getState().settingsTab).toBe('harnesses')
-    expect(useAppStore.getState().settingsProvider).toBe('acp')
+    expect(useAppStore.getState().settingsProvider).toBe('acp-grok')
     expect(useAppStore.getState().harnessListFocusKey).toBe('acp-grok')
   })
 })

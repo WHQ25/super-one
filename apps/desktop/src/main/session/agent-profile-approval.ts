@@ -4,6 +4,7 @@ import { createHash } from 'crypto'
 import type { SessionAgentLaunchConfig, SessionAgentLaunchProposal, SessionAgentProfile } from '@superone/shared/agent-types'
 import { readAgentProfile } from '@superone/shared/agent-profile'
 import { matchesProfileLaunchDefaults } from '@superone/shared/agent-profile-launch'
+import { isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import { isDefaultSessionProvider } from '@superone/shared/session-provider-definitions'
 import { canonicalJson } from '@superone/shared/request-coalescer'
 import { getDb } from '../database'
@@ -29,10 +30,10 @@ export function approvalProviderSnapshot(harnessId: SessionProvider['harnessId']
   const runtime = harnessId === 'claude' || harnessId === 'codex'
     ? resolveChatService(harnessId, config.apiProviderId, { experimentalClaudeOpenAiChatEnabled: readAppSettings().experimentalClaudeOpenAiChatEnabled })
     : null
-  return { display, runtimeFingerprint: configFingerprint(runtime), ...(harnessId === 'acp' ? { acpAgentId: acpAgentId?.trim() || null } : {}) }
+  return { display, runtimeFingerprint: configFingerprint(runtime), ...(isAcpProtocolHarness(harnessId) ? { acpAgentId: acpAgentId?.trim() || null } : {}) }
 }
 
-export function approvalFingerprint(row: SessionProvider, config: SessionAgentLaunchConfig, provider = approvalProviderSnapshot(row.harnessId, config, undefined, row.harnessId === 'acp' ? resolveAcpAgentId(row) : undefined)): string {
+export function approvalFingerprint(row: SessionProvider, config: SessionAgentLaunchConfig, provider = approvalProviderSnapshot(row.harnessId, config, undefined, isAcpProtocolHarness(row.harnessId) ? resolveAcpAgentId(row) : undefined)): string {
   return configFingerprint({ id: row.id, harnessId: row.harnessId, name: row.name, config: row.config, provider, launch: { permissionMode: 'default', sandboxMode: 'off', ...config } })
 }
 
@@ -52,7 +53,7 @@ export function approveAgentProfile(row: SessionProvider, config: SessionAgentLa
 
 export function isAgentProfileApproved(profile: SessionAgentProfile): boolean {
   if (!isAgentProfilesEnabled()) return false
-  if (profile.harnessId === 'acp' && !profile.acpAgentId?.trim()) return false
+  if (isAcpProtocolHarness(profile.harnessId) && !profile.acpAgentId?.trim()) return false
   const row = getSessionProvider(resolveProviderRowId(profile.id))
   if (!row) return false
   if (isDefaultSessionProvider(row)) return true

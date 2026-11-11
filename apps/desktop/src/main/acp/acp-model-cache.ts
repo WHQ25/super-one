@@ -12,6 +12,7 @@ import type {
 } from '@superone/shared/agent-types'
 import { isAcpEffortConfigId, isAcpEffortConfigOption } from '@superone/shared/effort-labels'
 import { withoutProjectScopedWorkflows } from '@superone/shared/workflow-commands'
+import { isAntigravityAcpAgent } from '@superone/shared/acp-brand'
 import { listBuiltinAgentDescriptors, getBuiltinAgent } from './agent-catalog'
 import { detectBuiltinAgents } from './acp-detect'
 import { createAcpRuntime } from './acp-runtime'
@@ -122,35 +123,130 @@ function normalizeResources(raw: AcpResources): AcpResources {
   }
 }
 
+type AcpProtocolHarnessId = 'acp-grok' | 'acp-antigravity'
+
+function legacyAcpSlot(): AcpResources | null {
+  return getCachedHarnessResources('acp' as 'acp-grok')
+}
+
+function slotHasPayload(resources: AcpResources | null | undefined): boolean {
+  if (!resources) return false
+  return (resources.agents?.length ?? 0) > 0
+    || Object.keys(resources.configByAgentId ?? {}).length > 0
+    || Object.keys(resources.modelsByAgentId ?? {}).length > 0
+    || Boolean(resources.selectedAgentId)
+}
+
+function builtinSelected(id: string | null | undefined): string | null {
+  return id && getBuiltinAgent(id) ? id : null
+}
+
+function filterBuiltinAgents(agents: AcpResources['agents'] | undefined): AcpResources['agents'] {
+  return (agents ?? []).filter((agent) => getBuiltinAgent(agent.id))
+}
+
+function pickConfig(
+  configByAgentId: AcpResources['configByAgentId'] | undefined,
+  antigravity: boolean,
+): NonNullable<AcpResources['configByAgentId']> {
+  const out: NonNullable<AcpResources['configByAgentId']> = {}
+  for (const [agentId, catalog] of Object.entries(configByAgentId ?? {})) {
+    if (isAntigravityAcpAgent(agentId) === antigravity) out[agentId] = catalog
+  }
+  return out
+}
+
+function mergeSlots(grok: AcpResources | null, antigravity: AcpResources | null): AcpResources | null {
+  if (!slotHasPayload(grok) && !slotHasPayload(antigravity)) return null
+  const agents = new Map<string, AcpResources['agents'][number]>()
+  for (const agent of [...filterBuiltinAgents(grok?.agents), ...filterBuiltinAgents(antigravity?.agents)]) {
+    const previous = agents.get(agent.id)
+    agents.set(agent.id, previous ? { ...previous, ...agent, installed: previous.installed || agent.installed } : agent)
+  }
+  return {
+    agents: agents.size ? [...agents.values()] : listBuiltinAgentDescriptors(false),
+    selectedAgentId: builtinSelected(grok?.selectedAgentId) ?? builtinSelected(antigravity?.selectedAgentId),
+    detecting: Boolean(grok?.detecting || antigravity?.detecting),
+    modelsByAgentId: { ...(antigravity?.modelsByAgentId ?? {}), ...(grok?.modelsByAgentId ?? {}) },
+    configByAgentId: { ...(antigravity?.configByAgentId ?? {}), ...(grok?.configByAgentId ?? {}) },
+  }
+}
+
+function storedMergedRaw(): AcpResources | null {
+  const grok = getCachedHarnessResources('acp-grok')
+  const antigravity = getCachedHarnessResources('acp-antigravity')
+  if (!slotHasPayload(grok) && !slotHasPayload(antigravity)) return legacyAcpSlot()
+  return mergeSlots(grok, antigravity)
+}
+
 export function readAcpResourcesCache(): AcpResources {
-  const cached = getCachedHarnessResources('acp')
-  if (!cached) return emptyResources()
-  const agents = (cached.agents ?? []).filter((a) => getBuiltinAgent(a.id) || a.id === 'custom')
-  const selectedAgentId =
-    cached.selectedAgentId && (getBuiltinAgent(cached.selectedAgentId) || cached.selectedAgentId === 'custom')
-      ? cached.selectedAgentId
-      : null
+  const stored = storedMergedRaw()
+  if (!stored) return emptyResources()
+  const agents = filterBuiltinAgents(stored.agents)
   return normalizeResources({
     agents: agents.length ? agents : listBuiltinAgentDescriptors(false),
-    selectedAgentId,
-    detecting: cached.detecting,
-    modelsByAgentId: cached.modelsByAgentId ?? {},
-    configByAgentId: cached.configByAgentId ?? {},
+    selectedAgentId: builtinSelected(stored.selectedAgentId),
+    detecting: stored.detecting,
+    modelsByAgentId: stored.modelsByAgentId ?? {},
+    configByAgentId: stored.configByAgentId ?? {},
   })
 }
 
+function projectSlot(resources: AcpResources, harnessId: AcpProtocolHarnessId): AcpResources {
+  const antigravity = harnessId === 'acp-antigravity'
+  const selected = builtinSelected(resources.selectedAgentId)
+  return normalizeResources({
+    agents: filterBuiltinAgents(resources.agents).filter((agent) => isAntigravityAcpAgent(agent.id) === antigravity),
+    selectedAgentId: selected && isAntigravityAcpAgent(selected) === antigravity ? selected : null,
+    detecting: resources.detecting,
+    modelsByAgentId: {},
+    configByAgentId: pickConfig(resources.configByAgentId, antigravity),
+  })
+}
+
+/** One concrete slot, including a legacy `acp` row when neither new slot is stored. */
+export function readAcpHarnessResources(harnessId: AcpProtocolHarnessId): AcpResources | null {
+  const direct = getCachedHarnessResources(harnessId)
+  if (slotHasPayload(direct)) {
+    return normalizeResources({
+      ...direct!,
+      agents: filterBuiltinAgents(direct!.agents),
+      selectedAgentId: builtinSelected(direct!.selectedAgentId),
+      modelsByAgentId: direct!.modelsByAgentId ?? {},
+      configByAgentId: direct!.configByAgentId ?? {},
+    })
+  }
+  const grok = getCachedHarnessResources('acp-grok')
+  const antigravity = getCachedHarnessResources('acp-antigravity')
+  if (slotHasPayload(grok) || slotHasPayload(antigravity)) return null
+  const legacy = legacyAcpSlot()
+  if (!legacy) return null
+  const projected = projectSlot(legacy, harnessId)
+  return slotHasPayload(projected) ? projected : null
+}
+
 export function writeAcpResourcesCache(resources: AcpResources): void {
-  setCachedHarnessResources('acp', normalizeResources(resources))
+  const normalized = normalizeResources(resources)
+  const selected = builtinSelected(normalized.selectedAgentId)
+  const writeSlot = (harnessId: AcpProtocolHarnessId) => {
+    const antigravity = harnessId === 'acp-antigravity'
+    setCachedHarnessResources(harnessId, normalizeResources({
+      agents: filterBuiltinAgents(normalized.agents).filter((agent) => isAntigravityAcpAgent(agent.id) === antigravity),
+      selectedAgentId: selected && isAntigravityAcpAgent(selected) === antigravity ? selected : null,
+      detecting: normalized.detecting,
+      modelsByAgentId: {},
+      configByAgentId: pickConfig(normalized.configByAgentId, antigravity),
+    }))
+  }
+  writeSlot('acp-grok')
+  writeSlot('acp-antigravity')
 }
 
 export async function refreshAcpDetectedAgents(): Promise<AcpResources> {
   const prev = readAcpResourcesCache()
   const agents = await detectBuiltinAgents()
   const prevSelected = prev.selectedAgentId
-  const selectedAgentId =
-    prevSelected && (getBuiltinAgent(prevSelected) || prevSelected === 'custom')
-      ? prevSelected
-      : null
+  const selectedAgentId = prevSelected && getBuiltinAgent(prevSelected) ? prevSelected : null
   const next = normalizeResources({
     ...prev,
     agents: agents.map((a) => ({

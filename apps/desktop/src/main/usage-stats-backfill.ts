@@ -73,8 +73,8 @@ function sessionHarness(provider: string | null, acpAgentId: string | null): Har
   if (provider === 'codex') return 'codex'
   if (provider === 'cursor') return 'cursor'
   if (provider === 'opencode') return 'opencode'
-  if (provider === 'acp' && isGrokAcpAgent(acpAgentId)) return 'grok'
-  if (provider === 'acp' && acpAgentId?.trim() === 'antigravity') return 'antigravity'
+  if (provider === 'acp-grok' || (provider === 'acp' && isGrokAcpAgent(acpAgentId))) return 'grok'
+  if (provider === 'acp-antigravity' || (provider === 'acp' && acpAgentId?.trim() === 'antigravity')) return 'antigravity'
   return 'claude'
 }
 

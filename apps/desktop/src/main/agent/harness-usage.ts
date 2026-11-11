@@ -19,7 +19,7 @@ import type {
   RemoteUsage,
 } from '@superone/shared/agent-types'
 import { claudeAccountCredentialDir, isClaudeAccountProvider } from '@superone/shared/agent-types'
-import { isAntigravityAcpAgent, isGrokAcpAgent } from '@superone/shared/acp-brand'
+import { acpAgentIdForHarness, isAcpProtocolHarness, isAntigravityAcpAgent, isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { isCodexAccountProvider } from '@superone/shared/codex-accounts'
 import { codexWindowLabel } from '@superone/runtime/usage'
 
@@ -102,12 +102,13 @@ export async function readHarnessUsage(request: HarnessUsageRequest, deps: Harne
   }
 
   // Grok and Antigravity are the ACP agents with a billing/quota surface.
+  const acpAgentId = request.acpAgentId?.trim()
+    || (isAcpProtocolHarness(provider) ? acpAgentIdForHarness(provider) : '')
   if (
-    provider === 'acp'
-    && request.acpAgentId
-    && (isGrokAcpAgent(request.acpAgentId) || isAntigravityAcpAgent(request.acpAgentId))
+    isAcpProtocolHarness(provider)
+    && (isGrokAcpAgent(acpAgentId) || isAntigravityAcpAgent(acpAgentId))
   ) {
-    const limits = await deps.acpRateLimits(request.acpAgentId, request, force)
+    const limits = await deps.acpRateLimits(acpAgentId, request, force)
     if (!limits || limits.windows.length === 0) return null
     return { ...limits, kind: 'acp', account: limits.account ?? null }
   }

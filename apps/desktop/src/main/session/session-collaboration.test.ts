@@ -486,7 +486,7 @@ describe('@agent mention targets', () => {
 
   it('resolves the ACP base provider to the agent behind it', () => {
     state.providers = [{
-      id: 'acp-grok', harnessId: 'acp', name: 'Grok (Base)', isBase: true,
+      id: 'acp-grok', harnessId: 'acp-grok', name: 'Grok (Base)', isBase: true,
       config: { agentId: 'grok-build' }, createdAt: 0, updatedAt: 0,
     }]
     expect(listAgentMentionTargets()).toEqual([
@@ -626,7 +626,7 @@ describe('@agent mention targets', () => {
   it('exposes the selected Grok model and effort as profile defaults', () => {
     state.db!.prepare('UPDATE sessions SET provider_id = ?').run('acp-base')
     state.providers = [{
-      id: 'acp-base', harnessId: 'acp', name: 'Others (ACP)', isBase: true,
+      id: 'acp-base', harnessId: 'acp-grok', name: 'Others (ACP)', isBase: true,
       config: { agentId: 'grok-build' }, createdAt: 0, updatedAt: 0,
     }]
     state.resourceCache = {
@@ -2482,6 +2482,10 @@ registerProfileApprovalScenarios({
   setAcpAgent: (id, source) => {
     if (source === 'preference') state.agentPreference.acp.selectedAgentId = id
     else state.resourceCache.acp = { ...(state.resourceCache.acp as object), selectedAgentId: id }
+  },
+  enableAntigravity: (enabled) => {
+    if (enabled) state.harnessStatuses['acp-antigravity'] = { enabled: true, state: 'ready' }
+    else delete state.harnessStatuses['acp-antigravity']
   },
 })
 

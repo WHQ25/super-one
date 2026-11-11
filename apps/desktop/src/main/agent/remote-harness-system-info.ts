@@ -21,8 +21,7 @@ import {
   harnessSandboxModes,
 } from '@superone/shared/harness/harness-sandbox'
 import { lookupCatalogContextWindow } from '@superone/shared/platform-registry'
-import { BASE_SESSION_PROVIDERS } from '@superone/shared/session-provider-definitions'
-import { isAntigravityAcpAgent } from '@superone/shared/acp-brand'
+import { acpAgentIdForHarness, isAntigravityAcpAgent } from '@superone/shared/acp-brand'
 import { acpModeCatalog } from '@superone/shared/harness/acp-mode-catalog'
 import { deriveSessionCatalog } from '../acp/acp-config'
 import { deepseekModeCatalog, openCodeAgentCatalog } from './remote-selector-catalog'
@@ -71,7 +70,6 @@ export interface RemoteHarnessSystemInfoDependencies {
 }
 
 const CODEX_PERMISSION_PRESETS = ['read-only', 'default', 'auto-review', 'full-access'] as const
-const ANTIGRAVITY_PERMISSION_MODES = ['default', 'plan', 'acceptEdits', 'auto', 'bypassPermissions'] as const
 
 function present(value: string | null | undefined): string | null {
   return value?.trim() || null
@@ -209,18 +207,15 @@ async function harnessSystemInfo(
         },
       }
     }
-    case 'acp': {
-      const cached = deps.getCachedResources('acp')
-      const fallbackAgentId = BASE_SESSION_PROVIDERS.acp.config.agentId
-      const acpAgentId = present(deps.acpAgentId)
-        ?? present(preferences.acp.selectedAgentId)
-        ?? present(cached?.selectedAgentId)
-        ?? (typeof fallbackAgentId === 'string' ? fallbackAgentId : null)
-      const catalog = acpAgentId ? cached?.configByAgentId?.[acpAgentId] : undefined
+    case 'acp-grok':
+    case 'acp-antigravity': {
+      const cached = deps.getCachedResources(harnessId)
+      const acpAgentId = present(deps.acpAgentId) ?? acpAgentIdForHarness(harnessId)
+      const catalog = cached?.configByAgentId?.[acpAgentId]
       const sessionCatalog = catalog ? deriveSessionCatalog(catalog) : null
       const models = sessionCatalog?.models ?? []
       const model = preferredModel(models, sessionCatalog?.selectedModelId)
-      const isAntigravity = isAntigravityAcpAgent(acpAgentId)
+      const isAntigravity = harnessId === 'acp-antigravity' || isAntigravityAcpAgent(acpAgentId)
       // Grok effort is extraModes or config id `reasoning_effort`. A real
       // session mode (`mode`) stays out of the effort slider, and Antigravity's
       // modes are already driven by permissionModes.
@@ -230,10 +225,8 @@ async function harnessSystemInfo(
         selectedModeId: sessionCatalog.selectedModeId,
       })
       const selectedEffort = present(sessionCatalog?.selectedModeId)
-      const permissionModes = isAntigravity
-        ? [...ANTIGRAVITY_PERMISSION_MODES]
-        : [...HARNESS_LAUNCH_OPTIONS.acp.permissionModes]
-      const configuredPermissionMode = sessionDefaultsForHarness(preferences, 'acp', acpAgentId).permissionMode
+      const permissionModes = [...HARNESS_LAUNCH_OPTIONS[harnessId].permissionModes]
+      const configuredPermissionMode = sessionDefaultsForHarness(preferences, harnessId, acpAgentId).permissionMode
       const defaultPermissionMode = permissionModes.includes(configuredPermissionMode)
         ? configuredPermissionMode
         : permissionModes[0] ?? 'default'

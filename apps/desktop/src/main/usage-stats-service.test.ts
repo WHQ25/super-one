@@ -790,8 +790,8 @@ describe('usage-stats-service: queryHarnessSessionRanks', () => {
 
     const { queryHarnessSessionRanks } = await import('./usage-stats-service')
     const ranks = queryHarnessSessionRanks(7)
-    expect(ranks.map((r) => r.key)).toEqual(['acp:grok-build', 'codex', 'claude'])
-    expect(ranks[0]).toMatchObject({ provider: 'acp', acpAgentId: 'grok-build', sessionCount: 4 })
+    expect(ranks.map((r) => r.key)).toEqual(['acp-grok', 'codex', 'claude'])
+    expect(ranks[0]).toMatchObject({ provider: 'acp-grok', acpAgentId: 'grok-build', sessionCount: 4 })
     expect(ranks[1]).toMatchObject({ provider: 'codex', sessionCount: 3 })
     expect(ranks[2]).toMatchObject({ provider: 'claude', sessionCount: 2 })
   })

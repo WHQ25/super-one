@@ -3,7 +3,7 @@ import { sendStartsStreaming, shouldQueueUserSend } from './session-send-request
 
 describe('shouldQueueUserSend', () => {
   it('holds a send behind a running turn for queueing harnesses only', () => {
-    for (const provider of ['claude', 'acp', 'opencode', 'dsh'] as const) {
+    for (const provider of ['claude', 'acp-grok', 'opencode', 'dsh'] as const) {
       expect(shouldQueueUserSend(provider, 'streaming')).toBe(true)
       expect(shouldQueueUserSend(provider, 'idle')).toBe(false)
     }

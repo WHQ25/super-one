@@ -139,12 +139,12 @@ describe('ensureHostSession', () => {
   })
 
   it("names an ACP agent in a local draft's selections", async () => {
-    seed(LOCAL, 'draft-acp', { preferredProvider: 'acp', acpAgentId: 'grok-build' })
+    seed(LOCAL, 'draft-acp', { preferredProvider: 'acp-grok', acpAgentId: 'grok-build' })
 
     await ensure(LOCAL).done
 
     expect(createSession).toHaveBeenCalledWith('local', expect.objectContaining({
-      harnessId: 'acp',
+      harnessId: 'acp-grok',
       selections: { sessionId: 'draft-acp', acpAgentId: 'grok-build' },
     }))
   })
@@ -323,7 +323,7 @@ describe('ensureHostSession', () => {
 
 describe('sessionTurnRequest', () => {
   const turn = { text: 'hello', clientMessageId: 'u1' }
-  it.each(['claude', 'codex', 'acp', 'opencode'] as const)('sends %s queue priority without requiring steer support', provider => {
+  it.each(['claude', 'codex', 'acp-grok', 'opencode'] as const)('sends %s queue priority without requiring steer support', provider => {
     seed(NODE, 'queued', { sessionProvider: provider })
     expect(sessionTurnRequest(useChatStore.getState(), NODE, 'queued', { ...turn, queued: true })).toMatchObject({ priority: 'next' })
   })

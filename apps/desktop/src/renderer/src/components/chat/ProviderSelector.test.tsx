@@ -88,8 +88,8 @@ describe('ProviderSelector harness catalog', () => {
       s1: {
         ...createDefaultPerSessionState(),
         _historyHydrated: true,
-        preferredProvider: 'acp',
-        sessionProvider: 'acp',
+        preferredProvider: 'acp-grok',
+        sessionProvider: 'acp-grok',
         acpAgentId: 'antigravity',
         harnessUserChosen: true,
       },
@@ -99,7 +99,7 @@ describe('ProviderSelector harness catalog', () => {
       projectSessions: { '/p': project },
       harnessResources: {
         ...useChatStore.getState().harnessResources,
-        acp: {
+        'acp-grok': {
           agents: [
             { id: 'grok-build', name: 'Grok Build', installed: true, commandPreview: 'grok agent stdio' },
             // Stale startup cache before ACP agent re-detection completes:
@@ -131,8 +131,8 @@ describe('ProviderSelector harness catalog', () => {
     ])
     window.app.queryHarnessSessionRanks = vi.fn(async () => [])
     window.app.getAppSettings = vi.fn(async () => ({
-      suggestionHarness: { provider: 'acp', acpAgentId: 'grok-build' },
-      secondaryHarness: { provider: 'acp', acpAgentId: 'antigravity' },
+      suggestionHarness: { provider: 'acp-grok', acpAgentId: 'grok-build' },
+      secondaryHarness: { provider: 'acp-grok', acpAgentId: 'antigravity' },
     }) as never)
     window.app.saveAppSettings = vi.fn(async () => ({}) as never)
 
@@ -142,8 +142,8 @@ describe('ProviderSelector harness catalog', () => {
       s1: {
         ...createDefaultPerSessionState(),
         _historyHydrated: true,
-        preferredProvider: 'acp',
-        sessionProvider: 'acp',
+        preferredProvider: 'acp-grok',
+        sessionProvider: 'acp-grok',
         acpAgentId: 'grok-build',
         harnessUserChosen: false,
       },
@@ -153,7 +153,7 @@ describe('ProviderSelector harness catalog', () => {
       projectSessions: { '/p': project },
       harnessResources: {
         ...useChatStore.getState().harnessResources,
-        acp: {
+        'acp-grok': {
           agents: [
             { id: 'grok-build', name: 'Grok Build', installed: true, commandPreview: 'grok agent stdio' },
             { id: 'antigravity', name: 'Antigravity', installed: true, commandPreview: 'agy --acp' },
@@ -198,7 +198,7 @@ describe('Chat Suggestions host selection', () => {
     const node: EnvironmentListItem = {
       connectionId: 'node-1', environmentId: 'env-1', label: 'Remote node',
       kind: 'remote', state: 'connected', endpointProfiles: [],
-      capabilities: { methods: [], harnessIds: ['codex', 'acp'], coldSessionResume: true, turnReattach: false, hostActionV1: false },
+      capabilities: { methods: [], harnessIds: ['codex', 'acp-grok'], coldSessionResume: true, turnReattach: false, hostActionV1: false },
     }
     listItems.mockReset().mockResolvedValue([node])
     window.environment = new Proxy(environment, {
@@ -215,13 +215,14 @@ describe('Chat Suggestions host selection', () => {
       initializeHarness: vi.fn(async () => {}),
       harnessResources: {
         claude: null, codex: null,
-        acp: {
+        'acp-grok': {
           agents: [
             { id: 'grok-build', name: 'Grok Build', installed: true, commandPreview: 'grok agent stdio' },
             { id: 'antigravity', name: 'Antigravity', installed: true, commandPreview: 'agy --acp' },
           ],
           selectedAgentId: 'antigravity', modelsByAgentId: {}, configByAgentId: {},
         },
+        'acp-antigravity': null,
       },
     })
     window.app.listHarnesses = vi.fn(async () => localCatalog)

@@ -17,7 +17,8 @@ const lastActive = (session: Readonly<NodeSessionRecord>) => session.transcript.
 
 function branding(session: Readonly<NodeSessionRecord>, ctx: RpcContext) {
   const config = ctx.sessionProviders?.get(session.providerId)?.config as { agentId?: string } | undefined
-  return { harness: session.harnessId, acpAgentId: session.harnessId === 'acp' ? config?.agentId ?? null : null }
+  const acp = session.harnessId === 'acp-grok' || session.harnessId === 'acp-antigravity' || session.harnessId === 'acp'
+  return { harness: session.harnessId, acpAgentId: acp ? config?.agentId ?? session.acpAgentId ?? null : null }
 }
 function entry(session: Readonly<NodeSessionRecord>, ctx: RpcContext, source?: string) {
   return { sessionId: session.sessionId, title: session.title ?? 'Untitled', ...branding(session, ctx), projectId: session.projectId, createdAt: date(session.createdAt), lastActiveAt: date(lastActive(session)), messageCount: ctx.sessions.messageCount(session.sessionId), tags: session.tags ?? [], pinned: session.isPinned, hidden: session.isHidden, isSelf: session.sessionId === source }

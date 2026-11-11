@@ -2076,7 +2076,7 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.USAGE_QUERY, range ?? {}) as Promise<{
       rows: Array<{
         day: string
-        harness: 'claude' | 'codex' | 'grok'
+        harness: 'claude' | 'codex' | 'grok' | 'antigravity'
         model: string
         input_tokens: number
         output_tokens: number
@@ -2084,7 +2084,7 @@ const appAPI = {
         cache_creation_tokens: number
       }>
     }>,
-  queryUsageCounts: (range?: { from?: string; to?: string; harness?: 'claude' | 'codex' | 'grok' | 'cursor' | 'opencode' }) =>
+  queryUsageCounts: (range?: { from?: string; to?: string; harness?: 'claude' | 'codex' | 'grok' | 'antigravity' | 'cursor' | 'opencode' }) =>
     ipcRenderer.invoke(AgentIpcChannels.USAGE_COUNTS_QUERY, range ?? {}) as Promise<{
       sessions: number
       messages: number
@@ -2093,7 +2093,7 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.USAGE_HARNESS_SESSION_RANKS, days ?? 7) as Promise<
       Array<{
         key: string
-        provider: 'claude' | 'codex' | 'acp' | 'opencode'
+        provider: 'claude' | 'codex' | 'acp-grok' | 'acp-antigravity' | 'opencode' | 'cursor' | 'dsh'
         acpAgentId: string | null
         sessionCount: number
       }>

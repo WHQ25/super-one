@@ -25,7 +25,7 @@ describe('routed native control presence', () => {
   it('reuses metadata for replacement and release without undoing a newer proof', async () => {
     const publish = vi.fn()
     const rpc = vi.fn(async (method: string) => method === 'project.list' ? [{ projectId: 'p', path: '/p' }]
-      : { sessionId: 's', projectId: 'p', harnessId: 'acp', acpAgentId: 'agent', cwd: '/p' })
+      : { sessionId: 's', projectId: 'p', harnessId: 'acp-grok', acpAgentId: 'agent', cwd: '/p' })
     const presence = new RoutedControlPresence(() => ({ client: { rpc: rpc as never }, projectKey: path => path }), publish, vi.fn())
     presence.changed(resource, lease)
     const next = { ...lease, leaseId: 'next', generation: '2' }

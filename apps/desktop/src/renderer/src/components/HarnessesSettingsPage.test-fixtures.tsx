@@ -59,7 +59,7 @@ const DEFAULT_SETTINGS = {
       tokenOverrides: {},
       darkTokenOverrides: {},
     },
-    acp: {
+    'acp-grok': {
       enabled: false,
       brandHue: null,
       darkBrandHue: null,
@@ -95,7 +95,7 @@ export type Scenario = {
   seedCliInstallEvents?: ExternalCliInstallEvent[]
   seedCliInstallStepMs?: number
   failCliInstallCode?: number
-  select?: 'claude' | 'codex' | 'cursor' | 'dsh' | 'opencode' | 'acp'
+  select?: 'claude' | 'codex' | 'cursor' | 'dsh' | 'opencode' | 'acp-grok' | 'acp-antigravity'
   focusKey?: string
   catalogPending?: boolean
   width?: number

@@ -12,7 +12,9 @@ const state = vi.hoisted(() => ({
   preferences: {
     claude: { defaultModel: 'sonnet', defaultEffort: 'high', defaultPermissionMode: 'default', defaultSandboxMode: 'off' },
     codex: { defaultModel: 'gpt', defaultReasoningEffort: 'high', defaultPermissionPreset: 'read-only', defaultFastMode: false },
-    acp: { selectedAgentId: 'agent-selected' }, cursor: {}, dsh: {}, opencode: {},
+    'acp-grok': { defaultModel: '', defaultEffort: '', defaultPermissionMode: 'default' },
+    'acp-antigravity': { defaultModel: '', defaultEffort: '', defaultPermissionMode: 'default' },
+    cursor: {}, dsh: {}, opencode: {},
   },
   available: true,
 }))
@@ -110,9 +112,9 @@ describe('Agent Profile settings management', () => {
     expect(listManagedAgentProfiles().every((profile) => profile.followsDefaults)).toBe(true)
   })
 
-  it('pins a new ACP Profile to the effective agent rather than the seeded agent', async () => {
-    const saved = await saveManagedAgentProfile(await proposal('acp-base'))
-    expect(getSessionProvider(saved.id)?.config).toMatchObject({ agentId: 'agent-selected' })
+  it('pins a new ACP Profile to the harness agent', async () => {
+    const saved = await saveManagedAgentProfile(await proposal('acp-grok'))
+    expect(getSessionProvider(saved.id)?.config).toMatchObject({ agentId: 'grok-build' })
   })
 
   it('updates instructions and reapproves the new configuration', async () => {

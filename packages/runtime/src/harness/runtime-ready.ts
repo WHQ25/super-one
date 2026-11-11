@@ -33,6 +33,11 @@ const RUNTIME_SPECS: Record<
     okReason: 'codex binary available',
     failReason: 'codex runtime unavailable: enable with --artifact or set SUPERONE_CODEX_BINARY',
   },
+  'acp-grok': {
+    catalogId: 'acp-grok',
+    okReason: 'acp binary available',
+    failReason: 'acp-grok runtime unavailable: enable with --command or set SUPERONE_ACP_BINARY',
+  },
   acp: {
     catalogId: 'acp-grok',
     okReason: 'acp binary available',

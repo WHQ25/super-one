@@ -16,7 +16,7 @@ let modeWrites: string[] = []
 
 function seedCursorSession(permissionMode: string): void {
   useChatStore.setState({
-    harnessResources: { claude: null, codex: null, acp: null, opencode: null, cursor: null },
+    harnessResources: { claude: null, codex: null, 'acp-grok': null, 'acp-antigravity': null, opencode: null, cursor: null },
   })
   useChatStore.getState().ensureSession('/cursor-permission')
   useChatStore.setState({ activeProject: '/cursor-permission' })

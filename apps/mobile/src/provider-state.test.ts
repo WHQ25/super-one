@@ -5,7 +5,8 @@ const PROVIDER = { id: 'p1', name: 'Zhipu', presetKey: 'zhipu', modelEnv: {}, fo
 
 describe('poweredByHint', () => {
   it('shows nothing for harnesses that own their account', () => {
-    expect(poweredByHint('acp')).toBeNull()
+    expect(poweredByHint('acp-grok')).toBeNull()
+    expect(poweredByHint('acp-antigravity')).toBeNull()
     expect(poweredByHint('opencode')).toBeNull()
     expect(poweredByHint('cursor')).toBeNull()
     expect(poweredByHint('dsh')).toBeNull()

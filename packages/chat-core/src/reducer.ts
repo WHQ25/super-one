@@ -1,4 +1,9 @@
+import { isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import { reduceCodexMetadata } from './codex-metadata'
+
+function acceptsAcpCatalog(provider: string | null | undefined): boolean {
+  return provider === 'acp' || isAcpProtocolHarness(provider)
+}
 import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
 import { withCodexContent } from '@superone/shared/codex-content'
 import { updateMcpAppAttachments } from '@superone/shared/mcp-apps-state'
@@ -200,7 +205,7 @@ function reduceEvent(
       // After harness switch, acpAgentId is kept for restore — but late prewarm must not
       // overwrite Claude/OpenCode/Codex selectedModel with Grok/ACP ids.
       const sessionProvider = session.sessionProvider ?? session.preferredProvider
-      if (sessionProvider !== 'acp') return {}
+      if (!acceptsAcpCatalog(sessionProvider)) return {}
       // Ignore catalogs from a different ACP agent (stale prewarm race grok → opencode).
       if (event.agentId && session.acpAgentId && event.agentId !== session.acpAgentId) {
         return {}
@@ -241,7 +246,7 @@ function reduceEvent(
 
     case 'acp_modes': {
       const sessionProvider = session.sessionProvider ?? session.preferredProvider
-      if (sessionProvider !== 'acp') return {}
+      if (!acceptsAcpCatalog(sessionProvider)) return {}
       if (event.agentId && session.acpAgentId && event.agentId !== session.acpAgentId) {
         return {}
       }
@@ -288,7 +293,7 @@ function reduceEvent(
 
     case 'acp_commands': {
       const sessionProvider = session.sessionProvider ?? session.preferredProvider
-      if (sessionProvider !== 'acp') return {}
+      if (!acceptsAcpCatalog(sessionProvider)) return {}
       if (event.agentId && session.acpAgentId && event.agentId !== session.acpAgentId) {
         return {}
       }

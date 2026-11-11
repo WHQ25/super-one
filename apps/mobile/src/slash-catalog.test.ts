@@ -99,7 +99,7 @@ describe('requestSlashCatalog', () => {
     const grok = await requestSlashCatalog(
       client({ get_system_info: { userSlashCommands: [{ name: 'clear' }] } }),
       '/work/super-one',
-      'acp',
+      'acp-grok',
       'grok-build',
     )
     expect(grok.map((c) => c.name)).toContain('recap')
@@ -108,7 +108,7 @@ describe('requestSlashCatalog', () => {
     const other = await requestSlashCatalog(
       client({ get_system_info: { userSlashCommands: [{ name: 'clear' }] } }),
       '/work/super-one',
-      'acp',
+      'acp-grok',
       'opencode',
     )
     expect(other.map((c) => c.name)).not.toContain('recap')

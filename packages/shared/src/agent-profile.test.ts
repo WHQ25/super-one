@@ -133,16 +133,16 @@ describe('agentProfileModelSupport', () => {
     })
     expect(agentProfileModelSupport('claude', CLAUDE, 'sonnet')?.options).toEqual({ ultracode: null })
     expect(agentProfileModelSupport('codex', CODEX, 'gpt-5.6')?.options).toEqual({ fastMode: { kind: 'toggle' } })
-    expect(agentProfileModelSupport('acp', GROK, 'grok-4')?.options).toEqual({
+    expect(agentProfileModelSupport('acp-grok', GROK, 'grok-4')?.options).toEqual({
       contextWindow: { kind: 'choice', values: [{ value: 256_000, label: '256K' }, { value: 1_000_000, label: '1M' }] },
       mode: null,
     })
-    expect(agentProfileModelSupport('acp', GROK, 'grok-code')?.options.contextWindow).toBeNull()
+    expect(agentProfileModelSupport('acp-grok', GROK, 'grok-code')?.options.contextWindow).toBeNull()
     expect(agentProfileModelSupport('claude', CLAUDE, 'nope')).toBeNull()
   })
 
   it('falls back to catalog-level efforts when models carry none (ACP modes)', () => {
-    expect(agentProfileModelSupport('acp', GROK, 'grok-4')?.efforts).toEqual(['low', 'high'])
+    expect(agentProfileModelSupport('acp-antigravity', GROK, 'grok-4')?.efforts).toEqual(['low', 'high'])
   })
 })
 
@@ -150,7 +150,7 @@ describe('validateAgentProfileRuntime', () => {
   it('passes supported combinations on every harness', () => {
     expect(validateAgentProfileRuntime({ model: 'opus', effort: 'max', options: { ultracode: true } }, CLAUDE, claude)).toEqual([])
     expect(validateAgentProfileRuntime({ model: 'gpt-5.6', options: { fastMode: true } }, CODEX, codex)).toEqual([])
-    expect(validateAgentProfileRuntime({ model: 'grok-4', options: { contextWindow: 1_000_000 } }, GROK, { id: 'acp', name: 'ACP' })).toEqual([])
+    expect(validateAgentProfileRuntime({ model: 'grok-4', options: { contextWindow: 1_000_000 } }, GROK, { id: 'acp-grok', name: 'ACP' })).toEqual([])
     expect(validateAgentProfileRuntime({ model: 'claude-opus-5-5', options: { modelParams: { fast: 'true', context: '1m' } } }, CURSOR, { id: 'cursor', name: 'Cursor' })).toEqual([])
     expect(validateAgentProfileRuntime({ options: { agent: 'plan' } }, OPENCODE, { id: 'opencode', name: 'OpenCode' })).toEqual([])
     expect(validateAgentProfileRuntime({ effort: 'low' }, CODEX, codex)).toEqual([])
@@ -168,13 +168,13 @@ describe('validateAgentProfileRuntime', () => {
       .toEqual(['runtime.effort is not supported by Claude model "haiku".'])
     expect(validateAgentProfileRuntime({ model: 'gpt-5.6-mini', effort: 'xhigh' }, CODEX, codex))
       .toEqual(['runtime.effort "xhigh" is not supported by Codex model "gpt-5.6-mini" (supported: low).'])
-    expect(validateAgentProfileRuntime({ model: 'grok-4', options: { contextWindow: 2_000_000 } }, GROK, { id: 'acp', name: 'ACP' }))
+    expect(validateAgentProfileRuntime({ model: 'grok-4', options: { contextWindow: 2_000_000 } }, GROK, { id: 'acp-grok', name: 'ACP' }))
       .toEqual(['options.contextWindow 2000000 is not one of: 256000, 1000000.'])
     expect(validateAgentProfileRuntime({ model: 'claude-opus-5-5', options: { modelParams: { context: '2m' } } }, CURSOR, { id: 'cursor', name: 'Cursor' }))
       .toEqual(['options.modelParams.context "2m" is not one of: 200k, 1m.'])
     expect(validateAgentProfileRuntime({ options: { agent: 'review' } }, OPENCODE, { id: 'opencode', name: 'OpenCode' }))
       .toEqual(['options.agent "review" is not one of: "build", "plan".'])
-    expect(validateAgentProfileRuntime({ options: { mode: 'ask' } }, GROK, { id: 'acp', name: 'ACP' }))
+    expect(validateAgentProfileRuntime({ options: { mode: 'ask' } }, GROK, { id: 'acp-grok', name: 'ACP' }))
       .toEqual(['options.mode is not supported by ACP.'])
   })
 
@@ -230,7 +230,7 @@ describe('resolveAgentLaunchDefaults — launch > profile > global', () => {
     expect(resolve({ base, profile: { model: 'opus', effort: 'max', options: { ultracode: true } }, launch: { model: 'sonnet' } }))
       .toEqual({ model: 'sonnet', effort: 'medium' })
     expect(resolveAgentLaunchDefaults({
-      harnessId: 'acp',
+      harnessId: 'acp-grok',
       catalog: GROK,
       base: {},
       profile: { model: 'grok-4', options: { contextWindow: 1_000_000 } },

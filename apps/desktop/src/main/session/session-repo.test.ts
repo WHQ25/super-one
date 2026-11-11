@@ -62,7 +62,7 @@ describe('resolveProviderSessionIdForResume', () => {
 
   it('preserves non-Codex provider session ids', () => {
     expect(resolveProviderSessionIdForResume(
-      { harnessId: 'acp', providerSessionId: 'grok-session' },
+      { harnessId: 'acp-grok', providerSessionId: 'grok-session' },
       [message('codex-thread')],
     )).toBe('grok-session')
   })
@@ -390,10 +390,10 @@ describe('session-repo', () => {
       expect(fake.sessionsRows.get('sess-2')?.provider).toBe('codex')
     })
 
-    it('maps acp-* providerId to legacy provider=acp', () => {
-      insertSessionRecord({ id: 'sess-acp', projectPath: '/tmp/proj', providerId: 'acp-base' })
-      expect(fake.sessionsRows.get('sess-acp')?.provider).toBe('acp')
-      expect(fake.sessionsRows.get('sess-acp')?.provider_id).toBe('acp-base')
+    it('maps an acp-grok providerId onto the provider column', () => {
+      insertSessionRecord({ id: 'sess-acp', projectPath: '/tmp/proj', providerId: 'acp-grok' })
+      expect(fake.sessionsRows.get('sess-acp')?.provider).toBe('acp-grok')
+      expect(fake.sessionsRows.get('sess-acp')?.provider_id).toBe('acp-grok')
     })
 
     it('maps dsh-* providerId to legacy provider=dsh', () => {
@@ -426,10 +426,10 @@ describe('session-repo', () => {
       expect(getSessionRecord('x1')?.harnessId).toBe('codex')
     })
 
-    it('derives harnessId=acp from acp providerId', () => {
+    it('derives harnessId=acp-grok from a legacy acp-base provider id', () => {
       insertSessionRecord({ id: 'a1', projectPath: '/tmp/proj', providerId: 'acp-base' })
       const rec = getSessionRecord('a1')
-      expect(rec?.harnessId).toBe('acp')
+      expect(rec?.harnessId).toBe('acp-grok')
       expect(rec?.providerId).toBe('acp-base')
     })
 
@@ -455,9 +455,8 @@ describe('session-repo', () => {
         acpAgentId: 'opencode',
       })
       const loaded = loadSessionStateBySid('s-acp-agent')
-      expect(loaded?.record.harnessId).toBe('acp')
+      expect(loaded?.record.harnessId).toBe('opencode')
       expect(loaded?.record.acpAgentId).toBe('opencode')
-      expect(fake.sessionsRows.get('s-acp-agent')?.provider).toBe('acp')
     })
 
     it('updateAcpAgentId patches existing row', () => {

@@ -15,7 +15,7 @@ describe('HarnessPermissionPopover', () => {
   it.each<[HarnessId, string]>([
     ['claude', 'chat.permissionModes.default.label'],
     ['codex', 'resources.automation.defaultValue'],
-    ['acp', 'chat.acpPermissionModes.ask.label'],
+    [ 'acp-grok', 'chat.acpPermissionModes.ask.label'],
     ['cursor', 'chat.cursorPermissionModes.agent.label'],
     // dsh speaks its own presets on launch rows too, not Claude's "Normal".
     ['dsh', 'chat.deepseekPermissionPresets.workspaceWrite.label'],

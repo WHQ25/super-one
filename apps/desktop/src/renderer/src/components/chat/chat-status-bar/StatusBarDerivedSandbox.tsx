@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { SandboxMode } from '@superone/shared/agent-types'
+import { isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import { resolveSandboxMode, sandboxModeFromInfo } from '@superone/shared/harness/harness-sandbox'
 import { useActiveSession, type ChatProvider } from '@/stores/chat'
 import { sandboxModes } from '../SandboxModeSelector'
@@ -50,9 +51,9 @@ function useSandboxState(activeProvider: ChatProvider): SandboxMode {
   // so the two chips in the bar cannot disagree.
   const codexPreset = useActiveSession((s) => s.selectedCodexPermissionPreset)
   const permissionMode = useActiveSession((s) => s.permissionMode)
-  const observedAcp = useObservedAcpSandbox(activeProvider === 'acp')
+  const observedAcp = useObservedAcpSandbox(isAcpProtocolHarness(activeProvider))
 
-  if (activeProvider === 'acp') return observedAcp
+  if (isAcpProtocolHarness(activeProvider)) return observedAcp
   return resolveSandboxMode({
     harnessId: activeProvider,
     permissionMode,

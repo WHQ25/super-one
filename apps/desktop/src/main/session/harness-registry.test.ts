@@ -52,7 +52,7 @@ setCodexServiceFactory(() => ({
 describe('harnessRegistry', () => {
   it('lists every registered harness', () => {
     const ids = harnessRegistry.list().map((h) => h.id).sort()
-    expect(ids).toEqual(['acp', 'claude', 'codex', 'cursor', 'dsh', 'opencode'])
+    expect(ids).toEqual(['acp-antigravity', 'acp-grok', 'claude', 'codex', 'cursor', 'dsh', 'opencode'])
   })
 
   it('get returns the claude harness', () => {
@@ -68,10 +68,9 @@ describe('harnessRegistry', () => {
     expect(h?.id).toBe('codex')
   })
 
-  it('get returns the acp harness', () => {
-    const h = harnessRegistry.get('acp')
-    expect(h).toBeDefined()
-    expect(h?.id).toBe('acp')
+  it('get returns the grok and antigravity ACP harnesses', () => {
+    expect(harnessRegistry.get('acp-grok')?.id).toBe('acp-grok')
+    expect(harnessRegistry.get('acp-antigravity')?.id).toBe('acp-antigravity')
   })
 
   it('get returns undefined for unknown id', () => {
@@ -91,8 +90,8 @@ describe('harnessRegistry', () => {
   })
 
   it('acp createBackend returns an acp backend', () => {
-    const h = harnessRegistry.get('acp')!
-    expect(h.createBackend().kind).toBe('acp')
+    expect(harnessRegistry.get('acp-grok')!.createBackend().kind).toBe('acp-grok')
+    expect(harnessRegistry.get('acp-antigravity')!.createBackend().kind).toBe('acp-antigravity')
   })
 
   it('opencode createBackend returns an opencode backend', () => {
@@ -116,7 +115,7 @@ describe('harnessRegistry', () => {
   })
 
   it('acp configSchema accepts agentId', () => {
-    const h = harnessRegistry.get('acp')!
+    const h = harnessRegistry.get('acp-grok')!
     expect(() => h.configSchema.parse({ agentId: 'grok-build' })).not.toThrow()
   })
 })

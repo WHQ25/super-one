@@ -759,7 +759,7 @@ export function createProductionTurnRunner(opts: NodeProductionRunnerOptions): T
     const harnessId = input.session.harnessId || 'codex'
     if (harnessId === 'codex') return codex(input)
     if (harnessId === 'claude') return claude(input)
-    if (harnessId === 'acp' || harnessId === 'opencode') return acpOpenCode(input)
+    if (harnessId === 'acp-grok' || harnessId === 'acp-antigravity' || harnessId === 'acp' || harnessId === 'opencode') return acpOpenCode(input)
     if (harnessId === 'cursor') return cursor(input)
     if (opts.allowSimulatedFallback) return simulated(input)
     throw new Error(

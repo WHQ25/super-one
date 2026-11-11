@@ -90,11 +90,11 @@ describe('local sessions on the environment route', () => {
     expect(own.sent.at(-1)?.codex).toMatchObject({ mode: 'review', threadId: 't1', serviceTier: 'fast', permissionPreset: 'full-access' })
   })
 
-  it.each(['claude', 'codex', 'acp', 'opencode', 'cursor', 'dsh'] as const)('persists %s identity before exposing a new session', async harnessId => {
+  it.each(['claude', 'codex', 'acp-grok', 'acp-antigravity', 'opencode', 'cursor', 'dsh'] as const)('persists %s identity before exposing a new session', async harnessId => {
     const { host, store } = localRoute()
     const created = await runWindowControl(7, () => host.createSession('local', { projectId: 'p1', harnessId, settings: { permissionMode: 'default' }, selections: { sessionId: 'new' } }))
     expect(created).toMatchObject({ sessionId: 'new' })
-    const providerId = harnessId === 'acp' ? 'acp-grok' : `${harnessId}-base`
+    const providerId = harnessId === 'acp-grok' || harnessId === 'acp-antigravity' ? harnessId : `${harnessId}-base`
     expect(await host.getSession('local', 'new')).toMatchObject({ harnessId, providerId })
     expect(store.rows.get('new')).toMatchObject({ harnessId, providerId })
   })

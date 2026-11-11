@@ -3,7 +3,8 @@ import type { HarnessId } from '../session-types'
 export const HARNESS_DEFAULT_BRAND_HUE: Record<HarnessId, number> = {
   claude: 40,
   codex: 240,
-  acp: 280,
+  'acp-grok': 280,
+  'acp-antigravity': 280,
   opencode: 150,
   /** Cool slate / Cursor-adjacent blue-gray. */
   cursor: 210,
@@ -274,7 +275,8 @@ function buildHarnessDefaults(harness: HarnessId): Record<DesignToken, LCH> {
 export const HARNESS_DEFAULT_TOKENS: Record<HarnessId, Record<DesignToken, LCH>> = {
   claude: buildHarnessDefaults('claude'),
   codex: buildHarnessDefaults('codex'),
-  acp: buildHarnessDefaults('acp'),
+  'acp-grok': buildHarnessDefaults('acp-grok'),
+  'acp-antigravity': buildHarnessDefaults('acp-antigravity'),
   opencode: buildHarnessDefaults('opencode'),
   cursor: buildHarnessDefaults('cursor'),
   dsh: buildHarnessDefaults('dsh'),

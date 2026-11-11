@@ -11,7 +11,7 @@ describe('Cursor sandbox harness helpers', () => {
     expect(harnessSupportsSandbox('claude')).toBe(true)
     expect(harnessSupportsSandbox('cursor')).toBe(true)
     expect(harnessSupportsSandbox('codex')).toBe(false)
-    expect(harnessSupportsSandbox('acp')).toBe(false)
+    expect(harnessSupportsSandbox('acp-grok')).toBe(false)
     expect(harnessSupportsSandbox('opencode')).toBe(false)
   })
 

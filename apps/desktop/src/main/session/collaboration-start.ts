@@ -1,3 +1,4 @@
+import { isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import { assertAgentProfileLaunchEnabled, isAgentProfilesEnabled } from './agent-profile-feature'
 /**
  * session_collab_start: create (spawn/handoff) or bind (link) the approved
@@ -215,7 +216,7 @@ async function startSessionAgentImpl(
       const profile = findSessionAgentProfile(listSessionAgentProfiles(), grant.agent_id)
       const row = getSessionProvider(rowId)
       if (isAgentProfilesEnabled() && profileApproval.source === 'defaults' && profile && row && isDefaultSessionProvider(row)
-        && (profile.harnessId !== 'acp' || profile.acpAgentId)) return
+        && (!isAcpProtocolHarness(profile.harnessId) || profile.acpAgentId)) return
       if (!profile || !row || currentApprovalFingerprint(row, profile) !== profileApproval.fingerprint
         || !isPreapprovedProfileLaunch(profile, { launchId: '', mode: grant.kind, agentId: profile.id, name: '', role: '', summary: '', config }, profileApproval.cwd)) {
         throw new Error('Profile approval or configuration changed. Request this launch again for user review.')

@@ -244,7 +244,7 @@ describe('AgentService prewarm', () => {
       id: 'sid-grok',
       cwd: '/p',
       snapshot: {
-        harnessId: 'acp',
+        harnessId: 'acp-grok',
         messages: [{ id: 'm1', role: 'user', content: [] }],
         providerSessionId: 'prior-grok-session',
       },
@@ -265,13 +265,13 @@ describe('AgentService prewarm', () => {
     service.setup()
     const handler = getRegisteredIpcHandler(AgentIpcChannels.PREWARM)!
 
-    await handler(null, '/p', { provider: 'acp', sessionId: 'sid-grok', acpAgentId: 'grok-build' })
+    await handler(null, '/p', { provider: 'acp-grok', sessionId: 'sid-grok', acpAgentId: 'grok-build' })
 
     expect(resumeSession).toHaveBeenCalledWith('sid-grok', { passive: true })
     expect(setActiveSession).toHaveBeenCalledWith('/p', 'sid-grok')
     expect(createSession).not.toHaveBeenCalled()
     expect(resumed.prewarm).toHaveBeenCalledWith(expect.objectContaining({
-      provider: 'acp',
+      provider: 'acp-grok',
       sessionId: 'sid-grok',
       acpAgentId: 'grok-build',
     }))
@@ -463,7 +463,7 @@ describe('AgentService Realtime Voice', () => {
       id: 'sid-voice',
       projectPath: '/repo/main',
       cwd: '/repo/main',
-      snapshot: { projectPath: '/repo/main', harnessId: 'acp', messages: [] },
+      snapshot: { projectPath: '/repo/main', harnessId: 'acp-grok', messages: [] },
       getRealtimeTimeline,
     })
     const disposeSession = vi.fn()
@@ -606,7 +606,7 @@ describe('AgentService prewarm worktree', () => {
     const existing = makeMockSession({
       id: 'sid-acp',
       cwd: '/repo/main',
-      snapshot: { harnessId: 'acp', messages: [] },
+      snapshot: { harnessId: 'acp-grok', messages: [] },
       isStreaming: vi.fn(() => false),
       applyWorktreeSelection,
       prewarm,
@@ -623,7 +623,7 @@ describe('AgentService prewarm worktree', () => {
     mockExistsSync.mockReturnValue(true)
 
     await handler(null, '/repo/main', {
-      provider: 'acp',
+      provider: 'acp-grok',
       sessionId: 'sid-acp',
       worktreePath: '/repo/main/.worktrees/feat',
       acpAgentId: 'grok-build',

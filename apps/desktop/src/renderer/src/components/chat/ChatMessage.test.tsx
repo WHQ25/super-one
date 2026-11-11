@@ -73,7 +73,7 @@ afterEach(() => {
 })
 
 describe('shared ContentBlock harness virtualization', () => {
-  it.each(['claude', 'codex', 'acp', 'opencode', 'cursor', 'dsh'] as const)('virtualizes a long %s turn through the common adapter', providerId => {
+  it.each(['claude', 'codex', 'acp-grok', 'opencode', 'cursor', 'dsh'] as const)('virtualizes a long %s turn through the common adapter', providerId => {
     const content: ChatMessageType['content'] = Array.from({ length: 96 }, (_, index) => ({
       type: 'tool_use', toolName: 'Bash', toolUseId: `command-${index}`,
       input: JSON.stringify({ command: `echo ${index}` }), status: 'complete',
@@ -348,7 +348,7 @@ describe('ChatMessage token footer', () => {
       <ChatMessage
         message={{
           ...createClaudeMessage([{ type: 'text', text: 'ok' }]),
-          providerId: 'acp',
+          providerId: 'acp-grok',
           metadata: {
             usage: {
               inputTokens: 1200,
@@ -937,7 +937,7 @@ describe('remote pending reply footer', () => {
 })
 
 describe('session retry footer', () => {
-  it.each(['claude', 'codex', 'acp', 'opencode', 'cursor', 'dsh'] as const)('shows a neutral inline retry for %s and returns to normal output after recovery', providerId => {
+  it.each(['claude', 'codex', 'acp-grok', 'opencode', 'cursor', 'dsh'] as const)('shows a neutral inline retry for %s and returns to normal output after recovery', providerId => {
     const message = createCodexMessage({ providerId })
     const { container, rerender } = render(<ChatMessage message={message} sessionStatus="streaming" isLastAssistant
       apiRetry={{ attempt: 2, maxRetries: 5, delayMs: 4000, message: 'rate limited' }} />)

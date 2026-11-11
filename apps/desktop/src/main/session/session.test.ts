@@ -805,7 +805,7 @@ describe('Session state machine', () => {
   })
 
   it('prewarm uses selectedAcpModeId as effort when no hint is provided', () => {
-    ;({ session, backend } = makeSession({ harnessId: 'acp', providerId: 'acp-base', effort: 'medium' }))
+    ;({ session, backend } = makeSession({ harnessId: 'acp-grok', providerId: 'acp-base', effort: 'medium' }))
     session.setSelectedSettings({ mode: 'xhigh' })
     session.prewarm()
     expect(backend.prewarmCalls[0]?.effort).toBe('xhigh')
@@ -822,7 +822,7 @@ describe('Session state machine', () => {
   })
 
   it('prewarm to another ACP agent drops empty-draft Grok context and resume id', () => {
-    ;({ session, backend } = makeSession({ harnessId: 'acp', providerId: 'acp-base', acpAgentId: 'grok-build' }))
+    ;({ session, backend } = makeSession({ harnessId: 'acp-grok', providerId: 'acp-base', acpAgentId: 'grok-build' }))
     backend.emit({
       type: 'message_usage',
       messageId: 'acp_session_grok',
@@ -845,7 +845,7 @@ describe('Session state machine', () => {
   })
 
   it('prewarm of the same ACP agent keeps the empty draft resume id', () => {
-    ;({ session, backend } = makeSession({ harnessId: 'acp', providerId: 'acp-base', acpAgentId: 'grok-build' }))
+    ;({ session, backend } = makeSession({ harnessId: 'acp-grok', providerId: 'acp-base', acpAgentId: 'grok-build' }))
     backend.emit({
       type: 'message_usage',
       messageId: 'acp_session_grok',
@@ -1320,7 +1320,7 @@ describe('Session state machine', () => {
     })
 
     it('drops empty ACP drafts from recap tracking instead of starting away', () => {
-      const { session: acp } = makeSession({ harnessId: 'acp', providerId: 'acp-base' })
+      const { session: acp } = makeSession({ harnessId: 'acp-grok', providerId: 'acp-base' })
       notifySessionRecapForegroundMock.mockClear()
       notifySessionRecapSessionRemovedMock.mockClear()
       acp.setForeground(true)
@@ -1339,7 +1339,7 @@ describe('Session state machine', () => {
         providerId: 'acp',
       }
       const { session: acp } = makeSession({
-        harnessId: 'acp',
+        harnessId: 'acp-grok',
         providerId: 'acp-base',
         initialMessages: [msg],
       })
@@ -1356,7 +1356,7 @@ describe('Session state machine', () => {
 
   describe('requestSessionRecap', () => {
     it('skips empty ACP sessions even when a runtime is warm', async () => {
-      const { session: acp, backend: b } = makeSession({ harnessId: 'acp', providerId: 'acp-base' })
+      const { session: acp, backend: b } = makeSession({ harnessId: 'acp-grok', providerId: 'acp-base' })
       b.activeRuntime = true
       await expect(acp.requestSessionRecap(true)).resolves.toBe(false)
       expect(b.requestSessionRecapCalls).toHaveLength(0)
@@ -1372,7 +1372,7 @@ describe('Session state machine', () => {
         providerId: 'acp',
       }
       const { session: acp, backend: b } = makeSession({
-        harnessId: 'acp',
+        harnessId: 'acp-grok',
         providerId: 'acp-base',
         initialMessages: [msg],
       })
@@ -2317,7 +2317,7 @@ describe('Session message accumulation', () => {
   })
 
   it('accumulates content_delta for acp harness and keeps text on message_complete', () => {
-    const { session, backend } = makeSession({ harnessId: 'acp', providerId: 'acp-base' })
+    const { session, backend } = makeSession({ harnessId: 'acp-grok', providerId: 'acp-base' })
     backend.emit({
       type: 'message_start',
       message: { id: 'a1', role: 'assistant', status: 'streaming', content: [], createdAt: '', providerId: 'acp' },
@@ -2692,7 +2692,7 @@ describe('Session message accumulation', () => {
   })
 
   it('dispatchBackendCommand(acp.steer_queued) only forwards during an active ACP turn', async () => {
-    const { session, backend } = makeSession({ harnessId: 'acp' })
+    const { session, backend } = makeSession({ harnessId: 'acp-grok' })
     const pending = session.send({ content: 'first' })
     await new Promise((resolve) => setTimeout(resolve, 0))
     backend.emit({ type: 'status_change', status: 'streaming' })
@@ -2708,7 +2708,7 @@ describe('Session message accumulation', () => {
 describe('Session ACP rewind', () => {
   it('maps a checkpointed user message onto Grok prompt index before rewindFiles', async () => {
     const { session, backend } = makeSession({
-      harnessId: 'acp',
+      harnessId: 'acp-grok',
       initialMessages: [
         {
           id: 'u0', role: 'user', status: 'complete', content: [], createdAt: '',
@@ -2731,7 +2731,7 @@ describe('Session ACP rewind', () => {
 
   it('maps conversation rewind onto Grok prompt index', async () => {
     const { session, backend } = makeSession({
-      harnessId: 'acp',
+      harnessId: 'acp-grok',
       initialMessages: [
         {
           id: 'u0', role: 'user', status: 'complete', content: [], createdAt: '',
@@ -2862,7 +2862,7 @@ describe('Session persist hook', () => {
   it('persists session_recap as a system marker for remote history restore', () => {
     const calls: SessionStateChange[] = []
     const { backend } = makeSession({
-      harnessId: 'acp',
+      harnessId: 'acp-grok',
       onStateChange: (s) => calls.push(s),
       initialMessages: [
         { id: 'u0', role: 'user', status: 'complete', content: [{ type: 'text', text: 'seed' }], createdAt: '', providerId: 'local' },

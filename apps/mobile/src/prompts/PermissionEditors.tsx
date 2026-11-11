@@ -1,6 +1,7 @@
 import { View } from 'react-native'
 import { Text } from '../ui/text'
 import type { ConfigConfirmField, HarnessId, RemoteSystemInfo, PermissionRequest } from '@superone/shared/agent-types'
+import { resolveLegacyHarnessId } from '@superone/shared/acp-brand'
 import { Disclosure } from './PermissionContent'
 import { EditableField, SelectField } from './EditableField'
 import { AgentConfigFields } from './AgentConfigFields'
@@ -51,7 +52,7 @@ export function PermissionEditors({ request, loadSystemInfo, onChange, onValidit
       {automation.changes?.map((change, index) => <View key={index} style={styles.card}><Text style={styles.label}>{change.field}</Text><Text style={styles.meta}>{change.from ?? 'Default'} → {change.to ?? 'Default'}</Text></View>)}
       {automation.items.map((item, index) => <View key={item.id ?? index} style={styles.card}><Text style={styles.title}>{item.name}</Text><Text style={styles.meta}>{item.scheduleSummary}</Text>{item.prompt || item.promptPreview ? <Disclosure title="Task"><NativeMarkdown content={item.prompt || item.promptPreview || ''} /></Disclosure> : null}</View>)}
       {automation.items[0]?.enabled !== undefined ? <EditableField field={{ label: 'Enabled', type: 'boolean' }} value={automation.items[0].enabled} onChange={(enabled) => onChange({ ...request, automationConfirm: { ...automation, items: automation.items.map((item, index) => index === 0 ? { ...item, enabled: enabled === true } : item) } })} /> : null}
-      {agent ? <AgentConfigFields loadSystemInfo={loadSystemInfo} harness={agent.type} config={agent} onChange={(patch) => {
+      {agent ? <AgentConfigFields loadSystemInfo={loadSystemInfo} harness={agent.type === 'acp' ? (resolveLegacyHarnessId('acp', { acpAgentId: agent.acpAgentId }) ?? 'acp-grok') : agent.type} config={agent} onChange={(patch) => {
         const nextAgent = { ...agent, ...patch }
         onChange({ ...request, automationConfirm: { ...automation, items: automation.items.map((item, index) => index === 0 ? { ...item, agent: nextAgent } : item), changes: automation.changes?.map((change) => change.field === 'agent' ? { ...change, agentTo: nextAgent } : change) } })
       }} /> : null}

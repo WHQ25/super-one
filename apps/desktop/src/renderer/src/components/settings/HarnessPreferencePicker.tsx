@@ -8,16 +8,18 @@ import {
   DropdownMenuTrigger,
 } from '@superone/ui/components/ui/dropdown-menu'
 import { cn } from '@superone/ui/lib/utils'
-import { acpAgentDisplayName, isAntigravityAcpAgent, isGrokAcpAgent } from '@superone/shared/acp-brand'
+import { acpAgentDisplayName, acpAgentIdForHarness, isAcpProtocolHarness, resolveLegacyHarnessId } from '@superone/shared/acp-brand'
 import type {
   AcpAgentDescriptor,
-  HarnessId,
   SuggestionHarnessPreference,
 } from '@superone/shared/agent-types'
-import { suggestionHarnessKey } from '@superone/shared/suggestion-harness-order'
+import {
+  canonicalSuggestionHarnessKey,
+  suggestionHarnessKey,
+  suggestionPreferenceFromKey,
+} from '@superone/shared/suggestion-harness-order'
 import {
   isCatalogHarnessEnabled,
-  isExperimentalAcpAgentEnabled,
   type HarnessCatalogStatus,
 } from '@/lib/harness-visibility'
 import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
@@ -40,16 +42,19 @@ export function isHarnessPreferenceFieldKey(key: string): boolean {
   return key === 'defaultHarness' || key === 'secondaryHarness'
 }
 
-/** Serialize a preference for settings / config tools (`claude`, `acp:grok-build`). */
+type HarnessPreferenceInput = {
+  provider: string
+  acpAgentId?: string | null
+} | null | undefined
+
+/** Serialize a preference for settings / config tools (`claude`, `acp-grok`). */
 export function harnessPreferenceToKey(
-  pref: SuggestionHarnessPreference | null | undefined,
+  pref: HarnessPreferenceInput,
 ): HarnessPreferenceKey {
   if (!pref) return null
-  if (pref.provider === 'acp') {
-    const agent = pref.acpAgentId?.trim()
-    return agent ? `acp:${agent}` : null
-  }
-  return pref.provider
+  const provider = resolveLegacyHarnessId(pref.provider, { acpAgentId: pref.acpAgentId })
+  if (!provider) return null
+  return suggestionHarnessKey(provider, pref.acpAgentId)
 }
 
 /** Parse a settings/config-tool key back into a preference (`null` / `"auto"` → Auto). */
@@ -60,51 +65,34 @@ export function keyToHarnessPreference(
   if (typeof value === 'object' && !Array.isArray(value)) {
     const raw = value as Record<string, unknown>
     const provider = typeof raw.provider === 'string' ? raw.provider.trim() : ''
-    if (
-      provider !== 'claude' &&
-      provider !== 'codex' &&
-      provider !== 'acp' &&
-      provider !== 'opencode' &&
-      provider !== 'dsh'
-    ) {
-      return null
-    }
+    if (!provider) return null
     const acpAgentId = typeof raw.acpAgentId === 'string' && raw.acpAgentId.trim()
       ? raw.acpAgentId.trim()
       : null
-    if (provider === 'acp' && !acpAgentId) return null
+    const resolved = resolveLegacyHarnessId(provider, { acpAgentId })
+    if (!resolved) return null
     return {
-      provider: provider as HarnessId,
-      acpAgentId: provider === 'acp' ? acpAgentId : null,
+      provider: resolved,
+      acpAgentId: isAcpProtocolHarness(resolved)
+        ? (acpAgentId ?? acpAgentIdForHarness(resolved))
+        : null,
     }
   }
   if (typeof value !== 'string') return null
-  const key = value.trim()
-  if (!key || key === 'auto') return null
-  if (
-    key === 'claude' ||
-    key === 'codex' ||
-    key === 'opencode' ||
-    key === 'dsh'
-  ) {
-    return { provider: key, acpAgentId: null }
-  }
-  if (key.startsWith('acp:')) {
-    const agent = key.slice(4).trim()
-    return agent ? { provider: 'acp', acpAgentId: agent } : null
-  }
-  return null
+  return suggestionPreferenceFromKey(value.trim())
 }
 
 export function harnessPreferencesEqual(
-  a: SuggestionHarnessPreference | null | undefined,
-  b: SuggestionHarnessPreference | null | undefined,
+  a: HarnessPreferenceInput,
+  b: HarnessPreferenceInput,
 ): boolean {
   if (a == null && b == null) return true
   if (a == null || b == null) return false
-  if (a.provider !== b.provider) return false
-  if (a.provider !== 'acp') return true
-  return (a.acpAgentId ?? null) === (b.acpAgentId ?? null)
+  const left = resolveLegacyHarnessId(a.provider, { acpAgentId: a.acpAgentId })
+  const right = resolveLegacyHarnessId(b.provider, { acpAgentId: b.acpAgentId })
+  if (!left || left !== right) return false
+  if (!isAcpProtocolHarness(left)) return true
+  return (a.acpAgentId ?? acpAgentIdForHarness(left)) === (b.acpAgentId ?? acpAgentIdForHarness(left))
 }
 
 /** Human label for a stored harness preference key (config confirm “current value”). */
@@ -119,7 +107,7 @@ export function formatHarnessPreferenceLabel(
   if (pref.provider === 'codex') return labels.codex
   if (pref.provider === 'opencode') return labels.opencode
   if (pref.provider === 'dsh') return labels.deepseek
-  if (pref.provider === 'acp') return acpAgentDisplayName(pref.acpAgentId)
+  if (isAcpProtocolHarness(pref.provider)) return acpAgentDisplayName(pref.acpAgentId)
   return harnessPreferenceToKey(pref) ?? autoLabel
 }
 
@@ -190,13 +178,14 @@ export function HarnessPreferencePicker({
 }: HarnessPreferencePickerProps) {
   const { t } = useTranslation()
   const experimentalAgentsEnabled = useAppStore((s) => s.experimentalAgentsEnabled)
-  const enabledExperimentalAgents = useAppStore((s) => s.enabledExperimentalAgents)
-  const acpAgents = useChatStore((s) => s.harnessResources.acp?.agents ?? EMPTY_ACP_AGENTS)
+  const grokAgents = useChatStore((s) => s.harnessResources['acp-grok']?.agents ?? EMPTY_ACP_AGENTS)
+  const antiAgents = useChatStore((s) => s.harnessResources['acp-antigravity']?.agents ?? EMPTY_ACP_AGENTS)
   const initializeHarness = useChatStore((s) => s.initializeHarness)
   const [harnessCatalog, setHarnessCatalog] = useState<HarnessCatalogStatus[] | null>(null)
 
   useEffect(() => {
-    void initializeHarness('acp')
+    void initializeHarness('acp-grok')
+    void initializeHarness('acp-antigravity')
   }, [initializeHarness])
 
   useEffect(() => {
@@ -249,26 +238,21 @@ export function HarnessPreferencePicker({
         label: t('settings.general.harnessOptions.deepseek'),
       })
     }
-    const visibleAgents = acpAgents.filter((agent) => {
-      if (agent.id === 'opencode') return false
-      if (isGrokAcpAgent(agent.id)) {
-        return isCatalogHarnessEnabled(harnessCatalog, 'acp-grok')
-      }
-      if (isAntigravityAcpAgent(agent.id)) {
-        return isCatalogHarnessEnabled(harnessCatalog, 'acp-antigravity')
-      }
-      return isExperimentalAcpAgentEnabled(agent.id, {
-        enabledExperimentalAgents,
-        legacyExperimentalAgentsEnabled: experimentalAgentsEnabled,
-      })
-    })
-    for (const agent of visibleAgents) {
-      const key = suggestionHarnessKey('acp', agent.id)
+    const acpSlots = [
+      ['acp-grok', grokAgents],
+      ['acp-antigravity', antiAgents],
+    ] as const
+    for (const [harnessId, slotAgents] of acpSlots) {
+      if (!isCatalogHarnessEnabled(harnessCatalog, harnessId)) continue
+      const canonical = acpAgentIdForHarness(harnessId)
+      const agent = slotAgents.find((entry) => entry.id === canonical) ?? slotAgents[0]
+      const agentId = agent?.id ?? canonical
+      const key = suggestionHarnessKey(harnessId, agentId)
       list.push({
         key,
         value: key,
-        pref: { provider: 'acp', acpAgentId: agent.id },
-        label: agent.name || acpAgentDisplayName(agent.id),
+        pref: { provider: harnessId, acpAgentId: agentId },
+        label: agent?.name || acpAgentDisplayName(agentId),
       })
     }
     if (
@@ -282,21 +266,27 @@ export function HarnessPreferencePicker({
         label: t('settings.general.harnessOptions.opencode'),
       })
     }
-    // Keep a currently selected ACP agent visible even if not in the live list.
-    if (value && value.startsWith('acp:') && !list.some((o) => o.value === value)) {
-      const agentId = value.slice(4)
-      list.push({
-        key: value,
-        value,
-        pref: { provider: 'acp', acpAgentId: agentId },
-        label: acpAgentDisplayName(agentId),
-      })
+    if (value) {
+      const canonical = canonicalSuggestionHarnessKey(value)
+      if (canonical && !list.some((o) => o.value === canonical || o.value === value)) {
+        const pref = suggestionPreferenceFromKey(canonical)
+        if (pref && isAcpProtocolHarness(pref.provider)) {
+          list.push({
+            key: canonical,
+            value: canonical,
+            pref,
+            label: acpAgentDisplayName(pref.acpAgentId),
+          })
+        }
+      }
     }
     if (excludeKey == null) return list
-    return list.filter((o) => o.value == null || o.value !== excludeKey)
-  }, [acpAgents, clearable, enabledExperimentalAgents, excludeKey, experimentalAgentsEnabled, harnessCatalog, t, value])
+    const excluded = canonicalSuggestionHarnessKey(excludeKey) ?? excludeKey
+    return list.filter((o) => o.value == null || (o.value !== excludeKey && o.value !== excluded))
+  }, [antiAgents, clearable, excludeKey, experimentalAgentsEnabled, grokAgents, harnessCatalog, t, value])
 
-  const selected = options.find((o) => o.value === value)
+  const canonicalValue = typeof value === 'string' ? (canonicalSuggestionHarnessKey(value) ?? value) : value
+  const selected = options.find((o) => o.value === value || o.value === canonicalValue)
     ?? (value == null
       ? { key: 'auto', value: null, pref: null, label: t('settings.general.defaultHarness.auto') }
       : {

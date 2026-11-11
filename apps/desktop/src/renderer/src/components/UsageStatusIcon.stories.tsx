@@ -432,7 +432,7 @@ function GrokCreditsPreview() {
     const project = createDefaultProjectState()
     project._activeSessionId = SB_SESSION
     project._sessions = { [SB_SESSION]: {
-      ...createDefaultPerSessionState(), preferredProvider: 'acp', sessionProvider: 'acp',
+      ...createDefaultPerSessionState(), preferredProvider: 'acp-grok', sessionProvider: 'acp-grok',
       acpAgentId: 'grok-build', apiProviderId: null, status: 'idle',
     } }
     useChatStore.setState({ activeProject: SB_PROJECT, projectSessions: { [SB_PROJECT]: project } })

@@ -1,3 +1,4 @@
+import { isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import { claudeFastModeOption, supportsClaudeFastMode } from '@superone/shared/claude-fast-mode'
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type {
@@ -190,7 +191,7 @@ export function useHarnessSelection() {
     setSandboxSupport(info.sandboxSupport ?? 'always')
     // A user-picked ACP agent outranks whatever the host happens to report:
     // the switcher chose `Grok Build`, not "whichever agent is loaded".
-    const nextAcpAgentId = provider === 'acp' ? selectedAcpAgentIdRef.current ?? info.acpAgentId ?? null : null
+    const nextAcpAgentId = isAcpProtocolHarness(provider) ? selectedAcpAgentIdRef.current ?? info.acpAgentId ?? null : null
     selectedAcpAgentIdRef.current = nextAcpAgentId
     setSelectedAcpAgentId(nextAcpAgentId)
     setPermissionModes(modes)
@@ -222,7 +223,7 @@ export function useHarnessSelection() {
     setClaudeFastModePick(null)
     setHostUltracode(false)
     setUltracodePick(null)
-    const nextAcpAgentId = provider === 'acp' ? acpAgentId : null
+    const nextAcpAgentId = isAcpProtocolHarness(provider) ? acpAgentId : null
     selectedAcpAgentIdRef.current = nextAcpAgentId
     setSelectedAcpAgentId(nextAcpAgentId)
   }

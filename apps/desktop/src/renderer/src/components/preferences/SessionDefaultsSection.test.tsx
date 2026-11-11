@@ -30,7 +30,8 @@ function settingsWith(preference: Record<string, unknown>) {
     agentPreference: {
       claude: { defaultPermissionMode: '', defaultSandboxMode: '' },
       codex: { defaultPermissionPreset: '' },
-      acp: { defaultPermissionMode: '' },
+      'acp-grok': { defaultPermissionMode: '' },
+      'acp-antigravity': { defaultPermissionMode: '' },
       cursor: { defaultPermissionMode: '', defaultSandboxMode: '' },
       dsh: { defaultPermissionMode: '' },
       opencode: { defaultPermissionMode: '' },
@@ -72,7 +73,7 @@ describe('SessionDefaultsSection', () => {
   })
 
   it('shows Ask for an unconfigured ACP session', async () => {
-    render(<SessionDefaultsSection harnessId="acp" />)
+    render(<SessionDefaultsSection harnessId="acp-grok" />)
 
     await waitFor(() => {
       expect(screen.getByText('chat.acpPermissionModes.ask.label')).toBeInTheDocument()
@@ -93,9 +94,9 @@ describe('SessionDefaultsSection', () => {
   })
 
   it('shows the mode configured for that harness', async () => {
-    getAppSettings.mockResolvedValue(settingsWith({ acp: { defaultPermissionMode: 'auto' } }))
+    getAppSettings.mockResolvedValue(settingsWith({ 'acp-grok': { defaultPermissionMode: 'auto' } }))
 
-    render(<SessionDefaultsSection harnessId="acp" />)
+    render(<SessionDefaultsSection harnessId="acp-grok" />)
 
     await waitFor(() => {
       expect(screen.getByText('chat.acpPermissionModes.auto.label')).toBeInTheDocument()
@@ -103,7 +104,7 @@ describe('SessionDefaultsSection', () => {
   })
 
   it('opens the ACP list with Ask / Always Approve, not Claude Normal / Bypass', async () => {
-    render(<SessionDefaultsSection harnessId="acp" />)
+    render(<SessionDefaultsSection harnessId="acp-grok" />)
     await waitFor(() => expect(getAppSettings).toHaveBeenCalled())
 
     await userEvent.click(screen.getByRole('button', { name: /acpPermissionModes/ }))
@@ -162,20 +163,17 @@ describe('SessionDefaultsSection', () => {
     })
     unmount()
 
-    render(<SessionDefaultsSection harnessId="acp" />)
+    render(<SessionDefaultsSection harnessId="acp-grok" />)
     await waitFor(() => expect(getAppSettings).toHaveBeenCalledTimes(2))
     expect(screen.queryByText('settings.preferences.sandbox.label')).not.toBeInTheDocument()
   })
 
   it('uses Antigravity permission modes and saves to antigravityDefaultPermissionMode when acpAgentId is antigravity', async () => {
     getAppSettings.mockResolvedValue(settingsWith({
-      acp: {
-        defaultPermissionMode: 'plan',
-        antigravityDefaultPermissionMode: 'acceptEdits',
-      },
+      'acp-antigravity': { defaultPermissionMode: 'acceptEdits' },
     }))
 
-    render(<SessionDefaultsSection harnessId="acp" acpAgentId="antigravity" />)
+    render(<SessionDefaultsSection harnessId="acp-antigravity" acpAgentId="antigravity" />)
 
     await waitFor(() => {
       expect(screen.getByText('chat.acpPermissionModes.acceptEdits.label')).toBeInTheDocument()
@@ -190,7 +188,7 @@ describe('SessionDefaultsSection', () => {
     await waitFor(() => {
       expect(saveAppSettings).toHaveBeenCalledWith({
         agentPreference: {
-          acp: { antigravityDefaultPermissionMode: 'bypassPermissions' },
+          'acp-antigravity': { defaultPermissionMode: 'bypassPermissions' },
         },
       })
     })

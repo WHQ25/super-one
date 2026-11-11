@@ -65,7 +65,7 @@ beforeEach(() => {
     activeProject: null,
     remoteSessions: {},
     _previousFocusedSession: null,
-    harnessResources: { claude: null, codex: null, acp: null, opencode: null, cursor: null },
+    harnessResources: { claude: null, codex: null, 'acp-grok': null, 'acp-antigravity': null, opencode: null, cursor: null },
     initializedHarnesses: new Set(),
   })
   mockPrewarm.mockClear()
@@ -184,8 +184,8 @@ describe('triggerPrewarm', () => {
     const proj = createDefaultProjectState()
     const sess = {
       ...createDefaultPerSessionState(),
-      preferredProvider: 'acp' as const,
-      sessionProvider: 'acp' as const,
+      preferredProvider: 'acp-grok' as const,
+      sessionProvider: 'acp-grok' as const,
       acpAgentId: 'opencode',
       selectedModel: 'opencode/big-pickle',
     }
@@ -197,7 +197,7 @@ describe('triggerPrewarm', () => {
     expect(mockPrewarm).toHaveBeenCalledTimes(1)
     const [, hint] = mockPrewarm.mock.calls[0]
     expect(hint).toMatchObject({
-      provider: 'acp',
+      provider: 'acp-grok',
       model: 'opencode/big-pickle',
       acpAgentId: 'opencode',
     })

@@ -64,7 +64,7 @@ describe('session-list-ops', () => {
       sessionId: 's1',
       title: 'ACP',
       lastActiveAt: '2026-01-01T00:00:00.000Z',
-      provider: 'acp',
+      provider: 'acp-grok',
       messageCount: 1,
       acpAgentId: 'cursor',
       providerSessionId: 'prov-123',

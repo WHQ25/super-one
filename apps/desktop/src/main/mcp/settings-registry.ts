@@ -41,26 +41,14 @@ export interface SettingsDomainDef {
  *
  * Claude and Codex are excluded because they own richer domains of their own.
  */
-const SESSION_DEFAULT_HARNESSES = ['acp', 'cursor', 'dsh', 'opencode'] as const
-
-/**
- * Heading per harness. Mostly the capability display name — except ACP, whose
- * `displayName` is "Others", the harness switcher's word for the ACP bucket.
- * That reads as a mistake at the top of a settings domain.
- */
-const SESSION_DEFAULT_LABELS: Record<typeof SESSION_DEFAULT_HARNESSES[number], string> = {
-  acp: 'ACP Agent',
-  cursor: HARNESS_CAPABILITIES.cursor.displayName,
-  dsh: HARNESS_CAPABILITIES.dsh.displayName,
-  opencode: HARNESS_CAPABILITIES.opencode.displayName,
-}
+const SESSION_DEFAULT_HARNESSES = ['acp-grok', 'acp-antigravity', 'cursor', 'dsh', 'opencode'] as const
 
 const SESSION_DEFAULT_DOMAINS: SettingsDomainDef[] = SESSION_DEFAULT_HARNESSES
   .filter((harnessId) => HARNESS_LAUNCH_OPTIONS[harnessId].permissionModes.length > 0)
   .map((harnessId) => ({
   domain: `agent-${harnessId}`,
-  label: `${SESSION_DEFAULT_LABELS[harnessId]} Defaults`,
-  description: `Default settings for new ${SESSION_DEFAULT_LABELS[harnessId]} chat sessions.`,
+  label: `${HARNESS_CAPABILITIES[harnessId].displayName} Defaults`,
+  description: `Default settings for new ${HARNESS_CAPABILITIES[harnessId].displayName} chat sessions.`,
   fields: [
     ...(harnessId === 'dsh' ? [DSH_SUBAGENT_FIELD] : []),
     {
@@ -160,23 +148,14 @@ const ALL_SETTINGS_DOMAINS: SettingsDomainDef[] = [
         toPatch: (v) => ({ jevFastLoopEnabled: v as boolean }),
       },
       {
-        key: 'acpSelectedAgentId',
-        label: 'Selected ACP Agent',
-        type: 'string',
-        clearTo: null,
-        note: 'Id of the ACP agent to use. Clear to unset.',
-        read: (s) => s.agentPreference.acp.selectedAgentId,
-        toPatch: (v) => ({ agentPreference: { acp: { selectedAgentId: v as string | null } } }),
-      },
-      {
         key: 'harnessOrder',
         label: 'Harness Order',
         type: 'string',
         clearTo: null,
         note:
           'Comma-separated ChatSuggestions harness order. First = default (fixed tab), second = secondary '
-          + '(menu default), rest follow. Values: "claude" | "codex" | "opencode" | "acp:<agentId>" '
-          + '(e.g. "claude,codex,acp:grok-build"). Clear / empty for Auto (session-count ranking + pins).',
+          + '(menu default), rest follow. Values: "claude" | "codex" | "opencode" | "acp-grok" | "acp-antigravity" '
+          + '(legacy "acp" and "acp:<agentId>" still parse). Clear / empty for Auto (session-count ranking + pins).',
         read: (s) => (s.harnessOrder.length > 0 ? s.harnessOrder.join(',') : null),
         toPatch: (v) => {
           if (v == null || v === '') return { harnessOrder: [] }
@@ -194,7 +173,8 @@ const ALL_SETTINGS_DOMAINS: SettingsDomainDef[] = [
         note:
           'ChatSuggestions primary harness (rank #1). Prefer reordering via harnessOrder. '
           + 'When harnessOrder is set, moves that key to index 0. Clear / "auto" only applies when '
-          + 'harnessOrder is empty. Values: "claude" | "codex" | "opencode" | "acp:<agentId>".',
+          + 'harnessOrder is empty. Values: "claude" | "codex" | "opencode" | "acp-grok" | "acp-antigravity" '
+          + '(legacy "acp:<agentId>" still parses).',
         read: (s) => serializeSuggestionHarness(s.suggestionHarness),
         toPatch: (v) => ({ suggestionHarness: parseSuggestionHarnessKey(v) }),
       },

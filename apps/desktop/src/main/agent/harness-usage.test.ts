@@ -110,11 +110,11 @@ describe('readHarnessUsage', () => {
 
   it('reads Grok and Antigravity billing through ACP and skips every other ACP agent', async () => {
     const d = deps()
-    const grok = await readHarnessUsage({ provider: 'acp', projectPath: '/p', acpAgentId: 'grok', sessionId: 's1' }, d)
+    const grok = await readHarnessUsage({ provider: 'acp-grok', projectPath: '/p', acpAgentId: 'grok', sessionId: 's1' }, d)
     expect(grok).toMatchObject({ kind: 'acp', title: 'Grok Build', account: 'g@x.ai', creditBalanceDollars: 12 })
-    const antigravity = await readHarnessUsage({ provider: 'acp', projectPath: '/p', acpAgentId: 'antigravity', sessionId: 's2' }, d)
+    const antigravity = await readHarnessUsage({ provider: 'acp-antigravity', projectPath: '/p', acpAgentId: 'antigravity', sessionId: 's2' }, d)
     expect(antigravity).toMatchObject({ kind: 'acp', title: 'Grok Build', account: 'g@x.ai', creditBalanceDollars: 12 })
-    expect(await readHarnessUsage({ provider: 'acp', projectPath: '/p', acpAgentId: 'gemini' }, d)).toBeNull()
+    expect(await readHarnessUsage({ provider: 'acp-grok', projectPath: '/p', acpAgentId: 'gemini' }, d)).toBeNull()
     expect(d.acpRateLimits).toHaveBeenCalledTimes(2)
   })
 

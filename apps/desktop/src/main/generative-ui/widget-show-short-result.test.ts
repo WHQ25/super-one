@@ -68,7 +68,8 @@ describe('who gets the short widget_show result', () => {
   it.each([
     ['claude', true],
     ['codex', true],
-    ['acp', false],
+    ['acp-grok', false],
+    ['acp-antigravity', false],
     ['opencode', false],
     ['cursor', false],
     ['dsh', false],

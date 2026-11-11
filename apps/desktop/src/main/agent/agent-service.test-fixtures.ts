@@ -227,7 +227,8 @@ vi.mock('../app-settings-service', () => ({
     agentPreference: {
       claude: { defaultModel: '', defaultEffort: '', defaultPermissionMode: '', defaultSandboxMode: '' },
       codex: { defaultModel: '', defaultReasoningEffort: '', defaultPermissionPreset: '', realtimeVoice: '' },
-      acp: { enabled: false, brandHue: null, tokenOverrides: {}, selectedAgentId: null },
+      'acp-grok': { defaultModel: '', defaultEffort: '', defaultPermissionMode: '', brandHue: null, tokenOverrides: {} },
+      'acp-antigravity': { defaultModel: '', defaultEffort: '', defaultPermissionMode: '', brandHue: null, tokenOverrides: {} },
     },
   })),
 }))

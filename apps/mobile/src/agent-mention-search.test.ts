@@ -10,7 +10,7 @@ import { serializeMentionDocument } from './mention-document'
 
 const targets = buildAgentMentionTargets([
   { providerId: 'codex-work-review', harnessId: 'codex', name: 'Code Reviewer', isBase: false },
-  { providerId: 'acp-base', harnessId: 'acp', name: 'ACP', isBase: true, acpAgentId: 'grok-build' },
+  { providerId: 'acp-base', harnessId: 'acp-grok', name: 'ACP', isBase: true, acpAgentId: 'grok-build' },
 ])
 
 describe('remote provider search to structured message', () => {

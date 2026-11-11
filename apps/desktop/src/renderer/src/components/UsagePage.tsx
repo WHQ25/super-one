@@ -112,8 +112,8 @@ function tokenTypeColors(base: string): TokenTypeColors {
 const HARNESS_SERIES: ReadonlyArray<{ key: Harness; label: string; brand: HarnessId }> = [
   { key: 'claude', label: 'Claude', brand: 'claude' },
   { key: 'codex', label: 'Codex', brand: 'codex' },
-  { key: 'grok', label: 'Grok', brand: 'acp' },
-  { key: 'antigravity', label: 'Antigravity', brand: 'acp' },
+  { key: 'grok', label: 'Grok', brand: 'acp-grok' },
+  { key: 'antigravity', label: 'Antigravity', brand: 'acp-antigravity' },
   { key: 'cursor', label: 'Cursor', brand: 'cursor' },
   { key: 'opencode', label: 'OpenCode', brand: 'opencode' },
 ]
@@ -183,10 +183,9 @@ export function UsagePage() {
     [catalog],
   )
   const knownModelNames = useMemo(() => {
-    const acpModels = Object.values(harnessResources.acp?.modelsByAgentId ?? {})
-      .flatMap((entry) => entry.models)
-    const acpExtraModels = Object.values(harnessResources.acp?.configByAgentId ?? {})
-      .flatMap((entry) => entry.extraModels ?? [])
+    const acpSlots = [harnessResources['acp-grok'], harnessResources['acp-antigravity']]
+    const acpModels = acpSlots.flatMap((slot) => Object.values(slot?.modelsByAgentId ?? {}).flatMap((entry) => entry.models))
+    const acpExtraModels = acpSlots.flatMap((slot) => Object.values(slot?.configByAgentId ?? {}).flatMap((entry) => entry.extraModels ?? []))
     return buildUsageModelNameIndex([
       ...(harnessResources.claude?.models ?? []),
       ...(harnessResources.codex?.models ?? []),

@@ -5,19 +5,14 @@
  * facts. The descriptor's capabilities.harnessIds must only list enabled + ready
  * harnesses — never every adapter compiled into the node.
  *
- * Concrete Grok identity is `acp-grok`. Legacy session/wire id `acp` remains a
- * read alias until desktop session storage fully migrates.
+ * `acp` is a legacy read alias for incoming payloads. Advertised ids are concrete.
  */
 
 import type { HarnessId } from '../session-types'
+import { resolveLegacyHarnessId, type LegacyHarnessHint } from '../harness/acp-brand'
 
-/**
- * What `capabilities.harnessIds` may contain.
- * Session wire ids stay as `HarnessId`. Antigravity is the exception: it also
- * persists sessions as `acp`, so the legacy wire id cannot name it. Hosts
- * advertise the catalog id `acp-antigravity` beside `acp` (Grok only).
- */
-export type AdvertisedHarnessId = HarnessId | 'acp-antigravity'
+/** What `capabilities.harnessIds` may contain. Incoming lists may still say `acp`. */
+export type AdvertisedHarnessId = HarnessId | 'acp'
 
 /** First-party node Harness catalog IDs (target identities). */
 export type NodeHarnessId =
@@ -56,11 +51,7 @@ export interface NodeHarnessDefinition {
   id: NodeHarnessId
   runtimeSource: HarnessRuntimeSource
   requiresAuth: boolean
-  /**
-   * Session persistence wire id. Grok and Antigravity both store sessions as
-   * `acp`. Descriptor advertisement is separate: Grok stays `acp`, Antigravity
-   * is `acp-antigravity` (see `readySessionHarnessIds`).
-   */
+  /** Session persistence id. Matches the catalog id. */
   sessionHarnessId: HarnessId
 }
 
@@ -70,8 +61,8 @@ export const NODE_HARNESS_DEFINITIONS: readonly NodeHarnessDefinition[] = [
   { id: 'opencode', runtimeSource: 'external', requiresAuth: false, sessionHarnessId: 'opencode' },
   // Managed runtimeSource (SDK) but not on ManagedHarnessId CDN pin chain yet.
   { id: 'cursor', runtimeSource: 'managed', requiresAuth: true, sessionHarnessId: 'cursor' },
-  { id: 'acp-grok', runtimeSource: 'external', requiresAuth: false, sessionHarnessId: 'acp' },
-  { id: 'acp-antigravity', runtimeSource: 'external', requiresAuth: false, sessionHarnessId: 'acp' },
+  { id: 'acp-grok', runtimeSource: 'external', requiresAuth: false, sessionHarnessId: 'acp-grok' },
+  { id: 'acp-antigravity', runtimeSource: 'external', requiresAuth: false, sessionHarnessId: 'acp-antigravity' },
   // In-process dsh Cordis tree (npm @deepseek-ai/dsh-*); no external binary to install.
   { id: 'dsh', runtimeSource: 'managed', requiresAuth: true, sessionHarnessId: 'dsh' },
 ] as const
@@ -98,36 +89,20 @@ export function getNodeHarnessDefinition(id: NodeHarnessId): NodeHarnessDefiniti
   return def
 }
 
-/**
- * Map a session/wire harness id to the node catalog id.
- * `acp` is the legacy Grok alias; arbitrary custom ACP is not remapped beyond this.
- */
-export function sessionHarnessIdToNodeHarnessId(sessionId: string): NodeHarnessId | null {
-  if (sessionId === 'acp' || sessionId === 'acp-grok') return 'acp-grok'
-  if (sessionId === 'acp-antigravity') return 'acp-antigravity'
-  if (
-    sessionId === 'claude' ||
-    sessionId === 'codex' ||
-    sessionId === 'opencode' ||
-    sessionId === 'cursor' ||
-    sessionId === 'dsh'
-  ) {
-    return sessionId
-  }
-  return null
+export function sessionHarnessIdToNodeHarnessId(
+  sessionId: string,
+  hint?: LegacyHarnessHint,
+): NodeHarnessId | null {
+  const resolved = resolveLegacyHarnessId(sessionId, hint)
+  return resolved && isNodeHarnessId(resolved) ? resolved : null
 }
 
 export function nodeHarnessIdToSessionHarnessId(id: NodeHarnessId): HarnessId {
   return getNodeHarnessDefinition(id).sessionHarnessId
 }
 
-/**
- * Normalize a client-supplied harness id to the Stage 1 session wire id.
- * Accepts catalog id `acp-grok` and legacy `acp`; always returns `acp` for Grok.
- * Returns null for unknown values.
- */
-export function normalizeSessionHarnessId(raw: string): HarnessId | null {
-  const nodeId = sessionHarnessIdToNodeHarnessId(raw)
+export function normalizeSessionHarnessId(raw: string, hint?: LegacyHarnessHint): HarnessId | null {
+  const nodeId = sessionHarnessIdToNodeHarnessId(raw, hint)
   if (!nodeId) return null
   return nodeHarnessIdToSessionHarnessId(nodeId)
 }
@@ -272,24 +247,14 @@ export function isHarnessRunnable(status: Pick<HarnessInstallationStatus, 'enabl
   return status.enabled && status.state === 'ready'
 }
 
-/**
- * Build the descriptor harnessIds list from catalog statuses.
- * Order follows NODE_HARNESS_DEFINITIONS. Grok keeps the legacy wire id `acp`.
- * Antigravity is advertised as `acp-antigravity` so a controller does not
- * collapse it into Grok.
- */
 export function readySessionHarnessIds(
   statuses: readonly HarnessInstallationStatus[],
-): AdvertisedHarnessId[] {
+): HarnessId[] {
   const byId = new Map(statuses.map((s) => [s.id, s]))
-  const out: AdvertisedHarnessId[] = []
+  const out: HarnessId[] = []
   for (const def of NODE_HARNESS_DEFINITIONS) {
     const status = byId.get(def.id)
     if (!status || !isHarnessRunnable(status)) continue
-    if (def.id === 'acp-antigravity') {
-      out.push('acp-antigravity')
-      continue
-    }
     if (!out.includes(def.sessionHarnessId)) out.push(def.sessionHarnessId)
   }
   return out

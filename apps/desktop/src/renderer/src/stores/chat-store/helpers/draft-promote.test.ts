@@ -360,8 +360,8 @@ describe('carrying a draft across projects', () => {
           _sessions: {
             'sid-from': session({
               draftText: '',
-              preferredProvider: 'acp',
-              sessionProvider: 'acp',
+              preferredProvider: 'acp-grok',
+              sessionProvider: 'acp-grok',
               acpAgentId: 'antigravity',
               harnessUserChosen: true,
             }),
@@ -399,8 +399,8 @@ describe('carrying a draft across projects', () => {
     const toSid = applyCarriedDraft(set, '/to', carried!)
     expect(toSid).not.toBe('sid-busy')
     const dest = state.projectSessions['/to']._sessions[toSid]
-    expect(dest.preferredProvider).toBe('acp')
-    expect(dest.sessionProvider).toBe('acp')
+    expect(dest.preferredProvider).toBe('acp-grok')
+    expect(dest.sessionProvider).toBe('acp-grok')
     expect(dest.acpAgentId).toBe('antigravity')
     expect(dest.harnessUserChosen).toBe(true)
     expect(dest._historyHydrated).toBe(true)

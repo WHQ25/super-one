@@ -118,7 +118,7 @@ const DEFAULT_EVENTS: CollaborationEventMock[] = [
     id: "handoff-release",
     mode: "handoff",
     target: "Release reviewer",
-    harness: "acp",
+    harness: "acp-grok",
     summary: "starts when implementation is ready",
     status: "pending",
   },
@@ -165,7 +165,7 @@ const DEFAULT_AGENTS: CollaborationAgentMock[] = [
   {
     id: "release",
     name: "Release reviewer",
-    harness: "acp",
+    harness: "acp-grok",
     role: "Handoff",
     task: "Take over final visual verification and release notes",
     status: "pending",

@@ -7,7 +7,7 @@ import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { claudeLimitsFromSubscription, claudeSubscriptionFromReport, unavailableNodeLimits } from '@/harness-ui/claude/remote-subscription-usage'
 import { claudeAccountCredentialDir, isClaudeAccountProvider } from '@superone/shared/agent-types'
 import type { ClaudeRateLimits } from '@superone/shared/agent-types'
-import { isAntigravityAcpAgent, isGrokAcpAgent } from '@superone/shared/acp-brand'
+import { acpAgentIdForHarness, isAcpProtocolHarness, isAntigravityAcpAgent, resolveLegacyHarnessId } from '@superone/shared/acp-brand'
 import { ProviderLabel } from './ProviderLabel'
 import { ExtraUsageBar, formatWindowLabel, GroupedWindowBars, ResetGrantsRow, WindowBar as WindowRow } from './provider-usage'
 import type { UsageWindow } from '@superone/shared/subscription-usage'
@@ -240,19 +240,15 @@ function ProviderRateLimitIcon({ apiProviderId, status, tip, highlight }: { apiP
 type AcpHarnessId = 'acp-grok' | 'acp-antigravity'
 
 function resolveAcpHarnessId(activeProvider: string | null | undefined, acpAgentId: string | null | undefined): AcpHarnessId | null {
-  if (activeProvider === 'acp-grok') return 'acp-grok'
-  if (activeProvider === 'acp-antigravity') return 'acp-antigravity'
-  if (activeProvider !== 'acp' || !acpAgentId) return null
-  if (isGrokAcpAgent(acpAgentId)) return 'acp-grok'
-  if (isAntigravityAcpAgent(acpAgentId)) return 'acp-antigravity'
-  return null
+  const resolved = resolveLegacyHarnessId(activeProvider, { acpAgentId })
+  return isAcpProtocolHarness(resolved) ? resolved : null
 }
 
 function AcpRateLimitIcon({ projectPath, harnessId, status, tip, highlight }: { projectPath: string; harnessId: AcpHarnessId; status: string; tip: RateLimitTipInfo | null; highlight: GaugeHighlight }) {
   const { t } = useTranslation()
   const projectPathRef = useRef(projectPath)
   projectPathRef.current = projectPath
-  const agentId = harnessId === 'acp-antigravity' ? 'antigravity' : 'grok-build'
+  const agentId = acpAgentIdForHarness(harnessId)
   const load = useCallback((force: boolean) => window.app.acpGetRateLimits(projectPathRef.current, agentId, force), [agentId])
   const { limits, refreshing, fetchLimits, refresh, refreshIfStale } = useVersionedProviderLimits(load, status)
 
@@ -267,13 +263,12 @@ function AcpRateLimitIcon({ projectPath, harnessId, status, tip, highlight }: { 
   const badgeRemaining = badgeWindow ? remainingPercent(badgeWindow.usedPercent) : null
   const label = limits?.title ?? t('usageGauge.windowFallback')
 
-  const titleNode = harnessId === 'acp-grok'
-    ? <ProviderLabel brandKey="grok" size={14} />
-    : <ProviderLabel brandKey="antigravity" size={14} />
+  const antigravity = isAntigravityAcpAgent(agentId)
+  const titleNode = antigravity
+    ? <ProviderLabel brandKey="antigravity" size={14} />
+    : <ProviderLabel brandKey="grok" size={14} />
 
-  const activeAccountKey = harnessId === 'acp-grok'
-    ? 'acp:grok-build'
-    : 'acp:antigravity'
+  const activeAccountKey = antigravity ? 'acp:antigravity' : 'acp:grok-build'
 
   return (
     <RateLimitTipHost tip={tip}>

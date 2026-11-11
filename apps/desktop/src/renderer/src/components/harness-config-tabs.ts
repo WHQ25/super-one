@@ -1,6 +1,7 @@
 import type { ComponentType } from 'react'
 import { Blocks, Bot, Cloud, Cpu, KeyRound, Palette, Puzzle, Webhook } from 'lucide-react'
 import { McpIcon } from '@superone/ui/components/ui/McpIcon'
+import { isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import type { SettingsProvider } from '@superone/shared/agent-types'
 import type { HarnessConfigSection } from '@/stores/app'
 
@@ -57,7 +58,7 @@ export function configTabsFor(provider: SettingsProvider | undefined): HarnessCo
   if (provider === 'codex') return CODEX_CONFIG_TABS
   if (provider === 'cursor') return CURSOR_CONFIG_TABS
   if (provider === 'dsh') return DSH_CONFIG_TABS
-  if (provider === 'acp') return ['account', 'preferences']
+  if (isAcpProtocolHarness(provider)) return ['account', 'preferences']
   if (provider === 'opencode') return SESSION_DEFAULTS_ONLY_TABS
   return null
 }

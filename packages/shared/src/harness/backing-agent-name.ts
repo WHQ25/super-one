@@ -1,18 +1,16 @@
 import type { HarnessId } from '../agent-types'
-import { acpAgentDisplayName } from './acp-brand'
+import { acpAgentDisplayName, acpAgentIdForHarness, isAcpProtocolHarness, resolveLegacyHarnessId } from './acp-brand'
 import { HARNESS_CAPABILITIES } from './harness-capabilities'
 
-/**
- * Name of the session's coding agent. ACP is a protocol, so the label is the
- * agent (Grok, Antigravity, …), not the harness display name "Others".
- */
 export function backingAgentName(input: {
-  provider: HarnessId
+  provider: HarnessId | string
   acpAgentId?: string | null
   acpAgentCatalogName?: string | null
 }): string {
-  if (input.provider === 'acp') {
-    return acpAgentDisplayName(input.acpAgentId, input.acpAgentCatalogName)
+  const provider = resolveLegacyHarnessId(input.provider, { acpAgentId: input.acpAgentId })
+  if (provider && isAcpProtocolHarness(provider)) {
+    return acpAgentDisplayName(input.acpAgentId ?? acpAgentIdForHarness(provider), input.acpAgentCatalogName)
   }
-  return HARNESS_CAPABILITIES[input.provider].displayName
+  if (provider) return HARNESS_CAPABILITIES[provider].displayName
+  return acpAgentDisplayName(input.acpAgentId, input.acpAgentCatalogName)
 }

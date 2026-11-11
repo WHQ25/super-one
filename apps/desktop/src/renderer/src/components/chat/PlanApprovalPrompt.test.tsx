@@ -101,14 +101,14 @@ function resetStore() {
   useChatStore.setState({
     projectSessions: {},
     activeProject: null,
-    harnessResources: { claude: null, codex: null, acp: null, opencode: null, cursor: null },
+    harnessResources: { claude: null, codex: null, 'acp-grok': null, 'acp-antigravity': null, opencode: null, cursor: null },
     initializedHarnesses: new Set(),
   })
 }
 
 function seedPlanApprovalState(
   initialMode: 'plan' | 'default' = 'plan',
-  opts?: { selectedModel?: string; sessionProvider?: 'claude' | 'acp' | 'codex' | null },
+  opts?: { selectedModel?: string; sessionProvider?: 'claude' | 'acp-grok' | 'acp-antigravity' | 'codex' | null },
 ) {
   useChatStore.getState().ensureSession('/proj')
   useChatStore.setState({ activeProject: '/proj' })
@@ -252,7 +252,7 @@ describe('PlanApprovalPrompt — integration', () => {
           outputStyles: [],
         },
         codex: null,
-        acp: null,
+        'acp-grok': null, 'acp-antigravity': null,
       },
     })
     seedPlanApprovalState('plan', { selectedModel: 'claude-opus-4-7' })
@@ -286,7 +286,7 @@ describe('PlanApprovalPrompt — integration', () => {
           outputStyles: [],
         },
         codex: null,
-        acp: null,
+        'acp-grok': null, 'acp-antigravity': null,
       },
     })
     seedPlanApprovalState('plan', { selectedModel: 'claude-opus-4-7' })
@@ -381,7 +381,7 @@ describe('PlanApprovalPrompt — integration', () => {
   })
 
   it('scenario: ACP approve with freeform sends follow-up user message, not feedback on wire', async () => {
-    seedPlanApprovalState('plan', { sessionProvider: 'acp' })
+    seedPlanApprovalState('plan', { sessionProvider: 'acp-grok' })
     const sendSpy = vi.fn().mockResolvedValue(undefined)
     useChatStore.setState({ sendMessage: sendSpy })
 

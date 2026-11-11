@@ -71,7 +71,7 @@ beforeEach(() => {
   useChatStore.setState({
     harnessResources: {
       claude: { models: [OPUS, HAIKU], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] },
-      codex: null, acp: null, opencode: null, cursor: null,
+      codex: null, 'acp-grok': null, 'acp-antigravity': null, opencode: null, cursor: null,
     } as never,
     claudeResourcesLoading: false,
   })

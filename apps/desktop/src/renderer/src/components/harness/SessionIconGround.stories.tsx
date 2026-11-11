@@ -57,7 +57,7 @@ const HARNESSES: { label: string; title: string; Ground: IconComponent; Bare: Ic
   { label: 'Cursor', title: 'Add worktree cleanup test', Ground: grounded('cursor'), Bare: CursorSessionIcon },
   { label: 'DeepSeek', title: 'Port relay ACK protocol', Ground: grounded('dsh'), Bare: DeepseekSessionIcon },
   { label: 'OpenCode', title: 'Bump harness manifest', Ground: grounded('opencode'), Bare: OpenCodeSessionIcon },
-  { label: 'Grok', title: 'Investigate stalled turn', Ground: grounded('acp', 'grok-build'), Bare: GrokSessionIcon },
+  { label: 'Grok', title: 'Investigate stalled turn', Ground: grounded('acp-grok', 'grok-build'), Bare: GrokSessionIcon },
   { label: 'ACP', title: 'Wire device catalog tiers', Ground: grounded('acp'), Bare: AcpSessionIcon },
 ]
 

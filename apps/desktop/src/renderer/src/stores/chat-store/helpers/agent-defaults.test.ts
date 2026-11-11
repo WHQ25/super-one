@@ -104,7 +104,7 @@ beforeEach(() => {
     activeProject: null,
     remoteSessions: {},
     _previousFocusedSession: null,
-    harnessResources: { claude: null, codex: null, acp: null, opencode: null, cursor: null },
+    harnessResources: { claude: null, codex: null, 'acp-grok': null, 'acp-antigravity': null, opencode: null, cursor: null },
     initializedHarnesses: new Set(),
   })
 })
@@ -238,8 +238,8 @@ describe('_computeClaudeDefaultPatch', () => {
 
   it('returns null for non-Claude harness sessions (shared selectedModel field)', () => {
     const session = createDefaultPerSessionState()
-    session.sessionProvider = 'acp'
-    session.preferredProvider = 'acp'
+    session.sessionProvider = 'acp-grok'
+    session.preferredProvider = 'acp-grok'
     session.selectedModel = 'grok-4.5'
     expect(_computeClaudeDefaultPatch(session, [opus])).toBeNull()
   })

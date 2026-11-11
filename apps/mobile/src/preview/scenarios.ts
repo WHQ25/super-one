@@ -78,7 +78,7 @@ export const nativeScenarios: NativeScenario[] = [
   { id: 'permission/create-agent-profile', category: 'Permissions', title: 'Create agent profile', description: 'Whole Grok profile with its own options, long instructions, unset and unsupported fields.', request: {
     requestId: 'preview-create-agent-profile', toolName: 'mcp__superone__agent_profile_apply', input: {}, allowAlwaysAllow: false, requestKind: 'agent_profile_confirm',
     agentProfileConfirm: { operation: 'create', profiles: [{
-      harnessId: 'acp', acpAgentId: 'grok-build', name: 'Reviewer', description: 'Reviews diffs without editing files.', model: 'grok-4', modelName: 'Grok 4', effort: 'high',
+      harnessId: 'acp-grok', acpAgentId: 'grok-build', name: 'Reviewer', description: 'Reviews diffs without editing files.', model: 'grok-4', modelName: 'Grok 4', effort: 'high',
       options: { contextWindow: '1M' }, unsupported: ['mode'],
       instructions: Array.from({ length: 8 }, (_, index) => `${index + 1}. Read the whole diff before commenting; cite file and line. 先通读改动，再逐条给出带行号的意见。`).join('\n'),
     }] },

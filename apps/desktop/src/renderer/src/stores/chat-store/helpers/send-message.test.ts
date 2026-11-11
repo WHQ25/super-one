@@ -126,7 +126,7 @@ beforeEach(() => {
     activeProject: null,
     remoteSessions: {},
     _previousFocusedSession: null,
-    harnessResources: { claude: null, codex: null, acp: null, opencode: null, cursor: null },
+    harnessResources: { claude: null, codex: null, 'acp-grok': null, 'acp-antigravity': null, opencode: null, cursor: null },
     initializedHarnesses: new Set(),
   })
   mockWorktreeState.pendingBaseBranch = null
@@ -700,8 +700,8 @@ describe('sendMessageImpl: intercepted commands', () => {
 
   it('routes ACP /workflows to openWorkflowsPopup and skips IPC send', async () => {
     seedProject('/proj', 'sid-grok-wf', {
-      sessionProvider: 'acp',
-      preferredProvider: 'acp',
+      sessionProvider: 'acp-grok',
+      preferredProvider: 'acp-grok',
       acpAgentId: 'grok-build',
     })
 
@@ -714,8 +714,8 @@ describe('sendMessageImpl: intercepted commands', () => {
 
   it('routes ACP /mcp to openMcpPopup and skips IPC send', async () => {
     seedProject('/proj', 'sid-grok-mcp', {
-      sessionProvider: 'acp',
-      preferredProvider: 'acp',
+      sessionProvider: 'acp-grok',
+      preferredProvider: 'acp-grok',
       acpAgentId: 'grok-build',
     })
 
@@ -776,8 +776,8 @@ describe('sendMessageImpl: intercepted commands', () => {
   it('intercepts Grok /recap and requests a session recap without sending a turn', async () => {
     mockEnvCallSession.mockClear()
     seedProject('/proj', 'sid-grok', {
-      sessionProvider: 'acp',
-      preferredProvider: 'acp',
+      sessionProvider: 'acp-grok',
+      preferredProvider: 'acp-grok',
       acpAgentId: 'grok-build',
     })
 
@@ -793,8 +793,8 @@ describe('sendMessageImpl: intercepted commands', () => {
   it('clears isRecapping when the recap request returns ok=false', async () => {
     mockEnvCallSession.mockClear().mockResolvedValue({ ok: false })
     seedProject('/proj', 'sid-grok', {
-      sessionProvider: 'acp',
-      preferredProvider: 'acp',
+      sessionProvider: 'acp-grok',
+      preferredProvider: 'acp-grok',
       acpAgentId: 'grok-build',
     })
 
@@ -805,21 +805,21 @@ describe('sendMessageImpl: intercepted commands', () => {
 
   it('creates a Grok session with its acpAgentId so the main process can persist the brand', async () => {
     seedProject('/proj', 'sid-grok', {
-      sessionProvider: 'acp',
-      preferredProvider: 'acp',
+      sessionProvider: 'acp-grok',
+      preferredProvider: 'acp-grok',
       acpAgentId: 'grok-build',
     })
 
     await useChatStore.getState().sendMessage('hello grok')
 
     expect(mockEnvCreateSession).toHaveBeenCalledWith('local', expect.objectContaining({
-      harnessId: 'acp',
+      harnessId: 'acp-grok',
       selections: { sessionId: 'sid-grok', acpAgentId: 'grok-build' },
     }))
     expect(mockEnvSendSessionMessage).toHaveBeenCalledTimes(1)
     expect(sentTurn()).toMatchObject({
       sessionId: 'sid-grok',
-      providerId: 'acp',
+      providerId: 'acp-grok',
       text: 'hello grok',
     })
   })
@@ -827,8 +827,8 @@ describe('sendMessageImpl: intercepted commands', () => {
   it('does not intercept /recap for non-Grok ACP agents', async () => {
     mockEnvCallSession.mockClear()
     seedProject('/proj', 'sid-other', {
-      sessionProvider: 'acp',
-      preferredProvider: 'acp',
+      sessionProvider: 'acp-grok',
+      preferredProvider: 'acp-grok',
       acpAgentId: 'opencode',
     })
 
@@ -1172,7 +1172,7 @@ describe('sendMessageImpl: IPC dispatch + rollback', () => {
 })
 
 describe('sendMessageImpl: queued send (streaming)', () => {
-  it.each(['claude', 'codex', 'acp', 'opencode'] as const)('keeps a remote %s follow-up queued until the host consumes it', async provider => {
+  it.each(['claude', 'codex', 'acp-grok', 'opencode'] as const)('keeps a remote %s follow-up queued until the host consumes it', async provider => {
     const path = 'remote:env-1:/work/app'
     seedProject(path, 'live', { sessionProvider: provider, preferredProvider: provider,
       hostSessionOwned: true, status: 'streaming', awaitingAssistantReply: false })
@@ -1500,7 +1500,7 @@ describe('sendMessageImpl: built-in capability reminder', () => {
 })
 
 describe('sendMessageImpl: miniapp authorize', () => {
-  it.each((['claude', 'codex', 'acp'] as const).flatMap(provider =>
+  it.each((['claude', 'codex', 'acp-grok'] as const).flatMap(provider =>
     ['/proj', 'remote:env-1:/work/app'].map(projectPath => ({ provider, projectPath })),
   ))('advertises only confirmed mini-app grants for $provider on $projectPath', async ({ provider, projectPath }) => {
     seedProject(projectPath, 'sid-1', {
@@ -1566,8 +1566,8 @@ describe('sendMessageImpl: miniapp authorize', () => {
 
   it('passes acp-antigravity agentId when @Antigravity is mentioned inside Grok', async () => {
     seedProject('/proj', 'sid-1', {
-      preferredProvider: 'acp',
-      sessionProvider: 'acp',
+      preferredProvider: 'acp-grok',
+      sessionProvider: 'acp-grok',
       acpAgentId: 'grok-build',
       mentions: [
         { kind: 'agent-profile', value: 'acp-antigravity:antigravity', displayName: 'Antigravity' },

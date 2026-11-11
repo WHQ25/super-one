@@ -23,8 +23,8 @@ describe('applyEventToSession: acp_commands', () => {
   it('stores agent commands when agent matches', () => {
     const session = {
       ...createDefaultPerSessionState(),
-      preferredProvider: 'acp' as const,
-      sessionProvider: 'acp' as const,
+      preferredProvider: 'acp-grok' as const,
+      sessionProvider: 'acp-grok' as const,
       acpAgentId: 'opencode',
     }
     const patch = applyEventToSession(session, {
@@ -39,8 +39,8 @@ describe('applyEventToSession: acp_commands', () => {
   it('drops commands from a different ACP agent', () => {
     const session = {
       ...createDefaultPerSessionState(),
-      preferredProvider: 'acp' as const,
-      sessionProvider: 'acp' as const,
+      preferredProvider: 'acp-grok' as const,
+      sessionProvider: 'acp-grok' as const,
       acpAgentId: 'opencode',
       acpSlashCommands: commands,
     }
@@ -55,8 +55,8 @@ describe('applyEventToSession: acp_commands', () => {
   it('keeps project-scoped workflows on the live session', () => {
     const session = {
       ...createDefaultPerSessionState(),
-      preferredProvider: 'acp' as const,
-      sessionProvider: 'acp' as const,
+      preferredProvider: 'acp-grok' as const,
+      sessionProvider: 'acp-grok' as const,
       acpAgentId: 'grok-build',
     }
     const live: SlashCommandInfo[] = [
@@ -80,8 +80,8 @@ describe('applyEventToSession: acp_commands', () => {
   it('replaces the full command list on update', () => {
     const session = {
       ...createDefaultPerSessionState(),
-      preferredProvider: 'acp' as const,
-      sessionProvider: 'acp' as const,
+      preferredProvider: 'acp-grok' as const,
+      sessionProvider: 'acp-grok' as const,
       acpAgentId: 'opencode',
       acpSlashCommands: commands,
     }

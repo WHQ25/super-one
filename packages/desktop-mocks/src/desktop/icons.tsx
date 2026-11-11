@@ -8,6 +8,7 @@ import {
 import { CodexSessionIcon } from "@superone/ui/components/harness/CodexSessionIcon"
 import { CursorSessionIcon } from "@superone/ui/components/harness/CursorSessionIcon"
 import { DeepseekSessionIcon } from "@superone/ui/components/harness/DeepseekSessionIcon"
+import { AntigravitySessionIcon } from "@superone/ui/components/harness/AntigravitySessionIcon"
 import { GrokSessionIcon } from "@superone/ui/components/harness/GrokSessionIcon"
 import { OpenCodeSessionIcon } from "@superone/ui/components/harness/OpenCodeSessionIcon"
 
@@ -145,9 +146,8 @@ const SESSION_ICON_BY_HARNESS = {
   cursor: CursorSessionIcon,
   opencode: OpenCodeSessionIcon,
   dsh: DeepseekSessionIcon,
-  // The product showcase uses Grok as its concrete ACP example. Consumers that
-  // need an unbranded protocol client can opt into the generic mark below.
-  acp: GrokSessionIcon,
+  "acp-grok": GrokSessionIcon,
+  "acp-antigravity": AntigravitySessionIcon,
 } satisfies Record<Harness, ComponentType<SessionIconProps>>
 
 export interface HarnessSessionIconProps extends SessionIconProps {
@@ -156,7 +156,7 @@ export interface HarnessSessionIconProps extends SessionIconProps {
 }
 
 export function HarnessSessionIcon({ harness, genericAcp = false, ...props }: HarnessSessionIconProps) {
-  const Icon = harness === "acp" && genericAcp ? AcpSessionIcon : SESSION_ICON_BY_HARNESS[harness]
+  const Icon = genericAcp && (harness === "acp-grok" || harness === "acp-antigravity") ? AcpSessionIcon : SESSION_ICON_BY_HARNESS[harness]
   return <Icon {...props} />
 }
 

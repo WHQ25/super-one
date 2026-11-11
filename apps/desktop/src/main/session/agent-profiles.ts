@@ -35,7 +35,8 @@ import {
 import type { AgentProfileListChoice, AgentProfileListOptionKey } from '@superone/shared/agent-profile-options'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { isDefaultSessionProvider, sessionProviderDisplayName } from '@superone/shared/session-provider-definitions'
-import { acpAgentDisplayName, isAntigravityAcpAgent, resolveHarnessBrandKey } from '@superone/shared/acp-brand'
+import { acpAgentDisplayName, acpAgentIdForHarness, isAcpProtocolHarness, isAntigravityAcpAgent, resolveHarnessBrandKey } from '@superone/shared/acp-brand'
+import { acpAgentDefaultsFor } from '@superone/shared/harness/session-defaults'
 import { acpModeCatalog } from '@superone/shared/harness/acp-mode-catalog'
 import { buildAgentMentionTargets, decodeAgentRef } from '@superone/shared/agent-mention-tags'
 import { isHarnessRunnable, sessionHarnessIdToNodeHarnessId, type NodeHarnessId } from '@superone/shared/environment'
@@ -43,6 +44,7 @@ import { formatCodexModelName } from '@superone/shared/codex-model-label'
 import { findCodexFastServiceTier } from '@superone/shared/codex-fast-mode'
 import { codexPresetForPermissionMode } from '@superone/shared/harness/harness-sandbox'
 import { findPlatform, type Credential } from '@superone/shared/platform-registry'
+import { readAcpHarnessResources } from '../acp/acp-model-cache'
 import { deriveSessionCatalog } from '../acp/acp-config'
 import { readAppSettings } from '../app-settings-service'
 import { getCachedHarnessResources } from '../database'
@@ -58,23 +60,12 @@ import { defaultChatProviderId } from '../agent/default-chat-provider'
 import { codexAccountStore } from '../codex/codex-account-store'
 
 export function resolveAcpAgentId(provider: ReturnType<typeof listSessionProviders>[number]): string | null {
-  if (provider.id === 'acp-antigravity') return 'antigravity'
+  if (!isAcpProtocolHarness(provider.harnessId)) return null
   const fromConfig = typeof (provider.config as { agentId?: unknown })?.agentId === 'string'
     ? (provider.config as { agentId: string }).agentId.trim()
     : ''
-  const followsDefaults = isDefaultSessionProvider(provider)
-  if (fromConfig && !followsDefaults) return fromConfig
-  const selected = readAppSettings().agentPreference?.acp?.selectedAgentId
-  if (typeof selected === 'string' && selected.trim()) {
-    const trimmed = selected.trim()
-    if (provider.id !== 'acp-grok' || !isAntigravityAcpAgent(trimmed)) return trimmed
-  }
-  const cached = getCachedHarnessResources('acp')
-  if (typeof cached?.selectedAgentId === 'string' && cached.selectedAgentId.trim()) {
-    const trimmed = cached.selectedAgentId.trim()
-    if (provider.id !== 'acp-grok' || !isAntigravityAcpAgent(trimmed)) return trimmed
-  }
-  return fromConfig || null
+  if (fromConfig && !isDefaultSessionProvider(provider)) return fromConfig
+  return acpAgentIdForHarness(provider.harnessId)
 }
 
 /**
@@ -84,7 +75,7 @@ export function resolveAcpAgentId(provider: ReturnType<typeof listSessionProvide
  * one twist is Cursor, whose picker hides models the user disabled in harness
  * config. Collab launches must offer exactly what the composer offers.
  */
-export function cachedHarnessModels(harnessId: Exclude<HarnessId, 'acp'>): ModelOption[] {
+export function cachedHarnessModels(harnessId: Exclude<HarnessId, 'acp-grok' | 'acp-antigravity'>): ModelOption[] {
   if (harnessId === 'cursor') {
     const cached = getCachedHarnessResources('cursor')
     return cached ? filterEnabledCursorModels(cached.models, cached) : []
@@ -142,10 +133,10 @@ export function profileResources(
   let defaultModel: ModelOption | undefined
   let defaultEffort: string | undefined
   let defaultFastMode: boolean | undefined
-  if (provider.harnessId === 'acp') {
-    const cached = getCachedHarnessResources('acp')
+  if (isAcpProtocolHarness(provider.harnessId)) {
+    const cached = readAcpHarnessResources(provider.harnessId)
     if (!cached) return uncatalogued()
-    const agentId = acpAgentId ?? resolveAcpAgentId(provider) ?? cached.selectedAgentId
+    const agentId = acpAgentId ?? resolveAcpAgentId(provider)
     const catalog = agentId ? cached.configByAgentId?.[agentId] : undefined
     const sessionCatalog = catalog ? deriveSessionCatalog(catalog) : null
     models = sessionCatalog?.models ?? []
@@ -155,13 +146,17 @@ export function profileResources(
     lists.mode = modeCatalog.modes.map((mode) => ({ value: mode.id, label: mode.name }))
     harnessEfforts = acpEfforts
     for (const effort of acpEfforts) efforts.add(effort)
-    defaultModel = models.find((model) => model.id === sessionCatalog?.selectedModelId)
+    const slot = acpAgentDefaultsFor(readAppSettings().agentPreference, provider.harnessId)
+    defaultModel = models.find((model) => model.id === slot.defaultModel)
+      ?? models.find((model) => model.id === sessionCatalog?.selectedModelId)
       ?? models.find((model) => model.isDefault)
       ?? models[0]
     const selectedMode = sessionCatalog?.selectedModeId
-    defaultEffort = selectedMode && acpEfforts.includes(selectedMode)
-      ? selectedMode
-      : acpEfforts.includes('medium') ? 'medium' : acpEfforts[0]
+    defaultEffort = slot.defaultEffort && acpEfforts.includes(slot.defaultEffort)
+      ? slot.defaultEffort
+      : selectedMode && acpEfforts.includes(selectedMode)
+        ? selectedMode
+        : acpEfforts.includes('medium') ? 'medium' : acpEfforts[0]
   } else {
     models = cachedHarnessModels(provider.harnessId)
     if (models.length === 0) return uncatalogued()
@@ -235,13 +230,10 @@ function isCatalogHarnessUsable(catalogId: NodeHarnessId | null): boolean {
 }
 
 export function isProviderUsable(provider: ReturnType<typeof listSessionProviders>[number]): boolean {
-  if (provider.harnessId === 'acp') {
-    if (provider.id === 'acp-antigravity') return isCatalogHarnessUsable('acp-antigravity')
-    if (provider.id === 'acp-grok') return isCatalogHarnessUsable('acp-grok')
-    if (isDefaultSessionProvider(provider)) return isCatalogHarnessUsable('acp-grok') || isCatalogHarnessUsable('acp-antigravity')
-    return isCatalogHarnessUsable(isAntigravityAcpAgent(resolveAcpAgentId(provider)) ? 'acp-antigravity' : 'acp-grok')
-  }
-  return isCatalogHarnessUsable(sessionHarnessIdToNodeHarnessId(provider.harnessId))
+  const catalogId = isAcpProtocolHarness(provider.harnessId)
+    ? provider.harnessId
+    : sessionHarnessIdToNodeHarnessId(provider.harnessId)
+  return isCatalogHarnessUsable(catalogId)
 }
 
 export function resolveProviderRowId(agentId: string): string {
@@ -283,8 +275,8 @@ function profileDisplayName(
 ): string {
   // A user-named agent keeps its name, a base row reads as its harness, and the
   // built-in ACP row as its agent.
-  if (provider.harnessId !== 'acp' || readAgentProfile(provider.config)) return sessionProviderDisplayName(provider)
-  const cached = getCachedHarnessResources('acp')
+  if (!isAcpProtocolHarness(provider.harnessId) || readAgentProfile(provider.config)) return sessionProviderDisplayName(provider)
+  const cached = readAcpHarnessResources(provider.harnessId)
   const catalogName = acpAgentId
     ? cached?.agents?.find((agent) => agent.id === acpAgentId)?.name
     : null
@@ -354,7 +346,7 @@ function launchDefaultConfig(
 
 /** Virtual proposals and stored Profiles use the same default resolution. */
 export function agentProfileLaunchConfig(provider: ReturnType<typeof listSessionProviders>[number]): SessionAgentLaunchConfig {
-  const acpAgentId = provider.harnessId === 'acp' ? resolveAcpAgentId(provider) : null
+  const acpAgentId = isAcpProtocolHarness(provider.harnessId) ? resolveAcpAgentId(provider) : null
   return launchDefaultConfig(provider.harnessId, profileResources(provider, {
     acpAgentId,
   }).defaultConfig, acpAgentId)
@@ -373,26 +365,13 @@ function usableProviders(): Array<{
   acpAgentId: string | null
 }> {
   const enabled = isAgentProfilesEnabled()
-  const allProviders = listSessionProviders()
-  const hasExplicitAcpRows = allProviders.some((row) => row.id === 'acp-grok' || row.id === 'acp-antigravity')
-  return allProviders
+  return listSessionProviders()
     .filter((provider) => enabled || !readAgentProfile(provider.config))
     .filter(isProviderUsable)
-    .flatMap((provider) => {
-      if (provider.harnessId !== 'acp') return [{ provider, acpAgentId: null }]
-      if (provider.id === 'acp-grok') return [{ provider, acpAgentId: resolveAcpAgentId(provider) }]
-      if (provider.id === 'acp-antigravity') return [{ provider, acpAgentId: 'antigravity' }]
-      if (!isDefaultSessionProvider(provider) || hasExplicitAcpRows) return [{ provider, acpAgentId: resolveAcpAgentId(provider) }]
-      const resolved = resolveAcpAgentId(provider)
-      return [
-        ...(isCatalogHarnessUsable('acp-grok')
-          ? [{ provider: { ...provider, id: 'acp-grok' }, acpAgentId: isAntigravityAcpAgent(resolved) ? 'grok-build' : resolved }]
-          : []),
-        ...(isCatalogHarnessUsable('acp-antigravity')
-          ? [{ provider: { ...provider, id: 'acp-antigravity' }, acpAgentId: 'antigravity' }]
-          : []),
-      ]
-    })
+    .map((provider) => ({
+      provider,
+      acpAgentId: isAcpProtocolHarness(provider.harnessId) ? resolveAcpAgentId(provider) : null,
+    }))
 }
 
 export function sessionAgentLaunchDefaults(
@@ -420,7 +399,7 @@ export function sessionAgentProfile(
   provider: ReturnType<typeof listSessionProviders>[number],
   explicitAcpAgentId?: string | null,
 ): SessionAgentProfile {
-  const acpAgentId = provider.harnessId === 'acp'
+  const acpAgentId = isAcpProtocolHarness(provider.harnessId)
     ? (explicitAcpAgentId !== undefined ? explicitAcpAgentId : resolveAcpAgentId(provider))
     : null
   const resources = profileResources(provider, { acpAgentId })
@@ -454,7 +433,7 @@ export function sessionAgentProfile(
     ...(acpAgentId ? { acpAgentId } : {}),
     brandKey,
     description: readAgentProfile(provider.config)?.identity.description
-      ?? (provider.harnessId === 'acp'
+      ?? (isAcpProtocolHarness(provider.harnessId)
         ? `ACP agent ${acpAgentId ?? 'unknown'} (${brandKey})`
         : `${provider.harnessId} harness with the built-in configuration`),
     defaultConfig: launchDefaultConfig(provider.harnessId, resources.defaultConfig, acpAgentId),

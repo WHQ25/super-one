@@ -8,9 +8,8 @@ import { useMobileTheme } from '../theme/context'
 const brands: { label: string; provider: HarnessId; acpAgentId?: string }[] = [
   { label: 'Claude', provider: 'claude' }, { label: 'Codex', provider: 'codex' },
   { label: 'Cursor', provider: 'cursor' }, { label: 'OpenCode', provider: 'opencode' },
-  { label: 'DeepSeek', provider: 'dsh' }, { label: 'Grok', provider: 'acp', acpAgentId: 'grok' },
-  { label: 'Antigravity', provider: 'acp', acpAgentId: 'antigravity' },
-  { label: 'ACP', provider: 'acp' },
+  { label: 'DeepSeek', provider: 'dsh' }, { label: 'Grok', provider: 'acp-grok', acpAgentId: 'grok-build' },
+  { label: 'Antigravity', provider: 'acp-antigravity', acpAgentId: 'antigravity' },
 ]
 const states = ['default', 'running', 'background', 'unseen', 'automation'] as const
 const filenames = ['index.ts', 'App.tsx', 'index.test.ts', 'main.dart', 'package.json', 'Dockerfile', 'README.md',

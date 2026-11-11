@@ -95,7 +95,7 @@ beforeEach(() => {
     activeProject: null,
     remoteSessions: {},
     _previousFocusedSession: null,
-    harnessResources: { claude: null, codex: null, acp: null, opencode: null, cursor: null },
+    harnessResources: { claude: null, codex: null, 'acp-grok': null, 'acp-antigravity': null, opencode: null, cursor: null },
     initializedHarnesses: new Set(),
   })
   vi.clearAllMocks()
@@ -540,7 +540,7 @@ describe('respondToPlanApprovalImpl', () => {
 
   it('does not reset ACP permissionMode to default on approve', () => {
     seedSession('sid-1', {
-      sessionProvider: 'acp',
+      sessionProvider: 'acp-grok',
       permissionMode: 'plan',
       hostSessionOwned: true,
       pendingPlanApproval: { requestId: 'p1', planContent: 'plan', planFilePath: '/plan', allowedPrompts: [] } as never,

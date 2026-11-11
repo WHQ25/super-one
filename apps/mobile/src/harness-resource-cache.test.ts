@@ -83,22 +83,22 @@ describe('connection harness resources', () => {
     }
 
     await requestHarnessResource(client, 'get_system_info', '/p', 'acp', { acpAgentId: 'grok-build' })
-    await requestSlashCatalog(client, '/p', 'acp', 'antigravity')
+    await requestSlashCatalog(client, '/p', 'acp-antigravity', 'antigravity')
 
     expect(client.rpc).toHaveBeenNthCalledWith(
       1,
       'harness.systemInfo',
-      { projectId: 'p', harnessId: 'acp', acpAgentId: 'grok-build' },
+      { projectId: 'p', harnessId: 'acp-grok', acpAgentId: 'grok-build' },
       { environmentId: 'desk' },
     )
     expect(client.rpc).toHaveBeenNthCalledWith(
       2,
       'harness.systemInfo',
-      { projectId: 'p', harnessId: 'acp', acpAgentId: 'antigravity' },
+      { projectId: 'p', harnessId: 'acp-antigravity', acpAgentId: 'antigravity' },
       { environmentId: 'desk' },
     )
     expect(peekHarnessResource(client, 'get_system_info', '/p', 'acp', 'grok-build')?.models).toEqual([{ id: 'grok-build-model' }])
-    expect(peekHarnessResource(client, 'get_system_info', '/p', 'acp', 'antigravity')?.models).toEqual([{ id: 'antigravity-model' }])
-    expect(peekSlashCatalog(client, '/p', 'acp', 'antigravity')?.map((cmd) => cmd.name)).toContain('antigravity-cmd')
+    expect(peekHarnessResource(client, 'get_system_info', '/p', 'acp-antigravity', 'antigravity')?.models).toEqual([{ id: 'antigravity-model' }])
+    expect(peekSlashCatalog(client, '/p', 'acp-antigravity', 'antigravity')?.map((cmd) => cmd.name)).toContain('antigravity-cmd')
   })
 })

@@ -54,7 +54,7 @@ beforeEach(() => {
   ;(window as unknown as { app: Record<string, unknown> }).app = { connectClaude }
 
   useChatStore.setState({
-    harnessResources: { claude: null, codex: null, acp: null, opencode: null, cursor: null },
+    harnessResources: { claude: null, codex: null, 'acp-grok': null, 'acp-antigravity': null, opencode: null, cursor: null },
     initializedHarnesses: new Set(),
     claudeResourcesLoading: false,
   })

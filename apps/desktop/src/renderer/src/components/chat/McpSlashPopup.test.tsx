@@ -8,8 +8,8 @@ vi.mock('@/stores/chat', () => {
   const state = {
     activeProject: '/project',
     _activeSessionId: 'sid-1',
-    sessionProvider: null as 'claude' | 'codex' | 'opencode' | 'acp' | null,
-    preferredProvider: 'claude' as 'claude' | 'codex' | 'opencode' | 'acp',
+    sessionProvider: null as 'claude' | 'codex' | 'opencode' | 'acp-grok' | 'acp-antigravity' | 'dsh' | null,
+    preferredProvider: 'claude' as 'claude' | 'codex' | 'opencode' | 'acp-grok' | 'acp-antigravity' | 'dsh',
     acpAgentId: null as string | null,
     mcpServers: [] as Array<{ name: string; status: string }>,
     mcpInitProgress: null as { connected: number; total: number } | null,
@@ -228,7 +228,7 @@ describe('McpSlashPopup', () => {
   })
 
   it('authenticates a Grok MCP server that needs auth', async () => {
-    setChat({ sessionProvider: 'acp', acpAgentId: 'grok-build' })
+    setChat({ sessionProvider: 'acp-grok', acpAgentId: 'grok-build' })
     mockWindow([{ name: 'github', status: 'needs-auth' }], [])
     const agent = (window as unknown as { environment: { callSession: ReturnType<typeof vi.fn> } }).environment
 
@@ -281,7 +281,7 @@ describe('McpSlashPopup', () => {
   })
 
   it('shows the Grok live badge for an ACP Grok session', async () => {
-    setChat({ sessionProvider: 'acp', preferredProvider: 'acp', acpAgentId: 'grok-build' })
+    setChat({ sessionProvider: 'acp-grok', preferredProvider: 'acp-grok', acpAgentId: 'grok-build' })
     mockWindow([{ name: 'github', status: 'connected', toolCount: 2 }], [])
 
     render(<McpSlashPopup onClose={vi.fn()} />)
@@ -291,8 +291,8 @@ describe('McpSlashPopup', () => {
 
   it('renders live Grok MCP status from the session store without waiting on probe', async () => {
     setChat({
-      sessionProvider: 'acp',
-      preferredProvider: 'acp',
+      sessionProvider: 'acp-grok',
+      preferredProvider: 'acp-grok',
       acpAgentId: 'grok-build',
       mcpServers: [{ name: 'linear', status: 'connected' }],
       mcpInitProgress: { connected: 1, total: 3 },

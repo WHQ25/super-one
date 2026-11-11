@@ -1,5 +1,6 @@
 import { useMemo } from 'react'
-import { isAntigravityAcpAgent } from '@superone/shared/acp-brand'
+import { acpAgentIdForHarness, isAntigravityAcpAgent } from '@superone/shared/acp-brand'
+import type { AcpHarnessId } from '@/stores/chat-store/harness/acp-slots'
 import { formatEffortOptionLabel, sortEffortsAscending } from '@superone/shared/effort-labels'
 import { acpModeCatalog } from '@superone/shared/harness/acp-mode-catalog'
 import { useChatStore } from '@/stores/chat'
@@ -10,12 +11,12 @@ import { effortLabel, useProfileCatalog, type LaunchModelProps } from '../launch
 import { acpSelectorModels, projectAntigravityModels } from './model-options'
 
 export function AcpLaunchModel({
-  profile, catalog, acpAgentId, model, effort, optionParams, onOptionParamChange, onRefreshModels, modelsLoading, onChange,
-}: LaunchModelProps) {
+  profile, catalog, acpAgentId, model, effort, optionParams, onOptionParamChange, onRefreshModels, modelsLoading, onChange, harnessId,
+}: LaunchModelProps & { harnessId: AcpHarnessId }) {
   const profileOnly = catalog === 'profile'
-  const refresh = pickLaunchRefresh(profileOnly, useHarnessCatalogRefresh('acp', !profileOnly), { onRefreshModels, modelsLoading })
-  const resources = useChatStore((s) => (profileOnly ? null : s.harnessResources.acp))
-  const agentId = acpAgentId ?? profile?.acpAgentId ?? resources?.selectedAgentId ?? null
+  const refresh = pickLaunchRefresh(profileOnly, useHarnessCatalogRefresh(harnessId, !profileOnly), { onRefreshModels, modelsLoading })
+  const resources = useChatStore((s) => (profileOnly ? null : s.harnessResources[harnessId]))
+  const agentId = acpAgentId ?? profile?.acpAgentId ?? acpAgentIdForHarness(harnessId)
   const live = useMemo(() => getCachedAcpCatalog(resources, agentId), [resources, agentId])
   const profileCatalog = useProfileCatalog(profile)
   const base = live?.models.length ? live.models : profileCatalog

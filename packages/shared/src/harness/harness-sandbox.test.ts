@@ -59,8 +59,9 @@ describe('a harness that folds sandbox into its permission setting', () => {
 describe('a harness SuperOne does not drive', () => {
   // Grok confines itself at process start; claiming `off` would deny a real sandbox.
   it('reports the sandbox ACP observed about itself', () => {
-    expect(resolveSandboxMode({ harnessId: 'acp', sandboxInfo: ON })).toBe('on')
-    expect(resolveSandboxMode({ harnessId: 'acp', sandboxInfo: null })).toBe('off')
+    expect(resolveSandboxMode({ harnessId: 'acp-grok', sandboxInfo: ON })).toBe('on')
+    expect(resolveSandboxMode({ harnessId: 'acp-grok', sandboxInfo: null })).toBe('off')
+    expect(resolveSandboxMode({ harnessId: 'acp-antigravity', sandboxInfo: ON })).toBe('on')
   })
 
   it('reports off for OpenCode, which has no sandbox mechanism at all', () => {

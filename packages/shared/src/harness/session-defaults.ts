@@ -1,6 +1,6 @@
 import type { AppSettings, CodexPermissionPreset, HarnessId, PermissionMode, SandboxMode } from '../agent-types'
-import { acpPermissionModesForAgent, HARNESS_LAUNCH_OPTIONS } from '../launch-options'
-import { isAntigravityAcpAgent } from './acp-brand'
+import { HARNESS_LAUNCH_OPTIONS } from '../launch-options'
+import { isAcpProtocolHarness, resolveLegacyHarnessId } from './acp-brand'
 
 export interface AcpAgentDefaults {
   defaultModel: string
@@ -8,41 +8,29 @@ export interface AcpAgentDefaults {
   defaultPermissionMode: PermissionMode | ''
 }
 
+type AcpHarnessId = 'acp-grok' | 'acp-antigravity'
+
 export function acpAgentDefaultsFor(
-  acp: Partial<AppSettings['agentPreference']['acp']> | null | undefined,
-  acpAgentId?: string | null,
+  preferences: Partial<AppSettings['agentPreference']> | null | undefined,
+  harnessId: AcpHarnessId,
 ): AcpAgentDefaults {
-  const resolvedAgentId = acpAgentId !== undefined ? acpAgentId : acp?.selectedAgentId
-  if (isAntigravityAcpAgent(resolvedAgentId)) {
-    return {
-      defaultModel: acp?.antigravityDefaultModel ?? '',
-      defaultEffort: acp?.antigravityDefaultEffort ?? '',
-      defaultPermissionMode: acp?.antigravityDefaultPermissionMode ?? '',
-    }
-  }
+  const slot = preferences?.[harnessId]
   return {
-    defaultModel: acp?.defaultModel ?? '',
-    defaultEffort: acp?.defaultEffort ?? '',
-    defaultPermissionMode: acp?.defaultPermissionMode ?? '',
+    defaultModel: slot?.defaultModel ?? '',
+    defaultEffort: slot?.defaultEffort ?? '',
+    defaultPermissionMode: slot?.defaultPermissionMode ?? '',
   }
 }
 
 export function acpAgentPreferencePatch(
-  acpAgentId: string | null | undefined,
+  harnessId: AcpHarnessId,
   patch: Partial<AcpAgentDefaults>,
-): Partial<AppSettings['agentPreference']['acp']> {
-  if (isAntigravityAcpAgent(acpAgentId)) {
-    const out: Partial<AppSettings['agentPreference']['acp']> = {}
-    if (patch.defaultModel !== undefined) out.antigravityDefaultModel = patch.defaultModel
-    if (patch.defaultEffort !== undefined) out.antigravityDefaultEffort = patch.defaultEffort
-    if (patch.defaultPermissionMode !== undefined) out.antigravityDefaultPermissionMode = patch.defaultPermissionMode
-    return out
-  }
-  const out: Partial<AppSettings['agentPreference']['acp']> = {}
-  if (patch.defaultModel !== undefined) out.defaultModel = patch.defaultModel
-  if (patch.defaultEffort !== undefined) out.defaultEffort = patch.defaultEffort
-  if (patch.defaultPermissionMode !== undefined) out.defaultPermissionMode = patch.defaultPermissionMode
-  return out
+): Partial<AppSettings['agentPreference']> {
+  const slot: Partial<AcpAgentDefaults> = {}
+  if (patch.defaultModel !== undefined) slot.defaultModel = patch.defaultModel
+  if (patch.defaultEffort !== undefined) slot.defaultEffort = patch.defaultEffort
+  if (patch.defaultPermissionMode !== undefined) slot.defaultPermissionMode = patch.defaultPermissionMode
+  return { [harnessId]: slot }
 }
 
 /**
@@ -94,18 +82,19 @@ export interface HarnessSessionDefaults {
  */
 export function sessionDefaultsForHarness(
   preferences: AppSettings['agentPreference'],
-  harnessId: HarnessId,
+  harnessId: HarnessId | string,
   acpAgentId?: string | null,
 ): HarnessSessionDefaults {
-  const resolvedAcpAgentId = acpAgentId !== undefined ? acpAgentId : preferences.acp?.selectedAgentId
-  const offered = harnessId === 'acp'
-    ? acpPermissionModesForAgent(resolvedAcpAgentId)
-    : HARNESS_LAUNCH_OPTIONS[harnessId].permissionModes
-  const { defaultPermissionMode } = HARNESS_LAUNCH_OPTIONS[harnessId]
+  const resolved = resolveLegacyHarnessId(harnessId, { acpAgentId })
+  if (!resolved) {
+    return { permissionMode: 'default', configuredPermissionMode: '', sandboxMode: null }
+  }
+  const offered = HARNESS_LAUNCH_OPTIONS[resolved].permissionModes
+  const { defaultPermissionMode } = HARNESS_LAUNCH_OPTIONS[resolved]
   // A harness without modes runs its own permission configuration, whatever an
   // older client left in its storage slot.
   const configuredPermissionMode = offered.length > 0
-    ? configuredPermissionModeFor(preferences, harnessId, resolvedAcpAgentId)
+    ? configuredPermissionModeFor(preferences, resolved)
     : ''
   return {
     // A stored mode this harness no longer offers is not asserted at it.
@@ -113,22 +102,19 @@ export function sessionDefaultsForHarness(
       ? configuredPermissionMode
       : defaultPermissionMode,
     configuredPermissionMode,
-    sandboxMode: sandboxDefaultForHarness(preferences, harnessId),
+    sandboxMode: sandboxDefaultForHarness(preferences, resolved),
   }
 }
 
 function configuredPermissionModeFor(
   preferences: AppSettings['agentPreference'],
   harnessId: HarnessId,
-  acpAgentId?: string | null,
 ): PermissionMode | '' {
-  // Codex stores a preset because that is what its backend executes; the shared
-  // mode is a projection of it, not a second stored value.
   if (harnessId === 'codex') {
     return codexPermissionModeForPreset(preferences.codex?.defaultPermissionPreset)
   }
-  if (harnessId === 'acp') {
-    return acpAgentDefaultsFor(preferences.acp, acpAgentId).defaultPermissionMode
+  if (isAcpProtocolHarness(harnessId)) {
+    return acpAgentDefaultsFor(preferences, harnessId).defaultPermissionMode
   }
   // A slot can be absent when the caller holds a partially built preference
   // object — a settings file written by an older build, or a test fixture that

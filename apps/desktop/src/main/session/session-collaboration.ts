@@ -7,7 +7,7 @@ import type {
   SessionAgentProfile,
   SessionAgentRemoteLaunch,
 } from '@superone/shared/agent-types'
-import { acpAgentDisplayName, resolveHarnessBrandKey } from '@superone/shared/acp-brand'
+import { acpAgentDisplayName, isAcpProtocolHarness, resolveHarnessBrandKey, resolveLegacyHarnessId } from '@superone/shared/acp-brand'
 import { isLaunchModelOffered } from '@superone/shared/collab-request-display'
 import { collabAgentDetail, collabAgentSummary, unknownCollabAgentMessage } from '@superone/shared/collab-agent-catalog'
 import {
@@ -207,9 +207,13 @@ function normalizeLaunches(
       assertNotPeeredElsewhere(store(), parent.id, peerSessionId)
       const peerTitle = peerRow.title?.trim() || peerSessionId.slice(0, 8)
       const { summary, name, role } = normalizeLaunchLabels('link', launch, peerTitle)
-      const peerHarnessId = (peerRow.provider?.trim()
+      const rawPeerHarness = (peerRow.provider?.trim()
         || peerRow.provider_id?.replace(/-base$/, '')
         || 'claude').toLowerCase()
+      const peerHarnessId = resolveLegacyHarnessId(rawPeerHarness, {
+        acpAgentId: peerRow.acp_agent_id,
+        providerId: peerRow.provider_id,
+      }) ?? rawPeerHarness
       const peerAcpAgentId = peerRow.acp_agent_id?.trim() || undefined
       const peerBrandKey = resolveHarnessBrandKey(peerHarnessId, peerAcpAgentId)
       const matchedProfile = peerRow.provider_id
@@ -221,7 +225,7 @@ function normalizeLaunches(
         : profileList.find((p) => p.harnessId === peerHarnessId
           && (!peerAcpAgentId || p.acpAgentId === peerAcpAgentId))
       const peerHarnessName = matchedProfile?.name
-        || (peerHarnessId === 'acp' && peerAcpAgentId
+        || (isAcpProtocolHarness(peerHarnessId) && peerAcpAgentId
           ? acpAgentDisplayName(peerAcpAgentId)
           : peerHarnessId.charAt(0).toUpperCase() + peerHarnessId.slice(1))
       return {

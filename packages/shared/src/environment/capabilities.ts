@@ -9,9 +9,8 @@ export interface EnvironmentCapabilities {
   /** Every RPC method this environment serves. */
   methods: string[]
   /**
-   * Harnesses this environment can host. Session wire ids, plus
-   * `acp-antigravity` when that catalog row is enabled and ready.
-   * Legacy `acp` means Grok only.
+   * Harnesses this environment can host. Concrete ids only on the way out.
+   * Incoming payloads may still list legacy `acp` (Grok unless an agent id says otherwise).
    */
   harnessIds: AdvertisedHarnessId[]
   /**
@@ -40,7 +39,7 @@ export function servesMethod(capabilities: Partial<Pick<EnvironmentCapabilities,
 /** This desktop's own environment: the window calls its host in-process, not by method. */
 export const LOCAL_ENVIRONMENT_CAPABILITIES: EnvironmentCapabilities = {
   methods: [],
-  harnessIds: ['claude', 'codex', 'acp', 'opencode'],
+  harnessIds: ['claude', 'codex', 'acp-grok', 'acp-antigravity', 'opencode'],
   coldSessionResume: true,
   turnReattach: false,
   hostActionV1: true,

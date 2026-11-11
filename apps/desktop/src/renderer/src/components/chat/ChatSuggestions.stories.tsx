@@ -36,13 +36,13 @@ function HostPreview({ scenario = 'ready', narrow = false }: { scenario?: Scenar
       initializeHarness: async () => {},
       setPreferredProvider: (provider) => update({ preferredProvider: provider, sessionProvider: null }),
       setAcpAgentId: (acpAgentId) => update({ acpAgentId }),
-      harnessResources: { claude: null, codex: null, acp: {
+      harnessResources: { claude: null, codex: null, 'acp-grok': {
         agents: [
           { id: 'grok-build', name: 'Grok Build', installed: true, commandPreview: 'grok agent stdio' },
           { id: 'antigravity', name: 'Antigravity', installed: true, commandPreview: 'agy --acp' },
         ],
         selectedAgentId: 'antigravity', modelsByAgentId: {}, configByAgentId: {},
-      } },
+      }, 'acp-antigravity': null },
     })
     useAppStore.setState({
       selectedHostConnectionId: scenario === 'ready' ? 'local' : 'remote-node',
@@ -59,7 +59,7 @@ function HostPreview({ scenario = 'ready', narrow = false }: { scenario?: Scenar
       connectionId: 'remote-node', environmentId: 'remote-env',
       label: 'Remote development workstation with a long name',
       kind: 'remote', state: 'connected', endpointProfiles: [],
-      capabilities: { methods: [], harnessIds: scenario === 'empty' ? [] : ['codex', 'acp'], coldSessionResume: true, turnReattach: false, hostActionV1: false },
+      capabilities: { methods: [], harnessIds: scenario === 'empty' ? [] : ['codex', 'acp-grok'], coldSessionResume: true, turnReattach: false, hostActionV1: false },
     }
     const listItems = async () => {
       if (scenario === 'loading') return new Promise<EnvironmentListItem[]>(() => {})

@@ -8,6 +8,7 @@
  * "Unknown agent profile" on launch.
  */
 
+import { isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import { AgentIpcChannels, type AgentMentionTarget, type HarnessId } from '@superone/shared/agent-types'
 import { buildAgentMentionTargets } from '@superone/shared/agent-mention-tags'
 import { parseRemoteProjectKey } from './remote-project-key'
@@ -84,8 +85,7 @@ function profilesToTargets(raw: unknown): AgentMentionTarget[] {
       name: typeof profile.name === 'string' ? profile.name : profile.id,
       isBase:
         profile.id === `${profile.harnessId}-base`
-        || profile.id === 'acp-grok'
-        || profile.id === 'acp-antigravity',
+        || isAcpProtocolHarness(profile.id),
       acpAgentId: typeof profile.acpAgentId === 'string' ? profile.acpAgentId : null,
     }]
   })

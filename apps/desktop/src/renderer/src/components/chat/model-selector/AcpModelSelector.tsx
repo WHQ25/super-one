@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { Loader2 } from 'lucide-react'
 import { useActiveSession, useChatStore, useScopedSessionActions } from '@/stores/chat'
 import type { AcpAgentDescriptor } from '@superone/shared/agent-types'
-import { acpAgentDisplayName, isAntigravityAcpAgent } from '@superone/shared/acp-brand'
+import { acpAgentDisplayName, acpAgentIdForHarness, isAcpProtocolHarness, isAntigravityAcpAgent } from '@superone/shared/acp-brand'
 import { formatEffortOptionLabel } from '@superone/shared/effort-labels'
 import { acpModeCatalog } from '@superone/shared/harness/acp-mode-catalog'
 import { acpSelectorModels, projectAntigravityModels } from '@/harness-ui/acp/model-options'
@@ -16,6 +16,8 @@ export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: 
   const { t } = useTranslation()
 
   const acpAgentId = useActiveSession((s) => s.acpAgentId)
+  const sessionProvider = useActiveSession((s) => s.sessionProvider)
+  const preferredProvider = useActiveSession((s) => s.preferredProvider)
   const acpModels = useActiveSession((s) => s.acpModels)
   const acpModelsStatus = useActiveSession((s) => s.acpModelsStatus)
   const acpModelsError = useActiveSession((s) => s.acpModelsError)
@@ -26,7 +28,14 @@ export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: 
   const acpModeConfigId = useActiveSession((s) => s.acpModeConfigId)
   const selectedAcpModeId = useActiveSession((s) => s.selectedAcpModeId)
   const selectedAcpContextWindow = useActiveSession((s) => s.selectedAcpContextWindow ?? null)
-  const agents = useChatStore((s) => s.harnessResources.acp?.agents ?? EMPTY_ACP_AGENTS)
+  const grokAgents = useChatStore((s) => s.harnessResources['acp-grok']?.agents ?? EMPTY_ACP_AGENTS)
+  const antiAgents = useChatStore((s) => s.harnessResources['acp-antigravity']?.agents ?? EMPTY_ACP_AGENTS)
+  const provider = sessionProvider || preferredProvider
+  const agents = isAcpProtocolHarness(provider) && acpAgentIdForHarness(provider) === 'antigravity'
+    ? antiAgents
+    : isAcpProtocolHarness(provider)
+      ? grokAgents
+      : [...grokAgents, ...antiAgents]
   const { setSelectedModel, setSelectedAcpMode, setSelectedAcpContextWindow } = useScopedSessionActions()
 
   const agent = agents.find((a) => a.id === acpAgentId)

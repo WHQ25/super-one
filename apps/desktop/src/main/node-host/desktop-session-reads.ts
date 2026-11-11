@@ -4,6 +4,7 @@ import {
   type EnvironmentEventEnvelope,
 } from '@superone/shared/environment'
 import type { SessionHistoryIndex } from '@superone/shared/session-history-index'
+import { isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import { baseSessionProviderId } from '@superone/shared/session-provider-definitions'
 import type { ChatMessage, ModelOption, SandboxInfo } from '@superone/shared/agent-types'
 import type { SessionRestoreFacts } from '@superone/shared/environment'
@@ -364,10 +365,10 @@ export abstract class DesktopSessionReads<Row extends DesktopSessionRow> impleme
     if (!includeState) return { live, state: {} as Record<string, unknown>, restore: undefined as SessionRestoreFacts | undefined, cursor }
     state = withTranscriptTodos(state, sources.todos, replay.some((event) => event.type === 'todos_updated'))
     state.pendingAsyncQuestions = pendingCodexAsyncQuestions(sources.questions)
-    const acpAgentId = row.harnessId === 'acp'
+    const acpAgentId = isAcpProtocolHarness(row.harnessId)
       ? (live?.snapshot?.acpAgentId ?? row.acpAgentId ?? null)
       : null
-    if (row.harnessId === 'acp') {
+    if (isAcpProtocolHarness(row.harnessId)) {
       state = attachAcpModelCatalog(state, acpAgentId, this.reads.acpModelCatalog)
     }
     const facts = sessionRestoreFacts({ session: live, row, history: sources.history, environmentId: this.reads.environmentId, sandboxInfo, realtime: this.reads.restore?.realtime?.(sessionId) })

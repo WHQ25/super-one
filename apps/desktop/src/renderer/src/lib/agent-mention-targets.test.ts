@@ -27,7 +27,7 @@ describe('agent mention targets', () => {
     const remoteCollabProfiles = vi.fn().mockResolvedValue({
       agents: [
         { id: 'codex-base', name: 'Codex (Base)', harnessId: 'codex' },
-        { id: 'acp-base', name: 'Others (ACP)', harnessId: 'acp', acpAgentId: 'grok-build' },
+        { id: 'acp-base', name: 'Others (ACP)', harnessId: 'acp-grok', acpAgentId: 'grok-build' },
       ],
     })
 

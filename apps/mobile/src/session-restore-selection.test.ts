@@ -36,7 +36,7 @@ test('non-Codex restore omits Fast so the host default is not treated as a sessi
 })
 
 test('provider, ACP mode and OpenCode agent ride only when the session set them', () => {
-  expect(openedSessionSelection('acp', {
+  expect(openedSessionSelection('acp-grok', {
     selectedModel: 'grok-4',
     apiProviderId: 'cred-1',
     selectedAcpModeId: 'code',

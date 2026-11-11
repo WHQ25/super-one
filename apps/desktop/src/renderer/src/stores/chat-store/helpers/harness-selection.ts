@@ -1,7 +1,9 @@
+import { acpAgentIdForHarness, isAcpProtocolHarness, isAntigravityAcpAgent, isGrokAcpAgent, isOpenCodeAcpAgent } from '@superone/shared/acp-brand'
 import type { ModelOption, SlashCommandInfo } from '@superone/shared/agent-types'
 import { HARNESS_STRATEGIES } from '@/harness-ui/strategies'
 import { resetHostSession } from '@/lib/session-client'
 import { getCachedAcpCatalog, sessionPatchFromAcpCatalog, sessionUsesAcpHarness } from '../harness/acp-handler'
+import { acpHarnessForAgent, acpResourcesFor, type AcpHarnessId } from '../harness/acp-slots'
 import type { ChatProvider, ChatStore } from '../types'
 import { clearContextUsageHold, holdContextUsageUntilAgent } from './context-usage-hold'
 import type { ChatStoreSet } from './lifecycle'
@@ -72,7 +74,7 @@ export function setPreferredProviderImpl(
 
   const switchedPermissionMode = sessionDefaultsFor(
     provider,
-    session.acpAgentId ?? get().harnessResources.acp?.selectedAgentId,
+    isAcpProtocolHarness(provider) ? acpAgentIdForHarness(provider) : session.acpAgentId,
   ).permissionMode
   set((s) => updateActivePerSession(s, () => ({
     ...modelReset,
@@ -118,7 +120,8 @@ export function hydrateAcpCatalogForSession(
 ): void {
   const session = get().projectSessions[projectPath]?._sessions[sessionId]
   if (!session) return
-  if (resolveProvider(session) !== 'acp' || !session.acpAgentId) return
+  const harnessId = resolveProvider(session)
+  if (!isAcpProtocolHarness(harnessId) || !session.acpAgentId) return
   if (
     session.acpModels.length > 0
     && session.acpModelsStatus === 'ready'
@@ -132,9 +135,9 @@ export function hydrateAcpCatalogForSession(
 
   const applyCatalog = (): void => {
     const current = get().projectSessions[projectPath]?._sessions[sessionId]
-    if (!current || resolveProvider(current) !== 'acp') return
+    if (!current || !isAcpProtocolHarness(resolveProvider(current))) return
     if (current.acpAgentId !== agentId) return
-    const catalog = getCachedAcpCatalog(get().harnessResources.acp, agentId)
+    const catalog = getCachedAcpCatalog(acpResourcesFor(get().harnessResources, harnessId), agentId)
     if (!catalog) return
     if (current.acpModels.length > 0 && current.acpModelsStatus === 'ready') {
       const needsModes = current.acpModes.length === 0 && catalog.modes.length > 0
@@ -167,18 +170,18 @@ export function hydrateAcpCatalogForSession(
     ))
   }
 
-  const cached = getCachedAcpCatalog(get().harnessResources.acp, agentId)
+  const cached = getCachedAcpCatalog(acpResourcesFor(get().harnessResources, harnessId), agentId)
   if (cached) {
     applyCatalog()
     return
   }
 
-  void get().initializeHarness('acp').then(() => {
+  void get().initializeHarness(harnessId).then(() => {
     applyCatalog()
     if (get().projectSessions[projectPath]?._sessions[sessionId]?.acpModels.length) return
     void window.app.refreshAcpModels?.(agentId).then((fresh) => {
       if (!fresh) return
-      get().setHarnessResources('acp', fresh)
+      get().setHarnessResources(harnessId, fresh)
       applyCatalog()
     }).catch((err) => {
       console.warn('[acp] hydrate catalog refresh failed:', err)
@@ -192,34 +195,41 @@ export function setAcpAgentIdImpl(
   agentId: string | null,
   opts?: { userChosen?: boolean },
 ): void {
+  if (!agentId) return
+  if (isOpenCodeAcpAgent(agentId)) {
+    setPreferredProviderImpl(set, get, 'opencode', opts)
+    set((s) => updateActivePerSession(s, () => ({ acpAgentId: null })))
+    return
+  }
+  if (!isGrokAcpAgent(agentId) && !isAntigravityAcpAgent(agentId)) return
+  const target: AcpHarnessId = acpHarnessForAgent(agentId)
+  const canonical = acpAgentIdForHarness(target)
   const { activeProject } = get()
   const session = getActivePerSession(get())
-  if (session.sessionProvider && session.messages.length > 0 && session.sessionProvider !== 'acp') return
+  if (session.sessionProvider && session.messages.length > 0 && !isAcpProtocolHarness(session.sessionProvider)) return
   const userChosenPatch = session.messages.length === 0 && opts?.userChosen !== undefined
     ? { harnessUserChosen: opts.userChosen }
     : {}
-  if (session.acpAgentId === agentId) {
+  if (resolveProvider(session) === target && session.acpAgentId === canonical) {
     if (opts?.userChosen !== undefined && session.messages.length === 0 && session.harnessUserChosen !== opts.userChosen) {
       set((s) => updateActivePerSession(s, () => userChosenPatch))
     }
-    const acp = get().harnessResources.acp
-    if (acp?.selectedAgentId === agentId) return
+    return
   }
-  // Grok and Antigravity share harness `acp`, so the picker never goes through
-  // setPreferredProvider. An empty draft must still drop the previous agent's
-  // initialization usage, or that ring stays on the next agent.
-  const switchingEmptyAcpAgent = sessionUsesAcpHarness(session)
-    && session.acpAgentId != null
-    && session.acpAgentId !== agentId
-    && session.messages.length === 0
-  const catalog = getCachedAcpCatalog(get().harnessResources.acp, agentId)
+  const switchingEmpty = session.messages.length === 0
+    && (session.acpAgentId !== canonical || resolveProvider(session) !== target)
+  const catalog = getCachedAcpCatalog(acpResourcesFor(get().harnessResources, target), canonical)
   const draftSid = activeProject ? getProject(get(), activeProject)._activeSessionId : null
-  if (switchingEmptyAcpAgent && draftSid && agentId) holdContextUsageUntilAgent(draftSid, agentId)
+  if (switchingEmpty && draftSid && sessionUsesAcpHarness(session) && session.acpAgentId) {
+    holdContextUsageUntilAgent(draftSid, canonical)
+  }
   const switchedPermissionMode = session.messages.length === 0
-    ? sessionDefaultsFor('acp', agentId).permissionMode
+    ? sessionDefaultsFor(target).permissionMode
     : null
   set((s) => updateActivePerSession(s, () => ({
-    acpAgentId: agentId,
+    preferredProvider: target,
+    sessionProvider: target,
+    acpAgentId: canonical,
     ...userChosenPatch,
     acpModes: [],
     acpModeConfigId: null,
@@ -230,7 +240,7 @@ export function setAcpAgentIdImpl(
     sessionGoal: null,
     ...(switchedPermissionMode ? { permissionMode: switchedPermissionMode } : {}),
     ...(catalog
-      ? sessionPatchFromAcpCatalog(catalog, { agentId })
+      ? sessionPatchFromAcpCatalog(catalog, { agentId: canonical })
       : {
           acpModels: [],
           acpModelConfigId: null,
@@ -239,39 +249,22 @@ export function setAcpAgentIdImpl(
           selectedModel: '',
           modelUserChosen: false,
         }),
-    ...(session.acpAgentId !== agentId ? { selectedAcpContextWindow: null } : {}),
-    ...(switchingEmptyAcpAgent ? emptyDraftRuntimeReset() : {}),
+    ...(session.acpAgentId !== canonical ? { selectedAcpContextWindow: null } : {}),
+    ...(switchingEmpty ? emptyDraftRuntimeReset() : {}),
   })))
-  const disposePriorMain: Promise<unknown> = switchingEmptyAcpAgent && activeProject && draftSid
+  const disposePriorMain: Promise<unknown> = switchingEmpty && activeProject && draftSid
     ? resetHostSession(activeProject, draftSid).catch(() => null)
     : Promise.resolve(null)
-  const acp = get().harnessResources.acp
-  if (acp && acp.selectedAgentId !== agentId) {
-    get().setHarnessResources('acp', { ...acp, selectedAgentId: agentId })
-  }
   void (async () => {
-    // Dispose the previous agent's process before prewarm recreates this sid,
-    // so Grok's session/load id and initialization usage cannot attach to Antigravity.
     await disposePriorMain
-    try {
-      await window.app.saveAppSettings({
-        agentPreference: {
-          acp: { selectedAgentId: agentId },
-        },
-      })
-    } catch (err) {
-      console.error('[acp] persist selectedAgentId failed:', err)
-    }
-    // If cache miss, request a once-per-launch probe for this agent then hydrate.
-    // Slash commands are not part of startup probe — loaded when / popup opens.
-    if (!catalog && agentId) {
+    if (!catalog) {
       try {
-        const fresh = await window.app.refreshAcpModels?.(agentId)
+        const fresh = await window.app.refreshAcpModels?.(canonical)
         if (fresh) {
-          get().setHarnessResources('acp', fresh)
-          const nextCatalog = getCachedAcpCatalog(fresh, agentId)
+          get().setHarnessResources(target, fresh)
+          const nextCatalog = getCachedAcpCatalog(fresh, canonical)
           if (nextCatalog) {
-            set((s) => updateActivePerSession(s, () => sessionPatchFromAcpCatalog(nextCatalog, { agentId })))
+            set((s) => updateActivePerSession(s, () => sessionPatchFromAcpCatalog(nextCatalog, { agentId: canonical })))
           }
         }
       } catch (err) {
@@ -298,7 +291,8 @@ export function ensureAcpSlashCommandsImpl(
   const { activeProject } = get()
   if (!activeProject) return
   const session = getActivePerSession(get())
-  if (resolveProvider(session) !== 'acp') return
+  const slashHarness = resolveProvider(session)
+  if (!isAcpProtocolHarness(slashHarness)) return
   if (!session.acpAgentId) return
   if (session.acpSlashCommandsStatus === 'loading') return
 
@@ -306,7 +300,7 @@ export function ensureAcpSlashCommandsImpl(
 
   const cachedCommands =
     session.acpSlashCommands.length === 0
-      ? getCachedAcpCatalog(get().harnessResources.acp, session.acpAgentId)?.slashCommands
+      ? getCachedAcpCatalog(acpResourcesFor(get().harnessResources, slashHarness), session.acpAgentId)?.slashCommands
       : undefined
 
   set((s) => updateActivePerSession(s, () => ({
@@ -321,7 +315,7 @@ export function ensureAcpSlashCommandsImpl(
   const timer = setTimeout(() => {
     _acpSlashLoadTimeouts.delete(key)
     const current = getActivePerSession(get())
-    if (resolveProvider(current) !== 'acp') return
+    if (!isAcpProtocolHarness(resolveProvider(current))) return
     if (current.acpAgentId !== session.acpAgentId) return
     if (current.acpSlashCommandsStatus !== 'loading') return
     set((s) => updateActivePerSession(s, () => ({ acpSlashCommandsStatus: 'ready' })))

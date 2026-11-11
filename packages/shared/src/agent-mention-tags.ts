@@ -56,9 +56,16 @@ export function decodeAgentRef(raw: string): AgentMentionRef | null {
 export function brandKeyForAgentRef(ref: string): string {
   const decoded = decodeAgentRef(ref)
   if (!decoded) return 'claude'
-  const harnessId = decoded.providerId.split('-')[0] ?? ''
+  const providerId = decoded.providerId
   const acpAgentId = decoded.acpAgentId
-    ?? (decoded.providerId === 'acp-grok' ? 'grok-build' : decoded.providerId === 'acp-antigravity' ? 'antigravity' : undefined)
+    ?? (providerId === 'acp-antigravity' || providerId.startsWith('acp-antigravity-') ? 'antigravity'
+      : providerId === 'acp-grok' || providerId.startsWith('acp-grok-') ? 'grok-build'
+        : undefined)
+  const harnessId = providerId.startsWith('acp-antigravity')
+    ? 'acp-antigravity'
+    : providerId.startsWith('acp-grok') || providerId.startsWith('acp-')
+      ? 'acp'
+      : (providerId.split('-')[0] ?? '')
   return resolveHarnessBrandKey(harnessId, acpAgentId)
 }
 

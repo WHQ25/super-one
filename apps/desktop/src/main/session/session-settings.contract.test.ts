@@ -4,6 +4,7 @@ import { applyEventToSession, createDefaultChatCoreSession } from '@superone/cha
 import type { ChatCoreSession } from '@superone/chat-core'
 import type { AgentEvent, HarnessId, SendMessageRequest, SessionSettingsPatch } from '@superone/shared/agent-types'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
+import { baseSessionProviderId } from '@superone/shared/session-provider-definitions'
 import { SESSION_SEND_SELECTION_KEYS, type SessionSendSelections } from '@superone/shared/environment/session-send'
 import type { NodeSessionSettings } from '@superone/runtime/session'
 import { parseSessionSettings } from '@superone/runtime/server/session-settings'
@@ -45,10 +46,10 @@ const CONTRACTS = {
   agent: { owner: 'session', lifetime: 'live', harness: 'opencode', value: 'plan', ui: 'openCodeAgentId', read: s => s.getUiSettings().openCodeAgentId },
   claudeFastMode: { owner: 'session', lifetime: 'live', harness: 'claude', value: true, ui: 'claudeFastMode', read: s => s.getUiSettings().claudeFastMode ?? false },
   ultracode: { owner: 'session', lifetime: 'live', harness: 'claude', value: true, ui: 'ultracode', read: s => s.getUiSettings().ultracode ?? false },
-  mode: { owner: 'session', lifetime: 'live', harness: 'acp', value: 'plan', ui: 'selectedAcpModeId', read: s => s.getUiSettings().selectedAcpModeId },
+  mode: { owner: 'session', lifetime: 'live', harness: 'acp-grok', value: 'plan', ui: 'selectedAcpModeId', read: s => s.getUiSettings().selectedAcpModeId },
   agentPreset: { owner: 'session', lifetime: 'live', harness: 'dsh', value: 'review', read: s => s.getAgentPreset() },
   additionalDirectories: { owner: 'session', lifetime: 'live', harness: 'claude', value: ['/extra'], read: s => s.getCallerScopedDirsSnapshot() },
-  contextWindow: { owner: 'provider', lifetime: 'provider', harness: 'acp', value: 128000 },
+  contextWindow: { owner: 'provider', lifetime: 'provider', harness: 'acp-grok', value: 128000 },
 } satisfies Record<SettingKey, Contract>
 
 const SEND_OWNERS = {
@@ -90,7 +91,7 @@ function fixture(harness: HarnessId) {
     close: vi.fn(async () => {}),
   }
   const session = new Session({
-    id: 'session', projectPath: '/project', cwd: '/project', providerId: `${harness}-base`, harnessId: harness,
+    id: 'session', projectPath: '/project', cwd: '/project', providerId: baseSessionProviderId(harness), harnessId: harness,
     providerConfig: {}, model: 'old-model', effort: 'low', backend: backend as unknown as SessionBackend,
     onStateChange: saved,
   })
@@ -268,7 +269,7 @@ describe('settings carried by a queued turn on other harnesses', () => {
 
   it.each([
     { harness: 'claude' as const, key: 'model' as const, value: 'queued-model', ui: 'selectedModel' as const },
-    { harness: 'acp' as const, key: 'model' as const, value: 'queued-model', ui: 'selectedModel' as const },
+    { harness: 'acp-grok' as const, key: 'model' as const, value: 'queued-model', ui: 'selectedModel' as const },
     { harness: 'opencode' as const, key: 'model' as const, value: 'queued-model', ui: 'selectedModel' as const },
     { harness: 'opencode' as const, key: 'agent' as const, value: 'plan', ui: 'openCodeAgentId' as const },
   ])('commits $harness / $key when the queued turn is consumed', async ({ harness, key, value, ui }) => {
@@ -325,7 +326,7 @@ describe('settings carried by a queued turn on other harnesses', () => {
   })
 
   it('keeps an ACP queued send on the live runtime when the Claude effort column differs', async () => {
-    const f = fixture('acp')
+    const f = fixture('acp-grok')
     await f.session.send({ content: 'Warm the backend' })
     let finishTurn!: () => void
     f.backend.send.mockImplementationOnce(() => new Promise<void>((resolve) => { finishTurn = resolve }))
@@ -333,7 +334,7 @@ describe('settings carried by a queued turn on other harnesses', () => {
     await vi.waitFor(() => expect(f.backend.send).toHaveBeenCalledTimes(2))
 
     const queued = f.session.send(desktopSendRequest({ sessionId: f.session.id, text: 'Insert soon',
-      client: { clientSessionId: 'phone' }, leaseId: 'test-lease', generation: '1', priority: 'next', clientMessageId: 'queued', effort: 'high' }, 'acp'), { providerOrigin: 'remote' })
+      client: { clientSessionId: 'phone' }, leaseId: 'test-lease', generation: '1', priority: 'next', clientMessageId: 'queued', effort: 'high' }, 'acp-grok'), { providerOrigin: 'remote' })
     await vi.waitFor(() => expect(f.backend.send).toHaveBeenCalledTimes(3))
     expect(f.backend.rebuild).not.toHaveBeenCalled()
     expect(f.session.getSelectedEffort()).toBe('low')
@@ -347,10 +348,10 @@ describe('settings carried by a queued turn on other harnesses', () => {
   })
 
   it('does not restart a running ACP session when a later send carries a different effort', async () => {
-    const f = fixture('acp')
+    const f = fixture('acp-grok')
     await f.session.send({ content: 'Warm the backend' })
     await f.session.send(desktopSendRequest({ sessionId: f.session.id, text: 'Next turn',
-      client: { clientSessionId: 'phone' }, leaseId: 'test-lease', generation: '1', effort: 'high' }, 'acp'), { providerOrigin: 'remote' })
+      client: { clientSessionId: 'phone' }, leaseId: 'test-lease', generation: '1', effort: 'high' }, 'acp-grok'), { providerOrigin: 'remote' })
     expect(f.backend.rebuild).not.toHaveBeenCalled()
     expect(f.session.getSelectedEffort()).toBe('high')
     expect(f.backend.send).toHaveBeenCalledTimes(2)

@@ -43,7 +43,7 @@ function launchResolution(
   launch?: AgentLaunchDefaults,
   followsDefaults = false,
 ) {
-  const discovered = harnessId === 'acp' ? deps.acpModels : deps.liveHarnessModels?.[harnessId]
+  const discovered = harnessId === 'acp-grok' || harnessId === 'acp-antigravity' ? deps.acpModels : deps.liveHarnessModels?.[harnessId]
   const harnessModels = discovered?.length
     ? discovered
     : listHarnessModels(deps.providers, harnessId, null, providerOptions(deps))
@@ -127,14 +127,16 @@ export function listCollaborationProfiles(deps: CollaborationDeps): SessionAgent
     // ACP is a protocol, not a brand: the row's config names the concrete
     // agent (grok-build), which is what the user sees and @-mentions.
     const acpAgentId =
-      harnessId === 'acp' && typeof cfg.agentId === 'string' && cfg.agentId.trim()
+      (harnessId === 'acp-grok' || harnessId === 'acp-antigravity') && typeof cfg.agentId === 'string' && cfg.agentId.trim()
         ? cfg.agentId.trim()
-        : null
+        : harnessId === 'acp-grok' || harnessId === 'acp-antigravity'
+          ? (harnessId === 'acp-antigravity' ? 'antigravity' : 'grok-build')
+          : null
     const profile = readAgentProfile(profileConfig)
     const apiProviderId = resolveHarnessService(providers, harnessId, null, providerOptions(deps))?.credentialId
     profiles.push({
       id: profileId,
-      name: profile ? name : harnessId === 'acp' ? acpAgentDisplayName(acpAgentId) : name,
+      name: profile ? name : acpAgentId ? acpAgentDisplayName(acpAgentId) : name,
       harnessId,
       ...(followsDefaults && deps.experimentalAgentProfilesEnabled?.() ? { followsDefaults: true } : {}),
       ...(acpAgentId ? { acpAgentId } : {}),

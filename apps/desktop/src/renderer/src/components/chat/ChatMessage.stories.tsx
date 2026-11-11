@@ -51,7 +51,7 @@ function makeAssistant(overrides: Partial<ChatMessageType> = {}): ChatMessageTyp
     id: 'assistant-1',
     role: 'assistant',
     status: 'complete',
-    providerId: 'acp',
+    providerId: 'acp-grok',
     createdAt: new Date(Date.now() - 45_000).toISOString(),
     content: [
       {

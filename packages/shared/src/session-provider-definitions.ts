@@ -1,4 +1,5 @@
 import type { HarnessId } from './agent-types'
+import { resolveLegacyHarnessId } from './harness/acp-brand'
 import { HARNESS_CAPABILITIES } from './harness/harness-capabilities'
 
 export interface BaseSessionProviderSpec {
@@ -15,7 +16,8 @@ export interface BaseSessionProviderSpec {
 export const BASE_SESSION_PROVIDERS = {
   claude: { id: 'claude-base', name: 'Claude (Base)', config: {} },
   codex: { id: 'codex-base', name: 'Codex (Base)', config: {} },
-  acp: { id: 'acp-grok', name: 'Grok (Base)', config: { agentId: 'grok-build' } },
+  'acp-grok': { id: 'acp-grok', name: 'Grok (Base)', config: { agentId: 'grok-build' } },
+  'acp-antigravity': { id: 'acp-antigravity', name: 'Antigravity (Base)', config: { agentId: 'antigravity' } },
   opencode: { id: 'opencode-base', name: 'OpenCode (Base)', config: {} },
   cursor: { id: 'cursor-base', name: 'Cursor (Base)', config: {} },
   dsh: { id: 'dsh-base', name: 'DeepSeek (Base)', config: {} },
@@ -25,31 +27,23 @@ export interface BaseSessionProviderDefinition extends BaseSessionProviderSpec {
   harnessId: HarnessId
 }
 
-export const EXTRA_BASE_SESSION_PROVIDER_DEFINITIONS: readonly BaseSessionProviderDefinition[] = [
-  { harnessId: 'acp', id: 'acp-antigravity', name: 'Antigravity (Base)', config: { agentId: 'antigravity' } },
-]
-
-export const BASE_SESSION_PROVIDER_DEFINITIONS: readonly BaseSessionProviderDefinition[] = [
-  ...(Object.entries(BASE_SESSION_PROVIDERS) as Array<[HarnessId, BaseSessionProviderSpec]>).map(
-    ([harnessId, spec]) => ({ harnessId, ...spec }),
-  ),
-  ...EXTRA_BASE_SESSION_PROVIDER_DEFINITIONS,
-]
+export const BASE_SESSION_PROVIDER_DEFINITIONS: readonly BaseSessionProviderDefinition[] = (
+  Object.entries(BASE_SESSION_PROVIDERS) as Array<[HarnessId, BaseSessionProviderSpec]>
+).map(([harnessId, spec]) => ({ harnessId, ...spec }))
 
 export function baseSessionProviderId(harnessId: HarnessId | string, acpAgentId?: string | null): string {
-  if (harnessId === 'acp' && acpAgentId && acpAgentId.toLowerCase().includes('antigravity')) {
-    return 'acp-antigravity'
-  }
-  const spec = (BASE_SESSION_PROVIDERS as Record<string, BaseSessionProviderSpec | undefined>)[harnessId]
+  const resolved = resolveLegacyHarnessId(String(harnessId), { acpAgentId, providerId: harnessId === 'acp' ? null : String(harnessId) })
+    ?? (typeof harnessId === 'string' ? null : harnessId)
+  const spec = resolved ? BASE_SESSION_PROVIDERS[resolved] : undefined
   return spec ? spec.id : `${harnessId}-base`
 }
 
-export function isDefaultSessionProvider(row: { id: string; harnessId: HarnessId; isBase: boolean }): boolean {
+export function isDefaultSessionProvider(row: { id: string; harnessId: string; isBase: boolean }): boolean {
   if (!row.isBase) return false
-  if (row.harnessId === 'acp') {
-    return row.id === 'acp-grok' || row.id === 'acp-antigravity' || row.id === 'acp-base'
-  }
-  return row.id === baseSessionProviderId(row.harnessId)
+  const resolved = resolveLegacyHarnessId(row.harnessId, { providerId: row.id })
+  if (!resolved) return false
+  if (row.id === 'acp-base') return resolved === 'acp-grok'
+  return row.id === BASE_SESSION_PROVIDERS[resolved].id
 }
 
 /**

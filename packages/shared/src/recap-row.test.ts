@@ -50,6 +50,7 @@ describe('isRecapSlashSend', () => {
   it('matches a bare /recap on harnesses that run it as a local command', () => {
     expect(isRecapSlashSend('claude', ' /recap ')).toBe(true)
     expect(isRecapSlashSend('claude', '/recap now')).toBe(false)
-    expect(isRecapSlashSend('acp', '/recap')).toBe(false)
+    expect(isRecapSlashSend('acp-grok', '/recap')).toBe(false)
+    expect(isRecapSlashSend('acp-antigravity', '/recap')).toBe(false)
   })
 })

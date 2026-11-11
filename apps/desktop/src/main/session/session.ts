@@ -1,3 +1,4 @@
+import { isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import { RealtimeVoiceInterest } from './realtime-voice-interest'
 import { extractSpokenSummary, visibleAssistantText } from '@superone/shared/voice-delegation'
 import { assertVoiceAccount } from '@superone/shared/realtime-voice'
@@ -463,7 +464,7 @@ export class Session implements SessionContract {
     const next = this._foregroundRefCount
     if (prev === next) return
     if (next > 0) this.markSeen()
-    if (this.harnessId !== 'acp') return
+    if (!isAcpProtocolHarness(this.harnessId)) return
     // Empty drafts have nothing to summarize — never enter the away-recap poll
     // (dev harness-switch spam used to fire x.ai/recap for every abandoned draft).
     if (this._messages.length === 0) {
@@ -642,7 +643,7 @@ export class Session implements SessionContract {
     }
     this.systemPromptAppend = opts.systemPromptAppend
     this.unattended = opts.unattended === true
-    if (this.harnessId === 'acp' && this._acpAgentId) {
+    if (isAcpProtocolHarness(this.harnessId) && this._acpAgentId) {
       this.providerConfig = withAgentId(this.providerConfig, this._acpAgentId)
     }
     this.homedir = opts.homedir ?? ''
@@ -777,7 +778,7 @@ export class Session implements SessionContract {
     this._apiProviderId = id
     if (this.resolveProviderConfigForApiProvider) {
       const effectiveNextConfig =
-        this.harnessId === 'acp' && this._acpAgentId
+        isAcpProtocolHarness(this.harnessId) && this._acpAgentId
           ? withAgentId(nextConfig, this._acpAgentId)
           : nextConfig
       let changed = false
@@ -1151,7 +1152,7 @@ export class Session implements SessionContract {
   async requestSessionRecap(auto: boolean): Promise<boolean> {
     this.lease.assertMutation()
     if (this._status === 'disposed') return false
-    if (this.harnessId !== 'acp') return false
+    if (!isAcpProtocolHarness(this.harnessId)) return false
     // No transcript → nothing for the agent to recap (skip auto and manual).
     if (this._messages.length === 0) return false
     const busy =
@@ -1558,7 +1559,7 @@ export class Session implements SessionContract {
 
   async rewindFiles(userMessageId: string, opts?: { dryRun?: boolean; includeConversation?: boolean }): Promise<RewindFilesResult> {
     if (!opts?.dryRun) this.lease.assertMutation()
-    if (this.harnessId === 'acp') {
+    if (isAcpProtocolHarness(this.harnessId)) {
       const index = grokPromptIndexForUserMessage(this._messages, userMessageId)
       if (index == null) return { canRewind: false, error: 'Grok prompt boundary not found' }
       await this.ensureStarted()
@@ -1574,7 +1575,7 @@ export class Session implements SessionContract {
   async rewindConversation(userMessageId: string): Promise<RewindFilesResult> {
     this.lease.assertMutation()
     this.assertNotDisposed()
-    if (this.harnessId === 'acp') {
+    if (isAcpProtocolHarness(this.harnessId)) {
       const index = grokPromptIndexForUserMessage(this._messages, userMessageId)
       if (index == null) return { canRewind: false, error: 'Grok prompt boundary not found' }
       await this.ensureStarted()
@@ -1687,12 +1688,12 @@ export class Session implements SessionContract {
 
   prewarm(hint?: PrewarmHint): void {
     this.touchRuntimeActivity()
-    if (this.harnessId === 'acp' && this.resolveProviderConfigForApiProvider) {
+    if (isAcpProtocolHarness(this.harnessId) && this.resolveProviderConfigForApiProvider) {
       try {
         this.providerConfig = this.resolveProviderConfigForApiProvider(this._apiProviderId)
       } catch { /* keep previous config */ }
     }
-    if (this.harnessId === 'acp') {
+    if (isAcpProtocolHarness(this.harnessId)) {
       if (hint?.acpAgentId) this.setAcpAgentId(hint.acpAgentId)
       else this.applyAcpAgentToConfig()
     }
@@ -1742,7 +1743,7 @@ export class Session implements SessionContract {
 
   setAcpAgentId(agentId: string | null): void {
     this.lease.assertMutation()
-    if (this.harnessId !== 'acp') return
+    if (!isAcpProtocolHarness(this.harnessId)) return
     if (this._acpAgentId === agentId) {
       this.applyAcpAgentToConfig()
       return
@@ -1796,7 +1797,7 @@ export class Session implements SessionContract {
   }
 
   private applyAcpAgentToConfig(): void {
-    if (this.harnessId !== 'acp' || !this._acpAgentId) return
+    if (!isAcpProtocolHarness(this.harnessId) || !this._acpAgentId) return
     this.providerConfig = withAgentId(this.providerConfig, this._acpAgentId)
   }
 
@@ -2007,7 +2008,7 @@ export class Session implements SessionContract {
   }
 
   private async disposeRuntime(): Promise<void> {
-    if (this.harnessId === 'acp') {
+    if (isAcpProtocolHarness(this.harnessId)) {
       notifySessionRecapSessionRemoved(this.id)
     }
     trace('session.lifecycle', 'dispose', { sid: this.id, control: this.lease.current })
@@ -2898,7 +2899,7 @@ export class Session implements SessionContract {
     // Grok's slider writes the session mode, and `selectedEffort` is filled
     // later from the agent's own model notification. Codex keeps its own
     // restart decision; only the queue gate above skips Codex.
-    const effortChanged = this.harnessId !== 'acp' && effort !== undefined && effort !== this.effort
+    const effortChanged = !isAcpProtocolHarness(this.harnessId) && effort !== undefined && effort !== this.effort
     if (effort !== undefined) this.effort = effort
     if (model !== undefined) this.model = model
     const changed = Object.fromEntries(Object.entries(patch)
@@ -2933,7 +2934,7 @@ export class Session implements SessionContract {
    * thread in place. ACP reasoning effort is a live session mode.
    */
   private effortChangeRestartsRuntime(): boolean {
-    return this.harnessId !== 'codex' && this.harnessId !== 'acp'
+    return this.harnessId !== 'codex' && !isAcpProtocolHarness(this.harnessId)
   }
 
   /** What crosses the runtime boundary: the turn plus session-owned defaults it omitted. */
@@ -3019,7 +3020,7 @@ export class Session implements SessionContract {
     // (api provider switch, ghost message_complete, etc.).
     if (this._messages.length === 0 && !this._needsStaleReconcile && !allowEmpty) return
     const isWorktree = this._cwd !== this.projectPath
-    if (this.harnessId === 'acp' && !this._acpAgentId) {
+    if (isAcpProtocolHarness(this.harnessId) && !this._acpAgentId) {
       this._acpAgentId = agentIdFromConfig(this.providerConfig)
     }
     const submittedDirty = [...this._dirtyMessageIds]

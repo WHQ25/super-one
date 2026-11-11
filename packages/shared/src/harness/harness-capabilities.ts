@@ -1,5 +1,5 @@
 import type { HarnessId } from './harness-id'
-import { isGrokAcpAgent } from './acp-brand'
+import { resolveLegacyHarnessId } from './acp-brand'
 import type { PromptKeyword } from '../prompt-keywords'
 import type { HarnessRuntimeCapabilities } from './session-catalog'
 
@@ -107,9 +107,8 @@ export interface HarnessCapabilities {
   /**
    * Session-goal behaviour, or `null` when the harness has no goal concept.
    *
-   * ACP is a container, not one agent: the entry here describes Grok, the only
-   * ACP agent that ships a goal. Resolve through {@link resolveGoalCapability}
-   * so the per-agent check lives in one named place.
+   * Grok ships a goal; Antigravity does not. Resolve through
+   * {@link resolveGoalCapability}, which also accepts the legacy `acp` wire id.
    */
   goal: GoalCapability | null
   /**
@@ -152,6 +151,26 @@ export interface HarnessCapabilities {
   promptKeywords: readonly PromptKeyword[]
   /** User-facing display name for this harness. */
   displayName: string
+}
+
+const ACP_PROTOCOL_CAPABILITIES = {
+  supportsMcp: true,
+  supportsPlanMode: true,
+  supportsTodos: true,
+  supportsSubagents: false,
+  supportsCompact: true,
+  supportsStreamingToolInput: false,
+  supportsQueuedSteer: true,
+  supportsAdditionalDirs: true,
+  supportsFork: true,
+  supportsContextUsage: true,
+  softCancel: true,
+  terminalCommandApproval: 'harness' as const,
+  modUi: false,
+  supportsShortWidgetResult: false,
+  supportsCuratedPluginDirectory: false,
+  supportsMcpToolPermissionRules: false,
+  promptKeywords: [] as const,
 }
 
 export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
@@ -214,45 +233,25 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     promptKeywords: [],
     displayName: 'Codex',
   },
-  acp: {
-    // Host injects SuperOne MCP on every ACP session; user MCP attach is a separate gap.
-    supportsMcp: true,
-    // Agent-driven plan + x.ai/exit_plan_mode approval is shipped (not host enter-plan).
-    supportsPlanMode: true,
-    // Plan entries and a completed todo_write emit todos_updated for the phone strip.
-    supportsTodos: true,
-    // Subagent_* notifications already map to task rows, but there is no nested
-    // child chrome for ACP. Keep false until Task UI can host those sessions.
-    supportsSubagents: false,
-    // Host intercepts `/compact` → `x.ai/compact_conversation`.
-    supportsCompact: true,
-    supportsStreamingToolInput: false,
-    // Mid-turn send queues. Grok steer is `x.ai/interject` on the live turn,
-    // so its queue has no second soon button. Antigravity steer now is
-    // `session/prompt` `_meta.sendNow`; its soon action stays `x.ai/interject`.
-    supportsQueuedSteer: true,
-    supportsQueuedSteerSoon: true,
-    // session/new additionalDirectories, gated per agent capability.
-    supportsAdditionalDirs: true,
-    // Cold `x.ai/session/fork` copies Grok session files; SuperOne then resumes the child.
-    supportsFork: true,
-    supportsContextUsage: true,
-    softCancel: true,
-    // Grok only — see `resolveGoalCapability`. The agent owns the loop and
-    // reports back over `goal_updated`; the host just posts `/goal …` lines.
+  'acp-grok': {
+    ...ACP_PROTOCOL_CAPABILITIES,
+    // Grok steer is `x.ai/interject` on the live turn, so the queue has no second soon button.
+    supportsQueuedSteerSoon: false,
+    // The agent owns the loop and reports back over `goal_updated`.
     goal: {
       lifecycleArgs: ['status', 'pause', 'resume', 'clear'],
       canPause: true,
       transport: 'slash',
       semantics: 'objective',
     },
-    terminalCommandApproval: 'harness',
-    modUi: false,
-    supportsShortWidgetResult: false,
-    supportsCuratedPluginDirectory: false,
-    supportsMcpToolPermissionRules: false,
-    promptKeywords: [],
-    displayName: 'Others',
+    displayName: 'Grok',
+  },
+  'acp-antigravity': {
+    ...ACP_PROTOCOL_CAPABILITIES,
+    // Steer now is `session/prompt` `_meta.sendNow`; soon stays `x.ai/interject`.
+    supportsQueuedSteerSoon: true,
+    goal: null,
+    displayName: 'Antigravity',
   },
   opencode: {
     supportsMcp: true,
@@ -353,14 +352,6 @@ export function resolveHarnessCapabilities(harnessId: HarnessId, runtime?: Harne
 }
 
 /**
- * Goal capability for a session, accounting for ACP being a container.
- *
- * `HARNESS_CAPABILITIES.acp.goal` describes Grok; any other ACP agent has no
- * goal surface, so it resolves to `null`. Every render/composer path should go
- * through here rather than testing the harness id, so the one agent-level
- * exception stays in a single named place.
- */
-/**
  * Every `/goal` lifecycle token any harness understands. Render paths that see
  * a message without knowing its harness (a `/goal …` user bubble) use this to
  * tell an objective from a `pause` / `clear`.
@@ -370,14 +361,12 @@ export const ALL_GOAL_LIFECYCLE_ARGS: readonly string[] = [...new Set(
 )]
 
 export function resolveGoalCapability(
-  harnessId: HarnessId | null | undefined,
+  harnessId: string | null | undefined,
   acpAgentId?: string | null,
 ): GoalCapability | null {
-  if (!harnessId) return null
-  if (harnessId === 'acp') {
-    return isGrokAcpAgent(acpAgentId) ? HARNESS_CAPABILITIES.acp.goal : null
-  }
-  return HARNESS_CAPABILITIES[harnessId]?.goal ?? null
+  const resolved = resolveLegacyHarnessId(harnessId, { acpAgentId })
+  if (!resolved) return null
+  return HARNESS_CAPABILITIES[resolved].goal
 }
 
 /**

@@ -12,7 +12,7 @@ function seed(acpAgentId: string) {
         ...createDefaultProjectState(),
         _activeSessionId: 'session',
         _sessions: {
-          session: { ...createDefaultPerSessionState(), sessionProvider: 'acp', acpAgentId },
+          session: { ...createDefaultPerSessionState(), sessionProvider: 'acp-grok', acpAgentId },
         },
       },
     },

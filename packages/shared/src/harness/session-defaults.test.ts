@@ -26,11 +26,18 @@ function preferences(overrides: Partial<Preferences> = {}): Preferences {
       brandHue: null, darkBrandHue: null,
       tokenOverrides: {}, darkTokenOverrides: {},
     },
-    acp: {
-      enabled: false,
+    'acp-grok': {
       brandHue: null, darkBrandHue: null,
       tokenOverrides: {}, darkTokenOverrides: {},
-      selectedAgentId: null,
+      defaultModel: '',
+      defaultEffort: '',
+      defaultPermissionMode: '',
+    },
+    'acp-antigravity': {
+      brandHue: null, darkBrandHue: null,
+      tokenOverrides: {}, darkTokenOverrides: {},
+      defaultModel: '',
+      defaultEffort: '',
       defaultPermissionMode: '',
     },
     cursor: { brandHue: null, darkBrandHue: null, tokenOverrides: {}, darkTokenOverrides: {}, defaultPermissionMode: '', defaultSandboxMode: '' },
@@ -70,17 +77,17 @@ describe('sessionDefaultsForHarness', () => {
     })
 
     expect(sessionDefaultsForHarness(prefs, 'claude').permissionMode).toBe('auto')
-    expect(sessionDefaultsForHarness(prefs, 'acp').permissionMode).toBe('default')
+    expect(sessionDefaultsForHarness(prefs, 'acp-grok').permissionMode).toBe('default')
     expect(sessionDefaultsForHarness(prefs, 'dsh').permissionMode).toBe('default')
   })
 
   it('reads each harness from its own slot', () => {
     const prefs = preferences({
-      acp: { ...preferences().acp, defaultPermissionMode: 'plan' },
+      'acp-grok': { ...preferences()['acp-grok'], defaultPermissionMode: 'plan' },
       opencode: { ...preferences().opencode, defaultPermissionMode: 'acceptEdits' },
     })
 
-    expect(sessionDefaultsForHarness(prefs, 'acp').permissionMode).toBe('plan')
+    expect(sessionDefaultsForHarness(prefs, 'acp-grok').permissionMode).toBe('plan')
     expect(sessionDefaultsForHarness(prefs, 'opencode').permissionMode).toBe('default')
     expect(sessionDefaultsForHarness(prefs, 'opencode').configuredPermissionMode).toBe('')
   })
@@ -119,7 +126,7 @@ describe('sessionDefaultsForHarness', () => {
     })
 
     expect(sessionDefaultsForHarness(prefs, 'claude').sandboxMode).toBe('on')
-    for (const harnessId of ['codex', 'acp', 'opencode', 'dsh'] as HarnessId[]) {
+    for (const harnessId of ['codex', 'acp-grok', 'acp-antigravity', 'opencode', 'dsh'] as HarnessId[]) {
       expect(sessionDefaultsForHarness(prefs, harnessId).sandboxMode).toBeNull()
     }
   })
@@ -138,23 +145,19 @@ describe('sessionDefaultsForHarness', () => {
 
   it('isolates Antigravity and Grok ACP permission defaults and accepts acceptEdits only on Antigravity', () => {
     const prefs = preferences({
-      acp: {
-        ...preferences().acp,
-        defaultPermissionMode: 'plan',
-        antigravityDefaultPermissionMode: 'acceptEdits',
-      },
+      'acp-grok': { ...preferences()['acp-grok'], defaultPermissionMode: 'plan' },
+      'acp-antigravity': { ...preferences()['acp-antigravity'], defaultPermissionMode: 'acceptEdits' },
     })
 
+    expect(sessionDefaultsForHarness(prefs, 'acp-grok').permissionMode).toBe('plan')
     expect(sessionDefaultsForHarness(prefs, 'acp', 'grok-build').permissionMode).toBe('plan')
+    expect(sessionDefaultsForHarness(prefs, 'acp-antigravity').permissionMode).toBe('acceptEdits')
     expect(sessionDefaultsForHarness(prefs, 'acp', 'antigravity').permissionMode).toBe('acceptEdits')
 
     const invalidForGrok = preferences({
-      acp: {
-        ...preferences().acp,
-        defaultPermissionMode: 'acceptEdits',
-      },
+      'acp-grok': { ...preferences()['acp-grok'], defaultPermissionMode: 'acceptEdits' },
     })
-    expect(sessionDefaultsForHarness(invalidForGrok, 'acp', 'grok-build').permissionMode).toBe('default')
+    expect(sessionDefaultsForHarness(invalidForGrok, 'acp-grok').permissionMode).toBe('default')
   })
 })
 

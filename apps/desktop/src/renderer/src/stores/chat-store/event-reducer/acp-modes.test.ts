@@ -23,8 +23,8 @@ describe('applyEventToSession: acp_modes', () => {
   it('hydrates modes and selection when agent matches', () => {
     const session = {
       ...createDefaultPerSessionState(),
-      preferredProvider: 'acp' as const,
-      sessionProvider: 'acp' as const,
+      preferredProvider: 'acp-grok' as const,
+      sessionProvider: 'acp-grok' as const,
       acpAgentId: 'opencode',
     }
     const patch = applyEventToSession(session, {
@@ -44,8 +44,8 @@ describe('applyEventToSession: acp_modes', () => {
   it('drops catalogs from a different ACP agent', () => {
     const session = {
       ...createDefaultPerSessionState(),
-      preferredProvider: 'acp' as const,
-      sessionProvider: 'acp' as const,
+      preferredProvider: 'acp-grok' as const,
+      sessionProvider: 'acp-grok' as const,
       acpAgentId: 'opencode',
       acpModes: modes,
       selectedAcpModeId: 'code',
@@ -65,8 +65,8 @@ describe('applyEventToSession: acp_modes', () => {
   it('does not wipe ready modes while loading', () => {
     const session = {
       ...createDefaultPerSessionState(),
-      preferredProvider: 'acp' as const,
-      sessionProvider: 'acp' as const,
+      preferredProvider: 'acp-grok' as const,
+      sessionProvider: 'acp-grok' as const,
       acpAgentId: 'opencode',
       acpModes: modes,
       selectedAcpModeId: 'ask',
@@ -86,8 +86,8 @@ describe('applyEventToSession: acp_modes', () => {
   it('applies agent-initiated mode updates', () => {
     const session = {
       ...createDefaultPerSessionState(),
-      preferredProvider: 'acp' as const,
-      sessionProvider: 'acp' as const,
+      preferredProvider: 'acp-grok' as const,
+      sessionProvider: 'acp-grok' as const,
       acpAgentId: 'opencode',
       acpModes: modes,
       selectedAcpModeId: 'ask',

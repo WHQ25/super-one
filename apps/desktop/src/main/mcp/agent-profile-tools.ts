@@ -42,6 +42,7 @@ import {
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
 import log from '../logger'
+import { acpAgentIdForHarness, isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import { agentProfileLaunchConfig, isProviderUsable, listSessionAgentProfiles, profileResources, resolveAcpAgentId } from '../session/agent-profiles'
 import { profileConfirms, type ConfirmOutcome } from './agent-profile-confirm'
 import {
@@ -53,7 +54,7 @@ import {
   harnessDisplayName,
   updateAgentProfile,
 } from '../session/agent-profile-store'
-import { getBaseProvider, getSessionProvider, listSessionProviders } from '../session/session-provider-repo'
+import { getSessionProvider, listSessionProviders } from '../session/session-provider-repo'
 import type { SessionProvider } from '../session/types'
 import type { BuiltInSuperoneToolDeps, SessionTitleSetter } from './superone-mcp-builtins'
 
@@ -82,7 +83,7 @@ function preview(text: string): string {
 }
 
 function rowAcpAgentId(row: SessionProvider): string | null {
-  return row.harnessId === 'acp' ? resolveAcpAgentId(row) : null
+  return isAcpProtocolHarness(row.harnessId) ? resolveAcpAgentId(row) : null
 }
 
 // ─── Views ───
@@ -516,7 +517,7 @@ async function createProfile(args: AgentProfileApplyArgs, deps: BuiltInSuperoneT
   const built = buildSpec(harnessId, { name, description }, args.instructions, mergeRuntime(undefined, args))
   if ('error' in built) return errorResult(built.error)
   // ACP is a container: pin the agent the user runs today, so the profile keeps its catalog.
-  const acpAgentId = harnessId === 'acp' ? resolveAcpAgentId(getBaseProvider('acp')) : null
+  const acpAgentId = isAcpProtocolHarness(harnessId) ? acpAgentIdForHarness(harnessId) : null
   const configFor = (spec: AgentProfileSpec) => ({ ...(acpAgentId ? { agentId: acpAgentId } : {}), profile: spec })
   const draft: SessionProvider = { id: '', harnessId, name, isBase: false, config: configFor(built.spec), createdAt: 0, updatedAt: 0 }
   const catalog = await agentProfileCatalog(draft)

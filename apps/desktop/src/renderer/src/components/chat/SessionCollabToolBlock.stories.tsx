@@ -60,7 +60,7 @@ const profiles: SessionAgentProfile[] = [
   {
     id: "acp-base",
     name: "Grok",
-    harnessId: "acp",
+    harnessId: "acp-grok",
     acpAgentId: "grok-build",
     brandKey: "acp-grok",
     defaultConfig: { model: "grok-4.5", effort: "high" },
@@ -633,7 +633,7 @@ export const MixedSpawnAndLink: Story = {
           sessionId: "cccccccc-cccc-cccc-cccc-cccccccccccc",
           peerTitle: "Earlier design thread",
           summary: "Sync design decisions with the existing Grok session",
-          peerHarnessId: "acp",
+          peerHarnessId: "acp-grok",
           peerHarnessName: "Grok",
           peerBrandKey: "acp-grok",
           peerAcpAgentId: "grok-build",

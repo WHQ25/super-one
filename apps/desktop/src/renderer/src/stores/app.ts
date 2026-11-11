@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { AppSettings, RecentFolder, RemoteDeviceConfig, SandboxCapability, SandboxProbeResult, SetupEvent, SettingsProvider, StartupData, AppVariant, UpdateEvent, WorktreeMode } from '@superone/shared/agent-types'
 import type { HarnessId } from '@superone/shared/session-types'
+import { isConcreteHarnessId } from '@superone/shared/acp-brand'
 import {
   DEFAULT_SESSION_CONTINUATION_HINT,
   readSessionContinuationHint,
@@ -399,6 +400,16 @@ async function enterMainAfterGates(
   if (startupData.cached?.cursor) {
     useChatStore.getState().setHarnessResources('cursor', startupData.cached.cursor)
   }
+  if (startupData.cached?.['acp-grok']) {
+    useChatStore.getState().setHarnessResources('acp-grok', startupData.cached['acp-grok'])
+  }
+  if (startupData.cached?.['acp-antigravity']) {
+    useChatStore.getState().setHarnessResources('acp-antigravity', startupData.cached['acp-antigravity'])
+  }
+  const legacyAcp = (startupData.cached as { acp?: StartupData['cached']['acp-grok'] } | null)?.acp
+  if (!startupData.cached?.['acp-grok'] && !startupData.cached?.['acp-antigravity'] && legacyAcp) {
+    useChatStore.getState().setHarnessResources('acp-grok', legacyAcp)
+  }
 
   // Catalog drives session read-only when a harness is disabled. Fire-and-forget:
   // null stays "unknown" (composer stays open) until the first successful fetch.
@@ -708,7 +719,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     cursor: FIRST_PROVIDER_TAB,
     dsh: 'mcp',
     // Session defaults are all these two have, so that is where they open.
-    acp: 'preferences',
+    'acp-grok': 'preferences',
+    'acp-antigravity': 'preferences',
     opencode: 'preferences',
   },
   harnessConfigSection: null,
@@ -1224,15 +1236,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       harnessConfigSection: null,
       view: 'settings',
     }
-    if (listKey === 'acp-grok' || listKey === 'acp-antigravity') {
-      patch.settingsProvider = 'acp'
-    } else if (
-      listKey === 'claude'
-      || listKey === 'codex'
-      || listKey === 'cursor'
-      || listKey === 'dsh'
-      || listKey === 'opencode'
-    ) {
+    if (isConcreteHarnessId(listKey)) {
       patch.settingsProvider = listKey
     }
     set(patch)

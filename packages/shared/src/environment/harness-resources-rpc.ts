@@ -53,5 +53,8 @@ export interface HarnessResourcesResult {
   claude: HarnessResourcesClaudeWire
   codex: HarnessResourcesCodexWire
   opencode: HarnessResourcesOpenCodeWire
-  acp: HarnessResourcesAcpWire
+  'acp-grok': HarnessResourcesAcpWire
+  'acp-antigravity': HarnessResourcesAcpWire
+  /** Legacy read alias. Prefer the concrete keys. */
+  acp?: HarnessResourcesAcpWire
 }

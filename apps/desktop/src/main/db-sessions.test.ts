@@ -100,7 +100,7 @@ describe('db-sessions session query + mapping', () => {
     expect(allMock).toHaveBeenCalledWith('proj-1')
     expect(providerBySessionId['s1']).toBe('codex')
     expect(providerBySessionId['s2']).toBe('claude')
-    expect(providerBySessionId['s3']).toBe('acp')
+    expect(providerBySessionId['s3']).toBe('acp-grok')
     expect(sessions[0].selectedModel).toBe('gpt-5.6')
     expect(sessions[0].parentSessionId).toBe('parent-1')
   })
@@ -287,7 +287,7 @@ describe('db-sessions session query + mapping', () => {
 
     expect(providerBySessionId['p1']).toBe('codex')
     expect(providerBySessionId['p2']).toBe('claude')
-    expect(providerBySessionId['p3']).toBe('acp')
+    expect(providerBySessionId['p3']).toBe('acp-grok')
   })
 
   it('listPinnedSessions maps acpAgentId so grok keeps its brand icon', () => {
@@ -314,7 +314,7 @@ describe('db-sessions session query + mapping', () => {
 
     const sessions = listPinnedSessions()
     expect(sessions).toHaveLength(1)
-    expect(sessions[0]?.provider).toBe('acp')
+    expect(sessions[0]?.provider).toBe('acp-grok')
     expect(sessions[0]?.acpAgentId).toBe('grok-build')
   })
 

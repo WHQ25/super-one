@@ -10,7 +10,7 @@ const CLAUDE_MODELS = [model('opus', { isDefault: true })]
 
 function context(resources: Partial<ChatStore['harnessResources']> = {}) {
   const project = { ...createDefaultProjectState(), codexModels: CODEX_MODELS }
-  const state = { harnessResources: { claude: null, codex: null, acp: null, ...resources } } as unknown as ChatStore
+  const state = { harnessResources: { claude: null, codex: null, 'acp-grok': null, 'acp-antigravity': null, ...resources } } as unknown as ChatStore
   return { state, project, claudeModels: CLAUDE_MODELS }
 }
 
@@ -60,8 +60,8 @@ describe('seedNewSession', () => {
 
   it('carries the replaced ACP session’s agent when the catalog is not cached', () => {
     const session = createDefaultPerSessionState()
-    seedNewSession(session, 'acp', { ...context(), previousSession: { ...createDefaultPerSessionState(), acpAgentId: 'other-agent' } })
-    expect(session).toMatchObject({ acpAgentId: 'other-agent', acpModelsStatus: 'loading', selectedModel: '' })
+    seedNewSession(session, 'acp-grok', { ...context(), previousSession: { ...createDefaultPerSessionState(), acpAgentId: 'other-agent' } })
+    expect(session).toMatchObject({ acpAgentId: 'grok-build', acpModelsStatus: 'loading', selectedModel: '' })
   })
 })
 

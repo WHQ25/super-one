@@ -32,7 +32,8 @@ export type AgentProfileOptionKey = keyof AgentProfileOptions
 export const HARNESS_PROFILE_OPTIONS: Readonly<Record<HarnessId, readonly AgentProfileOptionKey[]>> = {
   claude: ['ultracode'],
   codex: ['fastMode'],
-  acp: ['contextWindow', 'mode'],
+  'acp-grok': ['contextWindow', 'mode'],
+  'acp-antigravity': ['contextWindow', 'mode'],
   opencode: ['agent'],
   cursor: ['modelParams'],
   dsh: ['agentPreset'],

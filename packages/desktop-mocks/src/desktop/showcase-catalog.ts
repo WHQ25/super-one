@@ -85,14 +85,24 @@ export const HARNESS_SHOWCASE: readonly HarnessShowcaseMeta[] = [
     placeholder: "Ask DeepSeek Agent to work in this project…",
   },
   {
-    id: "acp",
-    label: "Grok via ACP",
+    id: "acp-grok",
+    label: "Grok",
     shortLabel: "Grok",
     model: "Grok Code",
     permission: "Confirm edits",
     sandbox: "on",
     sandboxInteractive: false,
     placeholder: "Ask Grok to work in this project…",
+  },
+  {
+    id: "acp-antigravity",
+    label: "Antigravity",
+    shortLabel: "Antigravity",
+    model: "Gemini",
+    permission: "Confirm edits",
+    sandbox: "on",
+    sandboxInteractive: false,
+    placeholder: "Ask Antigravity to work in this project…",
   },
 ] as const
 

@@ -25,7 +25,7 @@ function workflowTurn(shell: Partial<ContentBlock>, result?: ContentBlock, statu
     role: 'assistant',
     status,
     createdAt: '2026-01-01T00:00:00.000Z',
-    providerId: 'acp',
+    providerId: 'acp-grok',
     content: [
       {
         type: 'tool_use',

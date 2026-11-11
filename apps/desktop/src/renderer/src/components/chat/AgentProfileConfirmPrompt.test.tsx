@@ -22,7 +22,7 @@ describe('persistent Profile collaboration consent', () => {
   })
   it.each(['agent-before', undefined])('shows the effective ACP identity or unresolved boundary: %s', (acpAgentId) => {
     const config = { model: 'shared-model', permissionMode: 'default' as const }
-    render(<AgentProfileConfirmPrompt payload={{ operation: 'update', profiles: [{ id: 'legacy', name: 'Legacy worker', harnessId: 'acp', acpAgentId, description: 'Implement tasks.' }], changes: [], collaborationApproval: { baseConfig: config, config } }} onConfirm={vi.fn()} onReject={vi.fn()} />)
+    render(<AgentProfileConfirmPrompt payload={{ operation: 'update', profiles: [{ id: 'legacy', name: 'Legacy worker', harnessId: 'acp-grok', acpAgentId, description: 'Implement tasks.' }], changes: [], collaborationApproval: { baseConfig: config, config } }} onConfirm={vi.fn()} onReject={vi.fn()} />)
     expect(screen.getByText('ACP Agent')).toBeInTheDocument()
     expect(screen.getByText(acpAgentId ?? 'Unresolved (Launch Approval Required)')).toBeInTheDocument()
   })

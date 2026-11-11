@@ -18,7 +18,7 @@ beforeEach(() => {
   vi.clearAllMocks()
   Object.assign(window.app, { connectOpenCode: connect })
   useChatStore.setState({ projectSessions: {}, activeProject: null, harnessResources: {
-    claude: null, codex: null, acp: null, opencode: initial, cursor: null, dsh: null,
+    claude: null, codex: null, 'acp-grok': null, 'acp-antigravity': null, opencode: initial, cursor: null, dsh: null,
   } })
 })
 afterEach(cleanup)

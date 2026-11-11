@@ -23,7 +23,8 @@ export function useBootstrapHarnesses(
   )
 
   useEffect(() => {
-    void initializeHarness('acp')
+    void initializeHarness('acp-grok')
+    void initializeHarness('acp-antigravity')
   }, [initializeHarness])
 
   useEffect(() => {

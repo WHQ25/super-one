@@ -598,8 +598,8 @@ describe('UsageStatusIcon rate-limit tip', () => {
   })
 
   it('renders the Grok credits gauge from acpGetRateLimits', async () => {
-    hoisted.sessionState.sessionProvider = 'acp'
-    hoisted.sessionState.preferredProvider = 'acp'
+    hoisted.sessionState.sessionProvider = 'acp-grok'
+    hoisted.sessionState.preferredProvider = 'acp-grok'
     hoisted.sessionState.acpAgentId = 'grok-build'
     vi.stubGlobal('app', {
       acpGetRateLimits: vi.fn(async () => ({
@@ -630,8 +630,8 @@ describe('UsageStatusIcon rate-limit tip', () => {
   })
 
   it('retries Grok billing after the first empty prewarm fetch', async () => {
-    hoisted.sessionState.sessionProvider = 'acp'
-    hoisted.sessionState.preferredProvider = 'acp'
+    hoisted.sessionState.sessionProvider = 'acp-grok'
+    hoisted.sessionState.preferredProvider = 'acp-grok'
     hoisted.sessionState.acpAgentId = 'grok-build'
     const payload = {
       title: 'Grok Build',
@@ -661,10 +661,10 @@ describe('UsageStatusIcon rate-limit tip', () => {
     expect(screen.getByText('SuperGrok Heavy')).toBeInTheDocument()
   })
 
-  it('stays hidden for a non-Grok ACP agent with no billing surface', async () => {
-    hoisted.sessionState.sessionProvider = 'acp'
-    hoisted.sessionState.preferredProvider = 'acp'
-    hoisted.sessionState.acpAgentId = 'opencode'
+  it('stays hidden for OpenCode, which has no ACP billing surface', async () => {
+    hoisted.sessionState.sessionProvider = 'opencode'
+    hoisted.sessionState.preferredProvider = 'opencode'
+    hoisted.sessionState.acpAgentId = null
     const acpGetRateLimits = vi.fn(async () => null)
     vi.stubGlobal('app', { acpGetRateLimits })
 
@@ -844,8 +844,8 @@ describe('UsageStatusIcon rate-limit tip', () => {
   })
 
   it('isolates Grok and Antigravity usage state across ACP agent switches and ignores stale in-flight fetches', async () => {
-    hoisted.sessionState.sessionProvider = 'acp'
-    hoisted.sessionState.preferredProvider = 'acp'
+    hoisted.sessionState.sessionProvider = 'acp-grok'
+    hoisted.sessionState.preferredProvider = 'acp-grok'
     hoisted.sessionState.acpAgentId = 'grok-build'
 
     let resolveLateGrok!: (value: unknown) => void
@@ -869,6 +869,8 @@ describe('UsageStatusIcon rate-limit tip', () => {
     const { rerender } = render(<UsageStatusIcon />)
     expect(acpGetRateLimits).toHaveBeenCalledWith('/tmp/project', 'grok-build', false)
 
+    hoisted.sessionState.sessionProvider = 'acp-antigravity'
+    hoisted.sessionState.preferredProvider = 'acp-antigravity'
     hoisted.sessionState.acpAgentId = 'antigravity'
     rerender(<UsageStatusIcon />)
     await act(async () => {
@@ -905,6 +907,8 @@ describe('UsageStatusIcon rate-limit tip', () => {
       if (agentId === 'grok-build') return null
       return null
     })
+    hoisted.sessionState.sessionProvider = 'acp-grok'
+    hoisted.sessionState.preferredProvider = 'acp-grok'
     hoisted.sessionState.acpAgentId = 'grok-build'
     rerender(<UsageStatusIcon />)
     await act(async () => {

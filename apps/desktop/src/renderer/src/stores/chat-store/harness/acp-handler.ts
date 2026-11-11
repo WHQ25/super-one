@@ -1,4 +1,4 @@
-import { isAntigravityAcpAgent } from '@superone/shared/acp-brand'
+import { isAcpProtocolHarness, isAntigravityAcpAgent } from '@superone/shared/acp-brand'
 import type {
   AcpAgentConfigCatalog,
   AcpAgentModelCatalog,
@@ -13,11 +13,11 @@ import { withoutProjectScopedWorkflows } from '@superone/shared/workflow-command
 import { projectAntigravityModels } from '@/harness-ui/acp/model-options'
 import { defaultPrefsCache } from '../helpers/prefs-cache'
 import { resolveProvider, type ProviderResolvableSession } from '../helpers/provider-routing'
+import { acpHarnessForAgent, applySplitAcpResources, combineAcpResources } from './acp-slots'
 import type { ChatStore, PerSessionState } from '../types'
 
-/** Grok and Antigravity share this harness. The id comparison stays in this module. */
 export function sessionUsesAcpHarness(session: ProviderResolvableSession): boolean {
-  return resolveProvider(session) === 'acp'
+  return isAcpProtocolHarness(resolveProvider(session))
 }
 
 export function applyAcpResources(
@@ -29,7 +29,7 @@ export function applyAcpResources(
     let sessionsChanged = false
     const nextSessions: Record<string, PerSessionState> = { ...ps._sessions }
     for (const [sessionId, session] of Object.entries(ps._sessions ?? {})) {
-      const isAcp = (session.sessionProvider || session.preferredProvider) === 'acp'
+      const isAcp = isAcpProtocolHarness(session.sessionProvider || session.preferredProvider)
       if (!isAcp || !session.acpAgentId) continue
       const catalog = getCachedAcpCatalog(r, session.acpAgentId)
       if (!catalog) continue
@@ -70,7 +70,7 @@ export function applyAcpResources(
     }
   }
   return {
-    harnessResources: { ...s.harnessResources, acp: r },
+    harnessResources: applySplitAcpResources(s.harnessResources, r),
     ...(projectSessions !== s.projectSessions ? { projectSessions } : {}),
   }
 }
@@ -78,7 +78,7 @@ export function applyAcpResources(
 const FALLBACK_ACP_RESOURCES: AcpResources = {
   agents: [
     { id: 'grok-build', name: 'Grok Build', installed: false, commandPreview: 'grok agent stdio' },
-    { id: 'opencode', name: 'OpenCode', installed: false, commandPreview: 'opencode acp' },
+    { id: 'antigravity', name: 'Antigravity', installed: false, commandPreview: 'agy --acp' },
   ],
   selectedAgentId: null,
   modelsByAgentId: {},
@@ -238,11 +238,19 @@ export async function connectAcpResources(opts?: { force?: boolean }): Promise<A
   if (!opts?.force) {
     try {
       const startup = await window.app.getStartupData()
-      if (startup.cached.acp?.agents?.length) {
+      const cached = startup.cached as typeof startup.cached & { acp?: AcpResources | null }
+      const concrete = combineAcpResources(
+        cached['acp-grok']?.agents?.length ? cached['acp-grok'] : null,
+        cached['acp-antigravity']?.agents?.length ? cached['acp-antigravity'] : null,
+      )
+      const picked = concrete?.agents?.length
+        ? concrete
+        : (cached.acp?.agents?.length ? cached.acp : null)
+      if (picked?.agents?.length) {
         return {
-          ...startup.cached.acp,
-          modelsByAgentId: startup.cached.acp.modelsByAgentId ?? {},
-          configByAgentId: startup.cached.acp.configByAgentId ?? {},
+          ...picked,
+          modelsByAgentId: picked.modelsByAgentId ?? {},
+          configByAgentId: picked.configByAgentId ?? {},
         }
       }
     } catch {
@@ -251,7 +259,8 @@ export async function connectAcpResources(opts?: { force?: boolean }): Promise<A
   }
   try {
     if (typeof window.app.listAcpAgents === 'function') {
-      return await window.app.listAcpAgents()
+      const listed = await window.app.listAcpAgents()
+      if (listed?.agents) return listed
     }
   } catch (err) {
     console.warn('[acp] listAcpAgents failed:', err)
@@ -302,7 +311,10 @@ function resolveDefaultAcpModelAndMode(
   },
 ): { selectedModel: string; selectedModeId: string | null } {
   const agentId = opts?.agentId
-  const defaults = acpAgentDefaultsFor(defaultPrefsCache.agentPreference?.acp, agentId)
+  const defaults = acpAgentDefaultsFor(
+    defaultPrefsCache.agentPreference,
+    acpHarnessForAgent(isAntigravityAcpAgent(agentId) ? agentId : 'grok-build'),
+  )
   const preferred = opts?.preferSelected
   const preferredModel = preferred && session.models.some((m) => m.id === preferred) ? preferred : null
 

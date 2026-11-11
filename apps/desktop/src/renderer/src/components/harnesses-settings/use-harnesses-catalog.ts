@@ -49,7 +49,6 @@ export function useHarnessesCatalogState(getOrderKey: (item: ListItem) => string
   const [cliInstalls, setCliInstalls] = useState<Record<string, CliInstallUiState>>({})
   const [authRefreshSeq, setAuthRefreshSeq] = useState(0)
   const [enabledExperimentalAgents, setEnabledExperimentalAgents] = useState<string[]>([])
-  const [legacyExperimentalAll, setLegacyExperimentalAll] = useState(false)
   const [harnessOrder, setHarnessOrder] = useState<string[]>([])
   const [savingOrder, setSavingOrder] = useState(false)
 
@@ -58,13 +57,11 @@ export function useHarnessesCatalogState(getOrderKey: (item: ListItem) => string
     window.app.getAppSettings().then((s) => {
       if (!mounted) return
       setEnabledExperimentalAgents(s.enabledExperimentalAgents ?? [])
-      setLegacyExperimentalAll(!!s.experimentalAgentsEnabled)
       setHarnessOrder(Array.isArray(s.harnessOrder) ? s.harnessOrder : [])
     })
     const unsub = window.app.onAppSettingsChange?.((s) => {
       if (!mounted) return
       setEnabledExperimentalAgents(s.enabledExperimentalAgents ?? [])
-      setLegacyExperimentalAll(!!s.experimentalAgentsEnabled)
       setHarnessOrder(Array.isArray(s.harnessOrder) ? s.harnessOrder : [])
     })
     return () => {
@@ -165,14 +162,8 @@ export function useHarnessesCatalogState(getOrderKey: (item: ListItem) => string
   }, [catalog])
 
   const isItemEnabled = useCallback(
-    (item: ListItem): boolean => {
-      if (item.kind === 'catalog') {
-        return catalogIsOn(catalogById.get(item.catalogId))
-      }
-      if (legacyExperimentalAll) return true
-      return enabledExperimentalAgents.includes(item.acpAgentId)
-    },
-    [catalogById, enabledExperimentalAgents, legacyExperimentalAll],
+    (item: ListItem): boolean => catalogIsOn(catalogById.get(item.catalogId)),
+    [catalogById],
   )
 
   const setExperimentalAgentEnabled = useCallback(
@@ -185,7 +176,6 @@ export function useHarnessesCatalogState(getOrderKey: (item: ListItem) => string
         experimentalAgentsEnabled: false,
       })
       setEnabledExperimentalAgents(result.enabledExperimentalAgents ?? next)
-      setLegacyExperimentalAll(!!result.experimentalAgentsEnabled)
       useAppStore.getState().setExperimentalAgentsEnabled(result.experimentalAgentsEnabled)
     },
     [enabledExperimentalAgents],

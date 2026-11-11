@@ -48,8 +48,17 @@ export function registerDefaultProfileScenarios(fixture: {
       expect(createSession).not.toHaveBeenCalled()
     })
 
-    it.each(['claude', 'codex', 'acp', 'opencode', 'cursor', 'dsh'] as const)('provides one dynamic default Profile for %s', async (harnessId) => {
-      fixture.providers().splice(0, fixture.providers().length, { id: `${harnessId}-base`, harnessId, name: harnessId, isBase: true, config: harnessId === 'acp' ? { agentId: 'grok-build' } : {}, createdAt: 0, updatedAt: 0 })
+    it.each([
+      ['claude', 'claude-base'],
+      ['codex', 'codex-base'],
+      ['acp-grok', 'acp-grok'],
+      ['acp-antigravity', 'acp-antigravity'],
+      ['opencode', 'opencode-base'],
+      ['cursor', 'cursor-base'],
+      ['dsh', 'dsh-base'],
+    ] as const)('provides one dynamic default Profile for %s', async (harnessId, id) => {
+      if (harnessId === 'acp-antigravity') fixture.enableAntigravity?.(true)
+      fixture.providers().splice(0, fixture.providers().length, { id, harnessId, name: harnessId, isBase: true, config: harnessId === 'acp-grok' || harnessId === 'acp-antigravity' ? { agentId: harnessId === 'acp-antigravity' ? 'antigravity' : 'grok-build' } : {}, createdAt: 0, updatedAt: 0 })
       const profiles = listSessionAgentProfiles()
       expect(profiles).toHaveLength(1)
       expect(profiles[0].followsDefaults).toBe(true)
@@ -118,18 +127,18 @@ export function registerDefaultProfileScenarios(fixture: {
       expect(fixture.grantCount()).toBe(0)
     })
 
-    it('follows the ACP selection instead of the seeded base agent id', () => {
-      fixture.providers().splice(0, 1, { id: 'acp-base', harnessId: 'acp', name: 'ACP', isBase: true, config: { agentId: 'grok-build' }, createdAt: 0, updatedAt: 0 })
+    it('pins the built-in Grok agent and ignores a stale ACP selection', () => {
+      fixture.providers().splice(0, 1, { id: 'acp-grok', harnessId: 'acp-grok', name: 'Grok', isBase: true, config: { agentId: 'grok-build' }, createdAt: 0, updatedAt: 0 })
       fixture.setAcpAgent('agent-selected')
-      expect(listSessionAgentProfiles()[0].acpAgentId).toBe('agent-selected')
+      expect(listSessionAgentProfiles()[0].acpAgentId).toBe('grok-build')
     })
 
     it('offers and launches both Grok and Antigravity when both ACP harnesses are ready', async () => {
       fixture.providers().splice(
         0,
         fixture.providers().length,
-        { id: 'acp-grok', harnessId: 'acp', name: 'Grok (Base)', isBase: true, config: { agentId: 'grok-build' }, createdAt: 0, updatedAt: 0 },
-        { id: 'acp-antigravity', harnessId: 'acp', name: 'Antigravity (Base)', isBase: true, config: { agentId: 'antigravity' }, createdAt: 0, updatedAt: 0 },
+        { id: 'acp-grok', harnessId: 'acp-grok', name: 'Grok (Base)', isBase: true, config: { agentId: 'grok-build' }, createdAt: 0, updatedAt: 0 },
+        { id: 'acp-antigravity', harnessId: 'acp-antigravity', name: 'Antigravity (Base)', isBase: true, config: { agentId: 'antigravity' }, createdAt: 0, updatedAt: 0 },
       )
       fixture.setAcpAgent('grok-build')
       fixture.enableAntigravity?.(true)

@@ -27,8 +27,8 @@ const activeSessionState = {
   selectedModel: '',
   session: null as { model: string } | null,
   cursorModelParams: {} as Record<string, string>,
-  preferredProvider: 'claude' as 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp',
-  sessionProvider: null as 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp' | null,
+  preferredProvider: 'claude' as 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok' | 'acp-antigravity',
+  sessionProvider: null as 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp-grok' | 'acp-antigravity' | null,
   totalCostUsd: 0,
   status: 'idle' as string,
   detailedUsage: null as unknown,
@@ -313,8 +313,8 @@ describe('ContextUsage', () => {
   })
 
   it('refreshes detailed context usage after an ACP/Grok turn completes', async () => {
-    activeSessionState.preferredProvider = 'acp' as never
-    activeSessionState.sessionProvider = 'acp' as never
+    activeSessionState.preferredProvider = 'acp-grok' as never
+    activeSessionState.sessionProvider = 'acp-grok' as never
     activeSessionState.contextTokens = 42_000
     activeSessionState.status = 'streaming'
     getContextUsageMock = vi.fn(async () => ({
@@ -338,8 +338,8 @@ describe('ContextUsage', () => {
     activeSessionState.acpModels = [{ id: 'grok-4.7', name: 'Grok 4.7', description: '', contextWindow: 500_000 }]
     activeSessionState.contextTokens = 50_000
     activeSessionState.selectedModel = 'grok-4.7'
-    activeSessionState.preferredProvider = 'acp' as never
-    activeSessionState.sessionProvider = 'acp' as never
+    activeSessionState.preferredProvider = 'acp-grok' as never
+    activeSessionState.sessionProvider = 'acp-grok' as never
     activeSessionState.selectedAcpContextWindow = 256_000
 
     render(<ContextUsage />)
@@ -355,8 +355,8 @@ describe('ContextUsage', () => {
     activeSessionState.acpModels = [{ id: 'grok-4.5', name: 'Grok 4.5', description: '', contextWindow: 500_000 }]
     activeSessionState.contextTokens = 50_000
     activeSessionState.selectedModel = 'grok-4.5'
-    activeSessionState.preferredProvider = 'acp' as never
-    activeSessionState.sessionProvider = 'acp' as never
+    activeSessionState.preferredProvider = 'acp-grok' as never
+    activeSessionState.sessionProvider = 'acp-grok' as never
 
     render(<ContextUsage />)
     fireEvent.click(screen.getByRole('button'))

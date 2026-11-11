@@ -29,7 +29,7 @@ export function registerAgentProfileTools(server: McpServer, deps: BuiltInSupero
       inputSchema: {
         action: z.enum(['create', 'update']).describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'action')),
         id: z.string().optional().describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'id')),
-        harnessId: z.enum(['claude', 'codex', 'acp', 'opencode', 'cursor', 'dsh']).optional()
+        harnessId: z.enum(['claude', 'codex', 'acp-grok', 'acp-antigravity', 'opencode', 'cursor', 'dsh']).optional()
           .describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'harnessId')),
         name: z.string().optional().describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'name')),
         description: z.string().optional().describe(agentProfileField(AGENT_PROFILE_APPLY_INPUT_SCHEMA, 'description')),

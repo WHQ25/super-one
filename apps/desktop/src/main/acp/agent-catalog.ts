@@ -3,6 +3,7 @@ export interface AcpAgentDefinition {
   name: string
   command: string
   args: string[]
+  harnessId: 'acp-grok' | 'acp-antigravity' | 'opencode'
   installHint?: string
 }
 
@@ -12,6 +13,7 @@ export const BUILTIN_ACP_AGENTS: AcpAgentDefinition[] = [
     name: 'Grok Build',
     command: 'grok',
     args: ['agent', 'stdio'],
+    harnessId: 'acp-grok',
     installHint: 'Install Grok Build CLI, or set command to: npx -y @xai-official/grok agent stdio',
   },
   {
@@ -19,6 +21,7 @@ export const BUILTIN_ACP_AGENTS: AcpAgentDefinition[] = [
     name: 'Antigravity',
     command: 'agy',
     args: ['acp'],
+    harnessId: 'acp-antigravity',
     installHint: 'Install Antigravity CLI (agy on PATH or ~/.local/bin/agy)',
   },
   {
@@ -26,6 +29,7 @@ export const BUILTIN_ACP_AGENTS: AcpAgentDefinition[] = [
     name: 'OpenCode',
     command: 'opencode',
     args: ['acp'],
+    harnessId: 'opencode',
     installHint: 'Install OpenCode CLI with ACP support (`opencode` on PATH)',
   },
 ]
@@ -65,20 +69,14 @@ export function resolveAcpLaunch(input: {
   cwd?: string
   defaultCwd: string
 }): ResolvedAcpLaunch {
-  const agentId = input.agentId?.trim() || 'custom'
+  const agentId = input.agentId?.trim() || 'grok-build'
   const builtin = getBuiltinAgent(agentId)
-  const command = input.command?.trim() || builtin?.command
-  if (!command) {
-    throw new Error(
-      agentId === 'custom'
-        ? 'Custom ACP agent requires a command'
-        : `Unknown ACP agent "${agentId}" and no command override`,
-    )
-  }
+  if (!builtin) throw new Error(`Unknown ACP agent "${agentId}"`)
+  const command = input.command?.trim() || builtin.command
   return {
     agentId,
     command,
-    args: input.args ?? builtin?.args ?? [],
+    args: input.args ?? builtin.args,
     env: input.env ?? {},
     cwd: input.cwd?.trim() || input.defaultCwd,
   }

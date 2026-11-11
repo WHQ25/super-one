@@ -3,7 +3,14 @@ import type {
   HarnessSessionRank,
   SuggestionHarnessPreference,
 } from '@superone/shared/agent-types'
-import { isGrokAcpAgent } from '@superone/shared/acp-brand'
+import {
+  acpAgentIdForHarness,
+  isAntigravityAcpAgent,
+  isConcreteHarnessId,
+  isGrokAcpAgent,
+  isOpenCodeAcpAgent,
+  resolveLegacyHarnessId,
+} from '@superone/shared/acp-brand'
 
 export interface SuggestionHarnessOption {
   key: string
@@ -13,26 +20,43 @@ export interface SuggestionHarnessOption {
   sessionCount: number
 }
 
-export function suggestionHarnessKey(provider: HarnessId, acpAgentId?: string | null): string {
-  if (provider === 'acp') {
-    const agent = acpAgentId?.trim()
-    return agent ? `acp:${agent}` : 'acp'
-  }
+export function suggestionHarnessKey(provider: HarnessId, _acpAgentId?: string | null): string {
   return provider
+}
+
+export function canonicalSuggestionHarnessKey(key: string): string | null {
+  const trimmed = key.trim()
+  if (!trimmed || trimmed === 'auto') return null
+  if (isConcreteHarnessId(trimmed)) return trimmed
+  if (trimmed === 'acp') return 'acp-grok'
+  if (!trimmed.startsWith('acp:')) return null
+  const agent = trimmed.slice(4).trim()
+  if (!agent) return null
+  if (isAntigravityAcpAgent(agent)) return 'acp-antigravity'
+  if (isOpenCodeAcpAgent(agent)) return 'opencode'
+  if (isGrokAcpAgent(agent)) return 'acp-grok'
+  return null
+}
+
+export function suggestionPreferenceFromKey(key: string): SuggestionHarnessPreference | null {
+  const canonical = canonicalSuggestionHarnessKey(key)
+  if (!canonical || !isConcreteHarnessId(canonical)) return null
+  if (canonical === 'acp-grok' || canonical === 'acp-antigravity') {
+    return { provider: canonical, acpAgentId: acpAgentIdForHarness(canonical) }
+  }
+  return { provider: canonical, acpAgentId: null }
 }
 
 function preferenceKey(pref: SuggestionHarnessPreference | null | undefined): string | null {
   if (!pref) return null
-  return suggestionHarnessKey(pref.provider, pref.acpAgentId)
+  return resolveLegacyHarnessId(pref.provider, { acpAgentId: pref.acpAgentId })
 }
 
-function defaultRankIndex(option: Pick<SuggestionHarnessOption, 'provider' | 'acpAgentId'>): number {
+function defaultRankIndex(option: Pick<SuggestionHarnessOption, 'provider'>): number {
   if (option.provider === 'claude') return 0
   if (option.provider === 'codex') return 1
-  if (option.provider === 'acp') {
-    // Prefer Grok Build among ACP agents when counts tie / are zero.
-    return isGrokAcpAgent(option.acpAgentId) ? 2 : 3
-  }
+  if (option.provider === 'acp-grok') return 2
+  if (option.provider === 'acp-antigravity') return 3
   if (option.provider === 'opencode') return 4
   if (option.provider === 'cursor') return 5
   if (option.provider === 'dsh') return 6
@@ -78,7 +102,11 @@ export function orderSuggestionHarnesses(input: {
   /** null/undefined = Auto (no pin). Ignored when equal to default. */
   secondaryHarness?: SuggestionHarnessPreference | null
 }): SuggestionHarnessOption[] {
-  const countByKey = new Map(input.ranks.map((r) => [r.key, r.sessionCount] as const))
+  const countByKey = new Map<string, number>()
+  for (const rank of input.ranks) {
+    const key = canonicalSuggestionHarnessKey(rank.key) ?? rank.key
+    countByKey.set(key, (countByKey.get(key) ?? 0) + rank.sessionCount)
+  }
 
   const options: SuggestionHarnessOption[] = []
 
@@ -102,13 +130,18 @@ export function orderSuggestionHarnesses(input: {
   }
 
   for (const agent of input.acpAgents) {
-    const key = suggestionHarnessKey('acp', agent.id)
+    const provider = isAntigravityAcpAgent(agent.id)
+      ? 'acp-antigravity'
+      : isGrokAcpAgent(agent.id)
+        ? 'acp-grok'
+        : null
+    if (!provider || options.some((option) => option.provider === provider)) continue
     options.push({
-      key,
-      provider: 'acp',
-      acpAgentId: agent.id,
+      key: provider,
+      provider,
+      acpAgentId: acpAgentIdForHarness(provider),
       label: agent.name,
-      sessionCount: countByKey.get(key) ?? 0,
+      sessionCount: countByKey.get(provider) ?? 0,
     })
   }
 
@@ -155,7 +188,8 @@ export function orderSuggestionHarnesses(input: {
     const byKey = new Map(options.map((o) => [o.key, o] as const))
     const ordered: SuggestionHarnessOption[] = []
     const used = new Set<string>()
-    for (const key of orderKeys) {
+    for (const rawKey of orderKeys) {
+      const key = canonicalSuggestionHarnessKey(rawKey) ?? rawKey
       const opt = byKey.get(key)
       if (!opt || used.has(key)) continue
       ordered.push(opt)
@@ -192,9 +226,9 @@ function matchesPreference(
   option: SuggestionHarnessOption,
   pref: SuggestionHarnessPreference,
 ): boolean {
-  if (option.provider !== pref.provider) return false
-  if (option.provider !== 'acp') return true
-  return option.acpAgentId === (pref.acpAgentId ?? null)
+  const optionProvider = resolveLegacyHarnessId(option.provider, { acpAgentId: option.acpAgentId })
+  const prefProvider = resolveLegacyHarnessId(pref.provider, { acpAgentId: pref.acpAgentId })
+  return optionProvider != null && optionProvider === prefProvider
 }
 
 /**
@@ -259,10 +293,7 @@ export function resolveAutoApplyHarness(input: {
   const preference = input.suggestionHarness
   const target = preference == null
     ? input.fixedHarness
-    : input.orderedHarnesses.find((option) => (
-      option.provider === preference.provider
-      && (option.provider !== 'acp' || option.acpAgentId === (preference.acpAgentId ?? null))
-    )) ?? input.fixedHarness
+    : input.orderedHarnesses.find((option) => matchesPreference(option, preference)) ?? input.fixedHarness
 
   // Only a *changed* target re-applies, so switching to the secondary tab is not
   // snapped back to the default on the next render.

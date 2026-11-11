@@ -336,7 +336,7 @@ export const PhoneFocusedCodexSteer = {
 
 export const PhoneFocusedGrokSteer = {
   args: {
-    provider: 'acp',
+    provider: 'acp-grok',
     tablet: false, focused: true, streaming: true, draft: 'steer this',
     canSteer: true, canSteerSoon: false,
   },

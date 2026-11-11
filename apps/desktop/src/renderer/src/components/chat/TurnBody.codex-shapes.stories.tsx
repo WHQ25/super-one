@@ -33,7 +33,7 @@ function turn(items: CodexThreadItem[], status: ChatMessageType['status'] = 'com
     id: `turn-${status}`,
     role: 'assistant',
     status,
-    providerId: 'acp',
+    providerId: 'acp-grok',
     createdAt: new Date(Date.now() - 12_000).toISOString(),
     content: codexItemsToContent(items),
   }

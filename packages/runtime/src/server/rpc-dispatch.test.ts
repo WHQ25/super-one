@@ -60,7 +60,7 @@ function providersWithAgent(agentId: string): NonNullable<RpcContext['sessionPro
   return {
     get: () => ({
       id: 'acp-custom',
-      harnessId: 'acp',
+      harnessId: 'acp-grok',
       name: 'ACP',
       isBase: true,
       config: { agentId },

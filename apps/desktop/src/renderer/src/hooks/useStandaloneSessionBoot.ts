@@ -29,6 +29,12 @@ export function useStandaloneSessionBoot(projectPath: string, sessionId: string)
         if (startupData.cached.codex) useChatStore.getState().setHarnessResources('codex', startupData.cached.codex)
         if (startupData.cached.opencode) useChatStore.getState().setHarnessResources('opencode', startupData.cached.opencode)
         if (startupData.cached.cursor) useChatStore.getState().setHarnessResources('cursor', startupData.cached.cursor)
+        if (startupData.cached['acp-grok']) useChatStore.getState().setHarnessResources('acp-grok', startupData.cached['acp-grok'])
+        if (startupData.cached['acp-antigravity']) useChatStore.getState().setHarnessResources('acp-antigravity', startupData.cached['acp-antigravity'])
+        const legacyAcp = (startupData.cached as { acp?: typeof startupData.cached['acp-grok'] }).acp
+        if (!startupData.cached['acp-grok'] && !startupData.cached['acp-antigravity'] && legacyAcp) {
+          useChatStore.getState().setHarnessResources('acp-grok', legacyAcp)
+        }
         void useChatStore.getState().initializeHarness('claude')
         void useChatStore.getState().initializeHarness('codex')
 

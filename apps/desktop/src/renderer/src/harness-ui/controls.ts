@@ -1,6 +1,6 @@
 import type { ComponentType, ReactNode } from 'react'
 import type { HarnessId, PermissionMode } from '@superone/shared/agent-types'
-import { acpControls } from './acp/controls'
+import { acpAntigravityControls, acpGrokControls } from './acp/controls'
 import { claudeControls } from './claude/controls'
 import { codexControls } from './codex/controls'
 import { cursorControls } from './cursor/controls'
@@ -43,7 +43,8 @@ export interface LaunchPermissionView {
 export const HARNESS_CONTROLS: { [H in HarnessId]: HarnessControls } = {
   claude: claudeControls,
   codex: codexControls,
-  acp: acpControls,
+  'acp-grok': acpGrokControls,
+  'acp-antigravity': acpAntigravityControls,
   opencode: opencodeControls,
   cursor: cursorControls,
   dsh: dshControls,

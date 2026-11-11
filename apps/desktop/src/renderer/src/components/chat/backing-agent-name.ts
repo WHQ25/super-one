@@ -7,9 +7,13 @@ export function useBackingAgentName(): string {
   const sessionProvider = useActiveSession((session) => session.sessionProvider)
   const preferredProvider = useActiveSession((session) => session.preferredProvider)
   const acpAgentId = useActiveSession((session) => session.acpAgentId)
-  const catalogName = useChatStore((state) => (
-    state.harnessResources?.acp?.agents?.find((agent) => agent.id === acpAgentId)?.name ?? null
-  ))
+  const catalogName = useChatStore((state) => {
+    const agents = [
+      ...(state.harnessResources?.['acp-grok']?.agents ?? []),
+      ...(state.harnessResources?.['acp-antigravity']?.agents ?? []),
+    ]
+    return agents.find((agent) => agent.id === acpAgentId)?.name ?? null
+  })
   return backingAgentName({
     provider: resolveProvider({ sessionProvider, preferredProvider }),
     acpAgentId,

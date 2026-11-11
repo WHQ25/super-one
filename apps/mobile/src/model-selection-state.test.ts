@@ -40,7 +40,7 @@ describe('mobile model selection state', () => {
         { value: 'deep', label: 'Deep' },
       ],
     }
-    expect(effortOptionsForModel('acp', info, 'grok-4')).toEqual(info.efforts)
+    expect(effortOptionsForModel('acp-grok', info, 'grok-4')).toEqual(info.efforts)
   })
 
   const claudeCatalog: RemoteSystemInfo = {

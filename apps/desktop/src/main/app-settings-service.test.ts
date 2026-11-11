@@ -53,18 +53,13 @@ describe('app-settings-service', () => {
     darkBrandHue: null,
     tokenOverrides: {}, darkTokenOverrides: {},
   }
-  const defaultAcp = {
-    enabled: false,
+  const defaultAcpSlot = {
     brandHue: null,
     darkBrandHue: null,
     tokenOverrides: {}, darkTokenOverrides: {},
-    selectedAgentId: null,
     defaultModel: '',
     defaultEffort: '',
     defaultPermissionMode: '',
-    antigravityDefaultModel: '',
-    antigravityDefaultEffort: '',
-    antigravityDefaultPermissionMode: '',
   }
   /** Harnesses whose only preferences are brand theming and session defaults. */
   const defaultBrandOnly = { brandHue: null, darkBrandHue: null, tokenOverrides: {}, darkTokenOverrides: {}, defaultPermissionMode: '' }
@@ -131,7 +126,8 @@ describe('app-settings-service', () => {
     agentPreference: {
       claude: defaultClaude,
       codex: defaultCodex,
-      acp: defaultAcp,
+      'acp-grok': defaultAcpSlot,
+      'acp-antigravity': defaultAcpSlot,
       cursor: defaultCursor,
       dsh: defaultBrandOnly,
       opencode: defaultBrandOnly,
@@ -308,7 +304,8 @@ describe('app-settings-service', () => {
             darkBrandHue: null,
             tokenOverrides: {}, darkTokenOverrides: {},
           },
-          acp: defaultAcp,
+          'acp-grok': defaultAcpSlot,
+      'acp-antigravity': defaultAcpSlot,
           cursor: defaultCursor,
           dsh: defaultBrandOnly,
           opencode: defaultBrandOnly,
@@ -465,7 +462,8 @@ describe('app-settings-service', () => {
             darkBrandHue: null,
             tokenOverrides: {}, darkTokenOverrides: {},
           },
-          acp: defaultAcp,
+          'acp-grok': defaultAcpSlot,
+      'acp-antigravity': defaultAcpSlot,
           cursor: defaultCursor,
           dsh: defaultBrandOnly,
           opencode: defaultBrandOnly,
@@ -482,12 +480,12 @@ describe('app-settings-service', () => {
       mocks.readFileSync.mockReturnValue(JSON.stringify({
         suggestionHarness: { provider: 'acp', acpAgentId: 'grok-build' },
       }))
-      expect(readAppSettings().suggestionHarness).toEqual({ provider: 'acp', acpAgentId: 'grok-build' })
+      expect(readAppSettings().suggestionHarness).toEqual({ provider: 'acp-grok', acpAgentId: 'grok-build' })
 
       mocks.readFileSync.mockReturnValue(JSON.stringify({
         suggestionHarness: { provider: 'acp' },
       }))
-      expect(readAppSettings().suggestionHarness).toBeNull()
+      expect(readAppSettings().suggestionHarness).toEqual({ provider: 'acp-grok', acpAgentId: 'grok-build' })
     })
 
     it('clears secondaryHarness when save would make it equal default', () => {
@@ -512,7 +510,7 @@ describe('app-settings-service', () => {
         defaultHarness: 'acp:grok-build',
         secondaryHarness: 'claude',
       }))
-      expect(readAppSettings().suggestionHarness).toEqual({ provider: 'acp', acpAgentId: 'grok-build' })
+      expect(readAppSettings().suggestionHarness).toEqual({ provider: 'acp-grok', acpAgentId: 'grok-build' })
       expect(readAppSettings().secondaryHarness).toEqual({ provider: 'claude', acpAgentId: null })
 
       mocks.readFileSync.mockReturnValue(JSON.stringify({
@@ -528,9 +526,9 @@ describe('app-settings-service', () => {
         secondaryHarness: { provider: 'claude', acpAgentId: null },
       }))
       const read = readAppSettings()
-      expect(read.harnessOrder).toEqual(['codex', 'acp:grok-build', 'claude'])
+      expect(read.harnessOrder).toEqual(['codex', 'acp-grok', 'claude'])
       expect(read.suggestionHarness).toEqual({ provider: 'codex', acpAgentId: null })
-      expect(read.secondaryHarness).toEqual({ provider: 'acp', acpAgentId: 'grok-build' })
+      expect(read.secondaryHarness).toEqual({ provider: 'acp-grok', acpAgentId: 'grok-build' })
 
       mocks.readFileSync.mockReturnValue(JSON.stringify({
         harnessOrder: ['claude', 'codex'],
@@ -566,10 +564,10 @@ describe('app-settings-service', () => {
         harnessOrder: ['claude', 'codex', 'acp:grok-build'],
       }))
       const result = saveAppSettings({
-        suggestionHarness: { provider: 'acp', acpAgentId: 'grok-build' },
+        suggestionHarness: { provider: 'acp-grok', acpAgentId: 'grok-build' },
       })
-      expect(result.harnessOrder[0]).toBe('acp:grok-build')
-      expect(result.suggestionHarness).toEqual({ provider: 'acp', acpAgentId: 'grok-build' })
+      expect(result.harnessOrder[0]).toBe('acp-grok')
+      expect(result.suggestionHarness).toEqual({ provider: 'acp-grok', acpAgentId: 'grok-build' })
       expect(result.secondaryHarness).toEqual({ provider: 'claude', acpAgentId: null })
     })
 
@@ -578,7 +576,7 @@ describe('app-settings-service', () => {
         suggestionMenuHarness: { provider: 'acp', acpAgentId: 'grok-build' },
       }))
       expect(readAppSettings().suggestionMenuHarness).toEqual({
-        provider: 'acp',
+        provider: 'acp-grok',
         acpAgentId: 'grok-build',
       })
 
@@ -590,7 +588,7 @@ describe('app-settings-service', () => {
       mocks.readFileSync.mockReturnValue(JSON.stringify({
         suggestionMenuHarness: { provider: 'acp' },
       }))
-      expect(readAppSettings().suggestionMenuHarness).toBeNull()
+      expect(readAppSettings().suggestionMenuHarness).toEqual({ provider: 'acp-grok', acpAgentId: 'grok-build' })
     })
 
     it('returns defaults on corrupt JSON', () => {
@@ -630,10 +628,11 @@ describe('app-settings-service', () => {
       expect(readAppSettings().powerMode).toBe('lid-closed-on-ac')
     })
 
-    it('maps a legacy ACP patch to experimental agents', () => {
+    it('does not treat a concrete ACP slot write as the legacy experimental flag', () => {
       mocks.readFileSync.mockImplementation(fileNotFound)
-      const result = saveAppSettings({ agentPreference: { acp: { enabled: true } } })
-      expect(result.experimentalAgentsEnabled).toBe(true)
+      const result = saveAppSettings({ agentPreference: { 'acp-grok': { defaultModel: 'grok-4' } } })
+      expect(result.experimentalAgentsEnabled).toBe(false)
+      expect(result.agentPreference['acp-grok'].defaultModel).toBe('grok-4')
     })
 
     it.each(Object.keys(HARNESS_DEFAULT_BRAND_HUE))(

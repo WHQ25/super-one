@@ -45,7 +45,7 @@ const { createSendWriteScope } = await import('./send-write-scope')
 type SessionTurnOptions = Parameters<typeof sessionTurnRequest>[3]
 type SessionPatch = Partial<ReturnType<typeof createDefaultPerSessionState>>
 
-const HARNESSES: HarnessId[] = ['claude', 'codex', 'acp', 'opencode', 'cursor', 'dsh']
+const HARNESSES: HarnessId[] = ['claude', 'codex', 'acp-grok', 'opencode', 'cursor', 'dsh']
 const LOCATIONS = { local: '/proj', node: 'remote:env-1:/work/app' } as const
 const SID = 'sid-1'
 

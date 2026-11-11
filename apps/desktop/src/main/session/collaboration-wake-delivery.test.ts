@@ -112,7 +112,7 @@ describe('collaboration inbox to Session admission', () => {
     backend.resolveSend?.()
   })
 
-  it.each(['claude', 'codex', 'acp'] as const)(
+  it.each(['claude', 'codex', 'acp-grok'] as const)(
     'admits a %s wake through Session once, without retrying the ensuing provider error', async (harnessId) => {
       db = currentDb = openNodeDatabase(':memory:')
       const backend = new FakeBackend()
@@ -120,7 +120,7 @@ describe('collaboration inbox to Session admission', () => {
       backend.send = async (request, delivery?: SendDelivery) => { delivery?.onInputAccepted(); await send(request) }
       backend.injectTaskNotification = vi.fn(async () => 'deferred' as const)
       const session = new Session({
-        id: 'parent', projectPath: process.cwd(), cwd: process.cwd(), providerId: `${harnessId}-base`,
+        id: 'parent', projectPath: process.cwd(), cwd: process.cwd(), providerId: harnessId === 'acp-grok' ? harnessId : `${harnessId}-base`,
         harnessId, providerConfig: {}, backend,
       })
       const events: AgentEvent[] = []
@@ -168,7 +168,7 @@ describe('collaboration inbox to Session admission', () => {
     })
     const session = new Session({
       id: 'parent', projectPath: process.cwd(), cwd: process.cwd(),
-      providerId: 'acp-base', harnessId: 'acp', providerConfig: {}, backend,
+      providerId: 'acp-base', harnessId: 'acp-grok', providerConfig: {}, backend,
     })
     const host = {
       getSession: (id: string) => (id === 'parent' ? session : null),
@@ -202,7 +202,7 @@ describe('collaboration inbox to Session admission', () => {
     backend.send = async (request, delivery?: SendDelivery) => { delivery?.onInputAccepted(); await send(request) }
     const session = new Session({
       id: 'parent', projectPath: process.cwd(), cwd: process.cwd(),
-      providerId: 'acp-base', harnessId: 'acp', providerConfig: {}, backend,
+      providerId: 'acp-base', harnessId: 'acp-grok', providerConfig: {}, backend,
     })
     const host = {
       getSession: (id: string) => (id === 'parent' ? session : null),

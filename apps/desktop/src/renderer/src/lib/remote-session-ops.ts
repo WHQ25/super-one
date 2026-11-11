@@ -2,6 +2,7 @@
  * Renderer helpers for remote-node session operations.
  * All host-scoped project keys use `remote:<connectionId>:<hostPath>`.
  */
+import { isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness-capabilities'
 import { withCodexContents } from '@superone/shared/codex-content'
 import type { SessionLoadResult } from '@superone/shared/environment'
@@ -49,7 +50,7 @@ function applyRemoteSessionRow(
   opts?: { adoptSession?: boolean },
 ): PerSessionState {
   const namedHarness = snap?.harnessId || snap?.providerId
-  const providerId = namedHarness ? nodeHarnessToProviderId(namedHarness) : null
+  const providerId = namedHarness ? nodeHarnessToProviderId(namedHarness, snap?.acpAgentId) : null
   const base = previous ?? createDefaultPerSessionState()
   // A draft the node has never seen keeps the harness this window already picked.
   // Forcing Claude here is what snapped a Grok click back before the first send.
@@ -82,7 +83,7 @@ function applyRemoteSessionRow(
     preferredProvider: chatProvider,
     // Null from session.get means "this host did not name an agent", not
     // "replace the brand this window already has".
-    ...(chatProvider === 'acp' && typeof snap?.acpAgentId === 'string' && snap.acpAgentId ? { acpAgentId: snap.acpAgentId } : {}),
+    ...(isAcpProtocolHarness(chatProvider) && typeof snap?.acpAgentId === 'string' && snap.acpAgentId ? { acpAgentId: snap.acpAgentId } : {}),
     ...(snap ? { _parentSessionId: snap.parentSessionId ?? null } : {}),
     _title: snap?.title ?? base._title ?? null,
   }

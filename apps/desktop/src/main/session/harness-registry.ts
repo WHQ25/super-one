@@ -93,11 +93,19 @@ const codexHarness: Harness = {
   forkTranscript: forkCodexThread,
 }
 
-const acpHarness: Harness = {
-  id: 'acp',
-  name: 'Others (ACP)',
+const acpGrokHarness: Harness = {
+  id: 'acp-grok',
+  name: 'Grok',
   configSchema: acpConfigSchema,
-  createBackend: () => new AcpBackend(),
+  createBackend: () => new AcpBackend('acp-grok'),
+  forkTranscript: forkAcpTranscript,
+}
+
+const acpAntigravityHarness: Harness = {
+  id: 'acp-antigravity',
+  name: 'Antigravity',
+  configSchema: acpConfigSchema,
+  createBackend: () => new AcpBackend('acp-antigravity'),
   forkTranscript: forkAcpTranscript,
 }
 
@@ -142,7 +150,8 @@ const deepseekHarness: Harness = {
 const registry = new Map<HarnessId, Harness>([
   ['claude', claudeHarness],
   ['codex', codexHarness],
-  ['acp', acpHarness],
+  ['acp-grok', acpGrokHarness],
+  ['acp-antigravity', acpAntigravityHarness],
   ['opencode', openCodeHarness],
   ['cursor', cursorHarness],
   ['dsh', deepseekHarness],

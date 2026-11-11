@@ -2,6 +2,7 @@ import { AppWindow, CircleCheck, Columns2, Copy, FolderOpen, GitFork, Mail, Mail
 import { toast } from 'sonner'
 import type { TFunction } from 'i18next'
 import type { AgentStatus, SessionForkMode, SessionHistoryEntry } from '@superone/shared/agent-types'
+import { acpAgentIdForHarness, isAcpProtocolHarness, isAntigravityAcpAgent, isGrokAcpAgent, resolveLegacyHarnessId } from '@superone/shared/acp-brand'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { providerSessionIdFromResume } from '@superone/shared/environment'
 import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
@@ -72,17 +73,25 @@ export interface SessionMenuOptions {
  */
 export function sessionSupportsFork(session: SessionHistoryEntry): boolean {
   if (!session.provider) return true
-  return HARNESS_CAPABILITIES[session.provider].supportsFork
+  const provider = resolveLegacyHarnessId(session.provider, { acpAgentId: session.acpAgentId })
+  if (!provider) return true
+  return HARNESS_CAPABILITIES[provider].supportsFork
 }
 
 export function providerLabelFor(session: SessionHistoryEntry): string {
-  if (session.provider === 'codex') return 'Codex'
-  if (session.provider === 'acp') {
-    return session.acpAgentId?.toLowerCase().includes('grok') ? 'Grok (ACP)' : 'ACP'
+  const provider = session.provider
+    ? resolveLegacyHarnessId(session.provider, { acpAgentId: session.acpAgentId })
+    : null
+  if (provider === 'codex') return 'Codex'
+  if (isAcpProtocolHarness(provider)) {
+    const agent = session.acpAgentId ?? acpAgentIdForHarness(provider)
+    if (isGrokAcpAgent(agent)) return 'Grok (ACP)'
+    if (isAntigravityAcpAgent(agent)) return 'Antigravity'
+    return 'ACP'
   }
-  if (session.provider === 'opencode') return 'OpenCode'
-  if (session.provider === 'cursor') return 'Cursor'
-  if (session.provider === 'dsh') return 'DeepSeek'
+  if (provider === 'opencode') return 'OpenCode'
+  if (provider === 'cursor') return 'Cursor'
+  if (provider === 'dsh') return 'DeepSeek'
   return 'Claude Code'
 }
 

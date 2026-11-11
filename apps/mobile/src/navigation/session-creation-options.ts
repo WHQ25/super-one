@@ -1,4 +1,5 @@
 import type { HarnessId, SandboxMode } from '@superone/shared/agent-types'
+import { isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import { harnessSupportsSandbox } from '@superone/shared/harness/harness-sandbox'
 import { harnessSupportsAdditionalDirs } from '../provider-state'
 import type { CreateSessionOptions } from '../runtime-types'
@@ -17,7 +18,7 @@ export function sessionCreationOptions(input: {
   const dirs = [...new Set(input.directories)]
   return {
     provider: input.provider,
-    ...(input.provider === 'acp' && input.acpAgentId ? { acpAgentId: input.acpAgentId } : {}),
+    ...(isAcpProtocolHarness(input.provider) && input.acpAgentId ? { acpAgentId: input.acpAgentId } : {}),
     permissionMode: input.permissionMode,
     ...(input.model ? { model: input.model } : {}),
     ...(input.effort ? { effort: input.effort } : {}),

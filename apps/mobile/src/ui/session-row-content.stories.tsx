@@ -47,7 +47,7 @@ export const ScheduledSendsNarrow = {
 
 const antigravity = {
   ...idle,
-  session: { ...idle.session, sessionId: 'agy', title: 'Antigravity session', provider: 'acp' as const, acpAgentId: 'antigravity' },
+  session: { ...idle.session, sessionId: 'agy', title: 'Antigravity session', provider: 'acp-antigravity' as const, acpAgentId: 'antigravity' },
 }
 
 /** The mark is a Chromium raster of the desktop color logo, including unread and automation chrome. */

@@ -502,7 +502,7 @@ describe('SessionManager', () => {
     })
 
     it('hydrates providerSessionId from DB when creating with a known session id', () => {
-      seedProvider('acp-base', 'acp')
+      seedProvider('acp-base', 'acp-grok')
       const loadSession = vi.fn(() => ({
         projectPath: '/p',
         providerId: 'acp-base',
@@ -576,7 +576,7 @@ describe('SessionManager', () => {
     })
 
     it('does not hydrate providerSessionId from a different provider row', () => {
-      seedProvider('acp-base', 'acp')
+      seedProvider('acp-base', 'acp-grok')
       const loadSession = vi.fn(() => ({
         projectPath: '/p',
         providerId: 'claude-base',

@@ -5,6 +5,8 @@ import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import { useChatStore, useActiveSession, useSessionScope, selectClaudeModels, selectCursorModels } from '@/stores/chat'
 import { resolveRingContextWindow, type ContextUsageCategory } from '@superone/shared/agent-types'
+import { isAcpProtocolHarness } from '@superone/shared/acp-brand'
+import { isClaudeHarness } from '@/harness-ui/claude/is-claude-harness'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { resolveCursorSelectedContextWindow } from '@superone/cursor/cursor-model-selection'
 import { buildCatalogModelIndex, lookupCatalogContextWindow } from '@superone/shared/platform-registry'
@@ -160,13 +162,13 @@ export function ContextUsage() {
 
   const activeProvider = sessionProvider ?? preferredProvider
   const isCursor = activeProvider === 'cursor'
-  const isAcp = activeProvider === 'acp'
+  const isAcp = isAcpProtocolHarness(activeProvider)
   // Remote Claude sessions often keep selectedModel empty. The model the agent
   // is running is session.model. The selector's default row is only a stand-in
   // when nothing has been named — a catalog hit on that default must not hide
   // a window the session already reported for a model the catalog does not list.
   const namedModelId = selectedModel || sessionModel || detailedUsage?.model || ''
-  const claude = activeProvider === 'claude'
+  const claude = isClaudeHarness(activeProvider)
   const claudeStandInModelId = claude && !namedModelId
     ? (availableModels.find((model) => model.isDefault)?.id || availableModels[0]?.id || '')
     : ''

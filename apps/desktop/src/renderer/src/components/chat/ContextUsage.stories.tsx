@@ -12,7 +12,7 @@ mockIpc('app', 'codexListSkills', async () => [])
 
 const PROJECT = '/storybook/context-usage'
 const SID = 'context-usage'
-const HARNESSES: HarnessId[] = ['claude', 'codex', 'opencode', 'cursor', 'dsh', 'acp']
+const HARNESSES: HarnessId[] = ['claude', 'codex', 'opencode', 'cursor', 'dsh', 'acp-grok']
 
 function ContextUsagePreview({
   tokens = 0,
@@ -31,8 +31,8 @@ function ContextUsagePreview({
     const { activeProject, projectSessions, initializedHarnesses } = useChatStore.getState()
     const session = {
       ...createDefaultPerSessionState(),
-      preferredProvider: 'acp' as const,
-      sessionProvider: 'acp' as const,
+      preferredProvider: 'acp-grok' as const,
+      sessionProvider: 'acp-grok' as const,
       acpAgentId: 'grok-build',
       acpModels: [{ id: 'grok-4.6', name: 'Grok 4.6', description: '', contextWindow: 500_000 }],
       acpModelsStatus: 'ready' as const,
@@ -67,7 +67,7 @@ function ContextUsagePreview({
     <div style={{ width: narrow ? 280 : 480, maxWidth: '100%' }} className="rounded-xl border border-border bg-background p-4">
       {switchHarness && (
         <div className="mb-4 flex flex-wrap gap-2">
-          {HARNESSES.filter((harness) => harness !== 'acp').map((harness) => (
+          {HARNESSES.filter((harness) => harness !== 'acp-grok').map((harness) => (
             <button
               key={harness}
               type="button"

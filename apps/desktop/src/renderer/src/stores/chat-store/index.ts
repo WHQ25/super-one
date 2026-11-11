@@ -32,6 +32,7 @@ import { clearUnseenCompleted } from './helpers/unseen-completed'
 import { PERMISSION_MODES } from '@/components/chat/PermissionModeList'
 import { extractPartialToolInput } from './event-reducer/partial-tool-input'
 import type { AccountInfo, AgentEvent, AgentInfo, AgentPrewarmHint, AgentStatus, AskUserQuestionRequest, ChatMessage, ChatMessageContext, ClaudeResources, CodexAgentMessageItem, CodexAuthMode, CodexAuthStatus, CodexCollaborationMode, CodexPermissionPreset, CodexPlanApprovalState, CodexReasoningEffort, CodexResources, CodexReviewTarget, CodexThreadItem, CodexUsageInfo, ContentBlock, ContextUsageInfo, EffortLevel, HarnessId, HarnessResourcesMap, ImageAttachment, ModelOption, PlanApprovalRequest, PermissionMode, PermissionRequest, QuestionAnnotations, RewindFilesResult, SandboxInfo, SandboxMode, SessionHistoryEntry, SessionInfo, SkillInfo, SlashCommandInfo, TodoItem, UserQuestion } from '@superone/shared/agent-types'
+import { acpAgentIdForHarness, isAcpProtocolHarness, resolveLegacyHarnessId } from '@superone/shared/acp-brand'
 import { stripMiniAppMarkup } from '@superone/shared/miniapp-prompt-tags'
 import { DEFAULT_PROVIDER } from './event-reducer/transformers'
 import { logWorktreeWrite, registerWorktreeSessionReader } from '@superone/shared/session-worktree-log'
@@ -251,7 +252,10 @@ export function invalidateDefaultCodexPreferencesCache(): Promise<void> {
 
 export function invalidateDefaultAcpPreferencesCache(): Promise<void> {
   _clearDefaultPrefsCache()
-  return _loadDefaultSessionPrefs().then(() => _reapplyAgentDefaultsToSessions('acp'))
+  return _loadDefaultSessionPrefs().then(() => {
+    _reapplyAgentDefaultsToSessions('acp-grok')
+    _reapplyAgentDefaultsToSessions('acp-antigravity')
+  })
 }
 
 export {
@@ -368,8 +372,11 @@ const harnessHandlers: HarnessHandlerMap = {
     connect: (opts) => window.app.connectCodex(opts?.force === true),
     apply: (s, r) => applyCodexResources(s, r, resolveSessionCodexSelection),
   },
-  acp: {
-    // Serve disk cache immediately; background refresh runs once per app open in main.
+  'acp-grok': {
+    connect: (opts) => connectAcpResources(opts),
+    apply: (s, r) => applyAcpResources(s, r),
+  },
+  'acp-antigravity': {
     connect: (opts) => connectAcpResources(opts),
     apply: (s, r) => applyAcpResources(s, r),
   },
@@ -431,7 +438,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
   isOpen: false,
   corner: 'br',
   cursorApiKeyPromptOpen: false,
-  harnessResources: { claude: null, codex: null, acp: null, opencode: null, cursor: null, dsh: null },
+  harnessResources: { claude: null, codex: null, 'acp-grok': null, 'acp-antigravity': null, opencode: null, cursor: null, dsh: null },
   initializedHarnesses: new Set<HarnessId>(),
   claudeResourcesLoading: false,
   disabledSkills: [],
@@ -449,9 +456,9 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       const resources = await handler.connect({ force: opts?.force })
       get().setHarnessResources(harness, resources)
       // ACP: re-pull once after main's per-launch model probe (cache-first, then refresh).
-      if (harness === 'acp') {
+      if (isAcpProtocolHarness(harness)) {
         void refreshAcpModels().then((fresh) => {
-          if (fresh) get().setHarnessResources('acp', fresh)
+          if (fresh) get().setHarnessResources(harness, fresh)
         })
       }
     } catch (err) {
@@ -933,7 +940,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       }
     } catch (err) { console.warn('[chat] loadStoredSession failed:', err) }
 
-    const restoredProvider: ChatProvider = (savedProvider as ChatProvider) ?? DEFAULT_PROVIDER
+    const restoredProvider: ChatProvider = resolveLegacyHarnessId(savedProvider, { acpAgentId: savedAcpAgentId }) ?? DEFAULT_PROVIDER
 
     const freshProject = getProject(get())
     const freshActiveSession = getActivePerSession(get())
@@ -941,7 +948,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       await _parkActiveSession(activeProject, freshProject._activeSessionId)
     }
 
-    const defaultPermissionMode = await _getDefaultPermissionMode(restoredProvider)
+    const defaultPermissionMode = await _getDefaultPermissionMode(restoredProvider, savedAcpAgentId)
     const baseSession: PerSessionState = {
       ...applyCachedCodexPermissionPreset(createDefaultPerSessionState()),
       permissionMode: defaultPermissionMode,
@@ -958,7 +965,9 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
           ..._mergePersistedSessionState(baseSession, savedState),
           preferredProvider: restoredProvider,
           sessionProvider: restoredProvider,
-          acpAgentId: restoredProvider === 'acp' ? savedAcpAgentId : null,
+          acpAgentId: isAcpProtocolHarness(restoredProvider)
+            ? (savedAcpAgentId ?? acpAgentIdForHarness(restoredProvider))
+            : null,
           openCodeAgentId: restoredProvider === 'opencode'
             ? savedOpenCodeAgentId
             : null,
@@ -1012,7 +1021,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
     } catch (err) {
       console.warn('[chat] activateSession failed:', err)
     }
-    if (restoredProvider === 'acp') {
+    if (isAcpProtocolHarness(restoredProvider)) {
       hydrateAcpCatalogForSession(set, get, activeProject, sessionId)
       triggerPrewarm(get(), activeProject)
     }

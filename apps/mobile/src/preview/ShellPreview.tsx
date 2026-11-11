@@ -184,7 +184,12 @@ const PREVIEW_CATALOGS: Partial<Record<HarnessId, PreviewCatalog>> = {
     ],
     selectedAgentId: null,
   },
-  acp: {
+  'acp-grok': {
+    modes: [{ id: 'ask', name: 'Ask', description: 'Answer without editing' }, { id: 'code', name: 'Code', description: 'Edit files directly' }],
+    selectedModeId: 'code',
+    modeLabel: 'Mode',
+  },
+  'acp-antigravity': {
     modes: [{ id: 'ask', name: 'Ask', description: 'Answer without editing' }, { id: 'code', name: 'Code', description: 'Edit files directly' }],
     selectedModeId: 'code',
     modeLabel: 'Mode',
@@ -222,7 +227,8 @@ const PREVIEW_GOAL: SessionGoal = {
 const PREVIEW_HARNESS_OPTIONS: RemoteHarnessOption[] = [
   { key: 'claude', provider: 'claude', acpAgentId: null, label: 'Claude Code' },
   { key: 'codex', provider: 'codex', acpAgentId: null, label: 'Codex' },
-  { key: 'acp:grok-build', provider: 'acp', acpAgentId: 'grok-build', label: 'Grok Build' },
+  { key: 'acp-grok', provider: 'acp-grok', acpAgentId: 'grok-build', label: 'Grok Build' },
+  { key: 'acp-antigravity', provider: 'acp-antigravity', acpAgentId: 'antigravity', label: 'Antigravity' },
   { key: 'opencode', provider: 'opencode', acpAgentId: null, label: 'OpenCode' },
   { key: 'cursor', provider: 'cursor', acpAgentId: null, label: 'Cursor' },
   { key: 'dsh', provider: 'dsh', acpAgentId: null, label: 'DeepSeek' },

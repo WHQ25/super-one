@@ -9,7 +9,7 @@ const option = (provider: SuggestionHarnessOption['provider'], acpAgentId: strin
   sessionCount: 0,
 })
 
-const GROK = option('acp', 'grok-build')
+const GROK = option('acp-grok', 'grok-build')
 const CODEX = option('codex')
 const ORDERED = [GROK, CODEX]
 
@@ -17,7 +17,7 @@ const base = {
   disableAutoApply: false,
   harnessUserChosen: false,
   fixedHarness: GROK,
-  suggestionHarness: { provider: 'acp' as const, acpAgentId: 'grok-build' },
+  suggestionHarness: { provider: 'acp-grok' as const, acpAgentId: 'grok-build' },
   orderedHarnesses: ORDERED,
   messageCount: 0,
   lastAppliedKey: null as string | null,

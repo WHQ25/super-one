@@ -27,7 +27,8 @@ import { useMosaicStore } from '@/components/mosaic/mosaic-store'
 import { useSessionPaneForeground } from '@/stores/chat-store/session-scope'
 import { isSelectedSessionScope } from '@/stores/chat-store/selectors'
 import type { AcpAgentDescriptor, SuggestionHarnessPreference } from '@superone/shared/agent-types'
-import { acpAgentDisplayName, isGrokAcpAgent, isOpenCodeAcpAgent } from '@superone/shared/acp-brand'
+import { acpAgentDisplayName, isAcpProtocolHarness, isAntigravityAcpAgent, isGrokAcpAgent, resolveLegacyHarnessId } from '@superone/shared/acp-brand'
+import { acpHarnessForAgent } from '@/stores/chat-store/harness/acp-slots'
 import {
   catalogIdForSessionProvider,
   isCatalogHarnessEnabled,
@@ -58,7 +59,7 @@ const tabTriggerLayoutClass =
   'relative z-10 inline-flex flex-none items-center justify-center gap-1 whitespace-nowrap rounded px-3 py-1.5 text-xs font-medium max-w-[9.5rem] transition-colors'
 
 function optionLabel(option: SuggestionHarnessOption): string {
-  if (option.provider === 'acp') {
+  if (isAcpProtocolHarness(option.provider)) {
     return option.label || acpAgentDisplayName(option.acpAgentId)
   }
   return option.label
@@ -79,7 +80,9 @@ export function ProviderSelector({
   const messageCount = useActiveSession((s) => s.messages.length)
   const harnessUserChosen = useActiveSession((s) => s.harnessUserChosen)
   const hostSessionOwned = useActiveSession((s) => s.hostSessionOwned)
-  const agents = useChatStore((s) => s.harnessResources.acp?.agents ?? EMPTY_ACP_AGENTS)
+  const grokAgents = useChatStore((s) => s.harnessResources['acp-grok']?.agents ?? EMPTY_ACP_AGENTS)
+  const antiAgents = useChatStore((s) => s.harnessResources['acp-antigravity']?.agents ?? EMPTY_ACP_AGENTS)
+  const agents = useMemo(() => [...grokAgents, ...antiAgents], [grokAgents, antiAgents])
   const setPreferredProvider = useChatStore((s) => s.setPreferredProvider)
   const setAcpAgentId = useChatStore((s) => s.setAcpAgentId)
   const initializeHarness = useChatStore((s) => s.initializeHarness)
@@ -103,8 +106,10 @@ export function ProviderSelector({
     b: SuggestionHarnessPreference | null | undefined,
   ): boolean => {
     if (a == null || b == null) return a == null && b == null
-    if (a.provider !== b.provider) return false
-    if (a.provider !== 'acp') return true
+    const left = resolveLegacyHarnessId(a.provider, { acpAgentId: a.acpAgentId })
+    const right = resolveLegacyHarnessId(b.provider, { acpAgentId: b.acpAgentId })
+    if (left !== right) return false
+    if (!isAcpProtocolHarness(left)) return true
     return (a.acpAgentId ?? null) === (b.acpAgentId ?? null)
   }, [])
 
@@ -141,7 +146,7 @@ export function ProviderSelector({
     if (manual) {
       const pref: SuggestionHarnessPreference = {
         provider: option.provider,
-        acpAgentId: option.provider === 'acp' ? option.acpAgentId : null,
+        acpAgentId: isAcpProtocolHarness(option.provider) ? option.acpAgentId : null,
       }
       // Fixed tab pins default (#1); menu pins secondary (#2). Never promote a
       // menu pick to default — that was reordering tabs away from settings.
@@ -150,13 +155,13 @@ export function ProviderSelector({
       else persistDefaultHarness(pref)
     }
     setAgentMenuOpen(false)
-    if (option.provider === 'acp') {
+    if (isAcpProtocolHarness(option.provider)) {
       if (manual && sessionScope) {
         await useChatStore.getState().switchToSession(sessionScope.projectPath, sessionScope.sessionId)
       }
       if (!isSelectedSessionScope(useChatStore.getState(), sessionScope)) return
       if (option.acpAgentId) setAcpAgentId(option.acpAgentId, { userChosen: manual })
-      if (preferredProvider !== 'acp') await selectProvider('acp', manual)
+      if (preferredProvider !== option.provider) await selectProvider(option.provider, manual)
       return
     }
     await selectProvider(option.provider, manual)
@@ -181,7 +186,7 @@ export function ProviderSelector({
   const normalizedAgents = useMemo(
     () => agents.map((agent) => {
       if (agent.installed) return agent
-      const catalogId = catalogIdForSessionProvider('acp', agent.id)
+      const catalogId = catalogIdForSessionProvider(acpHarnessForAgent(agent.id), agent.id)
       if (!catalogId) return agent
       const row = harnessCatalog?.find((r) => r.id === catalogId)
       if (row?.enabled && (row.state === 'ready' || row.state === 'needs_auth' || row.state === 'installing')) {
@@ -194,7 +199,10 @@ export function ProviderSelector({
 
   // OpenCode over ACP is offered as the OpenCode harness, not as an ACP agent.
   const visibleAcpAgents = useMemo(
-    () => normalizedAgents.filter((agent) => !isOpenCodeAcpAgent(agent.id) && isAgentAllowed('acp', agent.id)),
+    () => normalizedAgents.filter((agent) => (
+      (isGrokAcpAgent(agent.id) || isAntigravityAcpAgent(agent.id))
+      && isAgentAllowed(acpHarnessForAgent(agent.id), agent.id)
+    )),
     [normalizedAgents, isAgentAllowed],
   )
 
@@ -211,8 +219,8 @@ export function ProviderSelector({
       void selectProvider('codex')
       return
     }
-    if (preferredProvider === 'acp') {
-      const next = visibleAcpAgents[0]
+    if (isAcpProtocolHarness(preferredProvider)) {
+      const next = visibleAcpAgents.find((agent) => acpHarnessForAgent(agent.id) === preferredProvider) ?? visibleAcpAgents[0]
       if (next) {
         setAcpAgentId(next.id)
         return
@@ -231,16 +239,17 @@ export function ProviderSelector({
 
   const selectedAcpAgent = useMemo(() => {
     if (normalizedAgents.length === 0) return null
+    const onHarness = (agent: { id: string }) => !isAcpProtocolHarness(preferredProvider) || acpHarnessForAgent(agent.id) === preferredProvider
     return normalizedAgents.find((a) => a.id === acpAgentId)
-      ?? visibleAcpAgents.find((a) => isGrokAcpAgent(a.id))
+      ?? visibleAcpAgents.find(onHarness)
       ?? visibleAcpAgents[0]
-      ?? normalizedAgents.find((a) => isGrokAcpAgent(a.id))
+      ?? normalizedAgents.find(onHarness)
       ?? normalizedAgents[0]
       ?? null
-  }, [normalizedAgents, acpAgentId, visibleAcpAgents])
+  }, [normalizedAgents, acpAgentId, preferredProvider, visibleAcpAgents])
 
   useEffect(() => {
-    if (canAutoSelect && preferredProvider === 'acp' && !acpAgentId && selectedAcpAgent?.id) {
+    if (canAutoSelect && isAcpProtocolHarness(preferredProvider) && !acpAgentId && selectedAcpAgent?.id) {
       setAcpAgentId(selectedAcpAgent.id)
     }
   }, [preferredProvider, acpAgentId, selectedAcpAgent?.id, setAcpAgentId, canAutoSelect])
@@ -274,9 +283,7 @@ export function ProviderSelector({
 
   const effectiveAcpAgentId = selectedAcpAgent?.id ?? acpAgentId ?? DEFAULT_ACP_AGENT_ID
   const { PickerIcon } = HARNESS_CONTROLS[preferredProvider]
-  const activeKey = preferredProvider === 'acp'
-    ? suggestionHarnessKey('acp', effectiveAcpAgentId)
-    : preferredProvider
+  const activeKey = suggestionHarnessKey(preferredProvider, effectiveAcpAgentId)
   const fixedActive = fixedHarness != null && activeKey === fixedHarness.key
   const menuTabOption = useMemo(
     () => resolveMenuTabOption({
@@ -325,11 +332,9 @@ export function ProviderSelector({
     selectHarnessOption,
   ])
 
-  const iconKey = hasEnabledHarness
-    ? (preferredProvider === 'acp' ? `acp:${effectiveAcpAgentId}` : preferredProvider)
-    : 'none'
+  const iconKey = hasEnabledHarness ? preferredProvider : 'none'
   const tabsValue = fixedActive ? 'fixed' : 'menu'
-  const selectedAcpForHint = preferredProvider === 'acp'
+  const selectedAcpForHint = isAcpProtocolHarness(preferredProvider)
     ? (visibleAcpAgents.find((a) => a.id === effectiveAcpAgentId) ?? selectedAcpAgent)
     : null
 
@@ -432,9 +437,9 @@ export function ProviderSelector({
                       <DropdownMenuContent align="center" className="min-w-48">
                         {menuHarnesses.map((option, index) => {
                           const prev = index > 0 ? menuHarnesses[index - 1] : null
-                          const showSeparator = !!prev && (prev.provider === 'acp') !== (option.provider === 'acp')
+                          const showSeparator = !!prev && isAcpProtocolHarness(prev.provider) !== isAcpProtocolHarness(option.provider)
                           const selected = activeKey === option.key
-                          const agentMeta = option.provider === 'acp'
+                          const agentMeta = isAcpProtocolHarness(option.provider)
                             ? visibleAcpAgents.find((a) => a.id === option.acpAgentId)
                             : null
                           return (
@@ -462,7 +467,7 @@ export function ProviderSelector({
               </TabsList>
             </Tabs>
           ) : null}
-          {preferredProvider === 'acp' && selectedAcpForHint && !selectedAcpForHint.installed && (
+          {isAcpProtocolHarness(preferredProvider) && selectedAcpForHint && !selectedAcpForHint.installed && (
             <p className="max-w-xs text-center text-xs text-muted-foreground">
               {t('chat.suggestions.agentInstallHint')}
             </p>

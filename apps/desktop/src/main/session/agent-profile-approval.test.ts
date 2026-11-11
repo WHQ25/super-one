@@ -54,8 +54,8 @@ describe('durable Profile approval', () => {
   })
 
   it('preserves the reviewed legacy ACP identity across reopen and delayed approval writes', () => {
-    const legacy = createSessionProviderStore(state.db).profiles.create({ id: 'legacy-acp', harnessId: 'acp', name: 'Legacy ACP', config: { profile: { version: 1, identity: { name: 'Legacy ACP', description: 'Implement tasks.' }, runtime: { model: 'shared-model' } } } })
-    const selected: SessionAgentProfile = { ...profile, id: legacy.id, harnessId: 'acp', acpAgentId: 'agent-before', defaultConfig: { model: 'shared-model', permissionMode: 'default' } }
+    const legacy = createSessionProviderStore(state.db).profiles.create({ id: 'legacy-acp', harnessId: 'acp-grok', name: 'Legacy ACP', config: { profile: { version: 1, identity: { name: 'Legacy ACP', description: 'Implement tasks.' }, runtime: { model: 'shared-model' } } } })
+    const selected: SessionAgentProfile = { ...profile, id: legacy.id, harnessId: 'acp-grok', acpAgentId: 'agent-before', defaultConfig: { model: 'shared-model', permissionMode: 'default' } }
     const reviewed = selectedApprovalProvider(selected)
     approveAgentProfile(legacy, selected.defaultConfig, reviewed)
     const path = state.db.name

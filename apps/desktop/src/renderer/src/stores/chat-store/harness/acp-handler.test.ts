@@ -251,8 +251,8 @@ describe('sessionPatchFromAcpCatalog', () => {
       },
     }
     const existingSession = {
-      preferredProvider: 'acp',
-      sessionProvider: 'acp',
+      preferredProvider: 'acp-grok',
+      sessionProvider: 'acp-grok',
       acpAgentId: 'antigravity',
       acpModels: [{ id: 'gemini-3.1-pro-high', name: 'Gemini 3.1 Pro (High)', description: '' }],
       acpModelsStatus: 'ready',
@@ -263,7 +263,7 @@ describe('sessionPatchFromAcpCatalog', () => {
       selectedModel: 'gemini-3.1-pro-high',
     } as unknown as PerSessionState
     const store = {
-      harnessResources: { acp: null },
+      harnessResources: { 'acp-grok': null, 'acp-antigravity': null },
       projectSessions: {
         '/proj': {
           _activeSessionId: 'sid-1',

@@ -61,7 +61,7 @@ describe('buildSessionMenuItems fork capability gate', () => {
       .map((e) => e.id)
   }
 
-  it.each(['claude', 'acp'] as const)('offers both fork modes on %s', (provider) => {
+  it.each(['claude', 'acp-grok'] as const)('offers both fork modes on %s', (provider) => {
     expect(idsFor({ ...base, provider })).toEqual(
       expect.arrayContaining(['forkWorktree', 'forkLocal']),
     )

@@ -1,3 +1,4 @@
+import { isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import type { BackendCommand, Session, SessionBackend } from './types'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { codexAsyncAnswerContent, isCodexAsyncAnswer } from '@superone/shared/codex-async-question'
@@ -37,7 +38,8 @@ export async function dispatchBackendSteer(cmd: SteerCommand, host: {
       'dsh.steer_queued': ['dsh', 'DeepSeek'],
       'opencode.steer_queued': ['opencode', 'OpenCode'],
     }[cmd.kind]
-    if (host.harnessId !== harness || !host.streaming) {
+    const matches = harness === 'acp' ? isAcpProtocolHarness(host.harnessId) : host.harnessId === harness
+    if (!matches || !host.streaming) {
       throw new Error(`Queued message can only steer an active ${label} turn`)
     }
   }

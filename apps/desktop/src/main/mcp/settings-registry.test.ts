@@ -61,7 +61,11 @@ function makeSettings(overrides: Partial<AppSettings> = {}): AppSettings {
     agentPreference: {
       claude: { defaultModel: '', defaultEffort: '', defaultPermissionMode: '', defaultSandboxMode: '', brandHue: null, tokenOverrides: {}, disabledSkills: [], askUserQuestionPreviewFormat: 'markdown' },
       codex: { defaultModel: '', defaultReasoningEffort: '', defaultPermissionPreset: '', defaultFastMode: false, realtimeVoice: '', brandHue: null, tokenOverrides: {} },
-      acp: { enabled: false, brandHue: null, tokenOverrides: {}, selectedAgentId: null },
+      'acp-grok': { defaultModel: '', defaultEffort: '', defaultPermissionMode: '', brandHue: null, tokenOverrides: {} },
+      'acp-antigravity': { defaultModel: '', defaultEffort: '', defaultPermissionMode: '', brandHue: null, tokenOverrides: {} },
+      cursor: { defaultPermissionMode: '', defaultSandboxMode: '', brandHue: null, tokenOverrides: {} },
+      dsh: { defaultPermissionMode: '', brandHue: null, tokenOverrides: {} },
+      opencode: { defaultPermissionMode: '', brandHue: null, tokenOverrides: {} },
     },
     ...overrides,
   }
@@ -159,7 +163,7 @@ describe('settings registry validation', () => {
         newValue: null,
       },
     ])
-    expect(patch.suggestionHarness).toEqual({ provider: 'acp', acpAgentId: 'grok-build' })
+    expect(patch.suggestionHarness).toEqual({ provider: 'acp-grok', acpAgentId: 'grok-build' })
     expect(patch.secondaryHarness).toBeNull()
   })
 
@@ -279,17 +283,16 @@ describe('settings registry — new field groups', () => {
     expect(patch.agentPreference?.claude?.askUserQuestionPreviewFormat).toBe('html')
   })
 
-  it('applies experimental agent and ACP selection fields under general settings', () => {
-    const { patch, applied } = buildPatchFromValues({
+  it('keeps the experimental agents flag and drops the removed ACP selection key', () => {
+    const { patch, applied, rejected } = buildPatchFromValues({
       experimentalAgentsEnabled: true,
       acpSelectedAgentId: 'gemini-cli',
     }, makeSettings())
+    expect(rejected).toEqual([{ key: 'acpSelectedAgentId', reason: 'unknown settings key' }])
     expect(applied).toEqual([
       { key: 'experimentalAgentsEnabled', label: 'Enable Experimental Agents', oldValue: false, newValue: true },
-      { key: 'acpSelectedAgentId', label: 'Selected ACP Agent', oldValue: null, newValue: 'gemini-cli' },
     ])
     expect(patch.experimentalAgentsEnabled).toBe(true)
-    expect(patch.agentPreference?.acp).toMatchObject({ selectedAgentId: 'gemini-cli' })
   })
 
   it('lists experimental and ACP fields under the general domain', () => {
@@ -297,10 +300,10 @@ describe('settings registry — new field groups', () => {
     expect(domains.find((d) => d.domain === 'general')).toBeTruthy()
     // ACP owns a session-defaults domain now: every harness must be
     // configurable, which is what the per-harness split is for.
-    expect(domains.find((d) => d.domain === 'agent-acp')).toBeTruthy()
+    expect(domains.find((d) => d.domain === 'agent-acp-grok')).toBeTruthy()
+    expect(domains.find((d) => d.domain === 'agent-acp-antigravity')).toBeTruthy()
     const guide = buildDomainGuide('general', makeSettings({
       experimentalAgentsEnabled: true,
-      agentPreference: { ...makeSettings().agentPreference, acp: { enabled: true, brandHue: null, tokenOverrides: {}, selectedAgentId: 'gemini-cli' } },
     }))
     expect(guide?.fields).toMatchObject([
       { key: 'locale' },
@@ -309,7 +312,6 @@ describe('settings registry — new field groups', () => {
       { key: 'experimentalAgentProfilesEnabled', currentValue: false },
       { key: 'experimentalRemoteNodesEnabled', currentValue: false },
       { key: 'jevFastLoopEnabled', currentValue: false },
-      { key: 'acpSelectedAgentId', currentValue: 'gemini-cli' },
       { key: 'harnessOrder', currentValue: null },
       { key: 'defaultHarness', currentValue: null },
       { key: 'secondaryHarness', currentValue: null },

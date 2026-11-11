@@ -2,10 +2,10 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { ChevronDown } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
-import { isAntigravityAcpAgent } from '@superone/shared/acp-brand'
+import { isAcpProtocolHarness, isAntigravityAcpAgent } from '@superone/shared/acp-brand'
 import type { HarnessId, PermissionMode, SandboxMode } from '@superone/shared/agent-types'
 import { acpAgentDefaultsFor, acpAgentPreferencePatch } from '@superone/shared/harness/session-defaults'
-import { acpPermissionModesForAgent, HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
+import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import { cn } from '@superone/ui/lib/utils'
 import { useAppStore } from '@/stores/app'
@@ -54,10 +54,8 @@ export function SessionDefaultsSection({ harnessId, acpAgentId, autoEligibility 
   const [permOpen, setPermOpen] = useState(false)
   const [sandboxOpen, setSandboxOpen] = useState(false)
 
-  const isAcp = harnessId === 'acp'
-  const offeredModes = isAcp
-    ? [...acpPermissionModesForAgent(acpAgentId)]
-    : HARNESS_LAUNCH_OPTIONS[harnessId].permissionModes
+  const isAcp = isAcpProtocolHarness(harnessId)
+  const offeredModes = HARNESS_LAUNCH_OPTIONS[harnessId].permissionModes
   const offeredSandboxModes = HARNESS_LAUNCH_OPTIONS[harnessId].sandboxModes
 
   useEffect(() => {
@@ -66,7 +64,7 @@ export function SessionDefaultsSection({ harnessId, acpAgentId, autoEligibility 
     window.app.getAppSettings().then((settings) => {
       if (!mounted) return
       if (isAcp) {
-        const acpDefaults = acpAgentDefaultsFor(settings.agentPreference.acp, acpAgentId)
+        const acpDefaults = acpAgentDefaultsFor(settings.agentPreference, harnessId)
         setPermissionMode(acpDefaults.defaultPermissionMode)
         setSandboxMode('')
         return
@@ -88,10 +86,11 @@ export function SessionDefaultsSection({ harnessId, acpAgentId, autoEligibility 
     if (saving) return
     setSaving(true)
     try {
-      const preferencePatch = isAcp
-        ? acpAgentPreferencePatch(acpAgentId, { defaultPermissionMode: patch.defaultPermissionMode })
-        : patch
-      await window.app.saveAppSettings({ agentPreference: { [harnessId]: preferencePatch } })
+      await window.app.saveAppSettings({
+        agentPreference: isAcp
+          ? acpAgentPreferencePatch(harnessId, { defaultPermissionMode: patch.defaultPermissionMode })
+          : { [harnessId]: patch },
+      })
       if (patch.defaultPermissionMode !== undefined) setPermissionMode(patch.defaultPermissionMode)
       if (patch.defaultSandboxMode !== undefined) setSandboxMode(patch.defaultSandboxMode)
       invalidateDefaultPermissionModeCache()

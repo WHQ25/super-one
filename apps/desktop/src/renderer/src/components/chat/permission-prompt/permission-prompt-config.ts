@@ -1,3 +1,4 @@
+import { isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import type { ChatProvider } from '@/stores/chat'
 
 /**
@@ -47,7 +48,7 @@ export function getPermissionPromptConfig(
   // option ids — not yolo / `enable-always-approve`. Elicitation keeps its
   // own form layout (Allow / optional persist / Decline / Cancel).
   const offersSessionAlways =
-    (sessionProvider === 'codex' || sessionProvider === 'acp')
+    (sessionProvider === 'codex' || isAcpProtocolHarness(sessionProvider))
     && allowAlwaysAllow
     && !isElicitation
   return {

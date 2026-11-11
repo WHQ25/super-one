@@ -15,6 +15,7 @@ export function registerProfileApprovalScenarios(fixture: {
   providers: () => SessionProvider[]
   duringProjectResolution: (effect: () => void) => void
   setAcpAgent: (id: string | null, source: 'preference' | 'cache') => void
+  enableAntigravity?: (enabled: boolean) => void
 }) {
   function seed(approved = true) {
     const db = fixture.db()
@@ -193,69 +194,40 @@ export function registerProfileApprovalScenarios(fixture: {
     })
   })
 
-  describe('legacy ACP Profile approval identity', () => {
-    function legacy(agentId: string | null, source: 'preference' | 'cache' = 'preference') {
+  describe('ACP Profile approval identity', () => {
+    function acpRow(harnessId: 'acp-grok' | 'acp-antigravity' = 'acp-grok') {
       seed(false)
+      if (harnessId === 'acp-antigravity') fixture.enableAntigravity?.(true)
       const row = fixture.providers().find((p) => p.id === 'implementer')!
-      row.harnessId = 'acp'
-      fixture.setAcpAgent(agentId, source)
+      row.harnessId = harnessId
       const profile = listSessionAgentProfiles().find((p) => p.id === row.id)!
       expect((row.config as Record<string, unknown>).agentId).toBeUndefined()
       approveAgentProfile(row, profile.defaultConfig, selectedApprovalProvider(profile))
-      return profile
+      return { row, profile }
     }
-    it('requires normal approval when the selected agent changes after legacy review', async () => {
-      legacy('agent-before')
-      fixture.setAcpAgent('agent-after', 'preference')
-      const profile = listSessionAgentProfiles().find((p) => p.id === 'implementer')!
-      expect(profile.acpAgentId).toBe('agent-after')
-      expect(isAgentProfileApproved(profile)).toBe(false)
-      const { parent, host } = environment()
-      const pending = requestSessionAgents(parent.id, proposal(), host)
-      resolveSessionAgentsConfirm(permission(parent).requestId, 'decline')
-      expect(parsed(await pending).status).toBe('rejected')
-    })
-    it.each(['preference', 'cache'] as const)('rejects identity drift between request and start via %s selection', async (source) => {
-      const reviewed = legacy('agent-before', source)
-      expect(isAgentProfileApproved(reviewed)).toBe(true)
-      const { parent, host, createSession } = environment()
-      const launch = parsed(await requestSessionAgents(parent.id, proposal(), host)).launches[0]
+    it.each(['preference', 'cache'] as const)('keeps a concrete harness agent when %s selection changes', async (source) => {
+      const { profile } = acpRow()
+      expect(profile.acpAgentId).toBe('grok-build')
+      expect(isAgentProfileApproved(profile)).toBe(true)
       fixture.setAcpAgent('agent-after', source)
-      const result = parsed(await startSessionAgent(parent.id, { launchId: launch.launchId, task: 'Build' }, host))
-      expect(result.status).toBe('error')
-      expect(result.message).toMatch(/approval or configuration changed/)
-      expect(createSession).not.toHaveBeenCalled()
-    })
-    it('does not preapprove an unresolved legacy ACP identity', async () => {
-      const reviewed = legacy(null)
-      expect(reviewed.acpAgentId).toBeUndefined()
-      expect(isAgentProfileApproved(reviewed)).toBe(false)
-      const { parent, host } = environment()
-      const pending = requestSessionAgents(parent.id, proposal(), host)
-      resolveSessionAgentsConfirm(permission(parent).requestId, 'decline')
-      expect(parsed(await pending).status).toBe('rejected')
-    })
-    it('rejects a previously resolved identity that disappears before start', async () => {
-      legacy('agent-before', 'cache')
+      const next = listSessionAgentProfiles().find((p) => p.id === 'implementer')!
+      expect(next.acpAgentId).toBe('grok-build')
+      expect(isAgentProfileApproved(next)).toBe(true)
       const { parent, host, createSession } = environment()
       const launch = parsed(await requestSessionAgents(parent.id, proposal(), host)).launches[0]
-      fixture.setAcpAgent(null, 'cache')
-      expect(parsed(await startSessionAgent(parent.id, { launchId: launch.launchId, task: 'Build' }, host)).status).toBe('error')
-      expect(createSession).not.toHaveBeenCalled()
+      expect(parsed(await startSessionAgent(parent.id, { launchId: launch.launchId, task: 'Build' }, host)).status).toBe('started')
+      expect(createSession).toHaveBeenCalledWith(expect.objectContaining({ acpAgentId: 'grok-build' }))
     })
-    it('rechecks legacy identity after asynchronous project preparation', async () => {
-      legacy('agent-before')
-      const { parent, host, createSession } = environment()
-      const launch = parsed(await requestSessionAgents(parent.id, proposal(), host)).launches[0]
-      fixture.duringProjectResolution(() => fixture.setAcpAgent('agent-after', 'preference'))
-      await expect(startSessionAgent(parent.id, { launchId: launch.launchId, task: 'Build' }, host)).rejects.toThrow(/approval or configuration changed/)
-      expect(createSession).not.toHaveBeenCalled()
+    it('resolves the antigravity harness to its builtin agent', () => {
+      const { profile } = acpRow('acp-antigravity')
+      expect(profile.acpAgentId).toBe('antigravity')
+      expect(isAgentProfileApproved(profile)).toBe(true)
     })
     it('keeps a pinned Profile on its reviewed agent when the global selection changes', async () => {
-      legacy('agent-before')
-      const row = fixture.providers().find((p) => p.id === 'implementer')!
+      const { row } = acpRow()
       row.config = { ...(row.config as object), agentId: 'agent-pinned' }
       const profile = listSessionAgentProfiles().find((p) => p.id === row.id)!
+      expect(profile.acpAgentId).toBe('agent-pinned')
       approveAgentProfile(row, profile.defaultConfig, selectedApprovalProvider(profile))
       const { parent, host, createSession } = environment()
       const launch = parsed(await requestSessionAgents(parent.id, proposal(), host)).launches[0]

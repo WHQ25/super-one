@@ -9,7 +9,7 @@ vi.mock('../session/session-repo', () => ({ deriveHarnessId: (row: { provider: s
 beforeEach(() => {
   vi.clearAllMocks()
   m.list.mockResolvedValue([{ environmentId: 'desktop', connectionId: 'local', kind: 'local', label: 'Desktop', state: 'connected' }, { environmentId: 'node', connectionId: 'route', kind: 'remote', state: 'disconnected' }])
-  m.headers.mockReturnValue([{ id: 'same', provider: 'acp', acp_agent_id: 'grok-build' }])
+  m.headers.mockReturnValue([{ id: 'same', provider: 'acp-grok', acp_agent_id: 'grok-build' }])
   m.connect.mockResolvedValue({ environmentId: 'node' })
   m.get.mockResolvedValue({ projectId: 'p', title: 'Remote', harnessId: 'codex' })
   m.metadata.mockResolvedValue([])
@@ -23,7 +23,7 @@ describe('session link host resolution', () => {
     expect(m.list).not.toHaveBeenCalled()
   })
   it('does lightweight visible headers only and leaves offline routes unavailable', async () => {
-    expect(await sessionLinkMetadata([{ environmentId: 'desktop', sessionId: 'same' }, { environmentId: 'node', sessionId: 'same' }])).toMatchObject([{ status: 'ok', metadata: { harness: 'acp', acpAgentId: 'grok-build' } }, { status: 'unavailable' }])
+    expect(await sessionLinkMetadata([{ environmentId: 'desktop', sessionId: 'same' }, { environmentId: 'node', sessionId: 'same' }])).toMatchObject([{ status: 'ok', metadata: { harness: 'acp-grok', acpAgentId: 'grok-build' } }, { status: 'unavailable' }])
     expect(m.connect).not.toHaveBeenCalled(); expect(m.load).not.toHaveBeenCalled(); expect(m.get).not.toHaveBeenCalled()
   })
   it('resolves only the explicit environment and owning project, ignoring working directories', async () => {

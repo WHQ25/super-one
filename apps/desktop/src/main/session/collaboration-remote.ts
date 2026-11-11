@@ -5,6 +5,7 @@
  * `session.send` under the control lease this desktop holds.
  */
 
+import { baseSessionProviderId } from '@superone/shared/session-provider-definitions'
 import { isEnvironment } from '@superone/shared/environment/client-view'
 import type {
   RemoteAgentProfiles,
@@ -176,10 +177,7 @@ export async function listRemoteAgentEnvironments(localProfiles: SessionAgentPro
 
 /** A remote child runs on the target's base provider for its harness; local provider ids mean nothing there. */
 export function remoteProviderId(harnessId: string, acpAgentId?: string | null): string {
-  if (harnessId === 'acp') {
-    return acpAgentId && acpAgentId.toLowerCase().includes('antigravity') ? 'acp-antigravity' : 'acp-grok'
-  }
-  return `${harnessId}-base`
+  return baseSessionProviderId(harnessId, acpAgentId)
 }
 
 async function git(cwd: string, args: string[]): Promise<string | null> {

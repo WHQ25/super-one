@@ -1,6 +1,7 @@
 import { AGENT_PROFILE_VERSION, profileApprovalConfig, providerLaunchRuntime, readAgentProfile, type AgentProfileCatalog } from '@superone/shared/agent-profile'
 import type { AgentProfileManagementDetail, ManagedAgentProfile, SaveManagedAgentProfile } from '@superone/shared/agent-profile-management'
 import { parseManagedProfileDraft } from '@superone/shared/agent-profile-management'
+import { isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import { isDefaultSessionProvider } from '@superone/shared/session-provider-definitions'
 import { getDb } from '../database'
 import { approveAgentProfile, configFingerprint, isAgentProfileApproved, selectedApprovalProvider } from './agent-profile-approval'
@@ -75,7 +76,7 @@ export async function saveManagedAgentProfile(input: SaveManagedAgentProfile): P
   assertReviewed()
   const config = {
     ...(source.config as Record<string, unknown>), profile: spec,
-    ...(source.harnessId === 'acp' && reviewed.agent.acpAgentId ? { agentId: reviewed.agent.acpAgentId } : {}),
+    ...(isAcpProtocolHarness(source.harnessId) && reviewed.agent.acpAgentId ? { agentId: reviewed.agent.acpAgentId } : {}),
   }
   const commit = (write: () => SessionProvider) => getDb().transaction(() => {
     // Catalog validation may await a harness. Fence changes during that wait too.

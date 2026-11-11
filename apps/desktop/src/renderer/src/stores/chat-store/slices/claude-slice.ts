@@ -2,6 +2,7 @@ import { toast } from 'sonner'
 import type { StateCreator } from 'zustand'
 import { shallow } from 'zustand/shallow'
 import type { EffortLevel, ModelOption } from '@superone/shared/agent-types'
+import { isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import {
   findCursorEffortParam,
   normalizeEffortValue,
@@ -268,7 +269,7 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
     const { projectPath, sessionId, session } = resolveWriteScope(get(), target)
     if (!projectPath) return
     const provider = session.sessionProvider ?? session.preferredProvider
-    if (provider !== 'acp') return
+    if (!isAcpProtocolHarness(provider)) return
     if (session.selectedAcpModeId === modeId) return
     set((s) => commitPerSession(s, target, () => ({ selectedAcpModeId: modeId })))
     pushSettings(projectPath, sessionId, session, { mode: modeId })
@@ -278,7 +279,7 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
     const { projectPath, sessionId, session } = resolveWriteScope(get(), target)
     if (!projectPath) return false
     const provider = session.sessionProvider ?? session.preferredProvider
-    if (provider !== 'acp') return false
+    if (!isAcpProtocolHarness(provider)) return false
     const previous = session.selectedAcpContextWindow ?? null
     if (previous === contextWindow) return true
     set((s) => commitPerSession(s, target, () => ({ selectedAcpContextWindow: contextWindow })))
@@ -298,13 +299,13 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
     if (!activeProject) return
     const provider = session.sessionProvider ?? session.preferredProvider
 
-    if (provider === 'acp' || provider === 'opencode' || provider === 'cursor') {
+    if (isAcpProtocolHarness(provider) || provider === 'opencode' || provider === 'cursor') {
       const patch: Partial<import('../types').PerSessionState> = {
         selectedModel: model,
         modelUserChosen: true,
         contextWindow: null,
         // Re-selecting the same model must not drop a window the user already picked.
-        ...(provider === 'acp' && session.selectedModel !== model ? { selectedAcpContextWindow: null } : {}),
+        ...(isAcpProtocolHarness(provider) && session.selectedModel !== model ? { selectedAcpContextWindow: null } : {}),
       }
       if (provider === 'cursor') {
         const cursorModels = state.harnessResources.cursor?.models ?? []

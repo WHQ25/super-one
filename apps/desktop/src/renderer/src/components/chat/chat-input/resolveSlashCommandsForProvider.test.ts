@@ -25,7 +25,8 @@ const opencode: SlashCommandInfo[] = [
 const catalogs = {
   claude,
   codex,
-  acp,
+  'acp-grok': acp,
+  'acp-antigravity': acp,
   opencode,
   cursor: [] as SlashCommandInfo[],
   dsh: [] as SlashCommandInfo[],
@@ -41,7 +42,7 @@ describe('resolveSlashCommandsForProvider', () => {
   })
 
   it('returns ACP catalog only — never Claude skills/commands', () => {
-    const result = resolveSlashCommandsForProvider('acp', catalogs)
+    const result = resolveSlashCommandsForProvider('acp-grok', catalogs)
     expect(result).toBe(acp)
     expect(result.some((c) => c.isSkill)).toBe(false)
     expect(result.map((c) => c.name)).toEqual(['web', 'clear'])

@@ -128,7 +128,7 @@ describe('deferred tool rows on the phone', () => {
   it('renders session_list as the archive row, not a superone · session list shell', async () => {
     restore = installFakeHost({
       [detailRef('mcp__superone__session_list')]: JSON.stringify({
-        input: JSON.stringify({ harness: 'acp' }),
+        input: JSON.stringify({ harness: 'acp-grok' }),
         result: JSON.stringify({ sessions: [], count: 0 }),
       }),
     })
@@ -174,11 +174,11 @@ describe('deferred tool rows on the phone', () => {
           id: 'call-1',
           server: 'superone',
           tool: 'session_list',
-          arguments: { harness: 'acp' },
+          arguments: { harness: 'acp-grok' },
           status: 'completed',
           result: { content: [{ type: 'text', text: payload }], structuredContent: null },
         },
-        input: JSON.stringify({ harness: 'acp' }),
+        input: JSON.stringify({ harness: 'acp-grok' }),
         result: payload,
       }),
     })
@@ -200,7 +200,7 @@ describe('deferred tool rows on the phone', () => {
                 id: 'call-1',
                 server: 'superone',
                 tool: 'session_list',
-                arguments: { harness: 'acp' },
+                arguments: { harness: 'acp-grok' },
                 status: 'completed',
                 remoteDetail: detailRef('mcp__superone__session_list'),
               }],

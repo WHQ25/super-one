@@ -223,7 +223,7 @@ describe('Grok UX reducer slices', () => {
 
   it('keeps the current ACP model when the catalog drops it', () => {
     const session = createDefaultChatCoreSession()
-    session.sessionProvider = 'acp'
+    session.sessionProvider = 'acp-grok'
     session.acpAgentId = 'grok-build'
     session.selectedModel = 'grok-4'
     session.modelUserChosen = true

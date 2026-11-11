@@ -61,12 +61,12 @@ describe('permission sheet state', () => {
     create.agentProfileConfirm = {
       operation: 'create',
       profiles: [{
-        harnessId: 'acp', acpAgentId: 'grok-build', name: 'Reviewer', description: 'Reviews diffs.', instructions: 'Never edit files.\nCite line numbers.',
+        harnessId: 'acp-grok', acpAgentId: 'grok-build', name: 'Reviewer', description: 'Reviews diffs.', instructions: 'Never edit files.\nCite line numbers.',
         model: 'grok-4', modelName: 'Grok 4', effort: 'max', permissionMode: 'plan', options: { contextWindow: '1M' }, unsupported: ['mode'],
       }],
     }
     expect(permissionSheetPresentation(create).items).toEqual([
-      { title: 'Reviewer', subtitle: 'Others · Grok · Reviews diffs.' },
+      { title: 'Reviewer', subtitle: 'Grok · Grok · Reviews diffs.' },
       { title: 'Instructions', label: true, subtitle: 'Never edit files.\nCite line numbers.' },
       { title: 'Model', label: true, subtitle: 'Grok 4' },
       { title: 'Effort', label: true, subtitle: 'Max' },
@@ -193,7 +193,7 @@ describe('persistent Profile consent', () => {
   it('shows the actual legacy ACP agent identity covered by consent', () => {
     const profile = request('agent_profile_confirm')
     const config = { model: 'shared-model' }
-    profile.agentProfileConfirm = { operation: 'update', profiles: [{ harnessId: 'acp', acpAgentId: 'agent-before', name: 'Worker', description: 'Implement.' }], collaborationApproval: { baseConfig: config, config } }
+    profile.agentProfileConfirm = { operation: 'update', profiles: [{ harnessId: 'acp-grok', acpAgentId: 'agent-before', name: 'Worker', description: 'Implement.' }], collaborationApproval: { baseConfig: config, config } }
     expect(permissionSheetPresentation(profile).items).toContainEqual({ title: 'ACP agent', label: true, subtitle: 'agent-before' })
   })
   it('explains long-term Profile consent and shows effective inherited account and sandbox', () => {

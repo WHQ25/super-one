@@ -16,14 +16,14 @@ describe('resolveSessionIconFromBrandKey', () => {
    * harness id, so `dsh` fell through to null and rendered a generic robot.
    */
   it.each(HARNESS_IDS)('resolves the brand key emitted for harness %s', (harnessId) => {
-    const brandKey = resolveHarnessBrandKey(harnessId, harnessId === 'acp' ? 'grok-build' : null)
+    const brandKey = resolveHarnessBrandKey(harnessId, harnessId === 'acp-grok' ? 'grok-build' : null)
     expect(resolveSessionIconFromBrandKey(brandKey), `no icon for brandKey ${brandKey}`)
       .not.toBeNull()
   })
 
   it('agrees with the harnessId path for every harness', () => {
     for (const harnessId of HARNESS_IDS) {
-      const acpAgentId = harnessId === 'acp' ? 'grok-build' : null
+      const acpAgentId = harnessId === 'acp-grok' ? 'grok-build' : null
       expect(resolveSessionIconFromBrandKey(resolveHarnessBrandKey(harnessId, acpAgentId)))
         .toBe(resolveSessionIcon(harnessId, acpAgentId))
     }

@@ -61,7 +61,7 @@ function setAcp(agentId: string, catalog: { models?: ModelOption[]; extraModes?:
   useChatStore.setState((state) => ({
     harnessResources: {
       ...state.harnessResources,
-      acp: {
+      'acp-grok': {
         agents: [],
         selectedAgentId: agentId,
         configByAgentId: { [agentId]: { configOptions: [], extraModels: catalog.models ?? [], ...catalog } },
@@ -74,14 +74,14 @@ beforeEach(() => {
   picker = {}
   useSettingsStore.setState({ fetchProviderData: async () => {}, setProviderScope: () => {} } as never)
   useChatStore.setState((state) => ({
-    harnessResources: { ...state.harnessResources, claude: null, acp: null, opencode: null, cursor: null, dsh: null } as never,
+    harnessResources: { ...state.harnessResources, claude: null, 'acp-grok': null, 'acp-antigravity': null, opencode: null, cursor: null, dsh: null } as never,
   }))
 })
 
 describe('launch model controls', () => {
   it('remounts cleanly while one row switches through every harness', () => {
     const { rerender } = render(<Row harnessId="claude" />)
-    for (const harnessId of ['codex', 'acp', 'opencode', 'cursor', 'dsh', 'claude'] as const) {
+    for (const harnessId of ['codex', 'acp-grok', 'acp-antigravity', 'opencode', 'cursor', 'dsh', 'claude'] as const) {
       rerender(<Row harnessId={harnessId} />)
       expect(picker.selectedModelId).toBeNull()
     }
@@ -134,37 +134,42 @@ describe('remote launch model metadata', () => {
 
 describe('ACP launch model', () => {
   it('shows Grok legacy modes (no config id) as effort, ascending', () => {
-    setAcp('grok', { models: [model('grok-4')], extraModes: [model('high', { name: 'High Effort' }), model('low', { name: 'Low Effort' })] })
-    render(<Row harnessId="acp" />)
+    setAcp('grok-build', { models: [model('grok-4')], extraModes: [model('high', { name: 'High Effort' }), model('low', { name: 'Low Effort' })] })
+    render(<Row harnessId="acp-grok" />)
     expect(values('models')).toEqual(['grok-4'])
     expect(values('effortOptions')).toEqual(['low', 'high'])
   })
 
   it('shows a reasoning_effort config select as effort', () => {
-    setAcp('grok', {
+    setAcp('grok-build', {
       configOptions: [
         { id: 'model', name: 'Model', type: 'select', category: 'model', currentValue: 'grok-4', options: [{ value: 'grok-4', name: 'Grok 4' }] },
         { id: 'reasoning_effort', name: 'Effort', type: 'select', category: 'thought_level', currentValue: 'low', options: [{ value: 'high', name: 'High' }, { value: 'low', name: 'Low' }] },
       ],
     })
-    render(<Row harnessId="acp" />)
+    render(<Row harnessId="acp-grok" />)
     expect(values('effortOptions')).toEqual(['low', 'high'])
   })
 
-  it('keeps a real session mode out of effort', () => {
-    setAcp('opencode', {
-      configOptions: [
-        { id: 'model', name: 'Model', type: 'select', category: 'model', currentValue: 'a/b', options: [{ value: 'a/b', name: 'B' }] },
-        { id: 'mode', name: 'Mode', type: 'select', category: 'mode', currentValue: 'build', options: [{ value: 'build', name: 'Build' }, { value: 'plan', name: 'Plan' }] },
-      ],
-    })
-    render(<Row harnessId="acp" acpAgentId="opencode" />)
+  it('keeps OpenCode effort empty when the model declares none', () => {
+    useChatStore.setState((state) => ({
+      harnessResources: {
+        ...state.harnessResources,
+        opencode: { models: [model('openai/gpt')], agents: [], commands: [] },
+      },
+    }))
+    render(<Row harnessId="opencode" model="openai/gpt" />)
     expect(picker.effortOptions).toEqual([])
   })
 
-  it('groups the ACP OpenCode agent’s provider/model ids by provider', () => {
-    setAcp('opencode', { models: [model('anthropic/opus'), model('openai/gpt')] })
-    render(<Row harnessId="acp" acpAgentId="opencode" model="openai/gpt" />)
+  it('groups OpenCode provider/model ids by provider', () => {
+    useChatStore.setState((state) => ({
+      harnessResources: {
+        ...state.harnessResources,
+        opencode: { models: [model('anthropic/opus'), model('openai/gpt')], agents: [], commands: [] },
+      },
+    }))
+    render(<Row harnessId="opencode" model="openai/gpt" />)
     expect(picker.models).toBeUndefined()
     expect((picker.modelGroups as Array<{ id: string }>).map((group) => group.id)).toEqual(['anthropic', 'openai'])
   })

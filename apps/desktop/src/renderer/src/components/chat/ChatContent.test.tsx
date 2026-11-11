@@ -1129,10 +1129,10 @@ describe('ChatContent ACP queue', () => {
     hoisted.steerQueuedMessage.mockClear()
     hoisted.sessionState.messages = [{ id: 'm1' }]
     hoisted.sessionState.queuedMessages = [{
-      id: 'u2', role: 'user', status: 'complete', content: [{ type: 'text', text: 'steer this' }], createdAt: '', providerId: 'acp',
+      id: 'u2', role: 'user', status: 'complete', content: [{ type: 'text', text: 'steer this' }], createdAt: '', providerId: 'acp-grok',
     }]
-    hoisted.sessionState.sessionProvider = 'acp'
-    hoisted.sessionState.preferredProvider = 'acp'
+    hoisted.sessionState.sessionProvider = 'acp-grok'
+    hoisted.sessionState.preferredProvider = 'acp-grok'
     hoisted.sessionState.acpAgentId = 'grok-build'
     hoisted.sessionState.status = 'streaming'
 

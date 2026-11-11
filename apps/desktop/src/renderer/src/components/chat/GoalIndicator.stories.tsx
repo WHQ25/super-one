@@ -6,7 +6,7 @@ import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilit
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { GoalIndicator } from './GoalIndicator'
 
-const GROK = HARNESS_CAPABILITIES.acp.goal!
+const GROK = HARNESS_CAPABILITIES['acp-grok'].goal!
 const CLAUDE = HARNESS_CAPABILITIES.claude.goal!
 
 interface HarnessProps {

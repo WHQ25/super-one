@@ -1,7 +1,7 @@
 import { getDb } from './database'
 import { getProjectId } from './recent-folders'
 import { serializeMessageContent, rowToChatMessage, deriveHarnessId, deriveAcpAgentId, storedSelectedModel, harnessIdFromProviderId } from './session/session-repo'
-import { recordSessionStarted, recordMessageCounts, type HarnessKind } from './usage-stats-service'
+import { activityHarnessKind, recordSessionStarted, recordMessageCounts } from './usage-stats-service'
 import type { ChatMessage, EffortLevel, HarnessId, SessionHistoryEntry, PinnedSessionEntry, SettledSessionPage, SessionRemoteControllerInfo } from '@superone/shared/agent-types'
 import { parseTagsJson } from '@superone/shared/session-tags'
 import { sessionTitleLikePatterns } from '@superone/shared/session-title-search'
@@ -249,7 +249,7 @@ export function createAutomationSession(
   sessionId: string,
   title: string,
   automationId: string,
-  provider: 'claude' | 'codex' | 'acp' | 'opencode' = 'claude',
+  provider: HarnessId | 'acp' = 'claude',
 ): string {
   const projectId = getProjectId(folderPath)
   if (!projectId) throw new Error(`Project not found for path: ${folderPath}`)
@@ -336,14 +336,7 @@ export function saveSessionState(
   const priorCountedIds = new Set(priorCounted.map((r) => r.id))
 
   const provider = data.provider ?? 'claude'
-  const harness: HarnessKind | null =
-    provider === 'codex'
-    || provider === 'claude'
-    || provider === 'cursor'
-    || provider === 'opencode'
-    || provider === 'acp'
-      ? provider as HarnessKind
-      : null
+  const harness = activityHarnessKind(provider)
 
   const newlyCountedMessages: Array<{ role: string; createdAt: string }> = []
   let countSessionStarted = false

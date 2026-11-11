@@ -181,7 +181,7 @@ function resetStore() {
     activeProject: null,
     remoteSessions: {},
     _previousFocusedSession: null,
-    harnessResources: { claude: null, codex: null, acp: null, opencode: null, cursor: null },
+    harnessResources: { claude: null, codex: null, 'acp-grok': null, 'acp-antigravity': null, opencode: null, cursor: null },
     initializedHarnesses: new Set(),
   })
 }
@@ -2186,7 +2186,7 @@ describe('switchSession Case A (in _sessions)', () => {
   it('switches pointer and resumes runtime for non-running target session', async () => {
     setupProject('/test')
     useChatStore.setState({
-      harnessResources: { claude: { models: [{ id: "claude-sonnet-4-6", name: "Sonnet", supportedEffortLevels: ["low", "medium", "high"] }] as never[], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }, codex: null, acp: null },
+      harnessResources: { claude: { models: [{ id: "claude-sonnet-4-6", name: "Sonnet", supportedEffortLevels: ["low", "medium", "high"] }] as never[], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }, codex: null, 'acp-grok': null, 'acp-antigravity': null },
     })
     const proj = useChatStore.getState().projectSessions['/test']
 
@@ -2395,7 +2395,7 @@ describe('switchSession does NOT prewarm (regression: prewarm only on typing)', 
   it('does NOT prewarm a Claude session restored from DB (Case B) — every old session click would otherwise leak a warmup process', async () => {
     setupProject('/test')
     useChatStore.setState({
-      harnessResources: { claude: { models: [{ id: 'claude-sonnet-4-6', name: 'Sonnet', supportedEffortLevels: ['low', 'medium', 'high'] }] as never[], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }, codex: null, acp: null },
+      harnessResources: { claude: { models: [{ id: 'claude-sonnet-4-6', name: 'Sonnet', supportedEffortLevels: ['low', 'medium', 'high'] }] as never[], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }, codex: null, 'acp-grok': null, 'acp-antigravity': null },
     })
     mockLoadStoredSession.mockResolvedValue({
       messages: [{ id: 'm', role: 'assistant', content: [], status: 'complete', createdAt: '', providerId: 'claude' }],
@@ -2413,7 +2413,7 @@ describe('switchSession Case B (from DB)', () => {
   it('loads session from DB and sets active', async () => {
     setupProject('/test')
     useChatStore.setState({
-      harnessResources: { claude: { models: [{ id: "claude-sonnet-4-6", name: "Sonnet", supportedEffortLevels: ["low", "medium", "high"] }] as never[], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }, codex: null, acp: null },
+      harnessResources: { claude: { models: [{ id: "claude-sonnet-4-6", name: "Sonnet", supportedEffortLevels: ["low", "medium", "high"] }] as never[], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }, codex: null, 'acp-grok': null, 'acp-antigravity': null },
     })
 
     mockLoadStoredSession.mockResolvedValue({
@@ -2444,7 +2444,7 @@ describe('switchSession Case B (from DB)', () => {
       harnessResources: { claude: { models: [
         { id: 'claude-sonnet-4-6', name: 'Sonnet', supportedEffortLevels: ['low', 'medium', 'high'] },
         { id: 'claude-opus-4-8', name: 'Opus', supportedEffortLevels: ['low', 'medium', 'high'] },
-      ] as never[], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }, codex: null, acp: null },
+      ] as never[], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }, codex: null, 'acp-grok': null, 'acp-antigravity': null },
     })
     mockLoadStoredSession.mockResolvedValue({
       messages: [{ id: 'db-msg-opus', role: 'assistant', content: [], status: 'complete', createdAt: '', providerId: 'claude' }],
@@ -3158,7 +3158,7 @@ describe('awaitingAssistantReply state machine', () => {
   it('sets awaitingAssistantReply true when sending a new Claude turn', async () => {
     setupProject('/test')
     useChatStore.setState({
-      harnessResources: { claude: { models: [{ id: "claude-sonnet-4-6", name: "Sonnet", supportedEffortLevels: ["low", "medium", "high"] }] as never[], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }, codex: null, acp: null },
+      harnessResources: { claude: { models: [{ id: "claude-sonnet-4-6", name: "Sonnet", supportedEffortLevels: ["low", "medium", "high"] }] as never[], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }, codex: null, 'acp-grok': null, 'acp-antigravity': null },
     })
 
     await useChatStore.getState().sendMessage('hello')
@@ -3233,7 +3233,7 @@ describe('awaitingAssistantReply state machine', () => {
   it('clears awaitingAssistantReply when sendMessage throws', async () => {
     setupProject('/test')
     useChatStore.setState({
-      harnessResources: { claude: { models: [{ id: "claude-sonnet-4-6", name: "Sonnet", supportedEffortLevels: ["low", "medium", "high"] }] as never[], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }, codex: null, acp: null },
+      harnessResources: { claude: { models: [{ id: "claude-sonnet-4-6", name: "Sonnet", supportedEffortLevels: ["low", "medium", "high"] }] as never[], account: {}, slashCommands: [], skills: [], commands: [], agents: [], outputStyles: [] }, codex: null, 'acp-grok': null, 'acp-antigravity': null },
     })
     mockWindowEnvironment.sendSessionMessage.mockRejectedValueOnce(new Error('send failed'))
 
@@ -5235,7 +5235,7 @@ describe('cyclePermissionMode', () => {
 
   it('cycles ACP modes Ask → Plan → Auto → Always Approve → Ask', async () => {
     setupProject('/test')
-    patchDraftSession('/test', { sessionProvider: 'acp', permissionMode: 'default' })
+    patchDraftSession('/test', { sessionProvider: 'acp-grok', permissionMode: 'default' })
 
     await useChatStore.getState().cyclePermissionMode()
     expect(getActiveDraftSession('/test')!.permissionMode).toBe('plan')
@@ -5719,13 +5719,13 @@ describe('remote session interaction routing', () => {
     type: "session_control_changed",
     projectPath: '/test',
     sessionId: 'mobile-grok-1',
-    harnessId: 'acp',
+    harnessId: 'acp-grok',
     acpAgentId: 'grok-build',
     lease: sessionControlLeaseFixture('mobile-grok-1')
 } as AgentEvent)
     const after = useChatStore.getState().projectSessions['/test']
-    expect(after._sessions['mobile-grok-1'].sessionProvider).toBe('acp')
-    expect(after._sessions['mobile-grok-1'].preferredProvider).toBe('acp')
+    expect(after._sessions['mobile-grok-1'].sessionProvider).toBe('acp-grok')
+    expect(after._sessions['mobile-grok-1'].preferredProvider).toBe('acp-grok')
     expect(after._sessions['mobile-grok-1'].acpAgentId).toBe('grok-build')
   })
 
@@ -5735,7 +5735,7 @@ describe('remote session interaction routing', () => {
     type: "session_control_changed",
     projectPath: '/test',
     sessionId: 'mobile-grok-2',
-    harnessId: 'acp',
+    harnessId: 'acp-grok',
     acpAgentId: 'grok-build',
     lease: sessionControlLeaseFixture('mobile-grok-2')
 } as AgentEvent)
@@ -5743,7 +5743,7 @@ describe('remote session interaction routing', () => {
     type: "session_control_changed",
     projectPath: '/test',
     sessionId: 'mobile-grok-2',
-    harnessId: 'acp',
+    harnessId: 'acp-grok',
     lease: sessionControlLeaseFixture('mobile-grok-2')
 } as AgentEvent)
     const after = useChatStore.getState().projectSessions['/test']
@@ -5995,7 +5995,7 @@ describe('interaction response routing', () => {
           _sessions: {
             a: {
               ...createDefaultPerSessionState(),
-              sessionProvider: 'acp',
+              sessionProvider: 'acp-grok',
               status: 'streaming' as const,
               hostSessionOwned: true,
               permissionMode: 'plan',

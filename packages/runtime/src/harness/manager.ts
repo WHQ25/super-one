@@ -197,7 +197,7 @@ export class HarnessManager {
   /**
    * Advertised harness ids that are currently runnable (enabled + ready).
    * Used by environment.descriptor capabilities.harnessIds.
-   * Grok is `acp`. Antigravity is `acp-antigravity`.
+   * Grok is `acp-grok`. Antigravity is `acp-antigravity`. Legacy `acp` is not advertised.
    */
   readySessionHarnessIds(): AdvertisedHarnessId[] {
     return listAdvertisedHarnessIds(this.list())
@@ -206,7 +206,7 @@ export class HarnessManager {
   /**
    * Whether a session.create harnessId is allowed on this node.
    * Legacy wire id `acp` is runnable when either ACP catalog row is ready,
-   * because both Grok and Antigravity persist sessions as `acp`.
+   * so an old client can still create. New sessions persist `acp-grok` or `acp-antigravity`.
    * `acp-grok` and `acp-antigravity` check that row only.
    */
   isSessionHarnessRunnable(sessionHarnessId: string): boolean {

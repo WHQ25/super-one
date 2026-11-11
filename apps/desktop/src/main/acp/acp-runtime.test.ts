@@ -187,7 +187,7 @@ function makeEchoAgentStream(
 describe('createAcpRuntime (in-process agent)', () => {
   it.each([
     ['grok-build', false, false],
-    ['custom', true, true],
+    ['opencode', true, true],
   ])('advertises local delegation capabilities for %s', async (agentId, terminal, hostFs) => {
     const captured: CapturedRequests = { newSession: null, prompts: [] }
     const runtime = await createAcpRuntime({
@@ -670,7 +670,7 @@ describe('createAcpRuntime (in-process agent)', () => {
     const loadCapture: CapturedLoad = { loads: [], news: 0 }
     const captured: CapturedRequests = { newSession: null, prompts: [], notifications: [] }
     const runtime = await createAcpRuntime({
-      launch: { agentId: 'custom', command: 'unused', defaultCwd: '/tmp/proj' },
+      launch: { agentId: 'opencode', command: 'unused', defaultCwd: '/tmp/proj' },
       permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
       resumeSessionId: 'prior-custom-session',
       streamFactory: async () => makeEchoAgentStream(captured, { loadSession: true }, loadCapture),
@@ -696,7 +696,7 @@ describe('createAcpRuntime (in-process agent)', () => {
   it('does not advertise folder trust for a non-grok agent that has a handler', async () => {
     const captured: CapturedRequests = { newSession: null, prompts: [], notifications: [] }
     const runtime = await createAcpRuntime({
-      launch: { agentId: 'custom', command: 'unused', defaultCwd: '/tmp/proj' },
+      launch: { agentId: 'opencode', command: 'unused', defaultCwd: '/tmp/proj' },
       permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
       onFolderTrust: async () => 'trust',
       streamFactory: async () => makeEchoAgentStream(captured),
@@ -1410,7 +1410,7 @@ describe('createAcpRuntime (in-process agent)', () => {
     const events: AgentEvent[] = []
     const runtime = await createAcpRuntime({
       launch: {
-        agentId: 'custom',
+        agentId: 'opencode',
         command: 'unused',
         defaultCwd: '/tmp/proj',
       },
@@ -2018,7 +2018,7 @@ describe('ACP host integration (MCP + system prompt)', () => {
 
   it.each([
     { agentId: 'grok-build', resumeSessionId: 'existing', appended: true },
-    { agentId: 'custom', resumeSessionId: undefined, appended: true },
+    { agentId: 'opencode', resumeSessionId: undefined, appended: true },
     { agentId: 'grok-build', resumeSessionId: undefined, appended: false },
   ])('preserves host instructions for $agentId resume=$resumeSessionId', async ({ agentId, resumeSessionId, appended }) => {
     const captured: CapturedRequests = { newSession: null, prompts: [], notifications: [] }
@@ -2052,7 +2052,7 @@ describe('ACP host integration (MCP + system prompt)', () => {
     prompts?: string[]
   }) {
     const runtime = await createAcpRuntime({
-      launch: { agentId: 'custom', command: 'unused', defaultCwd: '/tmp/proj' },
+      launch: { agentId: 'opencode', command: 'unused', defaultCwd: '/tmp/proj' },
       permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
       superoneSessionId: opts.superoneSessionId,
       additionalRoots: opts.additionalRoots,
@@ -2141,7 +2141,7 @@ describe('ACP host integration (MCP + system prompt)', () => {
     agentApp.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable))
     const texts: string[] = []
     const runtime = await createAcpRuntime({
-      launch: { agentId: 'custom', command: 'unused', defaultCwd: '/tmp/proj' },
+      launch: { agentId: 'opencode', command: 'unused', defaultCwd: '/tmp/proj' },
       permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
       resumeSessionId: 'prior-session',
       onSessionEvent: (event) => {
@@ -2252,7 +2252,7 @@ describe('ACP host integration (MCP + system prompt)', () => {
     ['trust', 'grok-build', ['superone', 'user-gh'], ['superone', 'user-gh', 'repo-local']],
     ['reject', 'grok-build', ['superone', 'user-gh'], null],
     ['omit', 'grok-build', ['superone', 'user-gh'], null],
-    ['trust', 'custom', ['superone', 'user-gh', 'repo-local'], null],
+    ['trust', 'opencode', ['superone', 'user-gh', 'repo-local'], null],
   ] as const)('gates project MCP for %s on %s', async (trust, agentId, initialNames, updatedNames) => {
     const { listMcpConfigs } = await import('../mcp-config-service')
     vi.mocked(listMcpConfigs).mockImplementation(() => [

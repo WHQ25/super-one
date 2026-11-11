@@ -43,7 +43,7 @@ export function createHarnessRunner(harnessId: HarnessId, opts?: { delayMs?: num
       })
     case 'acp-grok':
     case 'acp-antigravity':
-      return createSimulatedAcpTurnRunner({ delayMs })
+      return createSimulatedAcpTurnRunner({ delayMs, chunks: [`[${harnessId}] `, 'done'] })
     case 'opencode':
       return createSimulatedOpenCodeTurnRunner({ delayMs })
     case 'cursor':

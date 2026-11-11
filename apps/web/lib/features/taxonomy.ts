@@ -23,7 +23,8 @@ export const HARNESS_ORDER: HarnessId[] = [
   "cursor",
   "opencode",
   "dsh",
-  "acp",
+  "acp-grok",
+  "acp-antigravity",
 ]
 
 export type SubFeature = {
@@ -697,7 +698,7 @@ export const featureTaxonomy: FeatureCategory[] = [
       {
         slug: "acp-agents",
         category: "engines",
-        harnesses: ["acp"],
+        harnesses: ["acp-grok", "acp-antigravity"],
         title: { en: "ACP agents", zh: "ACP agent" },
         blurb: {
           en: "Any agent that speaks the Agent Client Protocol, wired first for Grok.",
@@ -708,7 +709,7 @@ export const featureTaxonomy: FeatureCategory[] = [
             slug: "acp-protocol",
             feature: "acp-agents",
             category: "engines",
-            harnesses: ["acp"],
+            harnesses: ["acp-grok", "acp-antigravity"],
             title: { en: "The protocol, not the vendor", zh: "接协议,不接厂商" },
             blurb: {
               en: "Session lifecycle, models, slash commands and worktree cwd map onto the shared contract.",
@@ -719,7 +720,7 @@ export const featureTaxonomy: FeatureCategory[] = [
             slug: "acp-tools",
             feature: "acp-agents",
             category: "engines",
-            harnesses: ["acp"],
+            harnesses: ["acp-grok", "acp-antigravity"],
             title: { en: "Tool mapping", zh: "工具映射" },
             blurb: {
               en: "Grok's tool calls render into the same chat UI every other harness uses.",
@@ -730,7 +731,7 @@ export const featureTaxonomy: FeatureCategory[] = [
             slug: "acp-plan",
             feature: "acp-agents",
             category: "engines",
-            harnesses: ["acp"],
+            harnesses: ["acp-grok", "acp-antigravity"],
             title: { en: "Plan mode & permissions", zh: "计划模式与权限" },
             blurb: {
               en: "Enter plan mode from the host UI; exit_plan_mode opens the same line-comment review.",
@@ -741,7 +742,7 @@ export const featureTaxonomy: FeatureCategory[] = [
             slug: "acp-superone-tools",
             feature: "acp-agents",
             category: "engines",
-            harnesses: ["acp"],
+            harnesses: ["acp-grok", "acp-antigravity"],
             title: { en: "Inherits the SuperOne tools", zh: "继承 SuperOne 工具面" },
             blurb: {
               en: "The host attaches SuperOne's MCP server to every ACP session, browser and devices included.",

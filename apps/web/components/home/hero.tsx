@@ -27,7 +27,8 @@ const HARNESS_CYCLE: Harness[] = [
   "cursor",
   "opencode",
   "dsh",
-  "acp",
+  "acp-grok",
+  "acp-antigravity",
 ]
 const HARNESS_CYCLE_MS = 2800
 

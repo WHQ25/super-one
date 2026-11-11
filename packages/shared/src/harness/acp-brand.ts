@@ -56,13 +56,25 @@ export function isOpenCodeAcpAgent(agentId: string | null | undefined): boolean 
   return agentId.toLowerCase().includes('opencode')
 }
 
-/** UI brand key: `acp-grok`, `acp-opencode`, or `acp` / harness id for non-ACP. */
+/**
+ * UI brand key. Session identity and the chip mark are different: an unknown
+ * legacy `acp` row launches as Grok, but a custom ACP agent keeps its own mark
+ * (`acp-<agent>`), and a bare `acp` stays the generic ACP mark.
+ */
 export function resolveHarnessBrandKey(
   harnessId: string | null | undefined,
   acpAgentId?: string | null,
 ): string {
   if (!harnessId) return 'claude'
-  return resolveLegacyHarnessId(harnessId, { acpAgentId }) ?? harnessId
+  if (harnessId !== 'acp') return harnessId
+  if (isGrokAcpAgent(acpAgentId)) return 'acp-grok'
+  if (isAntigravityAcpAgent(acpAgentId)) return 'acp-antigravity'
+  if (isOpenCodeAcpAgent(acpAgentId)) return 'acp-opencode'
+  if (acpAgentId?.trim()) {
+    const short = acpAgentId.trim().toLowerCase().replace(/-build$/, '').replace(/[^a-z0-9]+/g, '-')
+    return short ? `acp-${short}` : 'acp'
+  }
+  return 'acp'
 }
 
 /** Short human name for collab titles (`Name - Role`). */

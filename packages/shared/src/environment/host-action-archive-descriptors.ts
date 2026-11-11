@@ -185,12 +185,12 @@ export const HOST_ACTION_ARCHIVE_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
           "enum": [
             "claude",
             "codex",
+            "acp",
             "acp-grok",
             "acp-antigravity",
-            "acp",
             "opencode"
           ],
-          "description": "Filter by harness."
+          "description": "Filter by harness. `acp` matches both ACP harnesses."
         },
         "includeHidden": {
           "type": "boolean",
@@ -282,9 +282,9 @@ export const HOST_ACTION_ARCHIVE_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
           "enum": [
             "claude",
             "codex",
+            "acp",
             "acp-grok",
             "acp-antigravity",
-            "acp",
             "opencode"
           ]
         },

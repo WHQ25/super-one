@@ -9,7 +9,9 @@ function isHarnessId(id: string): id is HarnessId {
 }
 
 function isAdvertisedHarnessId(id: string): id is AdvertisedHarnessId {
-  return isHarnessId(id) || id === 'acp-antigravity'
+  // `acp` left HarnessId when Grok and Antigravity split, but old nodes still
+  // advertise it. AdvertisedHarnessId keeps that wire value.
+  return isHarnessId(id) || id === 'acp'
 }
 
 /**

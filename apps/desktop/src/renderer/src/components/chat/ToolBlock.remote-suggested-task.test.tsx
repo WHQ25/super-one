@@ -1,7 +1,8 @@
 /** @vitest-environment jsdom */
 
 import { fireEvent, render } from '@testing-library/react'
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { resetEnvironmentListCache } from '@/lib/environment-list'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import type { SessionRef } from '@superone/shared/environment/refs'
 import { projectWindowMessage } from '@superone/runtime/stream/delivery/window-projection'
@@ -11,6 +12,8 @@ import { DetailScopeProvider } from '@superone/chat-view/detail-scope'
 import { PortableMessage } from '@superone/chat-view/PortableMessage'
 import { SessionScopeProvider } from '@/stores/chat-store/session-scope'
 import { ToolBlock } from './ToolBlock'
+
+afterEach(() => { resetEnvironmentListCache() })
 
 const taskId = '0b9f3c1e-2a4d-4e5f-8a6b-7c8d9e0f1a2b'
 const params = { title: 'Fix the flaky login test', tldr: 'Times out on CI.', prompt: 'Restore the mock clock after each login test.\nVerify repeated runs pass.' }
@@ -24,6 +27,8 @@ describe('remote suggested-task prompt', () => {
       sessionSource: async () => 'remote-node',
       sessionLinkMetadata: async (refs: SessionRef[]) => refs.map(ref => ({ status: 'unavailable', ref })),
       callSession: async () => ({ profiles: [], initial: { agentId: 'claude-base', settings: {} } }),
+      listItems: async () => [],
+      onStatusEvent: () => () => {},
     } })
     const source: ChatMessage = {
       id: 'turn', role: 'assistant', status: 'complete', createdAt: '', providerId: 'claude', content: [

@@ -40,7 +40,7 @@ describe('HarnessManager', () => {
       command: '/opt/grok',
     })
 
-    expect(manager.readySessionHarnessIds()).toEqual(['codex', 'acp'])
+    expect(manager.readySessionHarnessIds()).toEqual(['codex', 'acp-grok'])
     expect(manager.isSessionHarnessRunnable('codex')).toBe(true)
     expect(manager.isSessionHarnessRunnable('acp')).toBe(true)
     expect(manager.isSessionHarnessRunnable('acp-grok')).toBe(true)
@@ -168,7 +168,7 @@ describe('HarnessManager', () => {
         'codex',
         'opencode',
         'cursor',
-        'acp',
+        'acp-grok',
         'acp-antigravity',
         'dsh',
       ])

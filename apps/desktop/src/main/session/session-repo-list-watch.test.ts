@@ -11,10 +11,14 @@ vi.mock('../recent-folders', () => ({ getProjectId: getProjectIdMock }))
 vi.mock('../logger', () => ({
   default: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), debug: vi.fn() },
 }))
-vi.mock('../usage-stats-service', () => ({
-  recordSessionStarted: vi.fn(),
-  recordMessageCounts: vi.fn(),
-}))
+vi.mock('../usage-stats-service', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../usage-stats-service')>()
+  return {
+    ...actual,
+    recordSessionStarted: vi.fn(),
+    recordMessageCounts: vi.fn(),
+  }
+})
 
 import { forkSessionRecord, insertSessionRecord, saveSessionStateBySid } from './session-repo'
 import { watchSessionList } from '../session-list-watch'

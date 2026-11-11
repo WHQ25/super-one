@@ -85,6 +85,9 @@ function profilesToTargets(raw: unknown): AgentMentionTarget[] {
       name: typeof profile.name === 'string' ? profile.name : profile.id,
       isBase:
         profile.id === `${profile.harnessId}-base`
+        // The stored provider row is still `acp-base` after the harness id
+        // became `acp-grok` or `acp-antigravity`.
+        || profile.id === 'acp-base'
         || isAcpProtocolHarness(profile.id),
       acpAgentId: typeof profile.acpAgentId === 'string' ? profile.acpAgentId : null,
     }]

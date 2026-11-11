@@ -1,10 +1,10 @@
 // Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
 
-exports[`createSession settings per harness > acp · local · chosen 1`] = `
+exports[`createSession settings per harness > acp-grok · local · chosen 1`] = `
 [
   "local",
   {
-    "harnessId": "acp",
+    "harnessId": "acp-grok",
     "projectId": "local-project",
     "selections": {
       "acpAgentId": "grok-build",
@@ -23,11 +23,11 @@ exports[`createSession settings per harness > acp · local · chosen 1`] = `
 ]
 `;
 
-exports[`createSession settings per harness > acp · local · defaults 1`] = `
+exports[`createSession settings per harness > acp-grok · local · defaults 1`] = `
 [
   "local",
   {
-    "harnessId": "acp",
+    "harnessId": "acp-grok",
     "projectId": "local-project",
     "selections": {
       "sessionId": "sid-1",
@@ -40,11 +40,11 @@ exports[`createSession settings per harness > acp · local · defaults 1`] = `
 ]
 `;
 
-exports[`createSession settings per harness > acp · node · chosen 1`] = `
+exports[`createSession settings per harness > acp-grok · node · chosen 1`] = `
 [
   "env-1",
   {
-    "harnessId": "acp",
+    "harnessId": "acp-grok",
     "projectId": "node-project",
     "settings": {
       "apiProviderId": "acct-1",
@@ -57,11 +57,11 @@ exports[`createSession settings per harness > acp · node · chosen 1`] = `
 ]
 `;
 
-exports[`createSession settings per harness > acp · node · defaults 1`] = `
+exports[`createSession settings per harness > acp-grok · node · defaults 1`] = `
 [
   "env-1",
   {
-    "harnessId": "acp",
+    "harnessId": "acp-grok",
     "projectId": "node-project",
     "settings": {
       "permissionMode": "default",
@@ -429,7 +429,7 @@ exports[`createSession settings per harness > opencode · node · defaults 1`] =
 ]
 `;
 
-exports[`sessionTurnRequest payload per harness > acp · local · chosen · first 1`] = `
+exports[`sessionTurnRequest payload per harness > acp-grok · local · chosen · first 1`] = `
 {
   "additionalDirectories": [
     "/extra",
@@ -440,14 +440,14 @@ exports[`sessionTurnRequest payload per harness > acp · local · chosen · firs
   "model": "picked-model",
   "permissionMode": "acceptEdits",
   "projectPath": "/proj",
-  "providerId": "acp",
+  "providerId": "acp-grok",
   "sandboxMode": "on",
   "sessionId": "sid-1",
   "text": "hi",
 }
 `;
 
-exports[`sessionTurnRequest payload per harness > acp · local · chosen · next 1`] = `
+exports[`sessionTurnRequest payload per harness > acp-grok · local · chosen · next 1`] = `
 {
   "additionalDirectories": [
     "/extra",
@@ -457,13 +457,13 @@ exports[`sessionTurnRequest payload per harness > acp · local · chosen · next
   "effort": "high",
   "model": "picked-model",
   "projectPath": "/proj",
-  "providerId": "acp",
+  "providerId": "acp-grok",
   "sessionId": "sid-1",
   "text": "hi",
 }
 `;
 
-exports[`sessionTurnRequest payload per harness > acp · local · chosen · queued 1`] = `
+exports[`sessionTurnRequest payload per harness > acp-grok · local · chosen · queued 1`] = `
 {
   "additionalDirectories": [
     "/extra",
@@ -474,13 +474,13 @@ exports[`sessionTurnRequest payload per harness > acp · local · chosen · queu
   "model": "picked-model",
   "priority": "next",
   "projectPath": "/proj",
-  "providerId": "acp",
+  "providerId": "acp-grok",
   "sessionId": "sid-1",
   "text": "hi",
 }
 `;
 
-exports[`sessionTurnRequest payload per harness > acp · local · chosen · queued form 1`] = `
+exports[`sessionTurnRequest payload per harness > acp-grok · local · chosen · queued form 1`] = `
 {
   "additionalDirectories": [
     "/extra",
@@ -497,13 +497,13 @@ exports[`sessionTurnRequest payload per harness > acp · local · chosen · queu
   "model": "picked-model",
   "priority": "next",
   "projectPath": "/proj",
-  "providerId": "acp",
+  "providerId": "acp-grok",
   "sessionId": "sid-1",
   "text": "hi",
 }
 `;
 
-exports[`sessionTurnRequest payload per harness > acp · local · chosen · review 1`] = `
+exports[`sessionTurnRequest payload per harness > acp-grok · local · chosen · review 1`] = `
 {
   "additionalDirectories": [
     "/extra",
@@ -513,7 +513,7 @@ exports[`sessionTurnRequest payload per harness > acp · local · chosen · revi
   "effort": "high",
   "model": "picked-model",
   "projectPath": "/proj",
-  "providerId": "acp",
+  "providerId": "acp-grok",
   "reviewTarget": {
     "type": "uncommittedChanges",
   },
@@ -522,43 +522,43 @@ exports[`sessionTurnRequest payload per harness > acp · local · chosen · revi
 }
 `;
 
-exports[`sessionTurnRequest payload per harness > acp · local · defaults · first 1`] = `
+exports[`sessionTurnRequest payload per harness > acp-grok · local · defaults · first 1`] = `
 {
   "additionalDirectories": [],
   "clientMessageId": "u1",
   "permissionMode": "default",
   "projectPath": "/proj",
-  "providerId": "acp",
+  "providerId": "acp-grok",
   "sandboxMode": "auto",
   "sessionId": "sid-1",
   "text": "hi",
 }
 `;
 
-exports[`sessionTurnRequest payload per harness > acp · local · defaults · next 1`] = `
+exports[`sessionTurnRequest payload per harness > acp-grok · local · defaults · next 1`] = `
 {
   "additionalDirectories": [],
   "clientMessageId": "u1",
   "projectPath": "/proj",
-  "providerId": "acp",
+  "providerId": "acp-grok",
   "sessionId": "sid-1",
   "text": "hi",
 }
 `;
 
-exports[`sessionTurnRequest payload per harness > acp · local · defaults · queued 1`] = `
+exports[`sessionTurnRequest payload per harness > acp-grok · local · defaults · queued 1`] = `
 {
   "additionalDirectories": [],
   "clientMessageId": "u1",
   "priority": "next",
   "projectPath": "/proj",
-  "providerId": "acp",
+  "providerId": "acp-grok",
   "sessionId": "sid-1",
   "text": "hi",
 }
 `;
 
-exports[`sessionTurnRequest payload per harness > acp · local · defaults · queued form 1`] = `
+exports[`sessionTurnRequest payload per harness > acp-grok · local · defaults · queued form 1`] = `
 {
   "additionalDirectories": [],
   "clientMessageId": "u1",
@@ -570,18 +570,18 @@ exports[`sessionTurnRequest payload per harness > acp · local · defaults · qu
   },
   "priority": "next",
   "projectPath": "/proj",
-  "providerId": "acp",
+  "providerId": "acp-grok",
   "sessionId": "sid-1",
   "text": "hi",
 }
 `;
 
-exports[`sessionTurnRequest payload per harness > acp · local · defaults · review 1`] = `
+exports[`sessionTurnRequest payload per harness > acp-grok · local · defaults · review 1`] = `
 {
   "additionalDirectories": [],
   "clientMessageId": "u1",
   "projectPath": "/proj",
-  "providerId": "acp",
+  "providerId": "acp-grok",
   "reviewTarget": {
     "type": "uncommittedChanges",
   },
@@ -590,7 +590,7 @@ exports[`sessionTurnRequest payload per harness > acp · local · defaults · re
 }
 `;
 
-exports[`sessionTurnRequest payload per harness > acp · node · chosen · first 1`] = `
+exports[`sessionTurnRequest payload per harness > acp-grok · node · chosen · first 1`] = `
 {
   "additionalDirectories": [
     "/extra",
@@ -601,14 +601,14 @@ exports[`sessionTurnRequest payload per harness > acp · node · chosen · first
   "model": "picked-model",
   "permissionMode": "acceptEdits",
   "projectPath": "remote:env-1:/work/app",
-  "providerId": "acp",
+  "providerId": "acp-grok",
   "sandboxMode": "on",
   "sessionId": "sid-1",
   "text": "hi",
 }
 `;
 
-exports[`sessionTurnRequest payload per harness > acp · node · chosen · next 1`] = `
+exports[`sessionTurnRequest payload per harness > acp-grok · node · chosen · next 1`] = `
 {
   "additionalDirectories": [
     "/extra",
@@ -618,13 +618,13 @@ exports[`sessionTurnRequest payload per harness > acp · node · chosen · next 
   "effort": "high",
   "model": "picked-model",
   "projectPath": "remote:env-1:/work/app",
-  "providerId": "acp",
+  "providerId": "acp-grok",
   "sessionId": "sid-1",
   "text": "hi",
 }
 `;
 
-exports[`sessionTurnRequest payload per harness > acp · node · chosen · queued 1`] = `
+exports[`sessionTurnRequest payload per harness > acp-grok · node · chosen · queued 1`] = `
 {
   "additionalDirectories": [
     "/extra",
@@ -635,13 +635,13 @@ exports[`sessionTurnRequest payload per harness > acp · node · chosen · queue
   "model": "picked-model",
   "priority": "next",
   "projectPath": "remote:env-1:/work/app",
-  "providerId": "acp",
+  "providerId": "acp-grok",
   "sessionId": "sid-1",
   "text": "hi",
 }
 `;
 
-exports[`sessionTurnRequest payload per harness > acp · node · chosen · queued form 1`] = `
+exports[`sessionTurnRequest payload per harness > acp-grok · node · chosen · queued form 1`] = `
 {
   "additionalDirectories": [
     "/extra",
@@ -652,13 +652,13 @@ exports[`sessionTurnRequest payload per harness > acp · node · chosen · queue
   "model": "picked-model",
   "priority": "next",
   "projectPath": "remote:env-1:/work/app",
-  "providerId": "acp",
+  "providerId": "acp-grok",
   "sessionId": "sid-1",
   "text": "hi",
 }
 `;
 
-exports[`sessionTurnRequest payload per harness > acp · node · chosen · review 1`] = `
+exports[`sessionTurnRequest payload per harness > acp-grok · node · chosen · review 1`] = `
 {
   "additionalDirectories": [
     "/extra",
@@ -668,7 +668,7 @@ exports[`sessionTurnRequest payload per harness > acp · node · chosen · revie
   "effort": "high",
   "model": "picked-model",
   "projectPath": "remote:env-1:/work/app",
-  "providerId": "acp",
+  "providerId": "acp-grok",
   "reviewTarget": {
     "type": "uncommittedChanges",
   },
@@ -677,60 +677,60 @@ exports[`sessionTurnRequest payload per harness > acp · node · chosen · revie
 }
 `;
 
-exports[`sessionTurnRequest payload per harness > acp · node · defaults · first 1`] = `
+exports[`sessionTurnRequest payload per harness > acp-grok · node · defaults · first 1`] = `
 {
   "additionalDirectories": [],
   "clientMessageId": "u1",
   "permissionMode": "default",
   "projectPath": "remote:env-1:/work/app",
-  "providerId": "acp",
+  "providerId": "acp-grok",
   "sandboxMode": "auto",
   "sessionId": "sid-1",
   "text": "hi",
 }
 `;
 
-exports[`sessionTurnRequest payload per harness > acp · node · defaults · next 1`] = `
+exports[`sessionTurnRequest payload per harness > acp-grok · node · defaults · next 1`] = `
 {
   "additionalDirectories": [],
   "clientMessageId": "u1",
   "projectPath": "remote:env-1:/work/app",
-  "providerId": "acp",
+  "providerId": "acp-grok",
   "sessionId": "sid-1",
   "text": "hi",
 }
 `;
 
-exports[`sessionTurnRequest payload per harness > acp · node · defaults · queued 1`] = `
+exports[`sessionTurnRequest payload per harness > acp-grok · node · defaults · queued 1`] = `
 {
   "additionalDirectories": [],
   "clientMessageId": "u1",
   "priority": "next",
   "projectPath": "remote:env-1:/work/app",
-  "providerId": "acp",
+  "providerId": "acp-grok",
   "sessionId": "sid-1",
   "text": "hi",
 }
 `;
 
-exports[`sessionTurnRequest payload per harness > acp · node · defaults · queued form 1`] = `
+exports[`sessionTurnRequest payload per harness > acp-grok · node · defaults · queued form 1`] = `
 {
   "additionalDirectories": [],
   "clientMessageId": "u1",
   "priority": "next",
   "projectPath": "remote:env-1:/work/app",
-  "providerId": "acp",
+  "providerId": "acp-grok",
   "sessionId": "sid-1",
   "text": "hi",
 }
 `;
 
-exports[`sessionTurnRequest payload per harness > acp · node · defaults · review 1`] = `
+exports[`sessionTurnRequest payload per harness > acp-grok · node · defaults · review 1`] = `
 {
   "additionalDirectories": [],
   "clientMessageId": "u1",
   "projectPath": "remote:env-1:/work/app",
-  "providerId": "acp",
+  "providerId": "acp-grok",
   "reviewTarget": {
     "type": "uncommittedChanges",
   },

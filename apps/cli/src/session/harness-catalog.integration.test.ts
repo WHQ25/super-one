@@ -191,7 +191,7 @@ describe('Harness catalog (Stage 1)', () => {
     const desc = (await client.rpc('environment.descriptor')) as {
       capabilities: { harnessIds: string[] }
     }
-    expect(desc.capabilities.harnessIds).toEqual(['codex', 'acp'])
+    expect(desc.capabilities.harnessIds).toEqual(['codex', 'acp-grok'])
     client.close()
   })
 
@@ -275,7 +275,7 @@ describe('Harness catalog (Stage 1)', () => {
     client.close()
   })
 
-  it('normalizes acp-grok create to wire acp and completes a simulated turn', async () => {
+  it('keeps acp-grok on create and completes a simulated turn', async () => {
     const rt = await boot({ simulatedHarness: true })
     const client = await connectAuthedRpc(rt)
     const projectDir = mkdtempSync(join(tmpdir(), 'hm-acp-'))
@@ -286,9 +286,9 @@ describe('Harness catalog (Stage 1)', () => {
     const session = (await client.rpc('session.create', {
       projectId: project.projectId,
       harnessId: 'acp-grok',
-      providerId: 'acp',
+      providerId: 'acp-grok',
     })) as { sessionId: string; harnessId: string }
-    expect(session.harnessId).toBe('acp')
+    expect(session.harnessId).toBe('acp-grok')
 
     const lease = (await client.rpc('session.acquireControl', {
       sessionId: session.sessionId,
@@ -314,7 +314,7 @@ describe('Harness catalog (Stage 1)', () => {
       await new Promise((r) => setTimeout(r, 25))
     }
     expect(status).toBe('idle')
-    expect(transcriptText).toContain('[acp]')
+    expect(transcriptText).toContain('[acp-grok]')
     client.close()
   })
 

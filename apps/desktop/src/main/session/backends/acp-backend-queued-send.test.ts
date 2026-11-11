@@ -225,7 +225,7 @@ describe('AcpBackend queued send / interject', () => {
         })
       },
     }))
-    const backend = new AcpBackend()
+    const backend = new AcpBackend('acp-antigravity')
     const events: AgentEvent[] = []
     backend.onEvent((event) => events.push(event))
     await backend.start(acpStartOpts({ agentId: 'antigravity' }))
@@ -404,7 +404,7 @@ describe('AcpBackend queued send / interject', () => {
     setAcpRuntimeFactory(async () => manualTurnRuntime(calls, {
       interject: async (text) => { interjects.push(text) },
     }))
-    const backend = new AcpBackend()
+    const backend = new AcpBackend('acp-antigravity')
     const events: AgentEvent[] = []
     backend.onEvent((e) => events.push(e))
     await backend.start(acpStartOpts({ agentId: 'antigravity' }))

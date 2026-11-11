@@ -12,5 +12,7 @@ export function shouldInterceptGrokRecap(
   acpAgentId: string | null | undefined,
 ): boolean {
   const resolved = resolveLegacyHarnessId(provider, { acpAgentId })
-  return resolved === 'acp-grok' && (acpAgentId == null || isGrokAcpAgent(acpAgentId))
+  // Same gate as the desktop slash strategy: only a known Grok agent.
+  // A legacy `acp` row with no agent id is not Grok.
+  return resolved === 'acp-grok' && isGrokAcpAgent(acpAgentId)
 }

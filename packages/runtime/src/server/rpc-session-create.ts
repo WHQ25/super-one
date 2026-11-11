@@ -16,8 +16,8 @@ export async function handleSessionCreate(payload: unknown, ctx: CreateRpcContex
   if (denied) return denied
   const p = asRecord(payload)
   const rawHarnessId = typeof p.harnessId === 'string' ? p.harnessId : 'claude'
-  // Stage 1 wire contract: normalize catalog id acp-grok → session wire acp
-  // before persistence so the turn runner never sees an unknown harness id.
+  // Concrete catalog ids pass through. A legacy `acp` payload resolves to
+  // acp-grok or acp-antigravity before persistence.
   const harnessId = normalizeSessionHarnessId(rawHarnessId)
   if (!harnessId) {
     return {

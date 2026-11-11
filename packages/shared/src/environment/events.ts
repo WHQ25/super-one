@@ -19,7 +19,8 @@ export type EnvironmentAggregateType =
 
 /**
  * Environment-log event: the set of enabled, ready harnesses changed.
- * Payload is `{ harnessIds: string[] }` (session wire ids).
+ * Payload is `{ harnessIds: string[] }`: session wire ids, plus
+ * `acp-antigravity` when that catalog row is ready. Legacy `acp` is Grok only.
  */
 export const HARNESS_CATALOG_CHANGED = 'harness_catalog_changed'
 

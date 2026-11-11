@@ -356,11 +356,11 @@ describe('RemoteSessionFeed', () => {
       event: (envelope) => events.push(envelope.aggregateId),
       harnessCatalog: (ids) => catalogs.push([...ids]),
     })
-    source.push({ ...envelope(8, 'env', 'environment', 'harness_catalog_changed'), payload: { harnessIds: ['claude', 'acp'] } })
+    source.push({ ...envelope(8, 'env', 'environment', 'harness_catalog_changed'), payload: { harnessIds: ['claude', 'acp', 'acp-antigravity'] } })
     source.push({ ...envelope(9, 'env', 'environment', 'provider_changed'), payload: { harnessId: 'claude' } })
     source.push({ ...envelope(10, 'env', 'environment', 'harness_catalog_changed'), payload: { harnessIds: 'acp' } })
     await flush()
-    expect(catalogs).toEqual([['claude', 'acp']])
+    expect(catalogs).toEqual([['claude', 'acp', 'acp-antigravity']])
     expect(events).toEqual([])
     feed.close()
   })

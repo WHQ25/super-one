@@ -16,6 +16,7 @@ describe('harness advertisement refresh', () => {
 
   it('reads harness ids only from a catalog event payload', () => {
     expect(harnessIdsFromCatalogEvent({ harnessIds: ['acp', 'claude'] })).toEqual(['acp', 'claude'])
+    expect(harnessIdsFromCatalogEvent({ harnessIds: ['acp', 'acp-antigravity'] })).toEqual(['acp', 'acp-antigravity'])
     expect(harnessIdsFromCatalogEvent({ harnessIds: ['acp', 'not-a-harness'] })).toEqual(['acp'])
     expect(harnessIdsFromCatalogEvent({ harnessIds: [] })).toEqual([])
     expect(harnessIdsFromCatalogEvent({ harnessIds: ['acp', 1] })).toBeNull()

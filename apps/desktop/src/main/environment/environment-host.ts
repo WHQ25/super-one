@@ -1,4 +1,4 @@
-import type { HarnessId } from '@superone/shared/agent-types'
+import type { AdvertisedHarnessId } from '@superone/shared/environment'
 import type { DetailTarget, DetailUpdate } from '@superone/shared/environment/detail'
 import type { RpcStreamHandlers } from '@superone/shared/environment/rpc-connection'
 import type { SessionStreamFrame, TopicSubscribeInput } from '@superone/shared/environment'
@@ -3787,7 +3787,7 @@ export class EnvironmentHost {
    * probe) calls it with the payload. The set recorded at connect does not
    * notify. The same ids notify once.
    */
-  noteAdvertisedHarnesses(connectionId: string, harnessIds: readonly HarnessId[]): void {
+  noteAdvertisedHarnesses(connectionId: string, harnessIds: readonly AdvertisedHarnessId[]): void {
     const current = this.lastStatus.get(connectionId)
     if (current?.state !== 'connected') return
     const next = harnessAdvertisementKey(harnessIds)

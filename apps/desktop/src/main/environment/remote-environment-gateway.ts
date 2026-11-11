@@ -1,5 +1,4 @@
-import type { HarnessId } from '@superone/shared/agent-types'
-import { ARTIFACT_RPC_METHODS, harnessAdvertisementKey, servesMethod, TRANSCRIPT_FOLD_METHOD } from '@superone/shared/environment'
+import { ARTIFACT_RPC_METHODS, harnessAdvertisementKey, servesMethod, TRANSCRIPT_FOLD_METHOD, type AdvertisedHarnessId } from '@superone/shared/environment'
 import { AsyncCoalescer } from '@superone/runtime/async-coalescer'
 import { randomUUID } from 'node:crypto'
 import { TEMP_FILE_RPC_METHODS, type TempFileStatResult, type TempFileReadRequest, type TempFileReadResult } from '@superone/shared/environment'
@@ -276,7 +275,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
    * Patch advertised harness ids from a `harness_catalog_changed` event.
    * No descriptor is dialed. A missing connection snapshot waits for the next `getDescriptor`.
    */
-  replaceAdvertisedHarnesses(harnessIds: readonly HarnessId[]): void {
+  replaceAdvertisedHarnesses(harnessIds: readonly AdvertisedHarnessId[]): void {
     const current = this.cachedDescriptor
     if (!current) return
     const next = [...harnessIds]

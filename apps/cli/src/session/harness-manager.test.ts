@@ -4,10 +4,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { openNodeDatabase } from '../db/database'
 import { HarnessManager } from './harness-manager'
-import {
-  NODE_HARNESS_DEFINITIONS,
-  NODE_HARNESS_IDS,
-} from '@superone/shared/environment/harness-installation'
+import { NODE_HARNESS_IDS } from '@superone/shared/environment/harness-installation'
 
 const dirs: string[] = []
 
@@ -47,7 +44,22 @@ describe('HarnessManager', () => {
     expect(manager.isSessionHarnessRunnable('codex')).toBe(true)
     expect(manager.isSessionHarnessRunnable('acp')).toBe(true)
     expect(manager.isSessionHarnessRunnable('acp-grok')).toBe(true)
+    expect(manager.isSessionHarnessRunnable('acp-antigravity')).toBe(false)
     expect(manager.isSessionHarnessRunnable('claude')).toBe(false)
+    db.close()
+  })
+
+  it('advertises Antigravity without marking legacy acp Grok ready', () => {
+    const { manager, db } = bootManager()
+    manager.update('acp-antigravity', {
+      enabled: true,
+      state: 'ready',
+      command: '/opt/agy',
+    })
+    expect(manager.readySessionHarnessIds()).toEqual(['acp-antigravity'])
+    expect(manager.isSessionHarnessRunnable('acp')).toBe(true)
+    expect(manager.isSessionHarnessRunnable('acp-antigravity')).toBe(true)
+    expect(manager.isSessionHarnessRunnable('acp-grok')).toBe(false)
     db.close()
   })
 
@@ -151,9 +163,15 @@ describe('HarnessManager', () => {
       const db = openNodeDatabase(path)
       const manager = new HarnessManager(db)
       manager.enableSimulatedOverlay()
-      expect(manager.readySessionHarnessIds()).toEqual(
-        [...new Set(NODE_HARNESS_DEFINITIONS.map(({ sessionHarnessId }) => sessionHarnessId))],
-      )
+      expect(manager.readySessionHarnessIds()).toEqual([
+        'claude',
+        'codex',
+        'opencode',
+        'cursor',
+        'acp',
+        'acp-antigravity',
+        'dsh',
+      ])
       db.close()
     }
     {

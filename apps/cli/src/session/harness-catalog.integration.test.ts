@@ -10,7 +10,7 @@ import {
 } from '@superone/shared/environment'
 import { startNodeRuntime, type NodeRuntime } from '../runtime'
 import { connectAuthedRpc } from '../test/ws-rpc'
-import { PHASE4_HARNESS_IDS } from './harness-runners'
+import { PHASE4_ADVERTISED_HARNESS_IDS } from './harness-runners'
 import { generateEd25519KeyPair, signPayload } from '../crypto-util'
 import WebSocket from 'ws'
 
@@ -201,7 +201,7 @@ describe('Harness catalog (Stage 1)', () => {
     const desc = (await client.rpc('environment.descriptor')) as {
       capabilities: { harnessIds: string[] }
     }
-    expect(desc.capabilities.harnessIds).toEqual(PHASE4_HARNESS_IDS)
+    expect(desc.capabilities.harnessIds).toEqual(PHASE4_ADVERTISED_HARNESS_IDS)
     client.close()
   })
 
@@ -214,7 +214,7 @@ describe('Harness catalog (Stage 1)', () => {
     const simDesc = (await simClient.rpc('environment.descriptor')) as {
       capabilities: { harnessIds: string[] }
     }
-    expect(simDesc.capabilities.harnessIds).toEqual(PHASE4_HARNESS_IDS)
+    expect(simDesc.capabilities.harnessIds).toEqual(PHASE4_ADVERTISED_HARNESS_IDS)
     simClient.close()
     await sim.stop()
     runtimes.pop()

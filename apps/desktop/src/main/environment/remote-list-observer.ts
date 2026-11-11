@@ -1,4 +1,5 @@
-import type { AgentEvent, HarnessId } from '@superone/shared/agent-types'
+import type { AgentEvent } from '@superone/shared/agent-types'
+import type { AdvertisedHarnessId } from '@superone/shared/environment'
 import { remoteProjectKey } from '@superone/shared/remote-resource-key'
 import type { SessionActivity } from '@superone/shared/session-activity'
 import type { RemoteListObserver } from './remote-session-feed'
@@ -15,7 +16,7 @@ export interface RemoteListHandlers {
   /** Provider credentials, bindings, or Claude accounts changed on the node. */
   catalogChanged?(): void
   /** The node's enabled, ready harness set changed. */
-  harnessCatalogChanged?(harnessIds: readonly HarnessId[]): void
+  harnessCatalogChanged?(harnessIds: readonly AdvertisedHarnessId[]): void
 }
 
 /**

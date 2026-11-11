@@ -149,12 +149,18 @@ export function createAcpOpenCodeProductionRouter(opts?: {
 }
 
 /**
- * Session wire harness ids advertised when the simulated catalog is fully ready.
- * Order matches NODE_HARNESS_DEFINITIONS. Grok and Antigravity share `acp`.
+ * Session wire harness ids for a simulated turn of each harness.
+ * Order matches NODE_HARNESS_DEFINITIONS. Grok and Antigravity both persist as `acp`,
+ * so this list has one `acp` entry. The descriptor adds `acp-antigravity` beside it.
  */
 export const PHASE4_HARNESS_IDS: HarnessId[] = [
   ...new Set(NODE_HARNESS_DEFINITIONS.map(({ sessionHarnessId }) => sessionHarnessId)),
 ]
+
+/** Descriptor ids when every catalog row is ready. */
+export const PHASE4_ADVERTISED_HARNESS_IDS: readonly string[] = PHASE4_HARNESS_IDS.flatMap((id) =>
+  id === 'acp' ? [id, 'acp-antigravity'] : [id],
+)
 
 // Re-export for production turn runner wiring.
 export { createCursorTurnRunner }

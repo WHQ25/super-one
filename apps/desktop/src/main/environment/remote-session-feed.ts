@@ -1,5 +1,4 @@
-import type { HarnessId } from '@superone/shared/agent-types'
-import { HARNESS_CATALOG_CHANGED, type EnvironmentEventEnvelope, type SessionStreamFrame, type TopicInterest, type TopicNoticeFrame, type TopicSubscribeInput } from '@superone/shared/environment'
+import { HARNESS_CATALOG_CHANGED, type AdvertisedHarnessId, type EnvironmentEventEnvelope, type SessionStreamFrame, type TopicInterest, type TopicNoticeFrame, type TopicSubscribeInput } from '@superone/shared/environment'
 import { harnessIdsFromCatalogEvent } from './harness-catalog-refresh'
 import { SESSION_LIST_EVENT_TYPES, topicKey, type TopicRef } from '@superone/shared/environment/topics'
 import type { RpcStreamHandlers } from '@superone/shared/environment/rpc-connection'
@@ -47,7 +46,7 @@ export interface RemoteListObserver {
   /** A `sessionList`, `projects`, or `environment` notice: change events, or a snapshot that stands in for missed ones. */
   notice?(frame: TopicNoticeFrame): void
   /** The node's advertised harness set changed (`harness_catalog_changed`). */
-  harnessCatalog?(harnessIds: readonly HarnessId[]): void
+  harnessCatalog?(harnessIds: readonly AdvertisedHarnessId[]): void
 }
 
 const LIST_NOTICE_KINDS: ReadonlySet<string> = new Set(['sessionList', 'projects', 'environment'])

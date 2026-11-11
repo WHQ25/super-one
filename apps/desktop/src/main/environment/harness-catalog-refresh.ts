@@ -1,3 +1,4 @@
+import type { AdvertisedHarnessId } from '@superone/shared/environment'
 import type { HarnessId } from '@superone/shared/agent-types'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 
@@ -5,6 +6,10 @@ export { HARNESS_CATALOG_CHANGED, harnessAdvertisementKey } from '@superone/shar
 
 function isHarnessId(id: string): id is HarnessId {
   return Object.hasOwn(HARNESS_CAPABILITIES, id)
+}
+
+function isAdvertisedHarnessId(id: string): id is AdvertisedHarnessId {
+  return isHarnessId(id) || id === 'acp-antigravity'
 }
 
 /**
@@ -16,9 +21,9 @@ export function harnessAdvertisementChanged(previous: string | undefined, next: 
 }
 
 /** Known harness ids from a `harness_catalog_changed` payload, or null when the payload is malformed. */
-export function harnessIdsFromCatalogEvent(payload: unknown): readonly HarnessId[] | null {
+export function harnessIdsFromCatalogEvent(payload: unknown): readonly AdvertisedHarnessId[] | null {
   if (!payload || typeof payload !== 'object') return null
   const ids = (payload as { harnessIds?: unknown }).harnessIds
   if (!Array.isArray(ids) || ids.some((id) => typeof id !== 'string')) return null
-  return ids.filter(isHarnessId)
+  return ids.filter(isAdvertisedHarnessId)
 }

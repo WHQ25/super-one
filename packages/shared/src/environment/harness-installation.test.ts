@@ -113,7 +113,19 @@ describe('readySessionHarnessIds', () => {
         command: '/usr/local/bin/agy',
       },
     ]
-    expect(readySessionHarnessIds(statuses)).toEqual(['claude', 'acp'])
+    expect(readySessionHarnessIds(statuses)).toEqual(['claude', 'acp', 'acp-antigravity'])
+  })
+
+  it('advertises Antigravity by catalog id and does not pretend Grok is ready', () => {
+    const statuses: HarnessInstallationStatus[] = [
+      {
+        ...defaultHarnessInstallationStatus('acp-antigravity'),
+        enabled: true,
+        state: 'ready',
+        command: '/usr/local/bin/agy',
+      },
+    ]
+    expect(readySessionHarnessIds(statuses)).toEqual(['acp-antigravity'])
   })
 
   it('isHarnessRunnable requires both enabled and ready', () => {

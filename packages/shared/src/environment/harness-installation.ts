@@ -11,6 +11,14 @@
 
 import type { HarnessId } from '../session-types'
 
+/**
+ * What `capabilities.harnessIds` may contain.
+ * Session wire ids stay as `HarnessId`. Antigravity is the exception: it also
+ * persists sessions as `acp`, so the legacy wire id cannot name it. Hosts
+ * advertise the catalog id `acp-antigravity` beside `acp` (Grok only).
+ */
+export type AdvertisedHarnessId = HarnessId | 'acp-antigravity'
+
 /** First-party node Harness catalog IDs (target identities). */
 export type NodeHarnessId =
   | 'claude'
@@ -49,8 +57,9 @@ export interface NodeHarnessDefinition {
   runtimeSource: HarnessRuntimeSource
   requiresAuth: boolean
   /**
-   * Session / capabilities.harnessIds wire id while desktop still uses legacy
-   * `acp` for Grok. For all other harnesses this equals `id`.
+   * Session persistence wire id. Grok and Antigravity both store sessions as
+   * `acp`. Descriptor advertisement is separate: Grok stays `acp`, Antigravity
+   * is `acp-antigravity` (see `readySessionHarnessIds`).
    */
   sessionHarnessId: HarnessId
 }
@@ -265,18 +274,23 @@ export function isHarnessRunnable(status: Pick<HarnessInstallationStatus, 'enabl
 
 /**
  * Build the descriptor harnessIds list from catalog statuses.
- * Order follows NODE_HARNESS_DEFINITIONS.
+ * Order follows NODE_HARNESS_DEFINITIONS. Grok keeps the legacy wire id `acp`.
+ * Antigravity is advertised as `acp-antigravity` so a controller does not
+ * collapse it into Grok.
  */
 export function readySessionHarnessIds(
   statuses: readonly HarnessInstallationStatus[],
-): HarnessId[] {
+): AdvertisedHarnessId[] {
   const byId = new Map(statuses.map((s) => [s.id, s]))
-  const out: HarnessId[] = []
+  const out: AdvertisedHarnessId[] = []
   for (const def of NODE_HARNESS_DEFINITIONS) {
     const status = byId.get(def.id)
-    if (status && isHarnessRunnable(status) && !out.includes(def.sessionHarnessId)) {
-      out.push(def.sessionHarnessId)
+    if (!status || !isHarnessRunnable(status)) continue
+    if (def.id === 'acp-antigravity') {
+      out.push('acp-antigravity')
+      continue
     }
+    if (!out.includes(def.sessionHarnessId)) out.push(def.sessionHarnessId)
   }
   return out
 }

@@ -16,17 +16,17 @@ import {
   defaultHarnessInstallationStatus,
   isHarnessRunnable,
   isNodeHarnessId,
-  normalizeSessionHarnessId,
-  readySessionHarnessIds,
+  readySessionHarnessIds as listAdvertisedHarnessIds,
+  sessionHarnessIdToNodeHarnessId,
   sanitizeHarnessCommand,
   sanitizeHarnessDiagnosticCode,
   type HarnessDiagnosticCode,
   type HarnessDiagnosticFields,
   type HarnessInstallState,
   type HarnessInstallationStatus,
+  type AdvertisedHarnessId,
   type NodeHarnessId,
 } from '@superone/shared/environment'
-import type { HarnessId } from '@superone/shared/session-types'
 import type { TransactionalSqliteDatabase } from '../sqlite'
 import type { ExternalLaunchConfig } from './types'
 
@@ -195,20 +195,29 @@ export class HarnessManager {
   }
 
   /**
-   * Session wire harness ids that are currently runnable (enabled + ready).
+   * Advertised harness ids that are currently runnable (enabled + ready).
    * Used by environment.descriptor capabilities.harnessIds.
+   * Grok is `acp`. Antigravity is `acp-antigravity`.
    */
-  readySessionHarnessIds(): HarnessId[] {
-    return readySessionHarnessIds(this.list())
+  readySessionHarnessIds(): AdvertisedHarnessId[] {
+    return listAdvertisedHarnessIds(this.list())
   }
 
-  /** Whether a session.create harnessId is allowed on this node. */
+  /**
+   * Whether a session.create harnessId is allowed on this node.
+   * Legacy wire id `acp` is runnable when either ACP catalog row is ready,
+   * because both Grok and Antigravity persist sessions as `acp`.
+   * `acp-grok` and `acp-antigravity` check that row only.
+   */
   isSessionHarnessRunnable(sessionHarnessId: string): boolean {
-    const wire = normalizeSessionHarnessId(sessionHarnessId)
-    if (!wire) return false
-    // Catalog lookup uses node id (acp → acp-grok).
-    const catalogId = wire === 'acp' ? 'acp-grok' : wire
-    if (!isNodeHarnessId(catalogId)) return false
+    if (sessionHarnessId === 'acp') {
+      return (
+        isHarnessRunnable(this.get('acp-grok')) ||
+        isHarnessRunnable(this.get('acp-antigravity'))
+      )
+    }
+    const catalogId = sessionHarnessIdToNodeHarnessId(sessionHarnessId)
+    if (!catalogId) return false
     return isHarnessRunnable(this.get(catalogId))
   }
 

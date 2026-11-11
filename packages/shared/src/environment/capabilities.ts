@@ -1,4 +1,4 @@
-import type { HarnessId } from '../session-types'
+import type { AdvertisedHarnessId } from './harness-installation'
 
 /**
  * What an environment can do, as it reports it — never inferred from version
@@ -8,8 +8,12 @@ import type { HarnessId } from '../session-types'
 export interface EnvironmentCapabilities {
   /** Every RPC method this environment serves. */
   methods: string[]
-  /** Harness IDs this environment can host. */
-  harnessIds: HarnessId[]
+  /**
+   * Harnesses this environment can host. Session wire ids, plus
+   * `acp-antigravity` when that catalog row is enabled and ready.
+   * Legacy `acp` means Grok only.
+   */
+  harnessIds: AdvertisedHarnessId[]
   /**
    * After cold node restart, Sessions remain usable and later turns may resume
    * from durable provider metadata when the Harness supports it.

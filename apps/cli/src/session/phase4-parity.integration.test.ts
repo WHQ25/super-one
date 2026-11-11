@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { startNodeRuntime, type NodeRuntime } from '../runtime'
-import { PHASE4_HARNESS_IDS } from './harness-runners'
+import { PHASE4_ADVERTISED_HARNESS_IDS, PHASE4_HARNESS_IDS } from './harness-runners'
 import type { HarnessId } from '@superone/shared/session-types'
 import { connectAuthedRpc } from '../test/ws-rpc'
 
@@ -77,7 +77,7 @@ describe('Phase 4 harness parity + collaboration', () => {
     const descriptor = (await client.rpc('environment.descriptor')) as {
       capabilities: { harnessIds: HarnessId[]; methods: string[] }
     }
-    expect(descriptor.capabilities.harnessIds).toEqual(PHASE4_HARNESS_IDS)
+    expect(descriptor.capabilities.harnessIds).toEqual(PHASE4_ADVERTISED_HARNESS_IDS)
     expect(descriptor.capabilities.methods).toContain('collaboration.send')
 
     const projectDir = mkdtempSync(join(tmpdir(), 'p4-proj-'))

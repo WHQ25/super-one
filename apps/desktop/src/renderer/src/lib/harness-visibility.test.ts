@@ -121,6 +121,12 @@ describe('catalogFromHarnessIds', () => {
     expect(isCatalogHarnessDisabled(catalog, 'claude')).toBe(true)
   })
 
+  it('keeps Antigravity when the host advertises it beside legacy acp', () => {
+    const catalog = catalogFromHarnessIds(['acp', 'acp-antigravity'])
+    expect(isCatalogHarnessEnabled(catalog, 'acp-grok')).toBe(true)
+    expect(isCatalogHarnessEnabled(catalog, 'acp-antigravity')).toBe(true)
+  })
+
   it('requires an explicit Antigravity identity instead of inferring it from ACP support', () => {
     const catalog = catalogFromHarnessIds(['acp-antigravity'])
     expect(isCatalogHarnessEnabled(catalog, 'acp-antigravity')).toBe(true)

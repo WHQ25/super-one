@@ -108,6 +108,7 @@ export function ContextUsage() {
   const contextTokens = useActiveSession((s) => s.contextTokens)
   const contextWindowFromSession = useActiveSession((s) => s.contextWindow)
   const selectedModel = useActiveSession((s) => s.selectedModel)
+  const sessionModel = useActiveSession((s) => s.session?.model ?? '')
   const cursorContextParam = useActiveSession((s) => s.cursorModelParams?.context)
   const selectedAcpContextWindow = useActiveSession((s) => s.selectedAcpContextWindow)
   const preferredProvider = useActiveSession((s) => s.preferredProvider)
@@ -160,35 +161,46 @@ export function ContextUsage() {
   const activeProvider = sessionProvider ?? preferredProvider
   const isCursor = activeProvider === 'cursor'
   const isAcp = activeProvider === 'acp'
+  // Remote Claude sessions often keep selectedModel empty. The model the agent
+  // is running is session.model. The selector's default row is only a stand-in
+  // when nothing has been named — a catalog hit on that default must not hide
+  // a window the session already reported for a model the catalog does not list.
+  const namedModelId = selectedModel || sessionModel || detailedUsage?.model || ''
+  const claude = activeProvider === 'claude'
+  const claudeStandInModelId = claude && !namedModelId
+    ? (availableModels.find((model) => model.isDefault)?.id || availableModels[0]?.id || '')
+    : ''
+  const ringModelId = claude ? (namedModelId || claudeStandInModelId) : selectedModel
   const currentModel = isCursor
     ? cursorModels.find((m) => m.id === selectedModel)
     : isAcp
       ? acpModels.find((m) => m.id === selectedModel)
-      : availableModels.find((m) => m.id === selectedModel)
+      : availableModels.find((m) => m.id === ringModelId)
   const detailedTokens = detailedUsage?.totalTokens ?? 0
   const effectiveTokens = detailedTokens > 0 ? detailedTokens : contextTokens
   const catalogContextWindow = useMemo(
     () => isCursor
       ? null
       : lookupCatalogContextWindow(
-        [selectedModel, currentModel?.resolvedModel, detailedUsage?.model],
+        [selectedModel, sessionModel, currentModel?.resolvedModel, detailedUsage?.model, claudeStandInModelId],
         catalogModels,
       ),
-    [isCursor, selectedModel, currentModel?.resolvedModel, detailedUsage?.model, catalogModels],
+    [isCursor, selectedModel, sessionModel, currentModel?.resolvedModel, detailedUsage?.model, claudeStandInModelId, catalogModels],
   )
   // Codex GPT-5.6 uses its managed 272k window; other models prefer models.dev.
   // Cursor uses the per-turn `context` param (300k / 1m), else the model row's
   // default (200k / 272k for GPT-5.6, set by mapCursorModel) and never models.dev.
   // An ACP pick (`selectedAcpContextWindow`) outranks the catalog the same way.
+  // A session-reported window beats Claude's hardcoded 200k when the catalog misses.
   const contextWindow = resolveRingContextWindow({
     harnessId: activeProvider,
-    modelId: selectedModel,
+    modelId: ringModelId,
     resolvedModel: currentModel?.resolvedModel,
     catalogContextWindow,
     harnessContextWindow: currentModel?.contextWindow,
     sessionContextWindow: contextWindowFromSession,
     detailedMaxTokens: detailedUsage?.maxTokens,
-    claudeFallback: activeProvider === 'claude',
+    claudeFallback: claude,
     selectedContextWindow: isCursor
       ? resolveCursorSelectedContextWindow(cursorContextParam, currentModel)
       : isAcp

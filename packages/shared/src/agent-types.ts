@@ -2749,16 +2749,18 @@ function modelUsesCodexGpt56Window(model: { id?: string | null; resolvedModel?: 
 }
 
 /**
- * Context ring denominator. Prefer models.dev catalog window over agent/session
- * maxTokens (those are often wrong or include non-window padding).
+ * Context ring denominator. Prefer models.dev over a harness row, then a window
+ * the running session reported. The Claude 200k/1M constant is only a guess for
+ * when nothing else named a window — reported maxTokens can include padding, but
+ * they are still more specific than that constant.
  *
  * Priority:
  * 1. Codex GPT-5.6 managed window
  * 2. models.dev `contextWindow` (when `[1m]` is set, at least {@link EXTENDED_CONTEXT_WINDOW})
  * 3. `[1m]` → 1M when catalog missing
  * 4. harness-reported model option window
- * 5. Claude hardcoded 200k/1M fallback (when `claudeFallback`)
- * 6. session / detailed-usage maxTokens as last resorts
+ * 5. session / detailed-usage maxTokens
+ * 6. Claude hardcoded 200k/1M fallback (when `claudeFallback`)
  */
 export function resolveRingContextWindow(input: {
   harnessId?: HarnessId | null
@@ -2789,11 +2791,11 @@ export function resolveRingContextWindow(input: {
   if (extended) return EXTENDED_CONTEXT_WINDOW
   const harness = positiveContextWindow(input.harnessContextWindow)
   if (harness != null) return harness
-  if (input.claudeFallback) return resolveModelContextWindow(model)
-  return (
-    positiveContextWindow(input.sessionContextWindow)
+  const reported = positiveContextWindow(input.sessionContextWindow)
     ?? positiveContextWindow(input.detailedMaxTokens)
-  )
+  if (reported != null) return reported
+  if (input.claudeFallback) return resolveModelContextWindow(model)
+  return null
 }
 
 // --- File rewind ---

@@ -70,6 +70,24 @@ describe('resolveRingContextWindow', () => {
     })).toBe(DEFAULT_CONTEXT_WINDOW)
   })
 
+  it('prefers a session-reported window over the Claude 200k constant', () => {
+    expect(resolveRingContextWindow({
+      harnessId: 'claude',
+      modelId: '',
+      catalogContextWindow: null,
+      sessionContextWindow: 1_000_000,
+      detailedMaxTokens: 1_000_000,
+      claudeFallback: true,
+    })).toBe(EXTENDED_CONTEXT_WINDOW)
+
+    expect(resolveRingContextWindow({
+      harnessId: 'claude',
+      modelId: 'claude-fable-5-2',
+      claudeFallback: true,
+      detailedMaxTokens: 1_000_000,
+    })).toBe(EXTENDED_CONTEXT_WINDOW)
+  })
+
   it('uses session then detailed maxTokens for non-Claude without catalog', () => {
     expect(resolveRingContextWindow({
       modelId: 'gpt-5',

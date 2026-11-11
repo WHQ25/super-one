@@ -5,7 +5,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ModelCatalog } from '@superone/shared/model-catalog-types'
 
 const chatState = {
-  availableModels: [] as Array<{ id: string; name: string; description: string; resolvedModel?: string; contextWindow?: number }>,
+  availableModels: [] as Array<{ id: string; name: string; description: string; resolvedModel?: string; contextWindow?: number; isDefault?: boolean }>,
   activeProject: '/test',
   setDetailedUsage: vi.fn(),
   harnessResources: {
@@ -25,6 +25,7 @@ const activeSessionState = {
   contextTokens: 0,
   contextWindow: null as number | null,
   selectedModel: '',
+  session: null as { model: string } | null,
   cursorModelParams: {} as Record<string, string>,
   preferredProvider: 'claude' as 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp',
   sessionProvider: null as 'claude' | 'codex' | 'opencode' | 'cursor' | 'acp' | null,
@@ -90,6 +91,7 @@ beforeEach(() => {
   activeSessionState.contextTokens = 0
   activeSessionState.contextWindow = null
   activeSessionState.selectedModel = ''
+  activeSessionState.session = null
   activeSessionState.cursorModelParams = {}
   activeSessionState.preferredProvider = 'claude'
   activeSessionState.sessionProvider = null
@@ -185,6 +187,57 @@ describe('ContextUsage', () => {
 
     expect(screen.getByText('12%')).toBeTruthy()
     expect(screen.getByText('120.0k / 1.0m')).toBeTruthy()
+  })
+
+  it('uses the session-reported 1M window when Claude selectedModel is empty and the catalog misses', () => {
+    chatState.availableModels = [{ id: 'claude-sonnet-4-6', name: 'Sonnet', description: '', isDefault: true }]
+    activeSessionState.contextTokens = 311_375
+    activeSessionState.contextWindow = 1_000_000
+    activeSessionState.selectedModel = ''
+    activeSessionState.session = { model: 'claude-fable-5-2' }
+    activeSessionState.preferredProvider = 'claude'
+    activeSessionState.sessionProvider = 'claude'
+
+    render(<ContextUsage />)
+    fireEvent.click(screen.getByRole('button'))
+
+    expect(screen.getByText('31%')).toBeTruthy()
+    expect(screen.getByText('311.4k / 1.0m')).toBeTruthy()
+    expect(screen.queryByText(/200\.0k/)).toBeNull()
+  })
+
+  it('looks up models.dev by the running session model when selectedModel is empty', () => {
+    modelCatalog = catalogWithModel('claude-fable-5-2', 1_000_000)
+    chatState.availableModels = [{ id: 'claude-sonnet-4-6', name: 'Sonnet', description: '', isDefault: true }]
+    activeSessionState.contextTokens = 311_375
+    activeSessionState.contextWindow = 200_000
+    activeSessionState.selectedModel = ''
+    activeSessionState.session = { model: 'claude-fable-5-2' }
+    activeSessionState.preferredProvider = 'claude'
+    activeSessionState.sessionProvider = 'claude'
+
+    render(<ContextUsage />)
+    fireEvent.click(screen.getByRole('button'))
+
+    expect(screen.getByText('31%')).toBeTruthy()
+    expect(screen.getByText('311.4k / 1.0m')).toBeTruthy()
+    expect(screen.queryByText(/200\.0k/)).toBeNull()
+  })
+
+  it('looks up the default Claude model when the session has not named one', () => {
+    modelCatalog = catalogWithModel('claude-sonnet-4-6', 1_000_000)
+    chatState.availableModels = [{ id: 'claude-sonnet-4-6', name: 'Sonnet', description: '', isDefault: true }]
+    activeSessionState.contextTokens = 100_000
+    activeSessionState.selectedModel = ''
+    activeSessionState.preferredProvider = 'claude'
+    activeSessionState.sessionProvider = 'claude'
+
+    render(<ContextUsage />)
+    fireEvent.click(screen.getByRole('button'))
+
+    expect(screen.getByText('10%')).toBeTruthy()
+    expect(screen.getByText('100.0k / 1.0m')).toBeTruthy()
+    expect(screen.queryByText(/200\.0k/)).toBeNull()
   })
 
   it('falls back to the 200k window for a Claude model without [1m]', () => {

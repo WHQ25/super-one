@@ -29,4 +29,14 @@ describe('streaming fade', () => {
     await waitFor(() => expect(container.querySelector('.stream-fade')).toBeNull())
     expect(container.textContent).toContain('Hello there')
   })
+
+  it('keeps the rendered blocks when streaming ends', async () => {
+    const { container, rerender } = render(<CopyableMarkdown text="Hello" isStreaming />)
+    await waitFor(() => expect(container.querySelector('.stream-fade')).not.toBeNull())
+    const paragraph = container.querySelector('p')
+
+    rerender(<CopyableMarkdown text="Hello" isStreaming={false} />)
+    await waitFor(() => expect(container.querySelector('.stream-fade')).toBeNull())
+    expect(container.querySelector('p')).toBe(paragraph)
+  })
 })

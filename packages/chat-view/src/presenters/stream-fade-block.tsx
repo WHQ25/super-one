@@ -6,7 +6,7 @@ export const StreamFadeBlock = memo(function StreamFadeBlock(props: BlockProps) 
   const Inner = useContext(FadeBlockInnerContext) ?? Block
   const [controller] = useState(() => createStreamFadePlugin())
   const streaming = useContext(StreamdownContext).isAnimating
-  controller.bind()
+  if (streaming) controller.bind()
   useLayoutEffect(() => {
     if (!streaming) {
       controller.reset()

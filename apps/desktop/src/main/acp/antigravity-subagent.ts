@@ -1,71 +1,84 @@
-import { existsSync, readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { readFileSync } from 'node:fs'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { isSubagentToolName } from '@superone/shared/tool-ui'
+import {
+  clearSettledWakeupBackgroundTasks,
+  createBackgroundTaskTrackerState,
+  disposeBackgroundTaskTracker,
+  noteBackgroundTaskMappedEvents,
+  pruneStaleUnboundBackgroundTasks,
+  syncBackgroundTasks,
+  type BackgroundTaskTrackerState,
+} from './antigravity-background-task'
 import { resolveAntigravityBrainRoots } from './antigravity-profile'
 import {
   extractParentWakeupProgress,
   extractSpawnedSubagentsFromParentTranscript,
-  parseAntigravitySubagentTranscript,
   type SpawnedSubagentRef,
 } from './antigravity-subagent-transcript'
+import {
+  emitWakeupProgressSteps,
+  findAntigravityTranscriptPath,
+  flushRemainingWakeupToolResults,
+  syncTrackedSubagentEntries,
+  type TrackedSubagent,
+} from './antigravity-wakeup-emitter'
 
 export * from './antigravity-subagent-transcript'
+export * from './antigravity-background-task'
 
 const POLL_INTERVAL_MS = 250
+const IDLE_POLL_INTERVAL_MS = 1_000
 const MAX_TRACK_DURATION_MS = 10 * 60 * 1000
 const DEFAULT_NO_WAKEUP_TIMEOUT_MS = 5_000
 const DEFAULT_WAKEUP_RESPONSE_TIMEOUT_MS = 120_000
 
-interface TrackedSubagent {
-  toolUseId: string
-  messageId: string
-  description: string
-  startedAtMs: number
-  conversationId?: string
-  outputFile?: string
-  spawnStepIndex?: number
-  lastRawLength: number
-  emittedSavedImages?: boolean
-  completed: boolean
+export interface AntigravityIdleWakeupHooks {
+  isPromptActive: () => boolean
+  ensureMessage: () => string
+  completeMessage: () => void
 }
 
 interface SessionSubagentState {
   parentSessionId: string
   brainRoots: string[]
   emitEvent: (event: AgentEvent) => void
+  idleHooks?: AntigravityIdleWakeupHooks
   boundConversationIds: Set<string>
   trackedByToolUseId: Map<string, TrackedSubagent>
+  bgTasks: BackgroundTaskTrackerState
   wakeupMessageId: string
-  wakeupPending: boolean
+  idleWakeupMessageId: string | null
+  subagentWakeupPending: boolean
   parentTurnEnded: boolean
   activeWakeupMinSpawnStepIndex: number | null
-  allSubagentsCompletedAtMs: number | null
+  allWorkCompletedAtMs: number | null
   noWakeupTimeoutMs: number
   wakeupResponseTimeoutMs: number
   emittedWakeupStepIndices: Set<number>
+  emittedWakeupToolResultIds: Set<string>
   unflushedWakeupReplay: boolean
   wakeupWaiters: Array<(outcome: 'completed' | 'cancelled') => void>
   timer: ReturnType<typeof setInterval> | null
+  timerIntervalMs: number
 }
 
 const sessionStates = new Map<string, SessionSubagentState>()
 
-function findTranscriptPath(sessionId: string, brainRoots: string[], preferFull = false): string | null {
-  const filenames = preferFull ? ['transcript_full.jsonl', 'transcript.jsonl'] : ['transcript.jsonl', 'transcript_full.jsonl']
-  for (const root of brainRoots) {
-    for (const filename of filenames) {
-      const candidate = join(root, sessionId, '.system_generated', 'logs', filename)
-      if (existsSync(candidate)) return candidate
-    }
+function isEffectiveWakeupPending(state: SessionSubagentState): boolean {
+  if (state.subagentWakeupPending) return true
+  for (const entry of state.bgTasks.tasksByToolUseId.values()) {
+    if (entry.wakeupRequired) return true
   }
-  return null
+  return false
 }
 
 function settleWakeupWaiters(state: SessionSubagentState, outcome: 'completed' | 'cancelled'): void {
-  state.wakeupPending = false
+  state.subagentWakeupPending = false
   state.parentTurnEnded = false
-  state.allSubagentsCompletedAtMs = null
+  state.activeWakeupMinSpawnStepIndex = null
+  state.allWorkCompletedAtMs = null
+  clearSettledWakeupBackgroundTasks(state.bgTasks)
   const waiters = state.wakeupWaiters.splice(0, state.wakeupWaiters.length)
   for (const resolve of waiters) {
     resolve(outcome)
@@ -74,274 +87,195 @@ function settleWakeupWaiters(state: SessionSubagentState, outcome: 'completed' |
 
 function syncSessionSubagents(state: SessionSubagentState): void {
   const now = Date.now()
-  const parentTranscriptPath = findTranscriptPath(state.parentSessionId, state.brainRoots, true)
+  const parentTranscriptPath = findAntigravityTranscriptPath(state.parentSessionId, state.brainRoots, true)
   let parentRaw = ''
   let spawnedRefs: SpawnedSubagentRef[] = []
   if (parentTranscriptPath) {
     try {
       parentRaw = readFileSync(parentTranscriptPath, 'utf8')
-      spawnedRefs = extractSpawnedSubagentsFromParentTranscript(parentRaw)
+      if (state.trackedByToolUseId.size > 0) {
+        spawnedRefs = extractSpawnedSubagentsFromParentTranscript(parentRaw)
+      }
     } catch {
       void 0
     }
   }
 
-  for (const entry of state.trackedByToolUseId.values()) {
-    if (entry.completed) continue
-    if (now - entry.startedAtMs > MAX_TRACK_DURATION_MS) {
-      entry.completed = true
-      continue
-    }
+  syncTrackedSubagentEntries(state, spawnedRefs, now, MAX_TRACK_DURATION_MS)
 
-    if (!entry.conversationId && spawnedRefs.length > 0) {
-      const match = spawnedRefs.find(
-        (ref) =>
-          !state.boundConversationIds.has(ref.conversationId) &&
-          (ref.createdAtMs === undefined || ref.createdAtMs >= entry.startedAtMs - 15_000),
+  const bgSummary = parentRaw
+    ? syncBackgroundTasks(
+        state.bgTasks,
+        parentRaw,
+        now,
+        MAX_TRACK_DURATION_MS,
+        state.parentTurnEnded,
+        state.emitEvent,
       )
-      if (match) {
-        state.boundConversationIds.add(match.conversationId)
-        entry.conversationId = match.conversationId
-        entry.spawnStepIndex = match.stepIndex
-        if (
-          state.activeWakeupMinSpawnStepIndex === null ||
-          match.stepIndex < state.activeWakeupMinSpawnStepIndex
-        ) {
-          state.activeWakeupMinSpawnStepIndex = match.stepIndex
-        }
-        entry.outputFile =
-          match.outputFile ||
-          findTranscriptPath(match.conversationId, state.brainRoots) ||
-          join(state.brainRoots[0] ?? '', match.conversationId, '.system_generated', 'logs', 'transcript.jsonl')
-        state.emitEvent({
-          type: 'task_started',
-          toolUseId: entry.toolUseId,
-          taskId: entry.conversationId,
-          description: entry.description,
-          ...(entry.outputFile ? { outputFile: entry.outputFile } : {}),
-          isBackgrounded: true,
-        })
+    : {
+        anyActiveNonDaemon: false,
+        anyWakeupRequired: isEffectiveWakeupPending(state) && !state.subagentWakeupPending,
+        minWakeupSpawnStepIndex: null,
+        emittedCompletionFromTranscript: false,
+        hasActiveIdleWatch: state.bgTasks.idleWatchStepIndex !== null,
       }
-    }
 
-    if (!entry.outputFile || !existsSync(entry.outputFile)) continue
-
-    let raw = ''
-    try {
-      raw = readFileSync(entry.outputFile, 'utf8')
-    } catch {
-      continue
-    }
-    if (!raw || raw.length === entry.lastRawLength) continue
-    entry.lastRawLength = raw.length
-
-    const parsed = parseAntigravitySubagentTranscript(raw)
-    const durationMs = parsed.durationMs > 0 ? parsed.durationMs : Math.max(0, now - entry.startedAtMs)
-
-    if (parsed.inputTokens > 0 || parsed.outputTokens > 0) {
-      state.emitEvent({
-        type: 'subagent_usage',
-        messageId: entry.messageId,
-        parentToolUseId: entry.toolUseId,
-        inputTokens: parsed.inputTokens,
-        outputTokens: parsed.outputTokens,
-      })
-    }
-
-    const taskId = entry.conversationId ?? entry.toolUseId
-
-    state.emitEvent({
-      type: 'task_progress',
-      toolUseId: entry.toolUseId,
-      taskId,
-      description: entry.description,
-      ...(parsed.lastToolName ? { lastToolName: parsed.lastToolName } : {}),
-      ...(parsed.summary ? { summary: parsed.summary } : {}),
-      outputFile: entry.outputFile,
-      ...(parsed.toolEntries.length > 0 ? { toolEntries: parsed.toolEntries } : {}),
-      usage: {
-        totalTokens: parsed.totalTokens,
-        toolUses: parsed.toolUses,
-        durationMs,
-      },
-    })
-
-    const formatSubagentSummary = (includeImages: boolean): string =>
-      includeImages
-        ? JSON.stringify({ subagent_id: taskId, output_file: entry.outputFile, status: 'generated', savedPaths: parsed.savedImagePaths, provider: 'antigravity' })
-        : JSON.stringify({ subagent_id: taskId, output_file: entry.outputFile })
-
-    if (!parsed.completed && !entry.emittedSavedImages && parsed.savedImagePaths.length > 0) {
-      entry.emittedSavedImages = true
-      state.emitEvent({
-        type: 'content_delta',
-        messageId: entry.messageId,
-        delta: {
-          type: 'tool_result',
-          toolUseId: entry.toolUseId,
-          summary: formatSubagentSummary(true),
-          outputPath: entry.outputFile,
-          isError: false,
-        },
-      })
-    }
-
-    if (parsed.completed) {
-      entry.completed = true
-      state.emitEvent({
-        type: 'content_delta',
-        messageId: entry.messageId,
-        delta: {
-          type: 'tool_result',
-          toolUseId: entry.toolUseId,
-          summary: formatSubagentSummary(parsed.savedImagePaths.length > 0),
-          outputPath: entry.outputFile,
-          isError: parsed.failed,
-        },
-      })
-      state.emitEvent({
-        type: 'task_notification',
-        toolUseId: entry.toolUseId,
-        taskId,
-        taskStatus: parsed.failed ? 'failed' : 'completed',
-        outputFile: entry.outputFile,
-        ...(parsed.summary ? { summary: parsed.summary } : {}),
-        ...(parsed.resultText ? { resultText: parsed.resultText } : {}),
-        usage: {
-          totalTokens: parsed.totalTokens,
-          toolUses: parsed.toolUses,
-          durationMs,
-        },
-      })
-    }
+  if (bgSummary.emittedCompletionFromTranscript && state.parentTurnEnded) {
+    state.unflushedWakeupReplay = true
+  }
+  if (
+    bgSummary.minWakeupSpawnStepIndex !== null &&
+    (state.activeWakeupMinSpawnStepIndex === null ||
+      bgSummary.minWakeupSpawnStepIndex < state.activeWakeupMinSpawnStepIndex)
+  ) {
+    state.activeWakeupMinSpawnStepIndex = bgSummary.minWakeupSpawnStepIndex
   }
 
-  let anyActive = [...state.trackedByToolUseId.values()].some((e) => !e.completed)
-  if (!anyActive && state.trackedByToolUseId.size > 0 && state.allSubagentsCompletedAtMs === null) {
-    state.allSubagentsCompletedAtMs = now
+  const anyActiveSubagent = [...state.trackedByToolUseId.values()].some((e) => !e.completed)
+  let anyActive = anyActiveSubagent || bgSummary.anyActiveNonDaemon
+  const wakeupPending = state.subagentWakeupPending || bgSummary.anyWakeupRequired
+
+  if (anyActive) {
+    state.allWorkCompletedAtMs = null
+  } else if ((state.trackedByToolUseId.size > 0 || wakeupPending) && state.allWorkCompletedAtMs === null) {
+    state.allWorkCompletedAtMs = now
   }
 
-  if (state.wakeupPending && state.parentTurnEnded) {
+  if (state.parentTurnEnded && !wakeupPending) {
+    settleWakeupWaiters(state, 'completed')
+  } else if (wakeupPending && state.parentTurnEnded) {
     const afterStepIndex =
       state.activeWakeupMinSpawnStepIndex ??
       (spawnedRefs.length > 0 ? spawnedRefs[spawnedRefs.length - 1]!.stepIndex : 0)
     const wakeup = extractParentWakeupProgress(parentRaw, afterStepIndex)
-
-    for (const step of wakeup.steps) {
-      if (state.emittedWakeupStepIndices.has(step.stepIndex)) continue
-      state.emittedWakeupStepIndices.add(step.stepIndex)
-      state.unflushedWakeupReplay = true
-
-      if (step.thinking) {
-        state.emitEvent({
-          type: 'content_delta',
-          messageId: state.wakeupMessageId,
-          replace: true,
-          delta: {
-            type: 'thinking',
-            id: `agy_wakeup_think_${step.stepIndex}`,
-            thinking: step.thinking,
-            startedAt: step.startedAt,
-            endedAt: step.endedAt,
-          },
-        })
-      }
-
-      for (const tc of step.toolCalls) {
-        state.emitEvent({
-          type: 'content_delta',
-          messageId: state.wakeupMessageId,
-          delta: {
-            type: 'tool_use',
-            toolUseId: tc.toolUseId,
-            toolName: tc.toolName,
-            input: JSON.stringify(tc.input),
-            status: 'complete',
-            ...(tc.summary ? { toolSummary: tc.summary } : {}),
-          },
-        })
-        if (isSubagentToolName(tc.toolName) && !state.trackedByToolUseId.has(tc.toolUseId)) {
-          const desc =
-            typeof tc.input.description === 'string' && tc.input.description.trim()
-              ? tc.input.description.trim()
-              : tc.summary || 'Subagent'
-          state.trackedByToolUseId.set(tc.toolUseId, {
-            toolUseId: tc.toolUseId,
-            messageId: state.wakeupMessageId,
-            description: desc,
-            startedAtMs: now,
-            lastRawLength: 0,
-            completed: false,
-          })
-          state.allSubagentsCompletedAtMs = null
-          anyActive = true
-        } else {
-          state.emitEvent({
-            type: 'content_delta',
-            messageId: state.wakeupMessageId,
-            delta: {
-              type: 'tool_result',
-              toolUseId: tc.toolUseId,
-              summary: tc.resultSummary ?? 'done',
-              isError: Boolean(tc.isError),
-            },
-          })
-        }
-      }
-
-      if (step.content) {
-        state.emitEvent({
-          type: 'content_delta',
-          messageId: state.wakeupMessageId,
-          replace: true,
-          delta: {
-            type: 'text',
-            id: `agy_wakeup_text_${step.stepIndex}`,
-            text: step.content,
-          },
-        })
-      }
-
-      if (wakeup.turnInputTokens > 0 || wakeup.turnOutputTokens > 0 || wakeup.turnCacheReadTokens > 0) {
-        state.emitEvent({
-          type: 'message_usage',
-          messageId: state.wakeupMessageId,
-          inputTokens: wakeup.turnInputTokens,
-          outputTokens: wakeup.turnOutputTokens,
-          ...(wakeup.turnCacheReadTokens > 0 ? { cacheReadTokens: wakeup.turnCacheReadTokens } : {}),
-          ...(wakeup.turnContextTokens > 0 ? { contextTokens: wakeup.turnContextTokens } : {}),
-        })
-      }
+    if (emitWakeupProgressSteps(state, wakeup, state.wakeupMessageId, now)) {
+      anyActive = true
     }
 
     if (!anyActive && wakeup.completed) {
+      flushRemainingWakeupToolResults(state, wakeup, state.wakeupMessageId)
       settleWakeupWaiters(state, 'completed')
-    } else if (!anyActive && state.allSubagentsCompletedAtMs !== null) {
-      const elapsedSinceSubagentsDone = now - state.allSubagentsCompletedAtMs
-      if (!wakeup.sawSystemMessage && elapsedSinceSubagentsDone >= state.noWakeupTimeoutMs) {
+    } else if (!anyActive && state.allWorkCompletedAtMs !== null) {
+      const elapsedSinceDone = now - state.allWorkCompletedAtMs
+      if (!wakeup.sawSystemMessage && elapsedSinceDone >= state.noWakeupTimeoutMs) {
         settleWakeupWaiters(state, 'completed')
-      } else if (wakeup.sawSystemMessage && elapsedSinceSubagentsDone >= state.wakeupResponseTimeoutMs) {
+      } else if (wakeup.sawSystemMessage && elapsedSinceDone >= state.wakeupResponseTimeoutMs) {
         settleWakeupWaiters(state, 'completed')
+      }
+    }
+  } else if (
+    !wakeupPending &&
+    !state.parentTurnEnded &&
+    state.bgTasks.idleWatchStepIndex !== null &&
+    state.idleHooks &&
+    !state.idleHooks.isPromptActive() &&
+    parentRaw
+  ) {
+    const idleWakeup = extractParentWakeupProgress(parentRaw, state.bgTasks.idleWatchStepIndex)
+    const hasNewStepWork = idleWakeup.steps.some(
+      (s) =>
+        !state.emittedWakeupStepIndices.has(s.stepIndex) ||
+        s.toolCalls.some(
+          (tc) => tc.hasResult && !tc.resultPending && !state.emittedWakeupToolResultIds.has(tc.toolUseId),
+        ),
+    )
+    if (hasNewStepWork) {
+      const targetMsgId = state.idleWakeupMessageId ?? state.idleHooks.ensureMessage()
+      state.idleWakeupMessageId = targetMsgId
+      emitWakeupProgressSteps(state, idleWakeup, targetMsgId, now)
+      if (idleWakeup.completed) {
+        flushRemainingWakeupToolResults(state, idleWakeup, targetMsgId)
+        const lastStep = idleWakeup.steps[idleWakeup.steps.length - 1]
+        if (lastStep) state.bgTasks.idleWatchStepIndex = lastStep.stepIndex
+        state.idleWakeupMessageId = null
+        state.idleHooks.completeMessage()
       }
     }
   }
 
-  const shouldKeepPolling = anyActive || (state.wakeupPending && state.parentTurnEnded)
-  if (!shouldKeepPolling && state.timer) {
-    clearInterval(state.timer)
-    state.timer = null
+  ensurePollingTimer(state)
+}
+
+function desiredPollingIntervalMs(state: SessionSubagentState): number | null {
+  const anyActiveSubagent = [...state.trackedByToolUseId.values()].some((e) => !e.completed)
+  const anyActiveBg = [...state.bgTasks.tasksByToolUseId.values()].some(
+    (e) => Boolean(e.taskId) && e.wakeupRequired && !e.completed,
+  )
+  const wakeupPending = isEffectiveWakeupPending(state)
+  if (anyActiveSubagent || anyActiveBg || (wakeupPending && state.parentTurnEnded)) {
+    return POLL_INTERVAL_MS
   }
+  if (state.bgTasks.idleWatchStepIndex !== null && state.idleHooks) {
+    return IDLE_POLL_INTERVAL_MS
+  }
+  return null
 }
 
 function ensurePollingTimer(state: SessionSubagentState): void {
-  const anyActive = [...state.trackedByToolUseId.values()].some((e) => !e.completed)
-  const shouldPoll = anyActive || (state.wakeupPending && state.parentTurnEnded)
-  if (shouldPoll && !state.timer) {
-    state.timer = setInterval(() => {
-      syncSessionSubagents(state)
-    }, POLL_INTERVAL_MS)
-    state.timer.unref?.()
+  const desiredMs = desiredPollingIntervalMs(state)
+  if (desiredMs === null) {
+    if (state.timer) {
+      clearInterval(state.timer)
+      state.timer = null
+      state.timerIntervalMs = 0
+    }
+    return
   }
+  if (state.timer && state.timerIntervalMs === desiredMs) return
+  if (state.timer) clearInterval(state.timer)
+  state.timerIntervalMs = desiredMs
+  state.timer = setInterval(() => {
+    syncSessionSubagents(state)
+  }, desiredMs)
+  state.timer.unref?.()
+}
+
+function getOrCreateSessionState(
+  parentSessionId: string,
+  messageId: string,
+  emitEvent: (event: AgentEvent) => void,
+  customBrainRoots?: string[],
+  idleHooks?: AntigravityIdleWakeupHooks,
+): SessionSubagentState {
+  let state = sessionStates.get(parentSessionId)
+  if (!state) {
+    state = {
+      parentSessionId,
+      brainRoots: customBrainRoots ?? resolveAntigravityBrainRoots(),
+      emitEvent,
+      ...(idleHooks ? { idleHooks } : {}),
+      boundConversationIds: new Set(),
+      trackedByToolUseId: new Map(),
+      bgTasks: createBackgroundTaskTrackerState(),
+      wakeupMessageId: messageId,
+      idleWakeupMessageId: null,
+      subagentWakeupPending: false,
+      parentTurnEnded: false,
+      activeWakeupMinSpawnStepIndex: null,
+      allWorkCompletedAtMs: null,
+      noWakeupTimeoutMs: DEFAULT_NO_WAKEUP_TIMEOUT_MS,
+      wakeupResponseTimeoutMs: DEFAULT_WAKEUP_RESPONSE_TIMEOUT_MS,
+      emittedWakeupStepIndices: new Set(),
+      emittedWakeupToolResultIds: new Set(),
+      unflushedWakeupReplay: false,
+      wakeupWaiters: [],
+      timer: null,
+      timerIntervalMs: 0,
+    }
+    sessionStates.set(parentSessionId, state)
+    return state
+  }
+  if (!state.parentTurnEnded && state.wakeupMessageId !== messageId) {
+    pruneStaleUnboundBackgroundTasks(state.bgTasks)
+    if (!isEffectiveWakeupPending(state)) {
+      state.activeWakeupMinSpawnStepIndex = null
+    }
+  }
+  state.emitEvent = emitEvent
+  state.wakeupMessageId = messageId
+  if (customBrainRoots) state.brainRoots = customBrainRoots
+  if (idleHooks) state.idleHooks = idleHooks
+  return state
 }
 
 export function noteAntigravitySubagentEvents(
@@ -350,43 +284,39 @@ export function noteAntigravitySubagentEvents(
   mappedEvents: ReadonlyArray<AgentEvent>,
   emitEvent: (event: AgentEvent) => void,
   customBrainRoots?: string[],
+  idleHooks?: AntigravityIdleWakeupHooks,
 ): void {
-  let state = sessionStates.get(parentSessionId)
+  const hasRelevantEvent = mappedEvents.some(
+    (ev) =>
+      ev.type === 'content_delta' &&
+      ((ev.delta.type === 'tool_use' &&
+        (isSubagentToolName(ev.delta.toolName) ||
+          ev.delta.toolName === 'Bash' ||
+          ev.delta.toolName.toLowerCase() === 'schedule')) ||
+        ev.delta.type === 'tool_result'),
+  )
+  if (!hasRelevantEvent && !sessionStates.has(parentSessionId)) return
+
+  const state = getOrCreateSessionState(
+    parentSessionId,
+    messageId,
+    emitEvent,
+    customBrainRoots,
+    idleHooks,
+  )
+
+  let notedSubagent = false
   for (const event of mappedEvents) {
     if (event.type !== 'content_delta' || event.delta.type !== 'tool_use') continue
     if (!isSubagentToolName(event.delta.toolName)) continue
 
-    if (!state) {
-      state = {
-        parentSessionId,
-        brainRoots: customBrainRoots ?? resolveAntigravityBrainRoots(),
-        emitEvent,
-        boundConversationIds: new Set(),
-        trackedByToolUseId: new Map(),
-        wakeupMessageId: messageId,
-        wakeupPending: true,
-        parentTurnEnded: false,
-        activeWakeupMinSpawnStepIndex: null,
-        allSubagentsCompletedAtMs: null,
-        noWakeupTimeoutMs: DEFAULT_NO_WAKEUP_TIMEOUT_MS,
-        wakeupResponseTimeoutMs: DEFAULT_WAKEUP_RESPONSE_TIMEOUT_MS,
-        emittedWakeupStepIndices: new Set(),
-        unflushedWakeupReplay: false,
-        wakeupWaiters: [],
-        timer: null,
-      }
-      sessionStates.set(parentSessionId, state)
-    } else {
-      state.emitEvent = emitEvent
-      state.wakeupMessageId = messageId
-      if (!state.wakeupPending) {
-        state.activeWakeupMinSpawnStepIndex = null
-      }
-      state.wakeupPending = true
-      state.parentTurnEnded = false
-      state.allSubagentsCompletedAtMs = null
-      if (customBrainRoots) state.brainRoots = customBrainRoots
+    notedSubagent = true
+    if (!isEffectiveWakeupPending(state)) {
+      state.activeWakeupMinSpawnStepIndex = null
     }
+    state.subagentWakeupPending = true
+    state.parentTurnEnded = false
+    state.allWorkCompletedAtMs = null
 
     if (state.trackedByToolUseId.has(event.delta.toolUseId)) continue
 
@@ -420,16 +350,18 @@ export function noteAntigravitySubagentEvents(
     })
   }
 
-  if (!state) return
-  syncSessionSubagents(state)
-  ensurePollingTimer(state)
+  const notedBg = noteBackgroundTaskMappedEvents(state.bgTasks, messageId, mappedEvents, state.emitEvent)
+  if (notedSubagent || notedBg || isEffectiveWakeupPending(state)) {
+    syncSessionSubagents(state)
+  }
 }
 
 export function hasPendingAntigravitySubagentWakeup(parentSessionId: string): boolean {
   const state = sessionStates.get(parentSessionId)
   if (!state) return false
-  const anyActive = [...state.trackedByToolUseId.values()].some((e) => !e.completed)
-  return anyActive || state.wakeupPending
+  syncSessionSubagents(state)
+  const anyActiveSubagent = [...state.trackedByToolUseId.values()].some((e) => !e.completed)
+  return anyActiveSubagent || isEffectiveWakeupPending(state)
 }
 
 export function waitForAntigravitySubagentWakeup(
@@ -437,7 +369,10 @@ export function waitForAntigravitySubagentWakeup(
   opts?: { noWakeupTimeoutMs?: number; wakeupResponseTimeoutMs?: number },
 ): Promise<'completed' | 'cancelled'> {
   const state = sessionStates.get(parentSessionId)
-  if (!state || (!state.wakeupPending && ![...state.trackedByToolUseId.values()].some((e) => !e.completed))) {
+  if (!state) return Promise.resolve('completed')
+  syncSessionSubagents(state)
+  const anyActiveSubagent = [...state.trackedByToolUseId.values()].some((e) => !e.completed)
+  if (!anyActiveSubagent && !isEffectiveWakeupPending(state)) {
     return Promise.resolve('completed')
   }
   if (typeof opts?.noWakeupTimeoutMs === 'number' && opts.noWakeupTimeoutMs >= 0) {
@@ -446,25 +381,24 @@ export function waitForAntigravitySubagentWakeup(
   if (typeof opts?.wakeupResponseTimeoutMs === 'number' && opts.wakeupResponseTimeoutMs >= 0) {
     state.wakeupResponseTimeoutMs = opts.wakeupResponseTimeoutMs
   }
-  state.wakeupPending = true
   state.parentTurnEnded = true
   return new Promise<'completed' | 'cancelled'>((resolve) => {
     state.wakeupWaiters.push(resolve)
     syncSessionSubagents(state)
-    ensurePollingTimer(state)
   })
 }
 
 export function cancelAntigravitySubagentWakeupWait(parentSessionId: string): boolean {
   const state = sessionStates.get(parentSessionId)
   if (!state) return false
-  const hadWaiters = state.wakeupWaiters.length > 0 || state.wakeupPending
+  const hadWaiters = state.wakeupWaiters.length > 0 || isEffectiveWakeupPending(state)
   for (const entry of state.trackedByToolUseId.values()) {
     entry.completed = true
   }
   if (state.timer) {
     clearInterval(state.timer)
     state.timer = null
+    state.timerIntervalMs = 0
   }
   settleWakeupWaiters(state, 'cancelled')
   return hadWaiters
@@ -484,6 +418,7 @@ export function disposeAntigravitySubagentTracker(parentSessionId?: string): voi
     const state = sessionStates.get(parentSessionId)
     if (state) {
       if (state.timer) clearInterval(state.timer)
+      disposeBackgroundTaskTracker(state.bgTasks)
       settleWakeupWaiters(state, 'cancelled')
     }
     sessionStates.delete(parentSessionId)
@@ -491,6 +426,7 @@ export function disposeAntigravitySubagentTracker(parentSessionId?: string): voi
   }
   for (const state of sessionStates.values()) {
     if (state.timer) clearInterval(state.timer)
+    disposeBackgroundTaskTracker(state.bgTasks)
     settleWakeupWaiters(state, 'cancelled')
   }
   sessionStates.clear()

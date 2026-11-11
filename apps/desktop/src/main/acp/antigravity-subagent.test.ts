@@ -14,7 +14,7 @@ import {
 import {
   extractAntigravityApiRetryEvent,
   isAntigravityCancelledChunk,
-} from './antigravity-runtime-bridge'
+} from '@superone/shared/antigravity-chunks'
 import {
   clearUnflushedAntigravityWakeupReplay,
   disposeAntigravitySubagentTracker,

@@ -1376,6 +1376,29 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
           }
           continue
         }
+        const turn = liveTurn()
+        const turnScope = scope()
+        if (launch.agentId === 'antigravity') {
+          if (message.update.sessionUpdate === 'user_message_chunk') {
+            turnScope.sawUserMessageChunk = true
+            clearUnflushedAntigravityWakeupReplay(activeSession.sessionId)
+          } else if (
+            turn &&
+            !turnScope.sawUserMessageChunk &&
+            hasUnflushedAntigravityWakeupReplay(activeSession.sessionId) &&
+            (message.update.sessionUpdate === 'agent_thought_chunk' ||
+              message.update.sessionUpdate === 'agent_message_chunk' ||
+              message.update.sessionUpdate === 'tool_call' ||
+              message.update.sessionUpdate === 'tool_call_update' ||
+              message.update.sessionUpdate === 'usage_update')
+          ) {
+            log.debug(
+              '[acp-runtime] dropping stale pre-user_message_chunk antigravity wakeup replay update=%s',
+              message.update.sessionUpdate,
+            )
+            continue
+          }
+        }
         const update =
           launch.agentId === 'antigravity'
             ? normalizeAntigravitySessionUpdate(message.update, activeSession.sessionId)
@@ -1386,29 +1409,8 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         if (notifMeta) noteContextTokensFromMeta(xaiCorrelation, notifMeta)
         const nextContextTokens = xaiCorrelation.lastUsage?.totalTokens ?? 0
         const contextChanged = nextContextTokens > 0 && nextContextTokens !== prevContextTokens
-        const turn = liveTurn()
         trace('acp.session', update.sessionUpdate, update, turn?.lastMessageId ?? activeSession.sessionId)
-        const turnScope = scope()
         if (launch.agentId === 'antigravity') {
-          if (update.sessionUpdate === 'user_message_chunk') {
-            turnScope.sawUserMessageChunk = true
-            clearUnflushedAntigravityWakeupReplay(activeSession.sessionId)
-          } else if (
-            turn &&
-            !turnScope.sawUserMessageChunk &&
-            hasUnflushedAntigravityWakeupReplay(activeSession.sessionId) &&
-            (update.sessionUpdate === 'agent_thought_chunk' ||
-              update.sessionUpdate === 'agent_message_chunk' ||
-              update.sessionUpdate === 'tool_call' ||
-              update.sessionUpdate === 'tool_call_update' ||
-              update.sessionUpdate === 'usage_update')
-          ) {
-            log.debug(
-              '[acp-runtime] dropping stale pre-user_message_chunk antigravity wakeup replay update=%s',
-              update.sessionUpdate,
-            )
-            continue
-          }
           if (isAntigravityCancelledChunk(update)) {
             continue
           }
@@ -1541,7 +1543,22 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
           deliver(event)
         }
         if (launch.agentId === 'antigravity') {
-          noteAntigravitySubagentEvents(activeSession.sessionId, messageId, mapped, deliver)
+          noteAntigravitySubagentEvents(
+            activeSession.sessionId,
+            messageId,
+            mapped,
+            (ev) => {
+              trackOpenTools(scope().openToolIds, [ev])
+              if (superoneSid) noteAcpTaskLifecycle(superoneSid, ev)
+              deliver(ev)
+            },
+            undefined,
+            {
+              isPromptActive: () => Boolean(liveTurn()),
+              ensureMessage: () => ensureAgentInitiatedMessage(null),
+              completeMessage: () => completeAgentInitiated('complete'),
+            },
+          )
         }
         if (launch.agentId === 'antigravity' && hadOpenTools && turnScope.openToolIds.size === 0) {
           advanceAntigravityThinkingStepAfterTools(

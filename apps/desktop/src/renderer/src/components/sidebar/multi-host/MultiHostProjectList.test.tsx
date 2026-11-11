@@ -129,21 +129,23 @@ describe('environment sections', () => {
     }))
     renderList({
       paneHeight: 640,
+      sectionSizes: new Map([
+        ['desktop', { fixedPx: 36, sessions: [{ key: local.pathKey, contentPx: 640 }] }],
+        ['node-1', { fixedPx: 36, sessions: [] }],
+      ]),
       expandedProjectKeys: new Set([local.pathKey]),
       folderSessions: { [local.pathKey]: sessions },
     })
 
     const localList = document.querySelector<HTMLElement>('[data-environment-id="desktop"] [data-environment-project-list]')
-    const remoteList = document.querySelector<HTMLElement>('[data-environment-id="node-1"] [data-environment-project-list]')
     const sessionList = document.querySelector<HTMLElement>('[data-active-session-list]')
     expect(localList).toHaveClass('max-h-64')
     expect(localList?.style.maxHeight).toBe(`${640 - 36 * 2 - 36}px`)
-    expect(remoteList?.style.maxHeight ?? '').toBe('')
     expect(sessionList).toHaveClass('max-h-64')
     expect(sessionList?.style.maxHeight).toBe(`${640 - 36 * 2 - 36 - 36}px`)
   })
 
-  it('keeps every overflowing device on the shared cap', () => {
+  it('stays on the shared cap until device contents are measured', () => {
     const projects = (environmentId: string, count: number) => Array.from({ length: count }, (_, index) => checkout({
       environmentId,
       connectionId: environmentId === 'desktop' ? 'local' : 'cli-1',
@@ -198,6 +200,7 @@ describe('environment sections', () => {
     }))
     renderList({
       paneHeight: 640,
+      sectionSizes: new Map([['desktop', { fixedPx: 14 * 36, sessions: [] }]]),
       environments: [
         bucket({ environmentId: 'desktop', connectionId: 'local', label: 'This Mac', kind: 'local', checkouts: projects }),
         ...['alpha', 'beta', 'gamma', 'delta'].map((label) => bucket({

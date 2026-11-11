@@ -8,10 +8,11 @@ export const SESSION_ROW_ESTIMATE = 32
  * scrollport is the capped box. `overscroll-contain` stops the browser from
  * chaining a wheel into the sidebar on its own; `chainSessionListWheel`
  * forwards that wheel once this viewport is already at the edge, including
- * past a nested list that is also at its edge.
+ * past a nested list that is also at its edge. A new max height eases in with
+ * the same 120ms as `SidebarCollapse`.
  */
 const SESSION_LIST_SCROLL_BEHAVIOR =
-  'sidebar-scroll min-h-0 min-w-0 [&_[data-slot=scroll-area-viewport]]:max-h-[inherit] [&_[data-slot=scroll-area-viewport]]:overscroll-contain [&_[data-slot=scroll-area-viewport]>div]:block!'
+  'sidebar-scroll min-h-0 min-w-0 transition-[max-height] duration-[120ms] ease-out motion-reduce:transition-none [&_[data-slot=scroll-area-viewport]]:max-h-[inherit] [&_[data-slot=scroll-area-viewport]]:overscroll-contain [&_[data-slot=scroll-area-viewport]>div]:block!'
 
 /** Tailwind `max-h-64` at the default 16px root. Keep this aligned with that class. */
 export const SESSION_LIST_CAP_PX = 256
@@ -47,19 +48,6 @@ export type ProjectFocusListMax =
   | { kind: 'cap' }
   | { kind: 'px'; maxHeight: number }
 
-export interface SessionListMaxOptions {
-  /**
-   * `fill` (default): one list is the pane, even before it is measured.
-   * `stretch`: one long list takes the measured leftover after its heading.
-   * An unmeasured or short list stays on the cap.
-   */
-  loneList?: 'fill' | 'stretch'
-  /** One environment heading. The default is one session row. */
-  headingPx?: number
-  /** Height reserved for each row of a short list. The default is one session row. */
-  rowPx?: number
-}
-
 const ENVIRONMENT_HEADING_PX = SESSION_ROW_ESTIMATE
 
 function listIsLong(list: ProjectFocusListSize): boolean {
@@ -76,22 +64,14 @@ function pixelCap(maxHeight: number): ProjectFocusListMax {
  * The fixed cap stays only when more than one environment already has more
  * rows than that cap. Otherwise a short list keeps the cap (it does not
  * fill it) and a long list takes the pane that remains.
- * Project focus uses the default so the only checkout list is the pane.
- * The unfocused multi-host list stretches that one list under its device header.
+ * The only checkout list is the pane.
  */
 export function projectFocusSessionListMaxHeights(
   lists: readonly ProjectFocusListSize[],
   availablePx: number,
-  options?: SessionListMaxOptions,
 ): ProjectFocusListMax[] {
   if (lists.length === 0) return []
-  const headingUnit = options?.headingPx ?? ENVIRONMENT_HEADING_PX
-  if (lists.length === 1) {
-    if (options?.loneList !== 'stretch') return [{ kind: 'fill' }]
-    const list = lists[0]!
-    if (!listIsLong(list) || !(availablePx > 0)) return [{ kind: 'cap' }]
-    return [pixelCap(availablePx - headingUnit)]
-  }
+  if (lists.length === 1) return [{ kind: 'fill' }]
 
   const environments = new Map<string, ProjectFocusListSize[]>()
   for (const list of lists) {
@@ -104,10 +84,9 @@ export function projectFocusSessionListMaxHeights(
   if (environments.size > 1 && everyEnvironmentIsLong) return lists.map(() => ({ kind: 'cap' }))
   if (!(availablePx > 0)) return lists.map(() => ({ kind: 'cap' }))
 
-  const headingPx = environments.size > 1 ? environments.size * headingUnit : 0
-  const rowPx = options?.rowPx ?? SESSION_ROW_ESTIMATE
+  const headingPx = environments.size > 1 ? environments.size * ENVIRONMENT_HEADING_PX : 0
   const shortPx = lists.reduce((sum, list, index) => (
-    overflows[index] ? sum : sum + list.sessionCount * rowPx
+    overflows[index] ? sum : sum + list.sessionCount * SESSION_ROW_ESTIMATE
   ), 0)
   const longIndexes = overflows.flatMap((overflowsAt, index) => (overflowsAt ? [index] : []))
   const room = Math.max(0, availablePx - headingPx - shortPx)
@@ -124,63 +103,96 @@ export function projectFocusSessionListMaxHeights(
   })
 }
 
-export interface MultiHostSectionSize {
+export interface MultiHostSectionMeasure {
+  /** Device content outside its active session lists: project rows, attention rows, Settled. */
+  fixedPx: number
+  /** Full content height of each mounted active session list, keyed by project path. */
+  sessions: readonly { key: string; contentPx: number }[]
+}
+
+export interface MultiHostSectionSize extends MultiHostSectionMeasure {
   environmentId: string
   /** False when the device is collapsed or offline: only its header remains. */
   open: boolean
-  projectCount: number
-  /** Expanded projects whose session rows are inside this device's project scroll. */
-  sessions: readonly { key: string; sessionCount: number; hasMore?: boolean }[]
+}
+
+function shareRoom(demands: readonly number[], room: number): number[] {
+  const shares = demands.map((demand) => Math.min(demand, SESSION_LIST_CAP_PX))
+  let left = Math.max(0, room - shares.reduce((sum, share) => sum + share, 0))
+  const need = (index: number) => demands[index]! - shares[index]!
+  const order = demands.map((_, index) => index).sort((a, b) => need(a) - need(b))
+  order.forEach((index, rank) => {
+    const even = rank === order.length - 1 ? left : Math.floor(left / (order.length - rank))
+    const given = Math.min(need(index), even)
+    shares[index] = shares[index]! + given
+    left -= given
+  })
+  const cut = demands.map((demand, index) => shares[index]! < demand)
+  const level = Math.max(0, ...shares.filter((_, index) => cut[index]))
+  return shares.map((share, index) => (cut[index] ? share : Math.max(level, share + left)))
+}
+
+function sectionDemand(section: MultiHostSectionMeasure): number {
+  return section.sessions.reduce((sum, list) => sum + list.contentPx, section.fixedPx)
 }
 
 /**
- * Unfocused multi-host: one project scroll per device, sized like a focused
- * checkout list. Session lists inside a device grow into that device's share.
- * They stay on the shared cap when fitting sibling projects would shrink them
- * below it; the device scroll still reaches those projects, and the other
- * device stays on screen because the device scroll itself is capped.
+ * Unfocused multi-host: one project scroll per device, sized from measured
+ * content. Every device first takes what it needs up to the shared cap. Any
+ * room left goes to the devices that still overflow: each round fills the
+ * smallest remaining need evenly, or splits the rest evenly when it cannot.
+ * Session lists inside a device share that device's height the same way, so
+ * none shrinks below the cap to fit sibling projects; the device scroll still
+ * reaches those projects.
  */
 export function multiHostProjectListMaxHeights(
   sections: readonly MultiHostSectionSize[],
   paneHeight: number,
 ): { projects: Map<string, ProjectFocusListMax>; sessions: Map<string, number> } {
-  const lists = sections.map((section) => {
-    if (!section.open) return { environmentId: section.environmentId, sessionCount: 0 }
-    const sessionRows = section.sessions.reduce((sum, list) => sum + list.sessionCount, 0)
-    const hasMore = section.sessions.some((list) => list.hasMore === true)
-    const sessionCount = section.projectCount === 0 ? 1 : section.projectCount + sessionRows
-    return { environmentId: section.environmentId, sessionCount, hasMore }
-  })
-  const heights = projectFocusSessionListMaxHeights(lists, paneHeight, {
-    loneList: 'stretch',
-    headingPx: MULTI_HOST_CHROME_ROW_PX,
-    rowPx: MULTI_HOST_CHROME_ROW_PX,
-  })
-  const projects = new Map(sections.map((section, index) => [section.environmentId, heights[index]!]))
+  const projects = new Map<string, ProjectFocusListMax>(sections.map((section) => [section.environmentId, { kind: 'cap' }]))
   const sessions = new Map<string, number>()
-  sections.forEach((section, index) => {
-    const max = heights[index]
-    if (!max || max.kind !== 'px' || section.sessions.length === 0) return
-    const room = max.maxHeight - section.projectCount * MULTI_HOST_CHROME_ROW_PX
-    if (room <= 0) return
-    const sessionHeights = projectFocusSessionListMaxHeights(
-      section.sessions.map((list) => ({
-        environmentId: section.environmentId,
-        sessionCount: list.sessionCount,
-        hasMore: list.hasMore,
-      })),
-      room,
-      { loneList: 'stretch', headingPx: 0 },
-    )
-    section.sessions.forEach((list, sessionIndex) => {
-      const height = sessionHeights[sessionIndex]
-      if (height?.kind !== 'px') return
-      const growing = height.maxHeight > SESSION_LIST_CAP_PX
-      const shrinkingWithDevice = max.maxHeight < SESSION_LIST_CAP_PX
-      if (growing || shrinkingWithDevice) sessions.set(list.key, height.maxHeight)
+  if (!(paneHeight > 0)) return { projects, sessions }
+  const open = sections.filter((section) => section.open)
+  const devices = shareRoom(open.map(sectionDemand), paneHeight - sections.length * MULTI_HOST_CHROME_ROW_PX)
+  open.forEach((section, index) => {
+    const device = devices[index]!
+    projects.set(section.environmentId, pixelCap(device))
+    const lists = shareRoom(section.sessions.map((list) => list.contentPx), device - section.fixedPx)
+    section.sessions.forEach((list, listIndex) => {
+      const maxHeight = lists[listIndex]!
+      if (maxHeight > SESSION_LIST_CAP_PX) sessions.set(list.key, maxHeight)
     })
   })
   return { projects, sessions }
+}
+
+function scrollContent(scrollArea: Element): HTMLElement | null {
+  return scrollArea.querySelector<HTMLElement>(':scope > [data-slot="scroll-area-viewport"] > *')
+}
+
+export function measureMultiHostSections(
+  root: HTMLElement,
+  track: (element: Element) => void,
+): Map<string, MultiHostSectionMeasure> {
+  const sizes = new Map<string, MultiHostSectionMeasure>()
+  for (const list of root.querySelectorAll('[data-environment-id] [data-environment-project-list]')) {
+    const environmentId = list.closest('[data-environment-id]')?.getAttribute('data-environment-id')
+    const content = scrollContent(list)
+    if (!environmentId || !content) continue
+    track(content)
+    let boxesPx = 0
+    const sessions: { key: string; contentPx: number }[] = []
+    for (const active of content.querySelectorAll('[data-active-session-list]')) {
+      const key = active.closest('[data-project-key]')?.getAttribute('data-project-key')
+      const inner = scrollContent(active)
+      if (!key || !inner) continue
+      track(inner)
+      boxesPx += active.getBoundingClientRect().height
+      sessions.push({ key, contentPx: Math.ceil(inner.getBoundingClientRect().height) })
+    }
+    sizes.set(environmentId, { fixedPx: Math.ceil(content.getBoundingClientRect().height - boxesPx), sessions })
+  }
+  return sizes
 }
 
 /**

@@ -2,6 +2,7 @@ import { useLayoutEffect, useRef, useState, type ComponentProps } from 'react'
 import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
 import { environmentSections } from '@/lib/multi-host/group-projects'
 import type { EnvironmentBucket } from '@/lib/multi-host/types'
+import { measureMultiHostSections, type MultiHostSectionMeasure } from '@/components/sidebar/session-list-scroll'
 import { EnvironmentHeader, MultiHostProjectList, OfflineEnvironmentGroup } from './MultiHostProjectList'
 
 type ListProps = ComponentProps<typeof MultiHostProjectList>
@@ -20,6 +21,36 @@ export function MultiHostEnvironmentScroll(props: ListProps) {
   const [pinnedId, setPinnedId] = useState<string | null>(null)
   const [obscuredIds, setObscuredIds] = useState<string[]>([])
   const [paneHeight, setPaneHeight] = useState(0)
+  const [sectionSizes, setSectionSizes] = useState<ReadonlyMap<string, MultiHostSectionMeasure>>()
+
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current
+    const content = viewport?.firstElementChild
+    if (!viewport || !content || typeof ResizeObserver === 'undefined') return
+    const tracked = new Set<Element>()
+    let lastKey = ''
+    const measure = () => {
+      for (const element of tracked) {
+        if (element.isConnected) continue
+        observer.unobserve(element)
+        tracked.delete(element)
+      }
+      const next = measureMultiHostSections(viewport, (element) => {
+        if (tracked.has(element)) return
+        tracked.add(element)
+        observer.observe(element)
+      })
+      const key = JSON.stringify([...next])
+      if (key === lastKey) return
+      lastKey = key
+      setSectionSizes(next)
+    }
+    const observer = new ResizeObserver(measure)
+    tracked.add(content)
+    observer.observe(content)
+    measure()
+    return () => observer.disconnect()
+  }, [])
 
   useLayoutEffect(() => {
     const viewport = viewportRef.current
@@ -131,7 +162,7 @@ export function MultiHostEnvironmentScroll(props: ListProps) {
     <div ref={frameRef} className="device-name-clip relative flex h-full min-h-0 min-w-0 flex-col pt-1">
       {/* The viewport's child is `display: table`, whose border-spacing leaves a sliver of scroll at both ends. */}
       <ScrollArea type="scroll" edgeFade viewportRef={viewportRef} className="sidebar-scroll min-h-0 min-w-0 flex-1 [&_[data-slot=scroll-area-viewport]>div]:block!">
-        <MultiHostProjectList {...props} obscuredEnvironmentIds={obscuredIds} paneHeight={paneHeight} />
+        <MultiHostProjectList {...props} obscuredEnvironmentIds={obscuredIds} paneHeight={paneHeight} sectionSizes={sectionSizes} />
       </ScrollArea>
       {offlineSections.length > 0 && (
         <OfflineEnvironmentGroup

@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { describe, expect, it } from 'vitest'
-import { chainSessionListWheel, multiHostProjectListMaxHeights, projectFocusSessionListMaxHeights, SESSION_LIST_CAP_PX } from './session-list-scroll'
+import { chainSessionListWheel, measureMultiHostSections, multiHostProjectListMaxHeights, projectFocusSessionListMaxHeights, SESSION_LIST_CAP_PX } from './session-list-scroll'
 
 function scrollport(
   metrics: { scrollHeight: number; clientHeight: number; scrollTop: number },
@@ -69,80 +69,78 @@ describe('projectFocusSessionListMaxHeights', () => {
       { kind: 'cap' },
     ])
   })
-
-  it('stretches one long list under its heading once the pane is measured', () => {
-    expect(projectFocusSessionListMaxHeights([local(3)], 640, { loneList: 'stretch', headingPx: 36 })).toEqual([
-      { kind: 'cap' },
-    ])
-    expect(projectFocusSessionListMaxHeights([local(20)], 0, { loneList: 'stretch' })).toEqual([
-      { kind: 'cap' },
-    ])
-    expect(projectFocusSessionListMaxHeights([local(20)], 640, { loneList: 'stretch', headingPx: 36 })).toEqual([
-      { kind: 'px', maxHeight: 640 - 36 },
-    ])
-  })
 })
 
 describe('multiHostProjectListMaxHeights', () => {
+  const device = (environmentId: string, fixedPx: number, sessions: { key: string; contentPx: number }[] = [], open = true) => ({
+    environmentId, open, fixedPx, sessions,
+  })
+
   it('stretches the only device into the measured pane', () => {
-    const { projects } = multiHostProjectListMaxHeights([
-      { environmentId: 'local', open: true, projectCount: 14, sessions: [] },
-    ], 640)
+    const { projects } = multiHostProjectListMaxHeights([device('local', 14 * 36)], 640)
     expect(projects.get('local')).toEqual({ kind: 'px', maxHeight: 640 - 36 })
   })
 
-  it('keeps the cap when every open device already overflows it', () => {
+  it('splits the pane evenly when every open device overflows its share', () => {
     const { projects, sessions } = multiHostProjectListMaxHeights([
-      { environmentId: 'local', open: true, projectCount: 14, sessions: [] },
-      { environmentId: 'remote', open: true, projectCount: 10, sessions: [] },
-    ], 900)
-    expect(projects.get('local')).toEqual({ kind: 'cap' })
-    expect(projects.get('remote')).toEqual({ kind: 'cap' })
+      device('local', 14 * 36),
+      device('remote', 10 * 36),
+    ], 600)
+    const share = (600 - 36 * 2) / 2
+    expect(projects.get('local')).toEqual({ kind: 'px', maxHeight: share })
+    expect(projects.get('remote')).toEqual({ kind: 'px', maxHeight: share })
     expect(sessions.size).toBe(0)
   })
 
-  it('gives leftover height to the long device and grows its session list', () => {
+  it('keeps every device on the cap when the pane cannot fit them all', () => {
+    const { projects } = multiHostProjectListMaxHeights([
+      device('local', 14 * 36),
+      device('remote', 36),
+      device('build', 10 * 36),
+    ], 500)
+    expect(projects.get('local')).toEqual({ kind: 'cap' })
+    expect(projects.get('build')).toEqual({ kind: 'cap' })
+  })
+
+  it('fills the smallest remaining need before splitting the rest', () => {
+    const { projects } = multiHostProjectListMaxHeights([
+      device('local', 900),
+      device('remote', 300),
+      device('build', 100),
+    ], 36 * 3 + 256 + 100 + 256 + 200)
+    expect(projects.get('local')).toEqual({ kind: 'px', maxHeight: 256 + 200 - 44 })
+  })
+
+  it('leaves a quiet device only what it shows and grows the busy one', () => {
     const { projects, sessions } = multiHostProjectListMaxHeights([
-      { environmentId: 'local', open: true, projectCount: 1, sessions: [{ key: '/src/app', sessionCount: 20 }] },
-      { environmentId: 'remote', open: true, projectCount: 1, sessions: [] },
-    ], 640)
-    expect(projects.get('remote')).toEqual({ kind: 'cap' })
-    expect(projects.get('local')).toEqual({ kind: 'px', maxHeight: 640 - 36 * 2 - 36 })
-    expect(sessions.get('/src/app')).toBe(640 - 36 * 2 - 36 - 36)
+      device('local', 36, [{ key: '/src/app', contentPx: 640 }]),
+      device('remote', 68, [{ key: 'remote:/srv/app', contentPx: 32 }]),
+    ], 660)
+    const busy = 660 - 36 * 2 - 100
+    expect(projects.get('local')).toEqual({ kind: 'px', maxHeight: busy })
+    expect(sessions.get('/src/app')).toBe(busy - 36)
   })
 
   it('keeps a collapsed device as a heading only', () => {
     const { projects } = multiHostProjectListMaxHeights([
-      { environmentId: 'local', open: true, projectCount: 14, sessions: [] },
-      { environmentId: 'remote', open: false, projectCount: 10, sessions: [] },
+      device('local', 14 * 36),
+      device('remote', 10 * 36, [], false),
     ], 640)
     expect(projects.get('local')).toEqual({ kind: 'px', maxHeight: 640 - 36 * 2 })
+    expect(projects.get('remote')).toEqual({ kind: 'cap' })
   })
 
   it('does not shrink a session list just to fit sibling projects', () => {
     const { sessions } = multiHostProjectListMaxHeights([
-      {
-        environmentId: 'local',
-        open: true,
-        projectCount: 14,
-        sessions: [{ key: 'a', sessionCount: 20 }],
-      },
-      { environmentId: 'remote', open: true, projectCount: 1, sessions: [] },
+      device('local', 14 * 36, [{ key: 'a', contentPx: 640 }]),
+      device('remote', 36),
     ], 640)
     expect(sessions.has('a')).toBe(false)
   })
 
   it('splits two full projects on one device', () => {
     const { sessions } = multiHostProjectListMaxHeights([
-      {
-        environmentId: 'local',
-        open: true,
-        projectCount: 2,
-        sessions: [
-          { key: 'a', sessionCount: 20 },
-          { key: 'b', sessionCount: 12 },
-        ],
-      },
+      device('local', 2 * 36, [{ key: 'a', contentPx: 640 }, { key: 'b', contentPx: 384 }]),
     ], 800)
     const room = 800 - 36 - 2 * 36
     expect(sessions.get('a')).toBe(room / 2)
@@ -151,10 +149,47 @@ describe('multiHostProjectListMaxHeights', () => {
 
   it('stays on the cap before the pane is measured', () => {
     const { projects, sessions } = multiHostProjectListMaxHeights([
-      { environmentId: 'local', open: true, projectCount: 1, sessions: [{ key: '/src/app', sessionCount: 20 }] },
+      device('local', 36, [{ key: '/src/app', contentPx: 640 }]),
     ], 0)
     expect(projects.get('local')).toEqual({ kind: 'cap' })
     expect(sessions.size).toBe(0)
+  })
+})
+
+describe('measureMultiHostSections', () => {
+  const box = (html: string) => {
+    const root = document.createElement('div')
+    root.innerHTML = html
+    document.body.appendChild(root)
+    return root
+  }
+  const sized = (root: HTMLElement, selector: string, height: number) => {
+    const element = root.querySelector(selector)!
+    element.getBoundingClientRect = () => ({ height } as DOMRect)
+  }
+
+  it('reads device content outside its active lists and each list at full length', () => {
+    const root = box(`
+      <div data-environment-id="desktop">
+        <div data-environment-project-list>
+          <div data-slot="scroll-area-viewport"><div id="device">
+            <div data-project-key="/src/app">
+              <div data-active-session-list>
+                <div data-slot="scroll-area-viewport"><div id="sessions"></div></div>
+              </div>
+            </div>
+          </div></div>
+        </div>
+      </div>`)
+    sized(root, '#device', 400)
+    sized(root, '[data-active-session-list]', 256)
+    sized(root, '#sessions', 640)
+    const tracked: Element[] = []
+
+    const sizes = measureMultiHostSections(root, (element) => tracked.push(element))
+
+    expect(sizes.get('desktop')).toEqual({ fixedPx: 144, sessions: [{ key: '/src/app', contentPx: 640 }] })
+    expect(tracked.map((element) => element.id)).toEqual(['device', 'sessions'])
   })
 })
 

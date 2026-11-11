@@ -25,7 +25,7 @@ import { SessionHoverCardTrigger, sidebarHoverCardRowClass } from '@/components/
 import { SidebarHoverChevron, sidebarRowActionsClass } from '@/components/sidebar/hover-disclosure'
 import { EnvironmentSectionHeader } from './EnvironmentSectionHeader'
 import { focusEnvironment } from '@/components/sidebar/sidebar-focus'
-import { chainSessionListWheel, multiHostProjectListMaxHeights, SESSION_LIST_SCROLL_CLASS, type MultiHostSectionSize } from '@/components/sidebar/session-list-scroll'
+import { chainSessionListWheel, multiHostProjectListMaxHeights, SESSION_LIST_SCROLL_CLASS, type MultiHostSectionMeasure, type MultiHostSectionSize } from '@/components/sidebar/session-list-scroll'
 
 const EMPTY_SESSIONS: SessionHistoryEntry[] = []
 const EMPTY_SETTLED_SESSIONS: PinnedSessionEntry[] = []
@@ -81,6 +81,7 @@ export interface MultiHostProjectListProps {
    * The scroll frame passes this; other callers leave it unset.
    */
   paneHeight?: number
+  sectionSizes?: ReadonlyMap<string, MultiHostSectionMeasure>
   /** Focus mode: one environment's projects, with no environment header of their own. */
   flat?: boolean
 }
@@ -95,24 +96,15 @@ function heightSections(
   environments: readonly EnvironmentBucket[],
   sort: SidebarSort,
   collapsedIds: ReadonlySet<string>,
-  expandedProjectKeys: ReadonlySet<string>,
-  folderSessions: Record<string, SessionHistoryEntry[]>,
-  sessionsHasMore: Record<string, boolean> | undefined,
+  measured: ReadonlyMap<string, MultiHostSectionMeasure>,
 ): MultiHostSectionSize[] {
-  const sizes: MultiHostSectionSize[] = []
-  for (const { bucket, checkouts } of environmentSections(environments, sort)) {
-    if (bucket.connection === 'offline') continue
-    const open = !collapsedIds.has(bucket.environmentId)
-    const sessions = open ? checkouts.flatMap((checkout) => {
-      if (!expandedProjectKeys.has(checkout.pathKey)) return []
-      const sessionCount = folderSessions[checkout.pathKey]?.length ?? 0
-      const hasMore = sessionsHasMore?.[checkout.pathKey] === true
-      if (sessionCount === 0 && !hasMore) return []
-      return [{ key: checkout.pathKey, sessionCount, hasMore }]
-    }) : []
-    sizes.push({ environmentId: bucket.environmentId, open, projectCount: checkouts.length, sessions })
-  }
-  return sizes
+  return environmentSections(environments, sort)
+    .filter(({ bucket }) => bucket.connection !== 'offline')
+    .map(({ bucket }) => {
+      const open = !collapsedIds.has(bucket.environmentId)
+      const size = open ? measured.get(bucket.environmentId) : undefined
+      return { environmentId: bucket.environmentId, open, fixedPx: size?.fixedPx ?? 0, sessions: size?.sessions ?? [] }
+    })
 }
 
 function ProjectLoadError({
@@ -147,9 +139,9 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
   } = props
   const collapsedIds = new Set(collapsedEnvironmentIds)
 
-  const environmentHeights = groupBy === 'environment' && !props.flat
+  const environmentHeights = groupBy === 'environment' && !props.flat && props.sectionSizes
     ? multiHostProjectListMaxHeights(
-        heightSections(environments, sort, collapsedIds, expandedProjectKeys, props.folderSessions, props.sessionsHasMore),
+        heightSections(environments, sort, collapsedIds, props.sectionSizes),
         props.paneHeight ?? 0,
       )
     : null

@@ -633,7 +633,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   ]
 
   return (
-    <div className={cn('min-w-0', fill && 'flex h-full min-h-0 flex-1 flex-col')}>
+    <div data-project-key={folder.path} className={cn('min-w-0', fill && 'flex h-full min-h-0 flex-1 flex-col')}>
       {!sessionsOnly && <ProjectHoverCard
           name={folder.name}
           repoIdentity={repoIdentity}

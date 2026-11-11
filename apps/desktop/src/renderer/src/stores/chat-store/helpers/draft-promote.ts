@@ -865,13 +865,17 @@ export async function consumeDraftForSession(
   draftIdBySession.delete(sessionId)
   releaseParkedDraft(draftId)
   const { connectionId } = resolveDraftTarget(projectPath)
-  try {
-    // A save already in flight must not recreate a draft after its first send.
-    useDraftsStore.getState().markDraftDiscarded(draftId)
-    await useDraftsStore.getState().removeDraft(connectionId, draftId)
-  } catch {
-    /* list will refresh; never block send */
+  const drafts = useDraftsStore.getState()
+  // Carry preserves content identity across execution environments. Each host
+  // may still hold an autosaved copy, so consuming only the sending host leaves
+  // the old node's draft available to resume and send again.
+  const connections = new Set([connectionId])
+  for (const [id, rows] of Object.entries(drafts.byConnection ?? {})) {
+    if (rows.some((row) => row.id === draftId)) connections.add(id)
   }
+  // A save already in flight on any host must not recreate the consumed draft.
+  drafts.markDraftDiscarded(draftId)
+  await Promise.allSettled([...connections].map((id) => drafts.removeDraft(id, draftId)))
 }
 
 /** Test seam — the module-level map would otherwise leak across cases. */

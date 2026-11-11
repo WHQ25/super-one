@@ -59,6 +59,10 @@ describe('project child lists', () => {
 
     expect(screen.getByText('Open child').closest('[data-child-session-list]')).not.toBeNull()
     expect(screen.queryByText('Closed child')).toBeNull()
+    // Long nowrap titles must shrink with the list. Otherwise the row's layout
+    // box runs past the sidebar and the hover card anchors to that hidden edge.
+    expect(screen.getByText('Open parent').closest('[data-active-session-list]')).toHaveClass('min-w-0')
+    expect(screen.getByText('Open child').closest('[data-child-session-list]')).toHaveClass('min-w-0')
   })
 
   it.each([false, true])('reveals a remote running child without loading its transcript or opening the child list (project expanded: %s)', async (isExpanded) => {

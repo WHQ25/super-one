@@ -11,7 +11,7 @@ export const SESSION_ROW_ESTIMATE = 32
  * past a nested list that is also at its edge.
  */
 const SESSION_LIST_SCROLL_BEHAVIOR =
-  'sidebar-scroll min-h-0 [&_[data-slot=scroll-area-viewport]]:max-h-[inherit] [&_[data-slot=scroll-area-viewport]]:overscroll-contain [&_[data-slot=scroll-area-viewport]>div]:block!'
+  'sidebar-scroll min-h-0 min-w-0 [&_[data-slot=scroll-area-viewport]]:max-h-[inherit] [&_[data-slot=scroll-area-viewport]]:overscroll-contain [&_[data-slot=scroll-area-viewport]>div]:block!'
 
 /** Tailwind `max-h-64` at the default 16px root. Keep this aligned with that class. */
 export const SESSION_LIST_CAP_PX = 256

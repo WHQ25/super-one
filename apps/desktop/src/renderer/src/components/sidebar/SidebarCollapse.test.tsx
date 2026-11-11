@@ -42,6 +42,7 @@ describe('SidebarCollapse', () => {
     const panel = panelOf('Body')
     expect(panel).toHaveClass('grid-rows-[1fr]', 'duration-[120ms]', 'ease-out')
     expect(panel).not.toHaveAttribute('inert')
+    expect(screen.getByText('Body').parentElement).toHaveClass('min-w-0', 'overflow-hidden')
   })
 
   it('drops the body only after the close transition', () => {

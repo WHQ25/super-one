@@ -178,14 +178,14 @@ function HistoryList({
     ? t('common.loading') : trimmedQuery ? t('sidebar.search.noSessions') : t('sidebar.contextMenu.noSessions')
 
   return (
-    <div data-project-history className="flex flex-col overflow-hidden">
+    <div data-project-history className="flex min-w-0 flex-col overflow-hidden">
       {showSearch && <ProjectHistorySearch query={query} onQueryChange={setQuery} onClose={onClose} />}
       {failedPaths.length > 0 && <div role="alert" className="px-2.5 py-1 text-xs text-sidebar-foreground/70">
         {t('sidebar.search.loadFailed')}{' '}
         <button type="button" className="underline" onClick={() => { setAllSessions(null); setReloadNonce((n) => n + 1) }}>{t('common.retry')}</button>
       </div>}
       <ScrollArea type="scroll" edgeFade viewportRef={scrollRef} onScroll={handleScroll}
-        className="sidebar-scroll min-h-0 [&_[data-slot=scroll-area-viewport]]:max-h-[inherit] [&_[data-slot=scroll-area-viewport]]:overscroll-contain [&_[data-slot=scroll-area-viewport]>div]:block!"
+        className="sidebar-scroll min-h-0 min-w-0 [&_[data-slot=scroll-area-viewport]]:max-h-[inherit] [&_[data-slot=scroll-area-viewport]]:overscroll-contain [&_[data-slot=scroll-area-viewport]>div]:block!"
         style={{ maxHeight: HISTORY_VIEWPORT_MAX }}>
         {sessions.length === 0 ? <div className="px-2.5 py-3 text-[11px] text-sidebar-foreground/50">{emptyText}</div> : (
           <div style={{ height: virtualizer.getTotalSize(), position: 'relative' }} className="w-full">

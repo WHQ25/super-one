@@ -256,6 +256,9 @@ describe('SessionRow hover card', () => {
     const title = trigger?.querySelector('.animated-title-wrap')
     expect(title).not.toBeNull()
     expect(title?.parentElement).toBe(trigger)
+    // flex-basis 0 so a nowrap title ellipsizes inside the row instead of
+    // stretching the row's layout box past the sidebar.
+    expect(title).toHaveClass('min-w-0', 'flex-1')
   })
 
   it('anchors a pinned card to the whole pinned row', () => {

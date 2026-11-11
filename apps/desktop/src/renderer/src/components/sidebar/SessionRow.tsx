@@ -517,7 +517,7 @@ function SessionRowFrame({
               </span>
             </div>
             {animateTitle
-              ? <SessionTitleAnimated projectPath={folderPath} sessionId={session.sessionId} fallback={session.title} className={view.titleClassName} animateOnMount={animateInitialTitle} />
+              ? <SessionTitleAnimated projectPath={folderPath} sessionId={session.sessionId} fallback={session.title} className={cn('min-w-0 flex-1', view.titleClassName)} animateOnMount={animateInitialTitle} />
               : <PlainSessionTitle projectPath={folderPath} sessionId={session.sessionId} fallback={session.title} className={view.titleClassName} />
             }
             {environmentOffline && (

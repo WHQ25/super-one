@@ -633,7 +633,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   ]
 
   return (
-    <div className={cn(fill && 'flex h-full min-h-0 flex-1 flex-col')}>
+    <div className={cn('min-w-0', fill && 'flex h-full min-h-0 flex-1 flex-col')}>
       {!sessionsOnly && <ProjectHoverCard
           name={folder.name}
           repoIdentity={repoIdentity}
@@ -796,7 +796,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
               onDeleteSession={onDeleteSession}
             />
           ) : derived.showSessions ? (
-            <div className={cn('flex flex-col py-0.5', fill && 'min-h-0 flex-1')}>
+            <div className={cn('flex min-w-0 flex-col py-0.5', fill && 'min-h-0 flex-1')}>
               {derived.groupsToShow.length === 0 ? (
                 sessionsLoading || sessionsOnly || projectSettled.length > 0 ? null : (
                   <div className="px-2.5 py-1.5 text-[11px] text-sidebar-foreground/70">{t('sidebar.contextMenu.noSessions')}</div>

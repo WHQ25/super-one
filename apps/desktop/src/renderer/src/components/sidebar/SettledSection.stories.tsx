@@ -164,6 +164,17 @@ export const Narrow: Story = {
       </Frame>
     )
   },
+  play: async ({ canvasElement }) => {
+    const frame = canvasElement.querySelector('[data-sidebar-inner]') as HTMLElement
+    const row = canvasElement.querySelector('.group\\/session') as HTMLElement
+    const frameBox = frame.getBoundingClientRect()
+    const rowBox = row.getBoundingClientRect()
+    await expect(rowBox.width).toBeGreaterThan(0)
+    await expect(rowBox.right).toBeLessThanOrEqual(frameBox.right + 1)
+    const inner = row.querySelector('.animated-title-inner') as HTMLElement
+    await expect(getComputedStyle(inner).textOverflow).toBe('ellipsis')
+    await expect(inner.scrollWidth).toBeGreaterThan(inner.clientWidth)
+  },
 }
 
 /**

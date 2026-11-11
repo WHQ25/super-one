@@ -196,7 +196,7 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
   if (props.flat) {
     const sections = environmentSections(environments, sort)
     return (
-      <div className="flex w-0 min-w-full flex-col px-2 pb-1.5">
+      <div className="flex w-0 min-w-full flex-col px-2 pb-1.5 [&>*]:min-w-0">
         {sections.map(({ bucket, checkouts }) => (
           <div key={bucket.environmentId} data-environment-id={bucket.environmentId}>
             {bucket.projectsStatus === 'loading' && checkouts.length === 0 && (
@@ -225,7 +225,7 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
   if (groupBy === 'environment') {
     const sections = environmentSections(environments, sort).filter((section) => section.bucket.connection !== 'offline')
     return (
-      <div className="flex w-0 min-w-full flex-col px-2 pb-1.5">
+      <div className="flex w-0 min-w-full flex-col px-2 pb-1.5 [&>*]:min-w-0">
         {sections.map(({ bucket, checkouts }) => {
           const collapsed = collapsedEnvironmentIds.includes(bucket.environmentId)
           const projectMax = environmentHeights?.projects.get(bucket.environmentId)
@@ -279,7 +279,7 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
   )
   const errors = environments.filter((bucket) => bucket.projectsStatus === 'error')
   return (
-    <div className="flex w-0 min-w-full flex-col px-2 pb-1.5">
+    <div className="flex w-0 min-w-full flex-col px-2 pb-1.5 [&>*]:min-w-0">
       {errors.map((bucket) => (
         <ProjectLoadError
           key={bucket.environmentId}

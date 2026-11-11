@@ -1,6 +1,7 @@
 import { useLayoutEffect, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect, userEvent, within } from 'storybook/test'
+import { expect, userEvent, waitFor, within } from 'storybook/test'
+import type { SessionHoverModel } from '@/lib/multi-host/session-hover'
 import type { PinnedSessionEntry, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { PROJECT_SETTLED_COLLAPSE_KEY, settledPanelId } from './sidebar-section-collapse'
 import { useAppStore } from '@/stores/app'
@@ -442,5 +443,59 @@ export const AllNesting: Story = {
     await expect(settled).toHaveAttribute('aria-expanded', 'true')
     await expect(canvas.getByText('Settled session 0')).toBeInTheDocument()
     await expect(canvas.queryByText('Settled session 35')).toBeNull()
+  },
+}
+
+const LONG_TITLE = '你现在连上了 superone 的 mcp 服务器了吗? mcp app 的标准更新了，然后 claude 也出了新的界面'
+
+function longTitleHover(): SessionHoverModel {
+  return {
+    title: LONG_TITLE,
+    projectName: 'super-one',
+    environmentLabel: 'This Mac',
+    kind: 'local',
+    connection: 'connected',
+    worktreeName: null,
+    lastActiveAt: '2026-10-09T00:00:00.000Z',
+    tags: [],
+  }
+}
+
+/**
+ * Non-focus list. A nowrap title used to widen the row past the clipped
+ * sidebar, so the hover card opened at that hidden right edge.
+ */
+export const LongTitle: Story = {
+  render: () => (
+    <div className="overflow-hidden bg-sidebar text-sidebar-foreground" style={{ width: 240 }} data-sidebar-outer>
+      <ProjectSidebarRow
+        {...callbacks}
+        showSettled={false}
+        folder={{ id: 'long', name: 'super-one', path: '/storybook/long-title', addedAt: '2026-10-09T00:00:00.000Z', lastOpened: '2026-10-09T00:00:00.000Z' }}
+        sessions={[session('long', LONG_TITLE)]}
+        sessionPresentation={() => ({ hover: longTitleHover() })}
+        isExpanded
+      />
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const frame = canvasElement.querySelector('[data-sidebar-outer]') as HTMLElement
+    const trigger = canvasElement.querySelector('.group\\/session') as HTMLElement
+    const frameBox = frame.getBoundingClientRect()
+    const triggerBox = trigger.getBoundingClientRect()
+    await expect(triggerBox.width).toBeGreaterThan(0)
+    await expect(triggerBox.right).toBeLessThanOrEqual(frameBox.right + 1)
+    const inner = trigger.querySelector('.animated-title-inner') as HTMLElement
+    await expect(getComputedStyle(inner).textOverflow).toBe('ellipsis')
+    await expect(inner.scrollWidth).toBeGreaterThan(inner.clientWidth)
+    await userEvent.hover(trigger)
+    const card = await waitFor(() => {
+      const node = canvasElement.ownerDocument.querySelector('[data-slot="hover-card-content"]')
+      if (!node) throw new Error('hover card missing')
+      return node
+    }, { timeout: 2000 })
+    const cardBox = card.getBoundingClientRect()
+    await expect(cardBox.left).toBeGreaterThanOrEqual(triggerBox.right - 1)
+    await expect(cardBox.left).toBeLessThanOrEqual(triggerBox.right + 8)
   },
 }

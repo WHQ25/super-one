@@ -701,7 +701,7 @@ export const AppSidebar = memo(function AppSidebar() {
   const pinnedAndDrafts = (showPinned || showDrafts) ? (
     <>
       {showPinned && (
-        <div className="flex flex-col px-2 pt-1 pb-1">
+        <div className="flex min-w-0 flex-col px-2 pt-1 pb-1">
           <SidebarSectionLabel
             section="pinned"
             count={pinnedForList.length}
@@ -736,7 +736,7 @@ export const AppSidebar = memo(function AppSidebar() {
         </div>
       )}
       {showDrafts && (
-        <div className="px-2">
+        <div className="min-w-0 px-2">
           <DraftsSection
             connectionIds={focusDrafts ? focusDrafts.connectionIds : draftConnectionIds}
             offlineConnectionIds={focusDrafts ? focusDrafts.offlineConnectionIds : offlineDraftConnectionIds}
@@ -840,7 +840,7 @@ export const AppSidebar = memo(function AppSidebar() {
           onLoadFolderSessions={(folderPath) => { void loadFolderSessions(folderPath, 'expand') }}
         />
       ) : (
-      <div className={cn('flex min-h-0 flex-1 flex-col', sidebarTab !== 'sessions' && 'hidden')}>
+      <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col', sidebarTab !== 'sessions' && 'hidden')}>
       {!multiHostChrome && (
       <div className="flex items-center justify-between px-1.5 pt-1.5 pb-0.5">
         <span className="truncate px-1.5 py-0.5 text-sm font-medium text-sidebar-foreground/70">
@@ -897,7 +897,7 @@ export const AppSidebar = memo(function AppSidebar() {
       </div>
       )}
 
-      <div className="min-h-0 flex-1">
+      <div className="min-h-0 min-w-0 flex-1">
         {multiHostChrome ? (
           environments.length === 0 ? (
             <div className="flex flex-1 items-center justify-center p-4 text-xs text-sidebar-foreground/70">
@@ -963,7 +963,7 @@ export const AppSidebar = memo(function AppSidebar() {
           </div>
         ) : (
           <ScrollArea type="scroll" edgeFade className="sidebar-scroll h-full">
-            <div className="flex w-0 min-w-full flex-col px-2 pb-1.5">
+            <div className="flex w-0 min-w-full flex-col px-2 pb-1.5 [&>*]:min-w-0">
               {hostTurnedOff ? (
                 <div className="flex flex-col items-center justify-center gap-1 p-4 text-center text-xs text-sidebar-foreground/70">
                   <span>{t('sidebar.hostDisconnected')}</span>

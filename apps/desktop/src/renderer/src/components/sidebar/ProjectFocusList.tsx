@@ -312,12 +312,12 @@ export function ProjectFocusList({
       )}
       <div ref={paneRef} data-project-focus-active className="flex min-h-0 flex-1 flex-col">
         {fillsPane ? (
-          <div className="flex min-h-0 w-0 min-w-full flex-1 flex-col">
+          <div className="flex min-h-0 w-0 min-w-full flex-1 flex-col [&>*]:min-w-0">
             {activeSections}
           </div>
         ) : (
           <ScrollArea type="scroll" edgeFade className="sidebar-scroll h-full min-h-0 flex-1">
-            <div className="flex w-0 min-w-full flex-col">
+            <div className="flex w-0 min-w-full flex-col [&>*]:min-w-0">
               {activeSections}
             </div>
           </ScrollArea>

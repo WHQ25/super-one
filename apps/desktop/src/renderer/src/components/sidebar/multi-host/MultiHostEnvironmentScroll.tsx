@@ -128,9 +128,9 @@ export function MultiHostEnvironmentScroll(props: ListProps) {
   return (
     // pt-1 and top-1 stay equal. With AppDrawer's mb-1 the gap is 8px.
     // The offline group is a sibling under the scroll. Opening it shortens the host list.
-    <div ref={frameRef} className="device-name-clip relative flex h-full min-h-0 flex-col pt-1">
+    <div ref={frameRef} className="device-name-clip relative flex h-full min-h-0 min-w-0 flex-col pt-1">
       {/* The viewport's child is `display: table`, whose border-spacing leaves a sliver of scroll at both ends. */}
-      <ScrollArea type="scroll" edgeFade viewportRef={viewportRef} className="sidebar-scroll min-h-0 flex-1 [&_[data-slot=scroll-area-viewport]>div]:block!">
+      <ScrollArea type="scroll" edgeFade viewportRef={viewportRef} className="sidebar-scroll min-h-0 min-w-0 flex-1 [&_[data-slot=scroll-area-viewport]>div]:block!">
         <MultiHostProjectList {...props} obscuredEnvironmentIds={obscuredIds} paneHeight={paneHeight} />
       </ScrollArea>
       {offlineSections.length > 0 && (

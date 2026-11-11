@@ -68,7 +68,10 @@ export function SidebarCollapse({
       aria-hidden={expanded ? undefined : true}
       onTransitionEnd={onTransitionEnd}
     >
-      <div className={cn('overflow-hidden', fill && expanded && 'flex min-h-0 flex-1 flex-col', innerClassName)}>
+      {/* min-w-0: a nowrap title must not widen this grid item. The outer
+          box clips the paint, but the row's layout rect stays the full
+          string and the hover card anchors to that hidden edge. */}
+      <div className={cn('min-w-0 overflow-hidden', fill && expanded && 'flex min-h-0 flex-1 flex-col', innerClassName)}>
         {mounted ? children : null}
       </div>
     </div>
@@ -136,7 +139,10 @@ export function SidebarHeightMorph({
       className={cn(fill ? 'flex min-h-0 flex-1 flex-col' : 'grid', className)}
       style={fill ? undefined : { overflow: 'hidden' }}
     >
-      <div ref={innerRef} className={cn('min-h-0', fill && 'flex min-h-0 flex-1 flex-col')}>{children}</div>
+      {/* min-w-0: a nowrap session title must not widen this grid/flex item.
+          The outer box clips the paint, but the row's layout rect stays the
+          full string and the hover card anchors to that hidden edge. */}
+      <div ref={innerRef} className={cn('min-h-0 min-w-0', fill && 'flex min-h-0 flex-1 flex-col')}>{children}</div>
     </div>
   )
 }

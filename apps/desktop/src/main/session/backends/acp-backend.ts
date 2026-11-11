@@ -1501,10 +1501,14 @@ export class AcpBackend implements SessionBackend {
 
   async send(request: SendMessageRequest, delivery?: SendDelivery): Promise<void> {
     if (!this.started || this.disposed) throw new Error('AcpBackend not started')
-    const compact = parseGrokCompactSlash(request.content)
-    if (compact) {
-      await this.compactNow(compact.userContext)
-      return
+    // Antigravity `/compact` is a normal session/prompt. The Grok RPC is not
+    // an Antigravity method; the turn itself is the start and end signal.
+    if (!isAntigravityAcpAgent(this.config.agentId)) {
+      const compact = parseGrokCompactSlash(request.content)
+      if (compact) {
+        await this.compactNow(compact.userContext)
+        return
+      }
     }
     // `/goal …` has to be a new prompt so Grok's slash parser sees it. Parking
     // it for interject (or behind the live goal turn) leaves pause/clear as a

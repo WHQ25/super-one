@@ -1939,6 +1939,21 @@ describe('AcpBackend', () => {
     await backend.close()
   })
 
+  it('sends Antigravity /compact as a prompt instead of x.ai/compact_conversation', async () => {
+    const prompts: string[] = []
+    const compact = vi.fn()
+    setAcpRuntimeFactory(async () => mockRuntime({
+      compactConversation: compact,
+      prompt: async (text) => { prompts.push(text) },
+    }))
+    const backend = new AcpBackend()
+    await backend.start(startOpts({ agentId: 'antigravity' }))
+    await backend.send({ content: '/compact keep the auth notes' })
+    expect(compact).not.toHaveBeenCalled()
+    expect(prompts).toEqual(['/compact keep the auth notes'])
+    await backend.close()
+  })
+
   it('rewinds files via prompt index with files_only, all, and conversation_only', async () => {
     const executes: Array<{ index: number; mode: string }> = []
     setAcpRuntimeFactory(async () => mockRuntime({

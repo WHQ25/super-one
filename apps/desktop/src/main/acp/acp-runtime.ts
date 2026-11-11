@@ -158,6 +158,15 @@ import {
   type AntigravityWireTurnUsage,
 } from './antigravity-runtime-bridge'
 import {
+  antigravityCompactTrigger,
+  antigravityManualCompactStart,
+  beginAntigravityCompactionTurn,
+  createAntigravityCompactionWatch,
+  finishAntigravityManualCompaction,
+  observeAntigravityCompaction,
+  readAntigravityCompactionSteps,
+} from './antigravity-compaction'
+import {
   isAntigravityUserInputRequest,
   normalizeAntigravitySessionUpdate,
 } from './antigravity-protocol'
@@ -1183,6 +1192,10 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     readonly stopWaiter: ((stopReason: string) => void) | null
     readonly settledPromise: Promise<void>
     superseded: boolean
+    /** `/compact` is a normal prompt. Its turn is the compaction start and end. */
+    manualCompact: boolean
+    compactStartedAt: number
+    compactionSettled: boolean
   }
   const newTurnScope = (lastMessageId: string | null = null): AcpTurnScope => ({
     agentMsgToLocal: new Map<string, string>(),
@@ -1198,6 +1211,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     emittedStepThinkingIds: [],
   })
   let currentTurn: AcpPromptTurn | null = null
+  const compactionWatch = launch.agentId === 'antigravity' ? createAntigravityCompactionWatch() : null
   /** Scope for agent-initiated (auto-wake) streaming, which runs only while no prompt is live. */
   let wakeScope: AcpTurnScope = newTurnScope()
   /** The scope owning whatever is streaming right now. */
@@ -1470,6 +1484,18 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
             closeAntigravityThinkingStep(turnScope, messageId, deliver)
             if (wasThinkingOpen || update.sessionUpdate === 'tool_call') {
               syncAntigravityTurnFromDb(activeSession.sessionId, messageId, turnScope, xaiCorrelation, deliver)
+            }
+          }
+          // One checkpoint read per new tool call. Updates of a call already
+          // opened are not a new chance for step 23 to appear.
+          if (
+            compactionWatch &&
+            update.sessionUpdate === 'tool_call' &&
+            !liveTurn()?.manualCompact
+          ) {
+            const steps = readAntigravityCompactionSteps(activeSession.sessionId)
+            for (const event of observeAntigravityCompaction(compactionWatch, steps)) {
+              deliver(event)
             }
           }
         }
@@ -1761,6 +1787,9 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         stopWaiter,
         settledPromise,
         superseded: false,
+        manualCompact: false,
+        compactStartedAt: 0,
+        compactionSettled: false,
       }
       const cancelPreviousBeforePrompt = launch.agentId === 'antigravity' && previousTurn !== null
       if (!cancelPreviousBeforePrompt) {
@@ -1826,7 +1855,21 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       // ActiveSession.prompt() cannot stamp `_meta`. Grok's
       // reconcile_plan_mode_with_prompt treats prompt `_meta.mode` as the only
       // prompt-carried mode signal (`agent` | `ask` | `plan`).
+      if (compactionWatch) {
+        const now = Date.now()
+        beginAntigravityCompactionTurn(
+          compactionWatch,
+          readAntigravityCompactionSteps(activeSession.sessionId),
+          now,
+        )
+        if (antigravityCompactTrigger(text) === 'manual') {
+          turn.manualCompact = true
+          turn.compactStartedAt = now
+          for (const event of antigravityManualCompactStart()) turn.onEvent(event)
+        }
+      }
       promptOpts?.onInputAccepted?.()
+      let compactOutcome: 'success' | 'failed' = 'failed'
       const promptPromise = activeConnection.agent.request(methods.agent.session.prompt, {
         sessionId: activeSession.sessionId,
         prompt: promptBlocks as never,
@@ -1936,6 +1979,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
             onEvent({ type: 'message_interrupted', messageId: id })
           }
         } else if (complete) {
+          compactOutcome = 'success'
           for (const id of localIds) {
             onEvent({ type: 'message_complete', messageId: id })
           }
@@ -2032,6 +2076,21 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         fail(describeAcpRequestFailure(err))
         throw err
       } finally {
+        if (compactionWatch && !turn.compactionSettled) {
+          turn.compactionSettled = true
+          const now = Date.now()
+          const steps = readAntigravityCompactionSteps(activeSession.sessionId)
+          const events = turn.manualCompact
+            ? finishAntigravityManualCompaction(
+              compactionWatch,
+              steps,
+              compactOutcome,
+              turn.compactStartedAt || now,
+              now,
+            )
+            : observeAntigravityCompaction(compactionWatch, steps)
+          for (const event of events) turn.onEvent(event)
+        }
         // Only the newest turn owns `currentTurn`; an older turn settling late
         // must leave the live one alone.
         if (gen === promptGen && currentTurn === turn) currentTurn = null

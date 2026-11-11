@@ -17,6 +17,14 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 - MCP Apps speak ext-apps 2.1. An app can register tools the model calls, and each call waits for consent. The desktop app drawer and Apps panel list global apps and apps for the open thread. A global app opens with no session and no project; the first message starts one. Chat, including the phone, asks before an app tool runs, and downloads from an app stay on the safety list.
 - A harness whose external CLI is missing shows a command that installs it.
+- Remote nodes rewind Claude, Grok, and Codex with the same modes as the desktop. Antigravity has no rewind, so that control stays hidden.
+- Antigravity `manage_subagents` has its own card for listing agents, listing peers, and stopping one or all of them. The card shows the role, a short conversation id, and the state.
+- Antigravity shows when a compaction starts and when it ends.
+- Claude and Codex model lists can be refreshed. Ordinary opens still read the 24-hour cache, and a refresh leaves the current list up until the new one arrives. Collaboration, suggested tasks, settings, and the remaining chat pickers use the same action. A phone paired with the desktop host still reads the saved catalog.
+
+### Changed
+
+- Grok and Antigravity are separate harnesses. An old `acp` session still opens, and a new session is stored as one or the other. Custom experimental ACP commands are not launched. Each agent keeps its own mark and usage gauge. `/recap` runs only for a known Grok agent. The harness chosen for a new session stays put when the project changes.
 
 ### Fixed
 
@@ -26,6 +34,31 @@ Every alpha release keeps its own notes on its GitHub Release.
 - A ready Antigravity install shows in the remote harness picker on its own.
 - A reply stays on screen when streaming ends. A short transcript keeps its place while scrolling up through a turn that is still streaming. (#184)
 - Claude bash rows on a remote node keep their file diffs. (#183)
+- A suggested task offers only harnesses the host can start. On a remote session, harnesses the node does not advertise stay hidden.
+- Claude's context ring uses the session's reported window when the catalog misses that model. (#182)
+- A draft that was already sent is consumed on every host. Paste-only content restores from the saved document. (#188)
+- Antigravity streams a background command and wakes the turn when it, or a scheduled task, finishes.
+
+## [0.80.0-alpha.1] - 2026-11-12
+
+### Added
+
+- Remote nodes rewind Claude, Grok, and Codex with the same modes as the desktop. Antigravity has no rewind API, so that control stays hidden.
+- Antigravity `manage_subagents` has its own card for listing agents, listing peers, and stopping one or all of them. The card shows the role, a short conversation id, and the state.
+- Antigravity shows when a compaction starts and when it ends. A manual `/compact` is both. An automatic compaction is read when the next tool call arrives and again when the turn settles.
+- Claude and Codex model lists can be refreshed. A normal open still uses the 24-hour cache, and a refresh keeps the current list on screen until the new one arrives. Collaboration, suggested tasks, settings, and the other chat pickers share that action. A phone paired with this desktop still reads the saved catalog. ACP chat models come from the live session, so that selector has no refresh button.
+
+### Changed
+
+- Grok and Antigravity are separate harnesses. An old `acp` session still opens. A new session is stored as Grok or Antigravity. Custom experimental ACP commands are no longer launched. A custom agent keeps its own mark, and `/recap` intercepts only a known Grok agent.
+
+### Fixed
+
+- A suggested task lists only harnesses this host can start. On a remote card, harnesses the node does not advertise are hidden too.
+- Claude's context ring uses the window the session reports when the catalog has no entry, so a 1M model is not shown against a hardcoded 200k. An empty model selection no longer skips the session model. (#182)
+- Grok and Antigravity usage gauges stay separate. A stale in-flight fetch is ignored, and switching to an empty draft clears the previous rate limit. The harness you picked stays selected when a new session changes project.
+- A sent draft is consumed on every known host, so the previous node cannot offer it again. A paste with no plain text restores from the saved document, including after the editor remounts. (#188)
+- Antigravity streams a background command and wakes the parent when that command or a scheduled task finishes. A task asked to keep running does not hold the turn open.
 
 ## [0.80.0-alpha] - 2026-11-11
 

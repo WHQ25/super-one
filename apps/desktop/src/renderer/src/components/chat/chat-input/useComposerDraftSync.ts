@@ -36,7 +36,9 @@ export function useComposerDraftSync({ editor, text, draftJson, attachments, ses
     })
     const storeAtts = attachments.filter((attachment) => attachment.id)
     const attMismatch = storeAtts.length !== editorAttIds.size || storeAtts.some((attachment) => !editorAttIds.has(attachment.id!))
-    const docMismatch = (readOnly || sessionChanged) && draftJson && JSON.stringify(draftJson) !== JSON.stringify(editor.getJSON())
+    // Paste chips have no plain text. An empty editor can therefore have the
+    // same text as a saved draft while still needing its rich document restored.
+    const docMismatch = draftJson && JSON.stringify(restorableDraftDoc(draftJson)) !== JSON.stringify(editor.getJSON())
     if (text === editor.getText() && !attMismatch && !docMismatch) return
 
     let cancelled = false

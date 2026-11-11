@@ -29,8 +29,9 @@ function updateDraft(fields: Partial<PerSessionState>) {
   })
 }
 
-function DraftPreview({ narrow = false, busy = false, failure = false, attachmentFailure }: { narrow?: boolean; busy?: boolean; failure?: boolean; attachmentFailure?: 'invalid' | 'save' }) {
+function DraftPreview({ narrow = false, busy = false, failure = false, attachmentFailure, pasteOnly = false }: { narrow?: boolean; busy?: boolean; failure?: boolean; pasteOnly?: boolean; attachmentFailure?: 'invalid' | 'save' }) {
   const [ready, setReady] = useState(false)
+  const [editorKey, setEditorKey] = useState(0)
   const [text, setText] = useState('Review the mobile draft layout and keep desktop edits visible.\nInclude the saved attachment and inline references.')
   const locked = useChatStore((state) => !!state.projectSessions[projectPath]?._sessions[sessionId]?.draftRemoteDeviceId)
   useEffect(() => {
@@ -41,17 +42,26 @@ function DraftPreview({ narrow = false, busy = false, failure = false, attachmen
       const project = createDefaultProjectState()
       const session = createDefaultPerSessionState()
       Object.assign(session, { draftId: 'shared-draft', draftText: text, draftJson: plainTextToTiptapDoc(text), draftRemoteDeviceId: attachmentFailure ? null : 'phone', ...(attachmentFailure ? { attachments: [{ ...PNG_ATTACHMENT, id: 'image', ...(attachmentFailure === 'invalid' ? { base64: 'invalid' } : {}) }] } : {}) })
+      if (pasteOnly) Object.assign(session, {
+        draftText: '', draftRemoteDeviceId: null,
+        draftJson: { type: 'doc', content: [{ type: 'paragraph', content: [
+          { type: 'pasteChip', attrs: { text: 'First pasted line\nSecond pasted line\nThird pasted line\nFourth pasted line' } },
+        ] }] },
+      })
       useChatStore.setState({ activeProject: projectPath, projectSessions: {
         ...useChatStore.getState().projectSessions,
         [projectPath]: { ...project, _activeSessionId: sessionId, _sessions: { [sessionId]: session } },
       } })
       if (attachmentFailure === 'save') useChatStore.setState({ sendMessage: async () => { updateDraft({ attachments: [] }); throw new Error('Attachment: Could not save picture.png. Retry the message.') } })
       useAppStore.setState({ harnessCatalog: null })
-      window.environment = { ...environment, disconnectDraft: async () => {
+      const disconnectDraft = async () => {
         if (busy) return new Promise<void>(() => {})
         if (failure) throw new Error('Could not disconnect draft. Try again.')
         updateDraft({ draftRemoteDeviceId: null })
-      } }
+      }
+      window.environment = new Proxy(environment, {
+        get: (target, key) => key === 'disconnectDraft' ? disconnectDraft : Reflect.get(target, key),
+      })
       setReady(true)
     }, 0)
     return () => {
@@ -60,16 +70,16 @@ function DraftPreview({ narrow = false, busy = false, failure = false, attachmen
       useChatStore.setState(previous)
       useAppStore.setState({ harnessCatalog: oldCatalog })
     }
-  }, [busy, failure, attachmentFailure])
+  }, [busy, failure, attachmentFailure, pasteOnly])
   return <div style={{ width: narrow ? 320 : 620, maxWidth: '100%' }}>
-    <label className="mb-5 block text-sm text-muted-foreground">Mobile draft
+    {pasteOnly ? <button className="mb-5 text-sm underline" onClick={() => setEditorKey(key => key + 1)}>Reopen composer</button> : <label className="mb-5 block text-sm text-muted-foreground">Mobile draft
       <textarea aria-label="Mobile draft" className="mt-2 block w-full rounded-md border p-2 text-foreground" value={text} disabled={!locked}
         onChange={(event) => {
           setText(event.target.value)
           updateDraft({ draftText: event.target.value, draftJson: plainTextToTiptapDoc(event.target.value) })
         }} />
-    </label>
-    {ready && <TooltipProvider><ChatComposerShell showTodoPopup={false} /><Toaster /></TooltipProvider>}
+    </label>}
+    {ready && <TooltipProvider><ChatComposerShell key={editorKey} showTodoPopup={false} /><Toaster /></TooltipProvider>}
   </div>
 }
 
@@ -78,6 +88,21 @@ export default meta
 type Story = StoryObj<typeof meta>
 export const SharedDraft: Story = { render: () => <DraftPreview /> }
 export const NarrowDraft: Story = { render: () => <DraftPreview narrow /> }
+/** A saved paste chip must survive mounting and reopening an otherwise empty editor. */
+export const PasteOnlyDraft: Story = {
+  render: () => <DraftPreview pasteOnly />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const expectPaste = () => expect(canvasElement.querySelector('[data-paste-chip]')).not.toBeNull()
+    await waitFor(expectPaste)
+    await userEvent.click(canvas.getByRole('button', { name: 'Reopen composer' }))
+    await waitFor(expectPaste)
+  },
+}
+export const PasteOnlyDraftNarrow: Story = { ...PasteOnlyDraft, render: () => <DraftPreview pasteOnly narrow /> }
+export const PasteOnlyDraftDark: Story = { ...PasteOnlyDraft, globals: { theme: 'dark' } }
+export const PasteOnlyDraftChinese: Story = { ...PasteOnlyDraft, globals: { locale: 'zh' } }
+
 export const Disconnecting: Story = { render: () => <DraftPreview busy /> }
 export const DisconnectError: Story = { render: () => <DraftPreview failure /> }
 

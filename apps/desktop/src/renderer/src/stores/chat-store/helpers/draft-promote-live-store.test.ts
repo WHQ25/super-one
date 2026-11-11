@@ -11,7 +11,10 @@ import { useAppStore } from '@/stores/app'
 import { useDraftsStore } from '@/stores/drafts'
 import {
   _resetDraftSessionMap,
+  applyCarriedDraft,
+  captureOpenDraft,
   claimDraftForSession,
+  consumeDraftForSession,
   discardDeletedDraft,
   promoteAllUnsentDrafts,
   promoteDraftIfUnsent,
@@ -94,5 +97,27 @@ describe('deleting a draft from the sidebar', () => {
     const sessions = useChatStore.getState().projectSessions['/repo']._sessions
     expect(sessions.focused).toMatchObject({ draftText: '', draftId: null })
     expect(sessions.background).toBeUndefined()
+  })
+})
+
+describe('sending a draft after switching execution environments', () => {
+  it('consumes every saved environment copy of the carried draft', async () => {
+    const source = 'remote:node:/srv/repo'
+    useChatStore.setState((state) => ({ activeProject: source, projectSessions: {
+      ...state.projectSessions,
+      [source]: { ...createDefaultProjectState(), _activeSessionId: 'remote-origin', _sessions: {
+        'remote-origin': { ...createDefaultPerSessionState(), draftText: 'send this locally' },
+      } },
+    } }))
+    await promoteDraftIfUnsent(useChatStore.getState(), source, 'remote-origin')
+    const carried = captureOpenDraft(useChatStore.getState(), source, 'remote-origin')!
+    const sid = applyCarriedDraft(useChatStore.setState, '/repo', carried)
+    await promoteDraftIfUnsent(useChatStore.getState(), '/repo', sid)
+    await consumeDraftForSession('/repo', sid)
+
+    expect(window.environment.deleteDraft).toHaveBeenCalledWith('node', carried.draftId)
+    expect(window.environment.deleteDraft).toHaveBeenCalledWith('local', carried.draftId)
+    expect(useDraftsStore.getState().byConnection.node).toEqual([])
+    expect(useDraftsStore.getState().byConnection.local).toEqual([])
   })
 })

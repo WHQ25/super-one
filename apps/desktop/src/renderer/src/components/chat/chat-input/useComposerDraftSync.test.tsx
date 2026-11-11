@@ -74,3 +74,20 @@ it('restores text, rich document structure, and attachments after the editor rem
     nextEditor.destroy()
   }
 })
+
+it('restores a paste-only draft when its editor mounts with the same empty plain text', async () => {
+  const { PasteChipNode } = await import('../paste-chip-node')
+  const draftJson = { type: 'doc', content: [{ type: 'paragraph', content: [
+    { type: 'pasteChip', attrs: { text: 'first line\nsecond line\nthird line\nfourth line' } },
+  ] }] }
+  const editor = new Editor({ extensions: [StarterKit, PasteChipNode] })
+  const view = renderHook(useComposerDraftSync, { initialProps: {
+    editor, text: '', draftJson, attachments: [], sessionId: 'paste-only', readOnly: false,
+  } })
+  try {
+    await waitFor(() => expect(editor.getJSON()).toEqual(draftJson))
+  } finally {
+    view.unmount()
+    editor.destroy()
+  }
+})

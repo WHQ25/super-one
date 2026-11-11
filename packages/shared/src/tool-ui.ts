@@ -194,7 +194,7 @@ export function uiToolNameFromId(id: string | undefined | null): string | null {
   return TOOL_ID_TO_UI_NAME[key] ?? null
 }
 
-const OPENCODE_SUPERONE_TOOL_NAMES = new Set<string>([
+export const SUPERONE_KNOWN_MCP_BARE_TOOLS = new Set<string>([
   ...BUILT_IN_SUPERONE_TOOL_NAMES,
   ...COMPUTER_USE_TOOL_NAMES,
   MINIAPP_CALL_BARE_NAME,
@@ -216,9 +216,11 @@ export function parseMcpToolName(toolName: string): { serverName: string; mcpToo
     if (/\s/.test(prefixed[1]) || /\s/.test(prefixed[2])) return null
     return { serverName: prefixed[1], mcpToolName: prefixed[2] }
   }
-  if (toolName.startsWith('superone_')) {
-    const bare = toolName.slice('superone_'.length)
-    if (OPENCODE_SUPERONE_TOOL_NAMES.has(bare)) return { serverName: 'superone', mcpToolName: bare }
+  for (const prefix of ['superone_', 'mcp_superone_'] as const) {
+    if (toolName.startsWith(prefix)) {
+      const bare = toolName.slice(prefix.length)
+      if (SUPERONE_KNOWN_MCP_BARE_TOOLS.has(bare)) return { serverName: 'superone', mcpToolName: bare }
+    }
   }
   const delimiter = toolName.indexOf('__')
   if (delimiter <= 0) return null
@@ -363,6 +365,27 @@ export function normalizeTranscriptTool(
       ? rawInput.tool_input as Record<string, unknown>
       : {}
     return { toolName: `mcp__${envelopeId}`, input: mcpInput }
+  }
+  if (normalizeToolIdKey(rawName) === 'call_mcp_tool') {
+    const server = typeof rawInput.ServerName === 'string' ? rawInput.ServerName.trim() : typeof rawInput.server === 'string' ? rawInput.server.trim() : ''
+    const tool = typeof rawInput.ToolName === 'string' ? rawInput.ToolName.trim() : typeof rawInput.tool === 'string' ? rawInput.tool.trim() : ''
+    if (server && tool) {
+      const args = rawInput.Arguments && typeof rawInput.Arguments === 'object' && !Array.isArray(rawInput.Arguments)
+        ? rawInput.Arguments as Record<string, unknown>
+        : rawInput.arguments && typeof rawInput.arguments === 'object' && !Array.isArray(rawInput.arguments)
+          ? rawInput.arguments as Record<string, unknown>
+          : {}
+      return { toolName: claudeMcpToolRuleName(server, tool), input: { ...args } }
+    }
+  }
+  const parsedMcp = parseMcpToolName(rawName)
+  if (parsedMcp) {
+    const input = { ...rawInput }
+    if (!rawName.startsWith('mcp__')) {
+      delete input.toolSummary
+      delete input.toolAction
+    }
+    return { toolName: claudeMcpToolRuleName(parsedMcp.serverName, parsedMcp.mcpToolName), input }
   }
 
   const toolName = uiToolNameFromId(rawName) ?? rawName

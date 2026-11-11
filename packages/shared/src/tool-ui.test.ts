@@ -107,6 +107,7 @@ describe('isAlwaysHiddenToolName', () => {
     expect(isAlwaysHiddenToolName('mcp__superone__session_rename')).toBe(true)
     expect(isAlwaysHiddenToolName('superone__session_rename')).toBe(true)
     expect(isAlwaysHiddenToolName('superone_session_rename')).toBe(true)
+    expect(isAlwaysHiddenToolName('mcp_superone_session_rename')).toBe(true)
   })
 
   it('does not hide ordinary file tools', () => {
@@ -123,7 +124,11 @@ describe('parseMcpToolName', () => {
     expect(parseMcpToolName('superone_browser_snapshot')).toEqual({ serverName: 'superone', mcpToolName: 'browser_snapshot' })
     expect(parseMcpToolName('superone_computer_act')).toEqual({ serverName: 'superone', mcpToolName: 'computer_act' })
     expect(parseMcpToolName('superone_miniapp_call')).toEqual({ serverName: 'superone', mcpToolName: 'miniapp_call' })
+    expect(parseMcpToolName('mcp_superone_session_rename')).toEqual({ serverName: 'superone', mcpToolName: 'session_rename' })
+    expect(parseMcpToolName('mcp_superone_browser_snapshot')).toEqual({ serverName: 'superone', mcpToolName: 'browser_snapshot' })
+    expect(parseMcpToolName('mcp_superone_miniapp_call')).toEqual({ serverName: 'superone', mcpToolName: 'miniapp_call' })
     expect(parseMcpToolName('superone_unknown_tool')).toBeNull()
+    expect(parseMcpToolName('mcp_superone_unknown_tool')).toBeNull()
     expect(parseMcpToolName('github_list_issues')).toBeNull()
   })
 
@@ -182,6 +187,23 @@ describe('normalizeTranscriptTool', () => {
     expect(normalizeTranscriptTool('use_tool', {
       tool_name: 'superone__session_rename',
       tool_input: { title: 'x' },
+    })).toEqual({
+      toolName: 'mcp__superone__session_rename',
+      input: { title: 'x' },
+    })
+    expect(normalizeTranscriptTool('mcp_superone_session_rename', {
+      title: 'x',
+      tags: ['mcp'],
+      toolSummary: 'Session rename',
+    })).toEqual({
+      toolName: 'mcp__superone__session_rename',
+      input: { title: 'x', tags: ['mcp'] },
+    })
+    expect(normalizeTranscriptTool('call_mcp_tool', {
+      ServerName: 'superone',
+      ToolName: 'session_rename',
+      Arguments: { title: 'x' },
+      toolSummary: 'Session rename',
     })).toEqual({
       toolName: 'mcp__superone__session_rename',
       input: { title: 'x' },

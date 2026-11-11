@@ -4,8 +4,7 @@ import type { SessionUpdate } from '@agentclientprotocol/sdk'
 import type { PermissionMode } from '@superone/shared/agent-types'
 import { looksLikeComputerUseOutline } from '@superone/shared/computer-use-result-shape'
 import { looksLikeSessionArchiveToon } from '@superone/shared/session-archive-result-shape'
-import { BUILT_IN_SUPERONE_TOOL_NAMES, COMPUTER_USE_TOOL_NAMES, MINIAPP_CALL_BARE_NAME, MINIAPP_LIST_BARE_NAME } from '@superone/shared/superone-host-owned-tools'
-import { claudeMcpToolRuleName, formatAgentToolOutput, parseMcpToolName, uiToolNameFromId } from '@superone/shared/tool-ui'
+import { claudeMcpToolRuleName, formatAgentToolOutput, parseMcpToolName, SUPERONE_KNOWN_MCP_BARE_TOOLS, uiToolNameFromId } from '@superone/shared/tool-ui'
 import { applyAntigravityManageTaskInput, compactDiffPair, resolveAntigravityManageTaskOutput } from './antigravity-manage-task'
 import {
   antigravityPermissionDisposition, antigravityPermissionMode, consumeAntigravityAnsweredQuestionSummary,
@@ -35,9 +34,6 @@ const SUBAGENT_TITLES = new Set([
   'Running start_subagent', 'Run start_subagent', 'Run start_subagent?', 'Running start subagent', 'Run start subagent',
   'Running invoke_subagent', 'Run invoke_subagent', 'Run invoke_subagent?', 'Running invoke subagent', 'Run invoke subagent',
   'start_subagent', 'invoke_subagent',
-])
-const SUPERONE_MCP_BARE_TOOLS = new Set<string>([
-  ...BUILT_IN_SUPERONE_TOOL_NAMES, ...COMPUTER_USE_TOOL_NAMES, MINIAPP_CALL_BARE_NAME, MINIAPP_LIST_BARE_NAME,
 ])
 
 export const ANTIGRAVITY_CLIENT_INFO = { name: 'zed', version: '0.0.0' } as const
@@ -210,7 +206,7 @@ function resolveAntigravityMcpMeta(
   }
   if (
     strippedName &&
-    SUPERONE_MCP_BARE_TOOLS.has(strippedName) &&
+    SUPERONE_KNOWN_MCP_BARE_TOOLS.has(strippedName) &&
     (metaObj?.is_mcp_tool_call === true || kind === 'other' || kind == null)
   ) {
     return { server: 'superone', tool: strippedName, ...(prompt ? { prompt } : {}) }
@@ -229,30 +225,27 @@ export function normalizeAntigravityRawInput(
   normalizedTitle?: string; normalizedMeta?: Record<string, unknown>
 } {
   const sanitizedIn = sanitizeAntigravityToolInput(rawInput)
-  let inObj = isRecord(sanitizedIn) ? { ...sanitizedIn } : {}
+  const inObj = isRecord(sanitizedIn) ? { ...sanitizedIn } : {}
   const outObj = isRecord(rawOutput) ? rawOutput : {}
   const strippedToolName = extractAntigravityToolNameFromTitle(title) ?? extractAntigravityToolNameFromTitle(toolNameHint)
   const mcpInfo = resolveAntigravityMcpMeta(title, strippedToolName, meta, kind, inObj)
 
   if (mcpInfo) {
-    const rawArgs = isRecord(inObj.arguments) ? inObj.arguments : isRecord(inObj.Arguments) ? inObj.Arguments : null
-    if (rawArgs) {
-      const inner = { ...rawArgs }
-      for (const [k, v] of Object.entries(inObj)) {
-        if (
-          k !== 'arguments' && k !== 'Arguments' && k !== 'server' && k !== 'ServerName' &&
-          k !== 'tool' && k !== 'ToolName' && k !== 'toolAction' && k !== 'toolSummary' && !(k in inner)
-        ) {
-          inner[k] = v
-        }
+    const rawArgs = isRecord(inObj.arguments) ? inObj.arguments : isRecord(inObj.Arguments) ? inObj.Arguments : {}
+    const inner = { ...rawArgs }
+    for (const [k, v] of Object.entries(inObj)) {
+      if (
+        k !== 'arguments' && k !== 'Arguments' && k !== 'server' && k !== 'ServerName' &&
+        k !== 'tool' && k !== 'ToolName' && k !== 'toolAction' && k !== 'toolSummary' && !(k in inner)
+      ) {
+        inner[k] = v
       }
-      inObj = inner
     }
     const baseMeta = isRecord(meta) ? { ...meta } : {}
     baseMeta.mcp = { server: mcpInfo.server, tool: mcpInfo.tool }
     baseMeta.is_mcp_tool_call = true
     return {
-      rawInput: inObj,
+      rawInput: inner,
       normalizedTitle: mcpInfo.prompt ?? claudeMcpToolRuleName(mcpInfo.server, mcpInfo.tool),
       normalizedMeta: baseMeta,
     }
@@ -483,7 +476,7 @@ export function normalizeAntigravitySessionUpdate(
   const isSparseCachedUpdate =
     update.sessionUpdate === 'tool_call_update' &&
     effectiveRawInput === undefined &&
-    (normalizedIn.isSubagent || normalizedIn.rawInput.variant === 'AskUserQuestion')
+    (isMcp || normalizedIn.isSubagent || normalizedIn.rawInput.variant === 'AskUserQuestion')
   const nextTitle = isSparseCachedUpdate ? undefined : (normalizedIn.normalizedTitle ?? titleStr)
 
   return {

@@ -755,6 +755,81 @@ describe('antigravity-protocol', () => {
         },
       },
     ])
+
+    const eagerPermReq: RequestPermissionRequest = {
+      sessionId: 'sess-1',
+      toolCall: {
+        toolCallId: 'mcp_eager_1',
+        title: 'Run mcp_superone_session_rename?',
+        kind: 'other',
+        rawInput: {
+          title: '检查 SuperOne MCP 连接状态',
+          tags: ['mcp', 'superone', 'status'],
+          toolSummary: 'Session rename',
+        },
+      },
+      options: [
+        { optionId: 'allow_once', name: 'Allow once', kind: 'allow_once' },
+        { optionId: 'reject_once', name: 'Reject', kind: 'reject_once' },
+      ],
+    }
+    expect(shouldAutoAllowAcpPermission(eagerPermReq)).toEqual({
+      allow: true,
+      toolName: 'mcp__superone__session_rename',
+      reason: 'builtin',
+    })
+
+    const eagerStart = normalizeAntigravitySessionUpdate({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'mcp_eager_1',
+      title: 'Running mcp_superone_session_rename',
+      kind: 'other',
+      status: 'in_progress',
+      rawInput: {
+        title: '检查 SuperOne MCP 连接状态',
+        tags: ['mcp', 'superone', 'status'],
+        toolSummary: 'Session rename',
+      },
+    } as unknown as SessionUpdate)
+    expect(mapSessionUpdate(eagerStart, { messageId: 'msg_eager_1' })).toEqual([
+      {
+        type: 'content_delta',
+        messageId: 'msg_eager_1',
+        delta: {
+          type: 'tool_use',
+          toolUseId: 'mcp_eager_1',
+          toolName: 'mcp__superone__session_rename',
+          toolFilePath: undefined,
+          toolSummary: undefined,
+          input: JSON.stringify({
+            title: '检查 SuperOne MCP 连接状态',
+            tags: ['mcp', 'superone', 'status'],
+          }),
+          status: 'streaming',
+        },
+      },
+    ])
+
+    const eagerDone = normalizeAntigravitySessionUpdate({
+      sessionUpdate: 'tool_call_update',
+      toolCallId: 'mcp_eager_1',
+      title: 'Session rename',
+      status: 'completed',
+      rawOutput: 'Renamed session',
+      content: [{ type: 'content', content: { type: 'text', text: '**Arguments**\n...\n**Result**\nRenamed session' } }],
+    } as unknown as SessionUpdate)
+    expect(mapSessionUpdate(eagerDone, { messageId: 'msg_eager_1' })).toEqual([
+      {
+        type: 'content_delta',
+        messageId: 'msg_eager_1',
+        delta: {
+          type: 'tool_result',
+          toolUseId: 'mcp_eager_1',
+          summary: 'Renamed session',
+          isError: false,
+        },
+      },
+    ])
   })
 
   it('normalizes Antigravity PascalCase file and search tool inputs into SuperOne UI tool blocks', () => {

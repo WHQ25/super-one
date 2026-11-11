@@ -203,6 +203,8 @@ export const MAIN_THREAD_ONLY_SUPERONE_TOOL_NAMES = [
 export function superoneBareToolName(name: string): string {
   if (name.startsWith(MCP_SUPERONE_TOOL_PREFIX)) return name.slice(MCP_SUPERONE_TOOL_PREFIX.length)
   if (name.startsWith('superone__')) return name.slice('superone__'.length)
+  if (name.startsWith('mcp_superone_')) return name.slice('mcp_superone_'.length)
+  if (name.startsWith('superone_')) return name.slice('superone_'.length)
   return name
 }
 

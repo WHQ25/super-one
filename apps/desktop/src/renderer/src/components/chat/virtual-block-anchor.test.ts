@@ -52,6 +52,18 @@ function fixture(initial = [20, 20], inset = 200) {
 }
 
 describe('virtual block reading anchor', () => {
+  it('holds the reading anchor in a short list, whose rows the virtualizer does not position', async () => {
+    const { viewport, row, reading, reveal } = fixture()
+    delete row.dataset.virtualRow
+    delete row.dataset.index
+    row.dataset.virtualMessage = 'message'
+    const before = reading.getBoundingClientRect().top
+    reveal([60, 20])
+    await Promise.resolve()
+    expect(viewport.scrollTop).toBe(640)
+    expect(reading.getBoundingClientRect().top).toBe(before)
+  })
+
   it('batches large sibling reveals even when the first moves the second below the fold', async () => {
     const { viewport, reading, reveal } = fixture()
     const before = reading.getBoundingClientRect().top

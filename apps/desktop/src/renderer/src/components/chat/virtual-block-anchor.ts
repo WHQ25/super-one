@@ -94,6 +94,9 @@ function followerTop(element: HTMLElement, row: HTMLElement): number {
   return row.getBoundingClientRect().height
 }
 
+/** A transcript row: positioned by the virtualizer, or in flow in a short list. */
+const ROW = '[data-virtual-row], [data-virtual-message]'
+
 /** Reveal geometry belongs to the transcript, so sibling/nested blocks share one correction. */
 export function createVirtualBlockAnchor(
   viewportRef: RefObject<HTMLDivElement | null>,
@@ -118,7 +121,7 @@ export function createVirtualBlockAnchor(
       let ancestor = element.parentElement
       while (ancestor && !changes.has(ancestor)) ancestor = ancestor.parentElement
       if (ancestor) continue
-      rows.add(previous.row)
+      if (previous.row.hasAttribute('data-virtual-row')) rows.add(previous.row)
       if (previous.follower === undefined || previous.end === undefined) {
         delta += element.getBoundingClientRect().height - previous.height
         continue
@@ -144,7 +147,7 @@ export function createVirtualBlockAnchor(
 
   return {
     prepare(element: HTMLElement) {
-      const row = element.closest<HTMLElement>('[data-virtual-row]')
+      const row = element.closest<HTMLElement>(ROW)
       if (!row || element.firstElementChild) return
       const box = element.getBoundingClientRect()
       // Snapshot before any sibling reveals. A large preceding block can push
@@ -156,20 +159,27 @@ export function createVirtualBlockAnchor(
       const previous = prepared.get(element)
       prepared.delete(element)
       const viewport = viewportRef.current
-      const row = element.closest<HTMLElement>('[data-virtual-row]')
-      // Small lists keep native browser anchoring; virtual rows opt out of it.
+      const row = element.closest<HTMLElement>(ROW)
       if (!viewport || !row) return
       const instance = virtualizerRef.current
-      const index = Number(row.dataset.index)
-      const item = instance.measurementsCache[index]
-      const offset = instance.scrollOffset ?? viewport.scrollTop
-      // First/fully-above-row measurements and bottom following belong to the
-      // outer virtualizer. Only a measured row spanning the fold needs help.
-      if (!item || !instance.itemSizeCache.has(item.key) || item.end < offset
-        || (isFollowingTail(viewport)
-          ?? viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop <= instance.options.scrollEndThreshold)) return
+      // Bottom following belongs to the chat scroll.
+      if (isFollowingTail(viewport)
+        ?? viewport.scrollHeight - viewport.clientHeight - viewport.scrollTop <= instance.options.scrollEndThreshold) return
       const box = element.getBoundingClientRect()
-      const above = previous ? item.start + previous.end <= offset : box.top + height <= viewport.getBoundingClientRect().top
+      const fold = viewport.getBoundingClientRect().top
+      let above = box.top + height <= fold
+      if (row.hasAttribute('data-virtual-row')) {
+        const item = instance.measurementsCache[Number(row.dataset.index)]
+        const offset = instance.scrollOffset ?? viewport.scrollTop
+        // First/fully-above-row measurements belong to the outer virtualizer.
+        // Only a measured row spanning the fold needs help.
+        if (!item || !instance.itemSizeCache.has(item.key) || item.end < offset) return
+        if (previous) above = item.start + previous.end <= offset
+      } else if (previous) {
+        // Rows of a short list lay out in flow with native anchoring off, so
+        // every reveal above the fold is corrected here.
+        above = row.getBoundingClientRect().top + previous.end <= fold
+      }
       if (!above) return
       const moved = previous ? followerTop(element, row) - previous.follower : box.height - height
       if (Math.abs(moved) < 0.01) return

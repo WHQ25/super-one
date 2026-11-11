@@ -56,6 +56,10 @@ function ChatMarkdown({ text, isStreaming, components, runtime, plugins }: {
   const options = markdownBlockOptions(text, runtime)
   const [staticFade] = useState(() => createStreamFadePlugin())
   const staticStreaming = isStreaming && options.mode === 'static'
+  // Keep the block type a stream started with. Swapping it when the turn
+  // settles would remount every block of the reply.
+  const [streamed, setStreamed] = useState(isStreaming)
+  if (isStreaming && !streamed) setStreamed(true)
   if (staticStreaming) staticFade.bind()
   useLayoutEffect(() => {
     if (staticStreaming) staticFade.commit()
@@ -67,7 +71,7 @@ function ChatMarkdown({ text, isStreaming, components, runtime, plugins }: {
   return (
     <FadeBlockInnerContext.Provider value={options.BlockComponent}>
       <Streamdown
-        BlockComponent={isStreaming && options.mode !== 'static' ? StreamFadeBlock : options.BlockComponent}
+        BlockComponent={streamed && options.mode !== 'static' ? StreamFadeBlock : options.BlockComponent}
         mode={options.mode}
         className="chat-md"
         plugins={plugins}

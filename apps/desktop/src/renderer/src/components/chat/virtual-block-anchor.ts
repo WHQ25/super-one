@@ -20,6 +20,13 @@ export const BLOCK_MOUNT_MARGIN = 300
  */
 export const BLOCK_KEEP_MARGIN = 1600
 
+type Edges = Pick<DOMRectReadOnly, 'top' | 'bottom'>
+
+/** Whether a laid-out box lies within {@link BLOCK_MOUNT_MARGIN} of the viewport. */
+export function nearViewport(box: Edges & Pick<DOMRectReadOnly, 'height'>, root: Edges): boolean {
+  return box.height > 0 && box.bottom >= root.top - BLOCK_MOUNT_MARGIN && box.top <= root.bottom + BLOCK_MOUNT_MARGIN
+}
+
 /** Mount within {@link BLOCK_MOUNT_MARGIN}; once shown, stay until the observer's keep margin. */
 export function blockStaysVisible(
   entry: Pick<IntersectionObserverEntry, 'isIntersecting' | 'boundingClientRect' | 'rootBounds'>,
@@ -28,8 +35,7 @@ export function blockStaysVisible(
   const root = entry.rootBounds
   const box = entry.boundingClientRect
   if (!root || box.height === 0) return false
-  const near = box.bottom >= root.top - BLOCK_MOUNT_MARGIN && box.top <= root.bottom + BLOCK_MOUNT_MARGIN
-  return near || (wasVisible && entry.isIntersecting)
+  return nearViewport(box, root) || (wasVisible && entry.isIntersecting)
 }
 
 /** Adjoining margins combine as CSS collapses them: the largest positive plus the most negative. */

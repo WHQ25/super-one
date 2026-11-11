@@ -6,7 +6,7 @@ import { retainMcpAppTranscript } from '../mcp-apps/layout-store'
 import { McpAppTranscriptRetention } from '../mcp-apps/transcript-retention'
 import { VirtualTranscriptContext } from './virtual-transcript-context'
 import { transcriptInteractionSnapshot } from './transcript-interaction'
-import { BLOCK_KEEP_MARGIN, blockStaysVisible, createVirtualBlockAnchor } from './virtual-block-anchor'
+import { BLOCK_KEEP_MARGIN, blockStaysVisible, createVirtualBlockAnchor, nearViewport } from './virtual-block-anchor'
 
 export interface VirtualTranscriptItem {
   id: string
@@ -117,8 +117,25 @@ export function VirtualTranscriptList({ items, viewportRef, apiRef }: {
   const observeBlock = useCallback((element: HTMLElement, callback: (visible: boolean) => void) => {
     blockCallbacks.set(element, callback)
     observer.current?.observe(element)
+    // The observer reports a frame later. A block remounted beside the viewport
+    // (a turn settling, a row scrolling in) would paint its empty placeholder first.
+    const root = viewportRef.current
+    const list = listRef.current
+    if (root && list) {
+      const view = root.getBoundingClientRect()
+      // A settled turn remounts shorter. Its row is re-measured and the offset
+      // clamped only after layout effects, so judge from where the transcript
+      // will end: the sizer's end less what this row is about to give up.
+      let end = list.getBoundingClientRect().bottom
+      const row = element.closest<HTMLElement>('[data-virtual-row]')
+      const cached = row ? virtualizerRef.current.measurementsCache[Number(row.dataset.index)]?.size : undefined
+      if (row && cached !== undefined) end -= Math.max(0, cached - row.getBoundingClientRect().height)
+      const gap = Math.max(0, view.bottom - end)
+      const { top, bottom, height } = element.getBoundingClientRect()
+      if (nearViewport({ top: top + gap, bottom: bottom + gap, height }, view)) callback(true)
+    }
     return () => { observer.current?.unobserve(element); blockCallbacks.delete(element); intersections.delete(element) }
-  }, [blockCallbacks, intersections])
+  }, [blockCallbacks, intersections, viewportRef])
   useEffect(() => {
     const root = viewportRef.current
     if (!root) return

@@ -15,6 +15,40 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
+- MCP Apps speak ext-apps 2.1. An app can register tools the model calls, and each call waits for consent. The desktop app drawer and Apps panel list global apps and apps for the open thread. A global app opens with no session and no project; the first message starts one. Chat, including the phone, asks before an app tool runs, and downloads from an app stay on the safety list.
+- A harness whose external CLI is missing shows a command that installs it.
+
+### Fixed
+
+- Antigravity uses the config already on the machine. SuperOne tools it calls immediately, including through the MCP bridge, still reach the host.
+- Long session titles ellipsize in the sidebar, and the hover card opens beside the visible row.
+- The usage hub matches a node's default Codex login, so that account's email stays on the one OpenAI card.
+- A ready Antigravity install shows in the remote harness picker on its own.
+- A reply stays on screen when streaming ends. A short transcript keeps its place while scrolling up through a turn that is still streaming. (#184)
+- Claude bash rows on a remote node keep their file diffs. (#183)
+
+## [0.80.0-alpha] - 2026-11-11
+
+### Added
+
+- MCP Apps speak ext-apps 2.1. An app can register tools the model calls, and each call waits for consent. The app drawer and the Apps panel list global apps and apps for the open thread. A global app opens with no session and no project; the first message starts one. The phone asks before an app tool runs, and a download whose name is on the blocklist is refused.
+- Settings shows a command that installs a harness's missing external CLI.
+
+### Fixed
+
+- Antigravity tool calls that arrive before the session is ready still map onto SuperOne tools.
+- Antigravity uses the config already on the machine, and the SuperOne MCP bridge reaches the host.
+- A long session title ellipsizes inside the sidebar row. The hover card anchors to the visible row.
+- The usage hub matches a node's default Codex login. A session that omits its account keeps that login's email on the one OpenAI card.
+- Desktop hosts and CLI nodes advertise Antigravity on its own, so a ready install appears in the remote picker.
+- Ending a stream keeps a reply's blocks on screen. (#184)
+- A short transcript keeps its place while scrolling up through a turn that is still streaming. (#184)
+- Remote Claude sessions keep bash working-tree diffs, including subagent calls. (#183)
+
+## [0.79.0] - 2026-11-11
+
+### Added
+
 - Doubao realtime voice or Gemini 3.8 Live. Official Codex sessions keep Codex Realtime. Other sessions that can send a turn use Gemini when that speech key is saved and Gemini is selected, or Doubao when Doubao is selected. The voice shell sends the conversation to the backend agent and returns immediately. Doubao reads each reply as it arrives. Gemini speaks the backend result after the current utterance. Doubao speakers: VV, Xiaohe, Yunzhou, Xiaotian, Tim, Dacey, and Stokie.
 - Read aloud, speech synthesis, and transcription. Read-aloud uses the enabled speech model and keeps the clip until the session is settled. ElevenLabs accepts a pasted voice id and plays that voice's preview. A provider with one key shows its name without the key label.
 - Images a generation tool saves to disk show in the chat gallery, including images from an image-generator subagent. Activity-panel and in-chat previews share the image menu, including Save As. A local picture can start a system file drag. A remote picture that only has inlined bytes has neither menu nor drag.
@@ -52,73 +86,6 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Collaboration wakes drain when a turn settles, and an orphaned ACP interaction is cleared. (#180)
 - Settings keeps the provider, credential, and binding lists when a local read returns nothing.
 - A markdown shell fence runs in a login interactive shell in the chat session's workspace, so startup files apply. The tab stays open and prints the exit code.
-
-## [0.79.0-alpha.2] - 2026-11-10
-
-### Added
-
-- Gemini 3.8 Live is a selectable voice. Official Codex sessions stay on Codex Realtime. Other sessions that can send a turn use Gemini when that speech key is saved, or Doubao when Doubao is selected. Gemini speaks the backend result after the current utterance.
-- After a successful idle Grok turn, the composer shows one prompt suggestion. A slash prompt does not request one. An empty or silence result is not shown, and an earlier follow-up list is left in place.
-- A disabled @git or @gh mention row has Check Again. It drops the cached probe and asks again, so signing in to gh turns the row and the composer grammar back on without quitting.
-
-### Fixed
-
-- A markdown shell fence runs in a login interactive shell in the chat session's workspace, so startup files apply. The tab stays open and prints the exit code.
-
-## [0.79.0-alpha.1] - 2026-11-10
-
-### Added
-
-- Doubao realtime voice. Official Codex sessions keep Codex voice. Other sessions that can send a turn use Doubao when a speech key is saved. The voice shell sends the conversation to the backend agent and returns immediately; the host forwards each reply for the voice model to read. Speakers: VV, Xiaohe, Yunzhou, Xiaotian, Tim, Dacey, and Stokie.
-- Read aloud, speech synthesis, and transcription. Read-aloud uses the enabled speech model and keeps the clip until the session is settled. ElevenLabs accepts a pasted voice id and plays that voice's preview. A provider with one key shows its name without the key label.
-- Activity-panel and in-chat image previews share the image menu, including Save As. A local picture can start a system file drag. A remote picture that only has inlined bytes has neither menu nor drag.
-- Antigravity manage_task has its own card for listing background tasks, checking status, stopping a task, and sending input.
-
-### Changed
-
-- Claude Agent SDK 0.3.321 (Claude Code 2.1.321). MCP Apps stay unchecked, subscriber hold is unused, and deny-instead-of-prompt stays off.
-- Settling a parent still settles idle spawn children. The host refuses while any direct child has an open turn. The settle control hides when this window already knows a child is running. Unsettle stays. An agent settles a child only when asked.
-- Next 16.4.5 and KaTeX 0.18.5 include the current advisories. The MCP SDK stays on 1.32.2.
-
-### Fixed
-
-- Claude's subagent tool guard fails closed when its hook throws or returns invalid output. A runtime that cannot honor that guard still asks for an update.
-- Session permission buttons stay on one row until the pane is 56rem. Decline rejects once and the turn continues. Cancel returns cancelled and stops.
-- Hover cards stay 4px to the right of the row and only slide vertically, so an offline host at the bottom of the window is not clipped.
-- A virtual transcript block keeps its height when the activity panel is fullscreen.
-- An API retry replaces the message footer instead of sitting beside the duration and token counts.
-- The message footer stays one text line. The hover time and fork do not shift the transcript.
-- An Antigravity turn counts context tokens as that turn's increment.
-- Antigravity stays on automatic review when accept-edits reports the current mode.
-- Collaboration wakes drain when a turn settles, and an orphaned ACP interaction is cleared. (#180)
-- Settings keeps the provider, credential, and binding lists when a local read returns nothing.
-
-### Tests
-
-- A speech-recognition model stays on the Google chat endpoint when that endpoint also serves video. An empty task list remains the orphan.
-
-## [0.79.0-alpha] - 2026-11-08
-
-### Added
-
-- Images a generation tool saves to disk show in the chat gallery, including images from an image-generator subagent.
-- Each ACP agent keeps its own default model, effort, and permission mode. A session that has not chosen yet uses that agent's default.
-- Antigravity keeps a turn open while a subagent is still running after the prompt ends, and answers elicitation through the question card.
-- Offline hosts share one folded group. Project focus and the unfocused multi-host list give leftover pane height to long session lists. The 256px cap stays when every open environment already overflows it.
-- Sidebar groups ease open and closed over 120ms. Heavy lists unmount after the close. Drafts keep their height animation.
-
-### Changed
-
-- Antigravity uses the agy CLI installed on the machine. Enable, readiness, and login resolve it on PATH or the known bin directories, and a saved agy_acp_server command moves onto that CLI.
-
-### Fixed
-
-- Streaming reasoning no longer fades in. Markdown still fades each new commit.
-- Antigravity usage reads the active Cloud Code quota endpoint, and one endpoint's numbers no longer replace the other's.
-- Message actions sit above the compact turn rail, so table and diagram toolbars and copy on a user message stay on the markdown edge.
-- Pending sends, MCP startup, and harness retries share one footer. A local send does not show the remote sending label.
-- A queued message that joins a live reply clears the sending state. Steering that continues the current reply does not show a second pending reply. (#174)
-- Mentions resolve files, apps, and catalogs on the session's own host. A remote pane does not grant an app on the machine in front. (#172)
 
 ## [0.78.1] - 2026-11-07
 

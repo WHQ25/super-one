@@ -1,4 +1,4 @@
-import type { SessionAgentLaunchConfig, SessionAgentProfile } from '@superone/shared/agent-types'
+import type { SandboxMode, SessionAgentLaunchConfig, SessionAgentProfile } from '@superone/shared/agent-types'
 import {
   agentLaunchErrors,
   launchConfigFromDefaults,
@@ -15,6 +15,7 @@ import { normalizeSessionHarnessId } from '@superone/shared/environment'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { isDefaultSessionProvider, sessionProviderDisplayName } from '@superone/shared/session-provider-definitions'
 import { acpAgentDisplayName, resolveHarnessBrandKey } from '@superone/shared/acp-brand'
+import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
 import type { HarnessId } from '@superone/shared/session-types'
 import { listHarnessApiProviders, listHarnessModels, resolveHarnessService } from '../provider/resolve-service'
 import { CollaborationError, collaborationSystemPrompt, type CollaborationGrantRow } from '@superone/runtime/collaboration'
@@ -65,6 +66,19 @@ function launchResolution(
     launch,
   })
   return { harnessModels, efforts, catalog, defaults }
+}
+
+/**
+ * Claude sandbox the node has actually chosen. Empty means unset, so a remote
+ * spawn keeps its fallback instead of inventing one. Codex has no sandbox
+ * toggle here; Cursor's lives on the desktop catalog, not in this file.
+ */
+function nodeSandboxDefault(deps: CollaborationDeps, harnessId: HarnessId): SandboxMode | undefined {
+  if (harnessId !== 'claude') return undefined
+  const raw = deps.agentSettings?.().claude.sandboxMode.trim()
+  const offered = HARNESS_LAUNCH_OPTIONS.claude.sandboxModes
+  if (!raw || !offered.includes(raw as SandboxMode)) return undefined
+  return raw as SandboxMode
 }
 
 /**
@@ -134,6 +148,7 @@ export function listCollaborationProfiles(deps: CollaborationDeps): SessionAgent
           : null
     const profile = readAgentProfile(profileConfig)
     const apiProviderId = resolveHarnessService(providers, harnessId, null, providerOptions(deps))?.credentialId
+    const sandboxMode = nodeSandboxDefault(deps, harnessId)
     profiles.push({
       id: profileId,
       name: profile ? name : acpAgentId ? acpAgentDisplayName(acpAgentId) : name,
@@ -142,7 +157,11 @@ export function listCollaborationProfiles(deps: CollaborationDeps): SessionAgent
       ...(acpAgentId ? { acpAgentId } : {}),
       brandKey: resolveHarnessBrandKey(harnessId, acpAgentId),
       description: profile?.identity.description ?? description,
-      defaultConfig: { ...launchConfigFromDefaults(defaults), ...(apiProviderId ? { apiProviderId } : {}) },
+      defaultConfig: {
+        ...launchConfigFromDefaults(defaults),
+        ...(apiProviderId ? { apiProviderId } : {}),
+        ...(sandboxMode ? { sandboxMode } : {}),
+      },
       models: models.length > 0 ? models : [{ id: 'default', name: 'Default' }],
       efforts: [...efforts],
       apiProviders: listHarnessApiProviders(providers, harnessId, providerOptions(deps)),

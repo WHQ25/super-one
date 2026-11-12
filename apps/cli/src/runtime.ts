@@ -278,6 +278,7 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
       loadNodeAgentSettings(paths.configJson).experimentalAgentProfilesEnabled,
     experimentalClaudeOpenAiChatEnabled: () =>
       loadNodeAgentSettings(paths.configJson).experimentalClaudeOpenAiChatEnabled,
+    agentSettings: () => loadNodeAgentSettings(paths.configJson),
   })
   collaborationRef = collaboration
   collaboration.rehydrateSystemPrompts()

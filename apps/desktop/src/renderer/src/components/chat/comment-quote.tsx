@@ -66,7 +66,7 @@ function CodeLines({ code, language, kinds }: { code: string; language: string; 
   const tokens = useHighlightedTokens(code, language || 'text')
   const lines = code.split('\n')
   return (
-    <span className="block w-fit max-w-full overflow-x-auto font-mono text-[11px] leading-snug">
+    <span className="block w-fit max-w-full overflow-x-auto font-mono text-xs leading-snug">
       {lines.map((text, index) => {
         const kind = kinds?.[index]
         return (
@@ -86,7 +86,7 @@ function CodeLines({ code, language, kinds }: { code: string; language: string; 
 
 function QuoteInlineCode({ code }: { code: string }) {
   return (
-    <code className="rounded bg-primary/8 px-1 py-0.5 font-sans text-[11px] font-medium text-primary/90">
+    <code className="rounded bg-primary/8 px-1 py-0.5 font-sans text-xs font-medium text-primary/90">
       {code}
     </code>
   )
@@ -117,7 +117,7 @@ export function CommentQuote({ quote }: { quote: string }) {
   const code = diff ? diff.map((line) => line.text).join('\n') : parsed.body
   return (
     <span className="mt-1 block w-fit max-w-full overflow-hidden rounded-md bg-background/70 text-left">
-      <span className="block truncate px-1.5 pt-1 font-sans text-[10px] leading-snug text-muted-foreground">{parsed.prefix}</span>
+      <span className="block truncate px-1.5 pt-1 font-sans text-2xs leading-snug text-muted-foreground">{parsed.prefix}</span>
       <span className="block max-h-28 overflow-auto pb-1">
         <CodeLines code={code} language={inferLanguage(parsed.filePath)} kinds={diff ? diff.map((line) => line.kind) : null} />
       </span>

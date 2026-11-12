@@ -9,6 +9,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { WorkspaceEntry } from '@superone/shared/environment'
+import { OFFICE_PREVIEW_MAX_BYTES } from '@superone/shared/file-preview'
 
 const state = vi.hoisted(() => ({ userData: '' }))
 // The zone's delivery record: a table that cannot be read protects every zone file (R5).
@@ -75,6 +76,33 @@ describe('remote files previewer resolver', () => {
   it('reports a zone file that neither the mirror nor the node has as missing', async () => {
     const file = await resolveRemotePreviewerFile({ path: '/home/node/.superone/node/sync/s1/agent/none.md' }, ctx({ files: {} }))
     expect(file.kind).toBe('missing')
+  })
+
+  it('previews a small zone docx and does not download one past the cap', async () => {
+    const small = await resolveRemotePreviewerFile(
+      { path: '/home/node/.superone/node/sync/s1/agent/notes.docx' },
+      ctx({ files: { 'agent/notes.docx': Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00]) } }),
+    )
+    expect(small).toMatchObject({ kind: 'office', size: 5 })
+
+    const artifactGet = vi.fn()
+    const huge = await resolveRemotePreviewerFile(
+      { path: '/home/node/.superone/node/sync/s1/agent/deck.pptx' },
+      ctx({
+        artifactStat: async () => ({ exists: true, size: OFFICE_PREVIEW_MAX_BYTES + 1, mtimeMs: 1 }),
+        artifactGet,
+      }),
+    )
+    expect(huge).toMatchObject({ kind: 'unpreviewable', reason: 'too_large', size: OFFICE_PREVIEW_MAX_BYTES + 1 })
+    expect(artifactGet).not.toHaveBeenCalled()
+  })
+
+  it('marks a project workbook over the transfer cap unpreviewable before reading it', async () => {
+    const file = await resolveRemotePreviewerFile(
+      { path: 'docs/model.xlsx' },
+      ctx({ project: [{ name: 'model.xlsx', path: 'docs/model.xlsx', type: 'file', size: 11 * 1024 * 1024 }] }),
+    )
+    expect(file).toMatchObject({ kind: 'unpreviewable', reason: 'too_large' })
   })
 
   it('stats a node project file through workspace.listDir', async () => {

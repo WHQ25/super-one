@@ -1,10 +1,11 @@
 import { FileIcon as SymbolsFileIcon, FolderIcon as SymbolsFolderIcon } from '@react-symbols/icons/utils'
 import { modelFileIconDataUri } from '@superone/shared/model-file-icon'
+import { officeFileIconDataUri } from '@superone/shared/office-file-icon'
 
 export function FileIcon({ name, size = 16, className }: { name: string; size?: number; className?: string }) {
-  const modelIcon = modelFileIconDataUri(name)
-  if (modelIcon) {
-    return <img src={modelIcon} width={size} height={size} className={className ?? 'shrink-0'} alt="" aria-hidden="true" draggable={false} />
+  const customIcon = modelFileIconDataUri(name) ?? officeFileIconDataUri(name)
+  if (customIcon) {
+    return <img src={customIcon} width={size} height={size} className={className ?? 'shrink-0'} alt="" aria-hidden="true" draggable={false} />
   }
   return <SymbolsFileIcon fileName={name} autoAssign width={size} height={size} className={className ?? 'shrink-0'} />
 }

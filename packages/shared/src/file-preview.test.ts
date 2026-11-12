@@ -5,6 +5,9 @@ import {
   CAD_MODEL_EXTENSIONS,
   MODEL_EXTENSIONS,
   fileKindFromName,
+  OFFICE_PREVIEW_MAX_BYTES,
+  officePreviewKind,
+  officePreviewVerdict,
   isInlinePreviewCandidate,
   isInlinePreviewTextName,
   isInlineRpcCandidate,
@@ -31,6 +34,22 @@ describe('inline preview policy', () => {
     for (const name of ['photo.png', 'movie.mp4', 'archive.zip', 'lib.so', 'data.bin', 'noext', 'doc.pdf', 'device.usdz']) {
       expect(isInlinePreviewTextName(name), name).toBe(false)
     }
+  })
+
+  it('classifies modern Office packages as office and leaves the legacy formats as text names', () => {
+    expect(fileKindFromName('reports/Q3.DOCX')).toBe('office')
+    expect(fileKindFromName('C:\\finance\\model.xlsx')).toBe('office')
+    expect(fileKindFromName('deck.pptx')).toBe('office')
+    expect(officePreviewKind('dir/a.XLSX')).toBe('xlsx')
+    expect(fileKindFromName('legacy.doc')).toBe('text')
+    expect(fileKindFromName('legacy.xls')).toBe('text')
+    expect(fileKindFromName('legacy.ppt')).toBe('text')
+    expect(officePreviewKind('legacy.doc')).toBeNull()
+    expect(isInlinePreviewTextName('report.docx')).toBe(false)
+    expect(officePreviewVerdict('a.docx', OFFICE_PREVIEW_MAX_BYTES)).toBe('office')
+    expect(officePreviewVerdict('a.docx', OFFICE_PREVIEW_MAX_BYTES + 1)).toBe('too-large')
+    expect(officePreviewVerdict('a.docx', Number.NaN)).toBe('too-large')
+    expect(officePreviewVerdict('a.doc', 10)).toBeNull()
   })
 
   it('classifies every supported 3D extension as a model', () => {

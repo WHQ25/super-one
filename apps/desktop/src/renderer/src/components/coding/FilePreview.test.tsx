@@ -138,6 +138,15 @@ describe('FilePreview read failures', () => {
     vi.restoreAllMocks()
   })
 
+  it('previews a docx instead of treating the zip as an unreadable binary', async () => {
+    stubFile({ language: 'office', content: '', diff: '' })
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('nope'))
+    render(<FilePreview filePath="docs/quarterly.docx" />)
+    await waitFor(() => expect(screen.getByText('This document could not be opened.')).toBeInTheDocument())
+    expect(screen.queryByText('Binary file — preview not supported')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('text-file-editor')).not.toBeInTheDocument()
+  })
+
   it('shows the error and hides tabs instead of rendering a blank editor', async () => {
     const w = globalThis.window as unknown as Record<string, unknown>
     w.app = {

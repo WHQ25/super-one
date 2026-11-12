@@ -19,8 +19,9 @@ on its own over LAN, after a Download confirmation over the relay when R2 stagin
 required. Downloaded images swap into the image body, downloaded clips into the `video`
 body (`ui/video-player.tsx`, `expo-video` with native controls, autoplay, Save to Photos),
 3D files into the `model` body (`ui/zoomable-model.tsx`) and PDFs into the `pdf` body
-(`ui/pdf-pages.tsx`). Other files stay on a "Downloaded" card so the menu can save or
-share them. The 3D and PDF bodies share `ui/cached-file-viewer.tsx`: it writes an offline
+(`ui/pdf-pages.tsx`). Other files, including `.docx`, `.xlsx` and `.pptx`, stay on a
+"Downloaded" card so the menu can save or share them. The phone does not run the
+desktop Office viewers. The 3D and PDF bodies share `ui/cached-file-viewer.tsx`: it writes an offline
 viewer page beside the cached file and gives its WebView read access to that folder;
 the page reads the file over XHR (`viewer-runtime/cached-file.ts`). The PDF page
 (`pdf-viewer/entry.ts`) is pdf.js's legacy build (the modern one needs iOS 18.2) with

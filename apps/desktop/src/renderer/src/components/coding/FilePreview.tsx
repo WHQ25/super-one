@@ -48,6 +48,8 @@ function withImageMenu(path: string | null, child: React.ReactNode) {
   return <ImageContextMenu savedPath={path} className="size-full">{child}</ImageContextMenu>
 }
 import { PdfPreview } from '@/components/chat/PdfPreview'
+import { OfficePreview } from './OfficePreview'
+import { OfficePreviewStatus } from './office-toolbar'
 import type { GitFileDiff, GitFileContent } from '@superone/shared/agent-types'
 import {
   AUDIO_EXTENSIONS,
@@ -57,6 +59,7 @@ import {
   NOTEBOOK_EXTENSIONS,
   PDF_EXTENSIONS,
   VIDEO_EXTENSIONS,
+  officePreviewKind,
 } from '@superone/shared/file-preview'
 import { FileDiffView } from './source-control/FileDiffView'
 import { FileWithDiffView } from './source-control/FileWithDiffView'
@@ -106,7 +109,7 @@ function useOwnFileData(filePath: string | undefined, refreshKey: number, root?:
       if (c.error) return
       if (pickedTabForPathRef.current === filePath) return
       pickedTabForPathRef.current = filePath
-      const isBin = c.language === 'image' || c.language === 'pdf' || c.language === 'video' || c.language === 'audio' || c.language === 'model'
+      const isBin = c.language === 'image' || c.language === 'pdf' || c.language === 'video' || c.language === 'audio' || c.language === 'model' || c.language === 'office'
       const isSvg = c.language === 'svg'
       const ext = getFileExt(filePath)
       const isMd = MARKDOWN_EXTS.has(ext)
@@ -148,6 +151,7 @@ export function FilePreview({ filePath, fileRoot: root }: FilePreviewProps) {
   // a blank editor, indistinguishable from an empty file.
   const loadError = fileContent?.error
   useEffect(() => { setRetrying(false) }, [fileContent])
+  useEffect(() => { setIsDirty(false) }, [filePath])
   const handleRetry = useCallback(() => {
     setRetrying(true)
     setRefreshKey((k) => k + 1)
@@ -163,8 +167,10 @@ export function FilePreview({ filePath, fileRoot: root }: FilePreviewProps) {
   const isVideoFile = VIDEO_EXTS.has(ext)
   const isAudioFile = AUDIO_EXTS.has(ext)
   const isModelFile = MODEL_EXTS.has(ext)
+  const officeKind = officePreviewKind(fileName)
+  const isOfficeFile = officeKind !== null
   const hasDiff = !!fileDiff?.diff
-  const isBinaryPreview = isBinImg || isPdfFile || isVideoFile || isAudioFile || isModelFile
+  const isBinaryPreview = isBinImg || isPdfFile || isVideoFile || isAudioFile || isModelFile || isOfficeFile
   const isUnpreviewable = fileContent?.language === 'binary' || fileContent?.language === 'too-large'
   // Non-md text files still use Editor + File; markdown and notebooks use
   // Preview + File only (a notebook's raw JSON is not hand-editable safely).
@@ -379,6 +385,15 @@ export function FilePreview({ filePath, fileRoot: root }: FilePreviewProps) {
                 url={previewSrc(fileContent?.content, () => toLocalFileUrl(fullFilePath))}
                 className="h-full"
               />
+            ) : effectiveTab === 'preview' && isOfficeFile && fileContent?.language === 'office' ? (
+              <div className="h-full min-h-0 overflow-hidden">
+                <OfficePreview
+                  url={previewSrc(fileContent.content, () => toLocalFileUrl(fullFilePath))}
+                  name={fileName}
+                />
+              </div>
+            ) : effectiveTab === 'preview' && isOfficeFile ? (
+              fileContent ? null : <OfficePreviewStatus phase="loading" />
             ) : effectiveTab === 'preview' && isVideoFile ? (
               <div className="flex h-full items-center justify-center p-4">
                 <MarkdownVideoPlayer

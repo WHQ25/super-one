@@ -4919,6 +4919,31 @@ export type Messages = {
     loadFailedHint: string
     tooLarge: string
     binary: string
+    office: {
+      loading: string
+      failed: string
+      zoomIn: string
+      zoomOut: string
+      fitWidth: string
+      fitPage: string
+      resetZoom: string
+      previousSlide: string
+      nextSlide: string
+      goToSlide: string
+      thumbnails: string
+      slideCount: string
+      sheetCount: string
+      oneSheet: string
+      save: string
+      saving: string
+      saveFailed: string
+      undo: string
+      redo: string
+      bold: string
+      italic: string
+      underline: string
+      previewOnly: string
+    }
   }
   tooltips: {
     toggleSidebar: string
@@ -10042,6 +10067,31 @@ export const en: Messages = {
     loadFailedHint: 'It may have been moved or deleted, or the remote node is unreachable.',
     tooLarge: 'File too large to preview',
     binary: 'Binary file — preview not supported',
+    office: {
+      loading: 'Loading document…',
+      failed: 'This document could not be opened.',
+      zoomIn: 'Zoom In',
+      zoomOut: 'Zoom Out',
+      fitWidth: 'Fit Width',
+      fitPage: 'Fit Page',
+      resetZoom: 'Reset Zoom',
+      previousSlide: 'Previous Slide',
+      nextSlide: 'Next Slide',
+      goToSlide: 'Go to Slide {{number}}',
+      thumbnails: 'Slide thumbnails',
+      slideCount: '{{current}} / {{count}}',
+      sheetCount: '{{count}} sheets',
+      oneSheet: '1 sheet',
+      save: 'Save',
+      saving: 'Saving…',
+      saveFailed: 'This document could not be saved.',
+      undo: 'Undo',
+      redo: 'Redo',
+      bold: 'Bold',
+      italic: 'Italic',
+      underline: 'Underline',
+      previewOnly: 'Preview only',
+    },
   },
   tooltips: {
     toggleSidebar: 'Toggle Sidebar',

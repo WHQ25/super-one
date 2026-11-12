@@ -92,34 +92,44 @@ export function resolveMediaSrcForProject(src: string, projectPath: string): str
   return encodeRemoteMediaUrl(projectPath, clean)
 }
 
+export type DisplayMediaResult = { url: string } | { failure: 'too-large' | 'unavailable' }
+
 /**
  * Turn a remote-media ref (or already-resolved src) into a browser-displayable URL.
  * Uses readProjectFile, which returns a data: URI for media on the node and a
  * local-file: URL for media mirrored into the session zone.
+ * `too-large` stays distinct from a missing file so a preview can say why.
  */
-export async function resolveDisplayMediaSrc(src: string): Promise<string | null> {
-  if (!src) return null
+export async function resolveDisplayMedia(src: string): Promise<DisplayMediaResult> {
+  if (!src) return { failure: 'unavailable' }
   if (src.startsWith('data:') || src.startsWith('http://') || src.startsWith('https://') || src.startsWith('blob:')) {
-    return src
+    return { url: src }
   }
   const remote = decodeRemoteMediaUrl(src)
-  if (!remote) return src
+  if (!remote) return { url: src }
 
   try {
     const file = await window.app.readProjectFile(remote.projectPath, remote.relativePath)
-    if (file.language === 'too-large' || file.language === 'binary') return null
+    if (file.language === 'too-large') return { failure: 'too-large' }
+    if (file.language === 'binary') return { failure: 'unavailable' }
     // Node media arrives as a data URI; session-zone media as the URL of its
     // desktop mirror, which the local-file protocol streams at any size.
-    if (file.content.startsWith('data:') || file.content.startsWith('local-file:')) return file.content
+    if (file.content.startsWith('data:') || file.content.startsWith('local-file:')) return { url: file.content }
     if (file.language === 'svg' && file.content) {
-      return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(file.content)}`
+      return { url: `data:image/svg+xml;charset=utf-8,${encodeURIComponent(file.content)}` }
     }
     // Unexpected text file referenced as media — still try as svg/text data
     if (file.content) {
-      return `data:application/octet-stream;base64,${btoa(file.content)}`
+      return { url: `data:application/octet-stream;base64,${btoa(file.content)}` }
     }
-    return null
+    return { failure: 'unavailable' }
   } catch {
-    return null
+    return { failure: 'unavailable' }
   }
+}
+
+/** URL form of `resolveDisplayMedia`. A refusal, of either kind, is null. */
+export async function resolveDisplayMediaSrc(src: string): Promise<string | null> {
+  const result = await resolveDisplayMedia(src)
+  return 'url' in result ? result.url : null
 }

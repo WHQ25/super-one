@@ -70,6 +70,19 @@ export const MODEL_EXTENSIONS: ReadonlySet<string> = new Set(Object.keys(MODEL_M
 /** CAD exchange formats the desktop tessellates with OpenCascade; the phone viewer cannot load them. */
 export const CAD_MODEL_EXTENSIONS: ReadonlySet<string> = new Set(['.step', '.stp', '.iges', '.igs'])
 export const MODEL_PREVIEW_MAX_BYTES = 100 * 1024 * 1024
+/**
+ * Modern Office Open XML only. Legacy `.doc` / `.xls` / `.ppt` stay binary:
+ * the viewers parse a ZIP package, not the OLE formats.
+ */
+export const OFFICE_EXTENSIONS: ReadonlySet<string> = new Set(['.docx', '.xlsx', '.pptx'])
+export const OFFICE_MIME: Readonly<Record<string, string>> = {
+  '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  '.xlsx': 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  '.pptx': 'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+}
+/** Viewer cap. A remote project read still stops at the transfer cap before this. */
+export const OFFICE_PREVIEW_MAX_BYTES = 25 * 1024 * 1024
+export type OfficePreviewFormat = 'docx' | 'xlsx' | 'pptx'
 export const NOTEBOOK_EXTENSIONS: ReadonlySet<string> = new Set(['.ipynb'])
 export const MARKDOWN_EXTENSIONS: ReadonlySet<string> = new Set(['.md', '.mdx', '.markdown'])
 
@@ -132,7 +145,24 @@ export function isVideoFileName(name: string): boolean {
 }
 
 /** What a file's NAME says about how it previews; the host corrects `text` by sniffing bytes. */
-export type FilePreviewKind = 'image' | 'pdf' | 'video' | 'audio' | 'model' | 'markdown' | 'notebook' | 'text'
+export type FilePreviewKind = 'image' | 'pdf' | 'video' | 'audio' | 'model' | 'office' | 'markdown' | 'notebook' | 'text'
+
+/** Which Office viewer a name selects, or null for anything those engines cannot open. */
+export function officePreviewKind(name: string): OfficePreviewFormat | null {
+  const ext = extensionOf(name)
+  if (!OFFICE_EXTENSIONS.has(ext)) return null
+  return ext.slice(1) as OfficePreviewFormat
+}
+
+/**
+ * Size verdict for a name `officePreviewKind` accepts.
+ * `null` when the name is not an Office preview at all.
+ */
+export function officePreviewVerdict(name: string, size: number): 'office' | 'too-large' | null {
+  if (!officePreviewKind(name)) return null
+  if (!Number.isFinite(size) || size < 0 || size > OFFICE_PREVIEW_MAX_BYTES) return 'too-large'
+  return 'office'
+}
 
 /**
  * Name-only classification. `.ogg` is a video container here because the
@@ -146,6 +176,7 @@ export function fileKindFromName(name: string): FilePreviewKind {
   if (VIDEO_EXTENSIONS.has(ext)) return 'video'
   if (AUDIO_EXTENSIONS.has(ext)) return 'audio'
   if (MODEL_EXTENSIONS.has(ext)) return 'model'
+  if (officePreviewKind(name)) return 'office'
   if (MARKDOWN_EXTENSIONS.has(ext)) return 'markdown'
   if (NOTEBOOK_EXTENSIONS.has(ext)) return 'notebook'
   return 'text'

@@ -460,6 +460,8 @@ interface AppAPI extends WindowLayoutAPI {
   /** Create an empty file or directory under `parentRelPath` ('' = project root); refuses to overwrite. */
   createEntry(folderPath: string, parentRelPath: string, name: string, kind: FileEntryKind): Promise<FileOpResult>
   saveFile(folderPath: string, filePath: string, content: string): Promise<FileOpResult>
+  /** Write an Office package. Refuses a remote project and a non-Office path. */
+  saveFileBytes(folderPath: string, filePath: string, bytes: Uint8Array): Promise<FileOpResult>
   readFileAsDataUri(absPath: string): Promise<{ ok: true; dataUri: string } | { ok: false; error: string }>
   stageAttachmentOriginal(request: StageAttachmentOriginalRequest): Promise<{ path: string }>
   attachmentOriginalStatus(paths: string[]): Promise<Record<string, AttachmentOriginalStatus>>

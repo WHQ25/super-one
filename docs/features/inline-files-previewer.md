@@ -38,9 +38,18 @@ text. These limits live in `packages/shared/src/generative-ui/native-widgets.ts`
 the builder does not enforce a separate 16 KiB payload limit.
 
 `fileKindFromName` in `packages/shared/src/file-preview.ts` is the common
-classification source. Kinds are image, PDF, video, audio, model, Markdown,
-notebook and text, plus the host verdicts `missing` and `unpreviewable`.
-[3D model preview](3d-model-preview.md) owns model formats and loading constraints.
+classification source. Kinds are image, PDF, video, audio, model, Office,
+Markdown, notebook and text, plus the host verdicts `missing` and
+`unpreviewable`. Office is modern Open XML only (`.docx`, `.xlsx`, `.pptx`);
+legacy `.doc`, `.xls` and `.ppt` stay on the binary path. The viewer cap is
+25 MiB. A remote project file above the 10 MiB data-URI cap, and a zone copy
+above 25 MiB, are `too_large` before any download. The activity-panel file
+tab uses the same viewer. Word, Excel, and PowerPoint preview without a
+toolbar. Word uses the read-only page renderer. Excel keeps cell editing off
+and still resizes columns and rows, with the grid following the pointer.
+PowerPoint keeps the custom thumbnail rail. Chat cards use the same preview.
+[3D model preview](3d-model-preview.md) owns model formats
+and loading constraints.
 
 ### 2.2 Host-built payload and remote identity
 
@@ -105,6 +114,7 @@ payloads rather than truncating them as generic tool text.
 | Model | Model preview | File chip; full preview uses the mobile viewer |
 | Markdown, small text | Read-only formatted/highlighted content | `loadTextFile` and `PortableMarkdown` |
 | Notebook | `NotebookPreview` | File chip |
+| Office (`.docx`, `.xlsx`, `.pptx`) | Read-only preview. Excel can resize columns and rows | File chip |
 | Missing/unpreviewable | Reason and applicable retry | Error or file chip |
 
 Inline text is read-only; editors with autosave are not used here.

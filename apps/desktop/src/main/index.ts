@@ -100,7 +100,8 @@ import { addSessionTerminalCommandRule, isTerminalCommandAllowedForSession } fro
 import { RemoteTerminalController } from './environment/remote-terminal-controller'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import { isGitMentionRefKind, type GitMentionRefKind } from '@superone/shared/git-mention-query'
-import { AUDIO_EXTENSIONS, BINARY_IMAGE_EXTENSIONS, MODEL_EXTENSIONS, PDF_EXTENSIONS, VIDEO_EXTENSIONS } from '@superone/shared/file-preview'
+import { AUDIO_EXTENSIONS, BINARY_IMAGE_EXTENSIONS, MODEL_EXTENSIONS, OFFICE_PREVIEW_MAX_BYTES, PDF_EXTENSIONS, VIDEO_EXTENSIONS, officePreviewKind } from '@superone/shared/file-preview'
+import { officeBytesSaveRefusal } from './office-save'
 import { nodePtySpawner } from './terminal/pty'
 import { DeviceRegistry } from './remote/device-registry'
 import { createDesktopTopicHub, publishHubEvent, topicOfTerminalEvent } from './stream/desktop-topics'
@@ -3481,6 +3482,17 @@ function registerIpcHandlers(): void {
       if (VIDEO_EXTS.has(ext)) return { path: filePath, content: '', language: 'video' }
       if (AUDIO_EXTS.has(ext)) return { path: filePath, content: '', language: 'audio' }
       if (MODEL_EXTS.has(ext)) return { path: filePath, content: '', language: 'model' }
+      // Office packages are ZIP files, so the NUL sniff below would call them
+      // binary. Stat first: a huge workbook must not be pulled into the viewer.
+      if (officePreviewKind(filePath)) {
+        const fullPath = resolveRealPath(isAbsolute(filePath) ? filePath : join(folderPath, filePath))
+        if (!isAbsolute(filePath) && !isPathWithinAllowed(fullPath, [folderPath])) {
+          return { path: filePath, content: '', language: 'text' }
+        }
+        const size = (await stat(fullPath)).size
+        if (size > OFFICE_PREVIEW_MAX_BYTES) return { path: filePath, content: '', language: 'too-large' }
+        return { path: filePath, content: '', language: 'office' }
+      }
       const fullPath = resolveRealPath(isAbsolute(filePath) ? filePath : join(folderPath, filePath))
       if (!isAbsolute(filePath) && !isPathWithinAllowed(fullPath, [folderPath])) {
         return { path: filePath, content: '', language: 'text' }
@@ -3516,6 +3528,31 @@ function registerIpcHandlers(): void {
         ? resolveRealPath(filePath)
         : validatePathInProject(folderPath, join(folderPath, filePath))
       await writeFile(fullPath, content, 'utf-8')
+      return { ok: true }
+    } catch (err) {
+      return { ok: false, error: (err as Error).message }
+    }
+  })
+
+  ipcMain.handle(AgentIpcChannels.SAVE_FILE_BYTES, async (_event, folderPath: string, filePath: string, bytes: Uint8Array) => {
+    try {
+      const view = bytes instanceof Uint8Array ? bytes : null
+      const refusal = officeBytesSaveRefusal(folderPath, filePath, view?.byteLength ?? -1)
+      if (refusal || !view) {
+        const error = refusal === 'remote'
+          ? 'Remote office files cannot be saved'
+          : refusal === 'size'
+            ? 'File too large to save'
+            : 'Office save was refused'
+        return { ok: false, error }
+      }
+      // Same path rules as SAVE_FILE. The bytes stay a Buffer: the string
+      // channel would encode a ZIP as UTF-8 and corrupt the package.
+      const isAbs = isAbsolute(filePath) || /^[A-Za-z]:[\\/]/.test(filePath)
+      const fullPath = isAbs
+        ? resolveRealPath(filePath)
+        : validatePathInProject(folderPath, join(folderPath, filePath))
+      await writeFile(fullPath, view)
       return { ok: true }
     } catch (err) {
       return { ok: false, error: (err as Error).message }

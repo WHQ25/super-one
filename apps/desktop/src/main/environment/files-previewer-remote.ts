@@ -20,10 +20,11 @@
 import { basename, dirname } from 'node:path'
 import type { PreviewerFile } from '@superone/shared/generative-ui/native-widgets'
 import type { WorkspaceEntry } from '@superone/shared/environment'
+import { OFFICE_PREVIEW_MAX_BYTES, officePreviewKind } from '@superone/shared/file-preview'
 import { classifyPreviewerFile, resolvePreviewerFile } from '../generative-ui/files-previewer-payload'
 import { mirrorNodeArtifact } from './session-file-mirror'
 import { nodeTwinOf, parseNodeZonePath, type NodeSyncZone } from './sync-zone-paths'
-import { normalizeHostPath } from './remote-file-tree'
+import { MAX_TRANSFER_BYTES, normalizeHostPath } from './remote-file-tree'
 
 export interface RemotePreviewerContext {
   resolveTempFile?: (path: string) => Promise<import('./remote-temp-files').RemoteTempFileResolution>
@@ -75,6 +76,18 @@ export async function resolveRemotePreviewerFile(
 
   const zonePath = ctx.zone ? parseNodeZonePath(ctx.zone, abs) : null
   if (zonePath) {
+    // An Office package past the viewer cap must not be mirrored first. The
+    // stat is the same one the mirror would make; only the download is skipped.
+    if (officePreviewKind(base.name)) {
+      try {
+        const st = await ctx.artifactStat(zonePath.sessionId, zonePath.relativePath)
+        if (st.exists && st.size > OFFICE_PREVIEW_MAX_BYTES) {
+          return { ...base, size: st.size, kind: 'unpreviewable', reason: 'too_large' }
+        }
+      } catch {
+        // Offline, the mirror below still answers from a copy already on disk.
+      }
+    }
     // Mirror it so a text file can be sniffed and the desktop copy is ready for
     // the first read; the stat that decides the row still comes from the node.
     const outcome = await mirrorNodeArtifact(zonePath.sessionId, zonePath.relativePath, {
@@ -104,7 +117,12 @@ export async function resolveRemotePreviewerFile(
       // Reuse local sniffing and size limits, preserving the node identity for
       // every subsequent read, Retry, media URL and phone handoff.
       const file = resolvePreviewerFile({ path: temp.path }, { root: dirname(temp.path), isReadable: () => true })
-      return { ...file, ...base }
+      const merged = { ...file, ...base }
+      // The card still reads this through the node, and that answer is a data URI.
+      if (merged.kind === 'office' && (file.size ?? 0) > MAX_TRANSFER_BYTES) {
+        return { ...merged, kind: 'unpreviewable', reason: 'too_large' }
+      }
+      return merged
     }
     return { ...base, kind: 'unpreviewable', reason: 'outside_readable_roots' }
   }
@@ -116,7 +134,11 @@ export async function resolveRemotePreviewerFile(
     if (!self || self.type === 'directory') return { ...base, kind: 'missing' }
     // Project files are trusted by extension: reading head bytes over RPC to sniff
     // a mislabelled .txt is not worth a round trip; the reader returns binary if wrong.
-    return classifyPreviewerFile(base, self.size ?? 0)
+    const file = classifyPreviewerFile(base, self.size ?? 0)
+    if (file.kind === 'office' && (self.size ?? 0) > MAX_TRANSFER_BYTES) {
+      return { ...file, kind: 'unpreviewable', reason: 'too_large' }
+    }
+    return file
   } catch {
     return { ...base, kind: 'missing' }
   }

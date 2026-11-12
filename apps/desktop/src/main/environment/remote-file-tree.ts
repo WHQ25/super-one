@@ -40,7 +40,7 @@ import {
   type GitMentionRefKind,
   type GitMentionRefsResult,
 } from '@superone/shared/git-mention-query'
-import { AUDIO_EXTENSIONS, BINARY_IMAGE_EXTENSIONS, MODEL_EXTENSIONS, MODEL_MIME, PDF_EXTENSIONS, VIDEO_EXTENSIONS } from '@superone/shared/file-preview'
+import { AUDIO_EXTENSIONS, BINARY_IMAGE_EXTENSIONS, MODEL_EXTENSIONS, MODEL_MIME, OFFICE_MIME, OFFICE_PREVIEW_MAX_BYTES, PDF_EXTENSIONS, VIDEO_EXTENSIONS, officePreviewKind } from '@superone/shared/file-preview'
 import {
   EMPTY_PAIR,
   parseGitStatusOutput,
@@ -53,6 +53,7 @@ import { createKeyedGitReadCache } from '../git/keyed-git-read-cache'
 import type { EnvironmentHost } from './environment-host'
 import { RemoteEnvironmentGateway } from './remote-environment-gateway'
 import { materializeRemoteProjectFile, resolveSessionFile, resolverDepsFor } from './session-file-resolver'
+import { parseNodeZonePath } from './sync-zone-paths'
 import { toLocalFileUrl } from '@superone/shared/path-display'
 import { mediaFileGrants } from '../media-file-grants'
 
@@ -110,7 +111,7 @@ export function invalidateRemoteGitReadsForConnection(connectionId: string): voi
 
 const SKIP_NAMES = new Set(['.git', '.DS_Store'])
 /** Match node workspace.writeFile / readFile payload cap. */
-const MAX_TRANSFER_BYTES = 10 * 1024 * 1024
+export const MAX_TRANSFER_BYTES = 10 * 1024 * 1024
 
 const REMOTE_IMAGE_EXTS = BINARY_IMAGE_EXTENSIONS
 const REMOTE_PDF_EXTS = PDF_EXTENSIONS
@@ -119,6 +120,7 @@ const REMOTE_AUDIO_EXTS = AUDIO_EXTENSIONS
 const REMOTE_MODEL_EXTS = MODEL_EXTENSIONS
 const REMOTE_MIME: Record<string, string> = {
   ...MODEL_MIME,
+  ...OFFICE_MIME,
   '.png': 'image/png',
   '.jpg': 'image/jpeg',
   '.jpeg': 'image/jpeg',
@@ -707,7 +709,7 @@ export async function materializeRemotePathsForDrag(
  * only paths under a single remote folderPath that we can resolve are exported
  * when `folderPath` is provided; otherwise each path is parsed independently.
  */
-type MediaLanguage = 'image' | 'pdf' | 'video' | 'audio' | 'model'
+type MediaLanguage = 'image' | 'pdf' | 'video' | 'audio' | 'model' | 'office'
 
 /** The preview language of a media file by extension, or null for anything else. */
 function mediaLanguage(filePath: string): MediaLanguage | null {
@@ -717,6 +719,7 @@ function mediaLanguage(filePath: string): MediaLanguage | null {
   if (REMOTE_VIDEO_EXTS.has(ext)) return 'video'
   if (REMOTE_AUDIO_EXTS.has(ext)) return 'audio'
   if (REMOTE_MODEL_EXTS.has(ext)) return 'model'
+  if (officePreviewKind(filePath)) return 'office'
   return null
 }
 
@@ -726,6 +729,26 @@ const MEDIA_FALLBACK_MIME: Record<MediaLanguage, string> = {
   video: 'video/mp4',
   audio: 'audio/mpeg',
   model: 'application/octet-stream',
+  office: 'application/octet-stream',
+}
+
+/**
+ * A zone Office file over the viewer cap. Checked before `resolveSessionFile`
+ * so the mirror does not download a deck the viewer would then refuse.
+ */
+async function officeZoneTooLarge(host: EnvironmentHost, folderPath: string, filePath: string): Promise<boolean> {
+  if (!officePreviewKind(filePath)) return false
+  const remote = parseRemoteProjectKey(folderPath)
+  if (!remote || !host.getSyncZone || !host.artifactStat) return false
+  const zone = host.getSyncZone(remote.connectionId)
+  const parsed = zone ? parseNodeZonePath(zone, filePath) : null
+  if (!parsed) return false
+  try {
+    const st = await host.artifactStat(remote.connectionId, parsed.sessionId, parsed.relativePath)
+    return st.exists && st.size > OFFICE_PREVIEW_MAX_BYTES
+  } catch {
+    return false
+  }
 }
 
 /** `GitFileContent` for bytes already in hand — the shape the panel and the previewer read. */
@@ -764,6 +787,9 @@ export async function readRemoteProjectFile(
   folderPath: string,
   filePath: string,
 ): Promise<GitFileContent | null> {
+  if (await officeZoneTooLarge(host, folderPath, filePath)) {
+    return { path: filePath, content: '', language: 'too-large' }
+  }
   const resolution = await resolveSessionFile(folderPath, filePath, resolverDepsFor(host))
   if (resolution.kind === 'missing') {
     return { path: filePath, content: '', language: 'text', error: 'missing' }
@@ -776,6 +802,11 @@ export async function readRemoteProjectFile(
     const media = mediaLanguage(filePath)
     if (media) {
       if (!existsSync(resolution.path)) return { path: filePath, content: '', language: 'text', error: 'missing' }
+      // Video streams at any size. An Office package is parsed in the renderer,
+      // so a mirror past the viewer cap is refused before that fetch.
+      if (media === 'office' && statSync(resolution.path).size > OFFICE_PREVIEW_MAX_BYTES) {
+        return { path: filePath, content: '', language: 'too-large' }
+      }
       return { path: filePath, content: toLocalFileUrl(resolution.path), language: media }
     }
     try {

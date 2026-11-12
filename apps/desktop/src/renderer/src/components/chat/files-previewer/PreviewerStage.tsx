@@ -7,6 +7,7 @@ import { Button } from '@superone/ui/components/ui/button'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import type { PreviewerFile } from '@superone/shared/generative-ui/native-widgets'
 import { PdfPreview } from '@/components/chat/PdfPreview'
+import { OfficePreview } from '@/components/coding/OfficePreview'
 import { CopyableMarkdown } from '@/components/chat/CopyableMarkdown'
 import { MarkdownAudioPlayer, MarkdownVideoPlayer } from '@/components/chat/markdown-media-player'
 import { localFileUrlToPath } from '@/lib/path-utils'
@@ -145,6 +146,12 @@ export function PreviewerStage({ file, state, mode, root, projectPath, initialMo
       return (
         <div className={cn('h-full w-full', inert)}>
           <PdfPreview url={state.url!} className="h-full" variant={card ? 'stage' : 'full'} />
+        </div>
+      )
+    case 'office':
+      return (
+        <div className={cn('h-full min-h-0 w-full overflow-hidden', inert)}>
+          <OfficePreview url={state.url!} name={file.name} variant={card ? 'stage' : 'full'} />
         </div>
       )
     case 'video':

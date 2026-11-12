@@ -1699,6 +1699,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.FILE_CREATE, folderPath, parentRelPath, name, kind),
   saveFile: (folderPath: string, filePath: string, content: string) =>
     ipcRenderer.invoke(AgentIpcChannels.SAVE_FILE, folderPath, filePath, content),
+  saveFileBytes: (folderPath: string, filePath: string, bytes: Uint8Array) =>
+    ipcRenderer.invoke(AgentIpcChannels.SAVE_FILE_BYTES, folderPath, filePath, bytes),
   readFileAsDataUri: (absPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.READ_FILE_AS_DATA_URI, absPath),
   stageAttachmentOriginal: (request: StageAttachmentOriginalRequest) =>

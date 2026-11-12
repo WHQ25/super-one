@@ -5,6 +5,7 @@ import {
   encodeRemoteMediaUrl,
   isRemoteMediaUrl,
   relativeUnderRemoteProject,
+  resolveDisplayMedia,
   resolveDisplayMediaSrc,
   resolveMediaSrcForProject,
 } from './remote-media-url'
@@ -51,6 +52,13 @@ describe('remote-media-url', () => {
     const url = 'local-file:///Users/me/Library/Application%20Support/SuperOne/sync/s1/recording/run.mp4'
     Object.assign(window.app, { readProjectFile: vi.fn(async () => ({ path: '/x', content: url, language: 'video' })) })
     expect(await resolveDisplayMediaSrc(encodeRemoteMediaUrl(project, '/home/node/sync/s1/recording/run.mp4'))).toBe(url)
+  })
+
+  it('reports a too-large office read separately from a missing file', async () => {
+    Object.assign(window.app, { readProjectFile: vi.fn(async () => ({ path: '/x', content: '', language: 'too-large' })) })
+    const src = encodeRemoteMediaUrl(project, 'docs/deck.pptx')
+    expect(await resolveDisplayMedia(src)).toEqual({ failure: 'too-large' })
+    expect(await resolveDisplayMediaSrc(src)).toBeNull()
   })
 
   it('local project still uses local-file URLs', () => {

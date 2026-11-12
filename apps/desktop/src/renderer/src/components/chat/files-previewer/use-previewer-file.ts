@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import type { PreviewerFile, PreviewerFileKind } from '@superone/shared/generative-ui/native-widgets'
 import { localFileUrlToPath, toLocalFileUrl, toMediaUrl } from '@/lib/path-utils'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
-import { resolveDisplayMediaSrc, resolveMediaSrcForProject } from '@/lib/remote-media-url'
+import { resolveDisplayMedia, resolveMediaSrcForProject } from '@/lib/remote-media-url'
 
 /**
  * What the stage needs for one slide. The host already decided `kind`, so the
@@ -24,8 +24,8 @@ function mediaUrl(file: PreviewerFile): string {
   // A `data:` "path" never comes from the host; it is how stories and fixtures
   // feed the stage without a media server.
   if (file.absolutePath.startsWith('data:')) return file.absolutePath
-  // Video and audio stream from the media server (range requests); everything
-  // else is a whole-file fetch the local-file protocol serves fine.
+  // Video, audio and models stream from the media server (range requests).
+  // Office documents are a whole-file fetch: the viewer caps that body itself.
   return file.kind === 'video' || file.kind === 'audio' || file.kind === 'model' ? toMediaUrl(file.absolutePath) : toLocalFileUrl(file.absolutePath)
 }
 
@@ -39,18 +39,19 @@ function isRemoteMedia(root: string, file: PreviewerFile): boolean {
   return !!parseRemoteProjectKey(root) && !file.absolutePath.startsWith('data:')
 }
 
-async function resolveRemoteMediaUrl(root: string, file: PreviewerFile): Promise<string | null> {
-  const resolved = await resolveDisplayMediaSrc(resolveMediaSrcForProject(file.absolutePath, root))
-  if (!resolved) return null
+async function resolveRemoteMediaUrl(root: string, file: PreviewerFile): Promise<{ url: string } | { failure: 'too-large' | 'unavailable' }> {
+  const resolved = await resolveDisplayMedia(resolveMediaSrcForProject(file.absolutePath, root))
+  if (!('url' in resolved)) return resolved
   // Zone media comes back as its mirror's local-file URL: from here on
   // it is a local file, and streams the way one does.
-  const mirror = localFileUrlToPath(resolved)
-  return mirror ? mediaUrl({ ...file, absolutePath: mirror }) : resolved
+  const mirror = localFileUrlToPath(resolved.url)
+  return { url: mirror ? mediaUrl({ ...file, absolutePath: mirror }) : resolved.url }
 }
 
 /** The URL a media-class slide loads from; `null` when a remote file cannot be resolved. */
 export function resolvePreviewerMediaUrl(root: string, file: PreviewerFile): Promise<string | null> {
-  return isRemoteMedia(root, file) ? resolveRemoteMediaUrl(root, file) : Promise.resolve(mediaUrl(file))
+  if (!isRemoteMedia(root, file)) return Promise.resolve(mediaUrl(file))
+  return resolveRemoteMediaUrl(root, file).then((result) => ('url' in result ? result.url : null))
 }
 
 function languageToError(language: string): PreviewerLoadError | null {
@@ -80,9 +81,13 @@ export function usePreviewerFile(root: string, file: PreviewerFile, active: bool
       if (isRemoteMedia(root, file)) {
         let cancelled = false
         setState({ status: 'loading' })
-        void resolveRemoteMediaUrl(root, file).then((url) => {
+        void resolveRemoteMediaUrl(root, file).then((result) => {
           if (cancelled) return
-          setState(url ? { status: 'ready', url } : { status: 'error', error: 'io' })
+          if (!('url' in result)) {
+            setState({ status: 'error', error: result.failure === 'too-large' ? 'too_large' : 'io' })
+            return
+          }
+          setState({ status: 'ready', url: result.url })
         }).catch(() => { if (!cancelled) setState({ status: 'error', error: 'io' }) })
         return () => { cancelled = true }
       }

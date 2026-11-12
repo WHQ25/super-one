@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { FILES_PREVIEWER_MAX_FILES, FILES_PREVIEWER_MAX_NOTE_CHARS } from '@superone/shared/generative-ui/native-widgets'
-import { buildFilesPreviewerPayload, resolvePreviewerFile } from './files-previewer-payload'
+import { OFFICE_PREVIEW_MAX_BYTES } from '@superone/shared/file-preview'
+import { buildFilesPreviewerPayload, classifyPreviewerFile, resolvePreviewerFile } from './files-previewer-payload'
 
 /**
  * Everything runs against a real temp directory; only the media-server root check is
@@ -60,6 +61,27 @@ describe('files-previewer payload — the host decides, the renderer draws', () 
     const { payload } = await buildFilesPreviewerPayload('t', { files: [{ path: 'gone.png' }, { path: 'notes.txt' }] }, deps())
     expect(payload?.files?.map((f) => f.kind)).toEqual(['missing', 'text'])
     expect(payload?.files?.[0].size).toBeUndefined()
+  })
+
+  it('classifies a docx as office and does not sniff the zip as binary', async () => {
+    writeFileSync(join(root, 'report.docx'), Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00]))
+    const file = resolvePreviewerFile({ path: 'report.docx' }, deps())
+    expect(file).toMatchObject({ kind: 'office', size: 5 })
+    const sniffed = classifyPreviewerFile(
+      { path: 'report.docx', absolutePath: file.absolutePath, name: 'report.docx' },
+      5,
+      () => new Uint8Array([0x50, 0x4b, 0x03, 0x04, 0x00]),
+    )
+    expect(sniffed.kind).toBe('office')
+  })
+
+  it('marks an office file past the viewer cap unpreviewable without reading it', () => {
+    const file = classifyPreviewerFile(
+      { path: 'big.xlsx', absolutePath: '/tmp/big.xlsx', name: 'big.xlsx' },
+      OFFICE_PREVIEW_MAX_BYTES + 1,
+      () => { throw new Error('should not sniff') },
+    )
+    expect(file).toMatchObject({ kind: 'unpreviewable', reason: 'too_large' })
   })
 
   it('keeps a binary USDZ as a model slide', async () => {

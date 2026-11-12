@@ -1,3 +1,4 @@
+import { OFFICE_PREVIEW_MAX_BYTES } from '@superone/shared/file-preview'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
@@ -535,6 +536,15 @@ describe('readRemoteProjectFile / saveRemoteProjectFile', () => {
     expect(warn).toHaveBeenCalled()
   })
 
+  it('inlines a project docx as an office data URI instead of calling the zip binary', async () => {
+    const bytes = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00])
+    const readFile = vi.fn().mockResolvedValue({ content: bytes })
+    const host = mockHost({ workspace: () => ({ readFile }) })
+    const result = await readRemoteProjectFile(host, 'remote:conn-1:/work/app', 'docs/report.docx')
+    expect(result?.language).toBe('office')
+    expect(result?.content.startsWith('data:application/vnd.openxmlformats-officedocument.wordprocessingml.document;base64,')).toBe(true)
+  })
+
   it('relativizes a host-absolute path against the project root', async () => {
     // Chat file chips cite the agent's absolute path; it must not be resolved
     // against the project root a second time.
@@ -584,6 +594,33 @@ describe('readRemoteProjectFile / saveRemoteProjectFile', () => {
       const mirror = join(zoneState.userData, 'sync', 's1', 'recording', 'run.mp4')
       expect(result).toEqual({ path: '/home/node/.superone/node/sync/s1/recording/run.mp4', content: `local-file://${mirror}`, language: 'video' })
       expect(existsSync(mirror)).toBe(true)
+    })
+
+    it('serves a zone docx as the mirror local-file URL', async () => {
+      const docx = Buffer.from([0x50, 0x4b, 0x03, 0x04, 0x00])
+      const host = mockHost({
+        workspace: () => ({ readFile: vi.fn() }),
+        getSyncZone: () => ({ syncRoot: '/home/node/.superone/node/sync', os: 'linux' }),
+        artifactStat: async () => ({ exists: true, size: docx.length, mtimeMs: 1_700_000_000_000 }),
+        artifactGet: async () => ({ chunk: docx.toString('base64'), total: docx.length, mtimeMs: 1_700_000_000_000, eof: true }),
+      })
+      const result = await readRemoteProjectFile(host, 'remote:conn-1:/work/app', '/home/node/.superone/node/sync/s1/agent/notes.docx')
+      expect(result?.language).toBe('office')
+      expect(result?.content.startsWith('local-file://')).toBe(true)
+    })
+
+    it('does not mirror a zone office file past the preview cap', async () => {
+      const artifactGet = vi.fn()
+      const host = mockHost({
+        workspace: () => ({ readFile: vi.fn() }),
+        getSyncZone: () => ({ syncRoot: '/home/node/.superone/node/sync', os: 'linux' }),
+        artifactStat: async () => ({ exists: true, size: OFFICE_PREVIEW_MAX_BYTES + 1, mtimeMs: 1 }),
+        artifactGet,
+      })
+      const path = '/home/node/.superone/node/sync/s1/agent/deck.pptx'
+      const result = await readRemoteProjectFile(host, 'remote:conn-1:/work/app', path)
+      expect(result).toEqual({ path, content: '', language: 'too-large' })
+      expect(artifactGet).not.toHaveBeenCalled()
     })
 
     it('reports a zone file neither side has as missing, not as an empty editor', async () => {

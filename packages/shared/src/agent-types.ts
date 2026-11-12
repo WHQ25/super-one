@@ -4723,6 +4723,8 @@ export const AgentIpcChannels = {
   LIST_DEVICE_MODELS: 'app:list-device-models',
   LOAD_DEVICE_MODEL: 'app:load-device-model',
   SAVE_FILE: 'app:save-file',
+  /** Bytes of a local Office package. Remote projects stay on the string save. */
+  SAVE_FILE_BYTES: 'app:save-file-bytes',
   READ_FILE_AS_DATA_URI: 'app:read-file-as-data-uri',
   STAGE_ATTACHMENT_ORIGINAL: 'app:stage-attachment-original',
   ATTACHMENT_ORIGINAL_STATUS: 'app:attachment-original-status',

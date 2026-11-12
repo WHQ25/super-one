@@ -212,7 +212,7 @@ function Stage({ file, root, scheme }: { file: PreviewerFile; root: string; sche
       }
       return <ChipStage file={file} hint={t('chat.filesPreviewer.tapToOpen')} />
     default:
-      // pdf, audio, notebook: the native viewer or the share sheet, never the WebView.
+      // pdf, audio, notebook, office: the native viewer or the share sheet, never the WebView.
       return <ChipStage file={file} hint={t('chat.filesPreviewer.tapToOpen')} />
   }
 }

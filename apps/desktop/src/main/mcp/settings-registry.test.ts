@@ -25,6 +25,8 @@ function makeSettings(overrides: Partial<AppSettings> = {}): AppSettings {
     dshSubagentModelSelection: { enabled: false, allowedModels: [] },
     crispText: true,
     autoExpandFileDiffs: false,
+    editorVimMode: false,
+    editorRelativeLineNumbers: false,
     autoExpandReasoning: false,
     detailChatMode: false,
     sessionContinuationHint: { enabled: true, minContextTokens: 300_000 },

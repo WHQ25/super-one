@@ -50,7 +50,7 @@ describe('worktree file-root routing', () => {
       selectedFile: null,
       fileDiff: null,
       fileContent: null,
-      activeTab: 'changes',
+      activeTab: 'file',
       scrollToLine: null,
     })
   })

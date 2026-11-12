@@ -118,6 +118,8 @@ const defaults: AppSettings = {
   crispText: true,
   notificationsPrimedAt: null,
   autoExpandFileDiffs: false,
+  editorVimMode: false,
+  editorRelativeLineNumbers: false,
   autoExpandReasoning: true,
   detailChatMode: false,
   sessionContinuationHint: DEFAULT_SESSION_CONTINUATION_HINT,
@@ -690,6 +692,11 @@ export function readAppSettings(): AppSettings {
       notificationsPrimedAt:
         typeof data.notificationsPrimedAt === 'number' ? data.notificationsPrimedAt : null,
       autoExpandFileDiffs: typeof data.autoExpandFileDiffs === 'boolean' ? data.autoExpandFileDiffs : defaults.autoExpandFileDiffs,
+      editorVimMode: typeof data.editorVimMode === 'boolean' ? data.editorVimMode : defaults.editorVimMode,
+      editorRelativeLineNumbers:
+        typeof data.editorRelativeLineNumbers === 'boolean'
+          ? data.editorRelativeLineNumbers
+          : defaults.editorRelativeLineNumbers,
       autoExpandReasoning: typeof data.autoExpandReasoning === 'boolean' ? data.autoExpandReasoning : defaults.autoExpandReasoning,
       detailChatMode: typeof data.detailChatMode === 'boolean'
         ? data.detailChatMode
@@ -785,6 +792,8 @@ export function readAppSettings(): AppSettings {
       crispText: defaults.crispText,
       notificationsPrimedAt: defaults.notificationsPrimedAt,
       autoExpandFileDiffs: defaults.autoExpandFileDiffs,
+      editorVimMode: defaults.editorVimMode,
+      editorRelativeLineNumbers: defaults.editorRelativeLineNumbers,
       autoExpandReasoning: defaults.autoExpandReasoning,
       detailChatMode: defaults.detailChatMode,
       sessionContinuationHint: defaults.sessionContinuationHint,
@@ -918,6 +927,8 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
         ? patch.notificationsPrimedAt
         : current.notificationsPrimedAt,
     autoExpandFileDiffs: patch.autoExpandFileDiffs ?? current.autoExpandFileDiffs,
+    editorVimMode: patch.editorVimMode ?? current.editorVimMode,
+    editorRelativeLineNumbers: patch.editorRelativeLineNumbers ?? current.editorRelativeLineNumbers,
     autoExpandReasoning: patch.autoExpandReasoning ?? current.autoExpandReasoning,
     detailChatMode: patch.detailChatMode ?? current.detailChatMode,
     sessionContinuationHint: patch.sessionContinuationHint === undefined

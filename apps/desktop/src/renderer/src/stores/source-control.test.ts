@@ -25,7 +25,7 @@ function resetStore(overrides: Record<string, unknown> = {}) {
     selectedFile: null,
     fileDiff: null,
     fileContent: null,
-    activeTab: 'changes',
+    activeTab: 'file',
     ...overrides,
   })
 }
@@ -108,18 +108,18 @@ describe('selectFile', () => {
     expect(store.getState().activeTab).toBe('preview')
   })
 
-  it('should default to changes tab when diff exists even for markdown', async () => {
+  it('should keep preview tab for markdown even when diff exists', async () => {
     const promise = store.getState().selectFile('/project', 'README.md')
     resolveDiff({ diff: '+ added line' })
     resolveContent({ content: '# Hello' })
     await promise
 
-    expect(store.getState().activeTab).toBe('changes')
+    expect(store.getState().activeTab).toBe('preview')
   })
 
-  it('should default to file tab for non-markdown without diff', async () => {
+  it('should default to file tab for non-markdown even when diff exists', async () => {
     const promise = store.getState().selectFile('/project', 'src/app.ts')
-    resolveDiff({ diff: '' })
+    resolveDiff({ diff: '@@ -1 +1 @@\n-old\n+code' })
     resolveContent({ content: 'code' })
     await promise
 

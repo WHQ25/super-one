@@ -275,6 +275,8 @@ interface AppState extends HarnessThemeState {
   uiFontFamily: string | null
   liquidGlass: boolean
   autoExpandFileDiffs: boolean
+  editorVimMode: boolean
+  editorRelativeLineNumbers: boolean
   autoExpandReasoning: boolean
   detailChatMode: boolean
   sessionContinuationHint: SessionContinuationHintSettings
@@ -285,6 +287,8 @@ interface AppState extends HarnessThemeState {
   setUiFontFamily: (family: string | null) => Promise<void>
   setLiquidGlass: (enabled: boolean) => Promise<void>
   setAutoExpandFileDiffs: (enabled: boolean) => Promise<void>
+  setEditorVimMode: (enabled: boolean) => Promise<void>
+  setEditorRelativeLineNumbers: (enabled: boolean) => Promise<void>
   setAutoExpandReasoning: (enabled: boolean) => Promise<void>
   setDetailChatMode: (enabled: boolean) => Promise<void>
   setSessionContinuationHint: (patch: Partial<SessionContinuationHintSettings>) => Promise<void>
@@ -1255,6 +1259,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   uiFontFamily: null,
   liquidGlass: false,
   autoExpandFileDiffs: false,
+  editorVimMode: false,
+  editorRelativeLineNumbers: false,
   autoExpandReasoning: true,
   detailChatMode: false,
   sessionContinuationHint: DEFAULT_SESSION_CONTINUATION_HINT,
@@ -1278,6 +1284,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         uiFontFamily: settings.uiFontFamily,
         liquidGlass: settings.liquidGlass,
         autoExpandFileDiffs: settings.autoExpandFileDiffs,
+        editorVimMode: settings.editorVimMode ?? false,
+        editorRelativeLineNumbers: settings.editorRelativeLineNumbers ?? false,
         autoExpandReasoning: settings.autoExpandReasoning,
         detailChatMode: settings.detailChatMode,
         sessionContinuationHint: settings.sessionContinuationHint,
@@ -1374,6 +1382,20 @@ export const useAppStore = create<AppState>((set, get) => ({
       .catch((err) => console.error('[auto-expand-file-diffs] persist failed:', err))
   },
 
+  setEditorVimMode: async (enabled) => {
+    set({ editorVimMode: enabled })
+    void window.app
+      .saveAppSettings({ editorVimMode: enabled })
+      .catch((err) => console.error('[editor-vim-mode] persist failed:', err))
+  },
+
+  setEditorRelativeLineNumbers: async (enabled) => {
+    set({ editorRelativeLineNumbers: enabled })
+    void window.app
+      .saveAppSettings({ editorRelativeLineNumbers: enabled })
+      .catch((err) => console.error('[editor-relative-line-numbers] persist failed:', err))
+  },
+
   setAutoExpandReasoning: async (enabled) => {
     set({ autoExpandReasoning: enabled })
     void window.app
@@ -1464,6 +1486,8 @@ if (typeof window !== 'undefined') {
       uiFontFamily: settings.uiFontFamily,
       liquidGlass: settings.liquidGlass,
       autoExpandFileDiffs: settings.autoExpandFileDiffs,
+      editorVimMode: settings.editorVimMode ?? false,
+      editorRelativeLineNumbers: settings.editorRelativeLineNumbers ?? false,
       autoExpandReasoning: settings.autoExpandReasoning,
       detailChatMode: settings.detailChatMode,
       sessionContinuationHint: settings.sessionContinuationHint,

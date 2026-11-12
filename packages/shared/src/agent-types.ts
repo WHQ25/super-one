@@ -5856,6 +5856,8 @@ export interface AppSettings {
    * (default), only the header with line counts is shown until the user expands.
    */
   autoExpandFileDiffs: boolean
+  editorVimMode: boolean
+  editorRelativeLineNumbers: boolean
   /**
    * When true (default), reasoning blocks open while they stream. When false,
    * they stay collapsed until the header is clicked. Completing a block still
@@ -6120,6 +6122,8 @@ export interface AppSettingsPatch {
   crispText?: boolean
   notificationsPrimedAt?: number | null
   autoExpandFileDiffs?: boolean
+  editorVimMode?: boolean
+  editorRelativeLineNumbers?: boolean
   autoExpandReasoning?: boolean
   detailChatMode?: boolean
   /** Merged into the stored value field by field. */

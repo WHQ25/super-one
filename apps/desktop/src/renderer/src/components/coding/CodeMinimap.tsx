@@ -1,6 +1,15 @@
 import { useRef, useState, useEffect, useCallback, memo } from 'react'
 import type { RefObject } from 'react'
-import type { DiffLine, HLToken } from '@/lib/diff-utils'
+import type { HLToken } from '@/lib/diff-utils'
+
+export interface MinimapLine {
+  kind: 'added' | 'removed' | 'modified' | 'unchanged'
+  lineNum: number
+  text: string
+  sourceIdx: number
+  deletedAbove?: boolean
+  deletedBelow?: boolean
+}
 
 const CHAR_W = 1.2
 const LINE_H = 3
@@ -15,9 +24,11 @@ const MAX_VISIBLE_LINES = 500
 
 const MINIMAP_CHUNK_LINES = 300
 
-function drawMinimapBase(ctx: CanvasRenderingContext2D, lines: DiffLine[], minimapW: number) {
+function drawMinimapBase(ctx: CanvasRenderingContext2D, lines: MinimapLine[], minimapW: number) {
   const addedBg = new Path2D()
   const addedGutter = new Path2D()
+  const modifiedBg = new Path2D()
+  const modifiedGutter = new Path2D()
   const removedBg = new Path2D()
   const removedGutter = new Path2D()
 
@@ -27,19 +38,32 @@ function drawMinimapBase(ctx: CanvasRenderingContext2D, lines: DiffLine[], minim
     if (line.kind === 'added') {
       addedBg.rect(0, y, minimapW, LINE_H)
       addedGutter.rect(0, y, GUTTER_W, LINE_H)
+    } else if (line.kind === 'modified') {
+      modifiedBg.rect(0, y, minimapW, LINE_H)
+      modifiedGutter.rect(0, y, GUTTER_W, LINE_H)
     } else if (line.kind === 'removed') {
       removedBg.rect(0, y, minimapW, LINE_H)
       removedGutter.rect(0, y, GUTTER_W, LINE_H)
     }
+    if (line.deletedAbove) {
+      removedBg.rect(0, y, minimapW, 1.5)
+      removedGutter.rect(0, y, GUTTER_W + 1, 2)
+    }
+    if (line.deletedBelow) {
+      removedBg.rect(0, y + LINE_H - 1.5, minimapW, 1.5)
+      removedGutter.rect(0, y + LINE_H - 2, GUTTER_W + 1, 2)
+    }
   }
 
-  ctx.fillStyle = 'rgba(34, 197, 94, 0.5)'; ctx.fill(addedBg)
-  ctx.fillStyle = 'rgb(0, 230, 64)'; ctx.fill(addedGutter)
+  ctx.fillStyle = 'rgba(34, 197, 94, 0.45)'; ctx.fill(addedBg)
+  ctx.fillStyle = 'rgb(16, 185, 129)'; ctx.fill(addedGutter)
+  ctx.fillStyle = 'rgba(245, 158, 11, 0.38)'; ctx.fill(modifiedBg)
+  ctx.fillStyle = 'rgb(245, 158, 11)'; ctx.fill(modifiedGutter)
   ctx.fillStyle = 'rgba(239, 68, 68, 0.5)'; ctx.fill(removedBg)
-  ctx.fillStyle = 'rgb(255, 50, 50)'; ctx.fill(removedGutter)
+  ctx.fillStyle = 'rgb(244, 63, 94)'; ctx.fill(removedGutter)
 }
 
-function drawMinimapDetailChunk(ctx: CanvasRenderingContext2D, lines: DiffLine[], tokens: HLToken[][] | null, start: number, end: number, minimapW: number) {
+function drawMinimapDetailChunk(ctx: CanvasRenderingContext2D, lines: MinimapLine[], tokens: HLToken[][] | null, start: number, end: number, minimapW: number) {
   const rectW = Math.max(CHAR_W * 0.9, 0.8)
   const rectH = Math.max(LINE_H - 1, 1)
   const colorPaths = new Map<string, Path2D>()
@@ -84,7 +108,7 @@ function drawMinimapDetailChunk(ctx: CanvasRenderingContext2D, lines: DiffLine[]
   }
 }
 
-function drawMinimap(canvas: HTMLCanvasElement, lines: DiffLine[], tokens: HLToken[][] | null, canvasH: number, minimapW: number): (() => void) | undefined {
+function drawMinimap(canvas: HTMLCanvasElement, lines: MinimapLine[], tokens: HLToken[][] | null, canvasH: number, minimapW: number): (() => void) | undefined {
   const dpr = window.devicePixelRatio || 1
   canvas.width = minimapW * dpr
   canvas.height = canvasH * dpr
@@ -135,7 +159,7 @@ function drawMinimap(canvas: HTMLCanvasElement, lines: DiffLine[], tokens: HLTok
 }
 
 export const CodeMinimap = memo(function CodeMinimap({ lines, tokens, scrollRef }: {
-  lines: DiffLine[]
+  lines: MinimapLine[]
   tokens: HLToken[][] | null
   scrollRef: RefObject<HTMLDivElement | null>
 }) {
@@ -165,7 +189,7 @@ export const CodeMinimap = memo(function CodeMinimap({ lines, tokens, scrollRef 
   const canvasH = lines.length * LINE_H
   const maxContainerH = MAX_VISIBLE_LINES * LINE_H
 
-  const prevDrawRef = useRef<{ lines: DiffLine[]; tokens: HLToken[][] | null; w: number }>({ lines: [], tokens: null, w: 0 })
+  const prevDrawRef = useRef<{ lines: MinimapLine[]; tokens: HLToken[][] | null; w: number }>({ lines: [], tokens: null, w: 0 })
   const cancelChunkRef = useRef<(() => void) | undefined>(undefined)
   useEffect(() => {
     const canvas = canvasRef.current
@@ -251,6 +275,7 @@ export const CodeMinimap = memo(function CodeMinimap({ lines, tokens, scrollRef 
   return (
     <div
       ref={containerRef}
+      data-testid="code-minimap"
       className="relative shrink-0 cursor-pointer overflow-hidden opacity-50 transition-opacity hover:opacity-70"
       style={{ width: minimapW, maxHeight: maxContainerH, contain: 'strict', willChange: 'transform' }}
       onClick={handleClick}

@@ -5,51 +5,6 @@ import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { Button } from '@superone/ui/components/ui/button'
 import { cn } from '@superone/ui/lib/utils'
 import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
-import { useEffectiveProjectRoot } from '@/stores/app'
-import { isAbsoluteLocalPath } from '@/lib/file-link'
-import { parseRemoteProjectKey } from '@/lib/remote-project-key'
-import { absoluteFilePath } from '@/components/chat/file-chip-context-menu'
-import { ImageContextMenu } from '@/components/chat/image-shared'
-import { McpAppOpenWithActions, McpAppOpenWithButton } from '@/components/mcp-apps/McpAppOpenWith'
-import { lastTouchedPane } from '@/stores/chat-store/session-scope'
-import { localFileUrlToPath, toLocalFileUrl, toMediaUrl } from '@/lib/path-utils'
-import { resolveMediaSrcForProject } from '@/lib/remote-media-url'
-import { MarkdownAudioPlayer, MarkdownVideoPlayer } from '@/components/chat/markdown-media-player'
-import type { ModelPreviewViewState } from './ModelPreview'
-
-/**
- * What a media preview loads. The host answers with bytes (a data URI) for a
- * file on a node, with a local-file URL for a cached project image or a
- * session-zone mirror, and with nothing for a plain local file — which is then
- * loaded from its own path. Streams (video, audio) go through the media
- * server when a local path is known, so a large mirror plays by range.
- */
-function previewSrc(content: string | undefined, fromPath: () => string, stream?: (path: string) => string): string {
-  if (!content) return fromPath()
-  if (content.startsWith('data:')) return content
-  const mirror = localFileUrlToPath(content)
-  if (mirror) return stream ? stream(mirror) : content
-  return fromPath()
-}
-
-/**
- * Path the image menu can copy, save, and reveal. A remote read hands back the
- * session-zone mirror as a local-file URL; inlined node bytes have no local file.
- */
-export function imageActionPath(fullFilePath: string, content: string | undefined, remote: boolean): string | null {
-  const mirrored = content ? localFileUrlToPath(content) : null
-  if (mirrored) return mirrored
-  if (remote) return null
-  return isAbsoluteLocalPath(fullFilePath) ? fullFilePath : null
-}
-
-function withImageMenu(path: string | null, child: React.ReactNode) {
-  if (!path) return child
-  return <ImageContextMenu savedPath={path} className="size-full">{child}</ImageContextMenu>
-}
-import { PdfPreview } from '@/components/chat/PdfPreview'
-import { OfficePreview } from './OfficePreview'
-import { OfficePreviewStatus } from './office-toolbar'
 import type { GitFileDiff, GitFileContent } from '@superone/shared/agent-types'
 import {
   AUDIO_EXTENSIONS,
@@ -61,36 +16,65 @@ import {
   VIDEO_EXTENSIONS,
   officePreviewKind,
 } from '@superone/shared/file-preview'
-import { FileDiffView } from './source-control/FileDiffView'
-import { FileWithDiffView } from './source-control/FileWithDiffView'
+import { useEffectiveProjectRoot } from '@/stores/app'
+import { useSourceControlStore } from '@/stores/source-control'
+import { isAbsoluteLocalPath } from '@/lib/file-link'
+import { parseRemoteProjectKey } from '@/lib/remote-project-key'
+import { absoluteFilePath } from '@/components/chat/file-chip-context-menu'
+import { ImageContextMenu } from '@/components/chat/image-shared'
+import { PdfPreview } from '@/components/chat/PdfPreview'
+import { McpAppOpenWithActions, McpAppOpenWithButton } from '@/components/mcp-apps/McpAppOpenWith'
+import { lastTouchedPane } from '@/stores/chat-store/session-scope'
+import { localFileUrlToPath, toLocalFileUrl, toMediaUrl } from '@/lib/path-utils'
+import { resolveMediaSrcForProject } from '@/lib/remote-media-url'
+import { MarkdownAudioPlayer, MarkdownVideoPlayer } from '@/components/chat/markdown-media-player'
+import type { ModelPreviewViewState } from './ModelPreview'
+import { OfficePreview } from './OfficePreview'
+import { OfficePreviewStatus } from './office-toolbar'
 import { ImagePreview } from './ImagePreview'
 import { MarkdownEditor } from './MarkdownEditor'
 import { NotebookPreview } from './NotebookPreview'
-import { TextFileEditor } from './TextFileEditor'
 import { FileSelectionContextMenuZone } from './FileSelectionContextMenuZone'
 
-const MARKDOWN_EXTS = MARKDOWN_EXTENSIONS
-const NOTEBOOK_EXTS = NOTEBOOK_EXTENSIONS
-const BINARY_IMAGE_EXTS = BINARY_IMAGE_EXTENSIONS
-const PDF_EXTS = PDF_EXTENSIONS
-const VIDEO_EXTS = VIDEO_EXTENSIONS
-const AUDIO_EXTS = AUDIO_EXTENSIONS
-const MODEL_EXTS = MODEL_EXTENSIONS
 const ModelPreview = lazy(() => import('./ModelPreview').then((module) => ({ default: module.ModelPreview })))
+const CodeFileEditor = lazy(() => import('./CodeFileEditor').then((module) => ({ default: module.CodeFileEditor })))
 
-/** Dotted, lower-case, matching the shared extension tables. */
+function previewSrc(content: string | undefined, fromPath: () => string, stream?: (path: string) => string): string {
+  if (!content) return fromPath()
+  if (content.startsWith('data:')) return content
+  const mirror = localFileUrlToPath(content)
+  if (mirror) return stream ? stream(mirror) : content
+  return fromPath()
+}
+
+export function imageActionPath(fullFilePath: string, content: string | undefined, remote: boolean): string | null {
+  const mirrored = content ? localFileUrlToPath(content) : null
+  if (mirrored) return mirrored
+  if (remote) return null
+  return isAbsoluteLocalPath(fullFilePath) ? fullFilePath : null
+}
+
+function withImageMenu(path: string | null, child: React.ReactNode) {
+  if (!path) return child
+  return <ImageContextMenu savedPath={path} className="size-full">{child}</ImageContextMenu>
+}
+
 function getFileExt(fileName: string): string {
   const dot = fileName.lastIndexOf('.')
   return dot < 0 ? '' : fileName.slice(dot).toLowerCase()
 }
 
-type TabKey = 'changes' | 'editor' | 'preview' | 'file'
+type TabKey = 'preview' | 'file'
 
 function useOwnFileData(filePath: string | undefined, refreshKey: number, root?: string) {
   const projectRoot = useEffectiveProjectRoot()
   const fileRoot = root ?? projectRoot
-  const [diff, setDiff] = useState<GitFileDiff | null>(null)
-  const [content, setContent] = useState<GitFileContent | null>(null)
+  const targetKey = `${fileRoot ?? ''}::${filePath ?? ''}`
+  const [loaded, setLoaded] = useState<{ key: string; diff: GitFileDiff | null; content: GitFileContent | null }>({
+    key: '',
+    diff: null,
+    content: null,
+  })
   const [tab, setTab] = useState<TabKey>('file')
   const pickedTabForPathRef = useRef<string | null>(null)
 
@@ -102,33 +86,32 @@ function useOwnFileData(filePath: string | undefined, refreshKey: number, root?:
       window.app.readProjectFile(fileRoot, filePath),
     ]).then(([d, c]) => {
       if (cancelled) return
-      setDiff(d)
-      setContent(c)
-      // A failed read carries no language signal — leave the tab unpicked so a
-      // successful retry still derives the right default (Preview for markdown).
+      setLoaded({ key: targetKey, diff: d, content: c })
       if (c.error) return
-      if (pickedTabForPathRef.current === filePath) return
-      pickedTabForPathRef.current = filePath
-      const isBin = c.language === 'image' || c.language === 'pdf' || c.language === 'video' || c.language === 'audio' || c.language === 'model' || c.language === 'office'
+      if (pickedTabForPathRef.current === targetKey) return
+      pickedTabForPathRef.current = targetKey
+      const isBin =
+        c.language === 'image' ||
+        c.language === 'pdf' ||
+        c.language === 'video' ||
+        c.language === 'audio' ||
+        c.language === 'model' ||
+        c.language === 'office'
       const isSvg = c.language === 'svg'
       const ext = getFileExt(filePath)
-      const isMd = MARKDOWN_EXTS.has(ext)
-      const isNb = NOTEBOOK_EXTS.has(ext)
-      // Default: media + markdown + notebook → Preview; dirty git → Changes; else File.
-      setTab(
-        isBin || isSvg || isMd || isNb
-          ? 'preview'
-          : d.diff
-            ? 'changes'
-            : 'file',
-      )
+      const isMd = MARKDOWN_EXTENSIONS.has(ext)
+      const isNb = NOTEBOOK_EXTENSIONS.has(ext)
+      setTab(isBin || isSvg || isMd || isNb ? 'preview' : 'file')
     }).catch(() => {
-      if (!cancelled && pickedTabForPathRef.current !== filePath) { setDiff(null); setContent(null) }
+      if (!cancelled && pickedTabForPathRef.current !== targetKey) {
+        setLoaded({ key: targetKey, diff: null, content: null })
+      }
     })
     return () => { cancelled = true }
-  }, [filePath, fileRoot, refreshKey])
+  }, [filePath, fileRoot, refreshKey, targetKey])
 
-  return { diff, content, tab, setTab }
+  const isCurrent = loaded.key === targetKey
+  return { diff: isCurrent ? loaded.diff : null, content: isCurrent ? loaded.content : null, tab, setTab }
 }
 
 interface FilePreviewProps {
@@ -141,17 +124,53 @@ export function FilePreview({ filePath, fileRoot: root }: FilePreviewProps) {
   const projectRoot = useEffectiveProjectRoot()
   const fileRoot = root ?? projectRoot
   const [isDirty, setIsDirty] = useState(false)
+  const isDirtyRef = useRef(false)
+  const [draftContent, setDraftContent] = useState<string | null>(null)
   const [refreshKey, setRefreshKey] = useState(0)
   const [retrying, setRetrying] = useState(false)
   const [modelViewState, setModelViewState] = useState<ModelPreviewViewState | null>(null)
   const liveContentRef = useRef<string | null>(null)
   const { diff: fileDiff, content: fileContent, tab: activeTab, setTab: setActiveTab } = useOwnFileData(filePath, refreshKey, root)
+  const scrollToLine = useSourceControlStore((s) => s.scrollToLine)
+  const selectedSourceFile = useSourceControlStore((s) => s.selectedFile)
   const selectedFile = filePath
-  // A failed read yields empty content — without this the preview would render
-  // a blank editor, indistinguishable from an empty file.
   const loadError = fileContent?.error
+
   useEffect(() => { setRetrying(false) }, [fileContent])
-  useEffect(() => { setIsDirty(false) }, [filePath])
+  useEffect(() => {
+    setIsDirty(false)
+    isDirtyRef.current = false
+    setDraftContent(null)
+    liveContentRef.current = null
+  }, [filePath])
+
+  useEffect(() => {
+    if (scrollToLine && selectedSourceFile === filePath) {
+      setActiveTab('file')
+    }
+  }, [scrollToLine, selectedSourceFile, filePath, setActiveTab])
+
+  useEffect(() => {
+    if (!fileRoot) return
+    const onFileChange = window.app.onFileChangeEvent
+    const onHeadChange = window.app.onGitHeadChange
+    if (!onFileChange && !onHeadChange) return
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const schedule = () => {
+      clearTimeout(timer)
+      timer = setTimeout(() => {
+        if (!isDirtyRef.current) setRefreshKey((k) => k + 1)
+      }, 300)
+    }
+    const unsubFile = onFileChange?.(schedule)
+    const unsubHead = onHeadChange?.(schedule)
+    return () => {
+      clearTimeout(timer)
+      unsubFile?.()
+      unsubHead?.()
+    }
+  }, [fileRoot])
+
   const handleRetry = useCallback(() => {
     setRetrying(true)
     setRefreshKey((k) => k + 1)
@@ -159,38 +178,33 @@ export function FilePreview({ filePath, fileRoot: root }: FilePreviewProps) {
 
   const fileName = selectedFile?.split('/').pop() ?? ''
   const ext = getFileExt(fileName)
-  const isMd = MARKDOWN_EXTS.has(ext)
-  const isNotebook = NOTEBOOK_EXTS.has(ext)
-  const isBinImg = BINARY_IMAGE_EXTS.has(ext)
-  const isPdfFile = PDF_EXTS.has(ext)
+  const isMd = MARKDOWN_EXTENSIONS.has(ext)
+  const isNotebook = NOTEBOOK_EXTENSIONS.has(ext)
+  const isBinImg = BINARY_IMAGE_EXTENSIONS.has(ext)
+  const isPdfFile = PDF_EXTENSIONS.has(ext)
   const isSvgFile = ext === '.svg'
-  const isVideoFile = VIDEO_EXTS.has(ext)
-  const isAudioFile = AUDIO_EXTS.has(ext)
-  const isModelFile = MODEL_EXTS.has(ext)
+  const isVideoFile = VIDEO_EXTENSIONS.has(ext)
+  const isAudioFile = AUDIO_EXTENSIONS.has(ext)
+  const isModelFile = MODEL_EXTENSIONS.has(ext)
   const officeKind = officePreviewKind(fileName)
   const isOfficeFile = officeKind !== null
-  const hasDiff = !!fileDiff?.diff
   const isBinaryPreview = isBinImg || isPdfFile || isVideoFile || isAudioFile || isModelFile || isOfficeFile
   const isUnpreviewable = fileContent?.language === 'binary' || fileContent?.language === 'too-large'
-  // Non-md text files still use Editor + File; markdown and notebooks use
-  // Preview + File only (a notebook's raw JSON is not hand-editable safely).
-  const isTextEditable = !isBinaryPreview && !isUnpreviewable && !isSvgFile && !isMd && !isNotebook
   const fullFilePath = isAbsoluteLocalPath(selectedFile) ? selectedFile : `${fileRoot}/${selectedFile}`
   const imagePath = imageActionPath(fullFilePath, fileContent?.content, !!parseRemoteProjectKey(fileRoot ?? ''))
+
   useEffect(() => { setModelViewState(null) }, [fullFilePath])
 
   const tabs = (() => {
     if (loadError || isUnpreviewable) return []
     if (isBinaryPreview) return [{ key: 'preview' as TabKey, label: 'Preview' }]
     const items: { key: TabKey; label: string }[] = []
-    if (hasDiff) items.push({ key: 'changes', label: 'Changes' })
     if (isSvgFile || isMd || isNotebook) items.push({ key: 'preview', label: 'Preview' })
-    if (isTextEditable) items.push({ key: 'editor', label: 'Editor' })
     items.push({ key: 'file', label: 'File' })
     return items
   })()
 
-  const effectiveTab = tabs.find((t) => t.key === activeTab) ? activeTab : tabs[0]?.key ?? 'file'
+  const effectiveTab = tabs.find((item) => item.key === activeTab) ? activeTab : tabs[0]?.key ?? 'file'
   const handleTabChange = useCallback((v: string) => {
     setActiveTab(v as TabKey)
   }, [setActiveTab])
@@ -202,6 +216,7 @@ export function FilePreview({ filePath, fileRoot: root }: FilePreviewProps) {
 
   const handleDirtyChange = useCallback((dirty: boolean) => {
     setIsDirty(dirty)
+    isDirtyRef.current = dirty
     if (!dirty) {
       reportUnsaved(null)
     } else if (liveContentRef.current != null) {
@@ -211,7 +226,7 @@ export function FilePreview({ filePath, fileRoot: root }: FilePreviewProps) {
 
   const handleContentChange = useCallback((text: string) => {
     liveContentRef.current = text
-    // Only publish draft while content differs from last loaded disk snapshot.
+    setDraftContent(text)
     const disk = fileContent?.content ?? ''
     if (text !== disk) {
       reportUnsaved(text)
@@ -226,7 +241,13 @@ export function FilePreview({ filePath, fileRoot: root }: FilePreviewProps) {
     }
   }, [reportUnsaved])
 
-  const handleSaved = useCallback(() => {
+  const handleSaved = useCallback((savedText?: string) => {
+    if (savedText !== undefined) {
+      liveContentRef.current = savedText
+      setDraftContent(savedText)
+    }
+    isDirtyRef.current = false
+    setIsDirty(false)
     reportUnsaved(null)
     setRefreshKey((k) => k + 1)
   }, [reportUnsaved])
@@ -251,36 +272,15 @@ export function FilePreview({ filePath, fileRoot: root }: FilePreviewProps) {
     )
   }
 
-  // Keep leading root "/" as a segment; drop empty pieces from split.
   const pathSegments = selectedFile.split(/[/\\]/).filter((s, i) => s.length > 0 || i === 0)
   const breadcrumbRef = useRef<HTMLDivElement>(null)
-  // Prefer showing the filename when the path overflows — scroll to the end.
   useEffect(() => {
     const el = breadcrumbRef.current
     if (!el) return
     el.scrollLeft = el.scrollWidth
   }, [selectedFile, pathSegments.length])
 
-  // Prefer in-memory draft when remounting markdown Preview so edits aren't lost.
-  const editorContent = liveContentRef.current ?? fileContent?.content ?? ''
-  const textEditorBody = (
-    <TextFileEditor
-      content={editorContent}
-      filePath={selectedFile}
-      onDirtyChange={handleDirtyChange}
-      onContentChange={handleContentChange}
-      onSaved={handleSaved}
-    />
-  )
-  const markdownPreviewBody = (
-    <MarkdownEditor
-      content={editorContent}
-      filePath={selectedFile}
-      onDirtyChange={handleDirtyChange}
-      onContentChange={handleContentChange}
-      onSaved={handleSaved}
-    />
-  )
+  const editorContent = draftContent ?? fileContent?.content ?? ''
 
   return (
     <div ref={rootRef} className="flex h-full flex-col">
@@ -343,35 +343,23 @@ export function FilePreview({ filePath, fileRoot: root }: FilePreviewProps) {
           </div>
         ) : (
           <>
-            {/* Markdown: Preview = editable WYSIWYG. File uses the same highlighted
-                source view as other files (FileWithDiffView). Editable highlighted
-                File for all types is a later unification. */}
-            {isMd && effectiveTab === 'preview' && (
+            {isMd && effectiveTab === 'preview' ? (
               <FileSelectionContextMenuZone
                 filePath={fullFilePath}
                 fileContent={editorContent}
                 className="size-full"
               >
-                {markdownPreviewBody}
-              </FileSelectionContextMenuZone>
-            )}
-            {/* Non-markdown text: Editor tab = plain editable textarea. */}
-            {isTextEditable && (
-              <FileSelectionContextMenuZone
-                filePath={fullFilePath}
-                fileContent={liveContentRef.current ?? fileContent?.content ?? null}
-                className={effectiveTab === 'editor' ? 'size-full' : 'hidden'}
-              >
-                {textEditorBody}
-              </FileSelectionContextMenuZone>
-            )}
-            {effectiveTab === 'changes' && hasDiff ? (
-              <FileSelectionContextMenuZone filePath={fullFilePath} fileContent={fileContent?.content ?? null} className="size-full">
-                <FileDiffView filePath={selectedFile} diff={fileDiff?.diff ?? ''} content={fileContent?.content ?? ''} />
+                <MarkdownEditor
+                  content={editorContent}
+                  filePath={selectedFile}
+                  onDirtyChange={handleDirtyChange}
+                  onContentChange={handleContentChange}
+                  onSaved={handleSaved}
+                />
               </FileSelectionContextMenuZone>
             ) : effectiveTab === 'preview' && isNotebook ? (
-              <FileSelectionContextMenuZone filePath={fullFilePath} fileContent={fileContent?.content ?? null} className="size-full">
-                <NotebookPreview content={fileContent?.content ?? ''} />
+              <FileSelectionContextMenuZone filePath={fullFilePath} fileContent={editorContent} className="size-full">
+                <NotebookPreview content={editorContent} />
               </FileSelectionContextMenuZone>
             ) : effectiveTab === 'preview' && isBinImg ? (
               withImageMenu(imagePath, (
@@ -423,17 +411,27 @@ export function FilePreview({ filePath, fileRoot: root }: FilePreviewProps) {
               withImageMenu(imagePath, (
                 <ImagePreview
                   src={
-                    fileContent?.content
-                      ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(fileContent.content)}`
+                    editorContent
+                      ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(editorContent)}`
                       : toLocalFileUrl(fullFilePath)
                   }
                   alt={fileName}
                 />
               ))
-            ) : effectiveTab === 'file' ? (
-              <FileSelectionContextMenuZone filePath={fullFilePath} fileContent={fileContent?.content ?? null} className="size-full">
-                <FileWithDiffView filePath={selectedFile} content={fileContent?.content ?? ''} diff={fileDiff?.diff ?? ''} />
-              </FileSelectionContextMenuZone>
+            ) : effectiveTab === 'file' && fileContent !== null ? (
+              <Suspense fallback={<div className="size-full" />}>
+                <CodeFileEditor
+                  key={`${fileRoot ?? ''}::${selectedFile}`}
+                  content={editorContent}
+                  diskContent={fileContent.content ?? ''}
+                  gitDiff={fileDiff?.diff ?? ''}
+                  filePath={selectedFile}
+                  fileRoot={fileRoot}
+                  onDirtyChange={handleDirtyChange}
+                  onContentChange={handleContentChange}
+                  onSaved={handleSaved}
+                />
+              </Suspense>
             ) : null}
           </>
         )}

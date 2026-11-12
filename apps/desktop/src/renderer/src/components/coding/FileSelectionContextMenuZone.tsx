@@ -19,6 +19,7 @@ interface MenuState {
 interface FileSelectionContextMenuZoneProps {
   filePath: string
   fileContent?: string | null
+  captureSelection?: () => CapturedFileSelection | null
   children: React.ReactNode
   className?: string
 }
@@ -192,7 +193,7 @@ function sliceSelectedText(rows: { text: string }[], startCol: number, endCol: n
   return [first, ...middle, last].join('\n')
 }
 
-export function FileSelectionContextMenuZone({ filePath, fileContent, children, className }: FileSelectionContextMenuZoneProps) {
+export function FileSelectionContextMenuZone({ filePath, fileContent, captureSelection, children, className }: FileSelectionContextMenuZoneProps) {
   const { t } = useTranslation()
   const [menu, setMenu] = useState<MenuState | null>(null)
   const addUserSelection = useChatStore((s) => s.addUserSelection)
@@ -200,7 +201,7 @@ export function FileSelectionContextMenuZone({ filePath, fileContent, children, 
 
   const handleContextMenu = (event: React.MouseEvent<HTMLDivElement>) => {
     event.preventDefault()
-    const captured = captureFileSelection(filePath, window.getSelection(), fileContent)
+    const captured = captureSelection ? captureSelection() : captureFileSelection(filePath, window.getSelection(), fileContent)
     if (!captured) return
     if (!captured.copyText && !captured.quoteText) return
     if (liquidGlass) {

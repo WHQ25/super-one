@@ -1597,6 +1597,19 @@ export type Messages = {
         label: string
         description: string
       }
+      editor: string
+      editorVimMode: {
+        label: string
+        description: string
+        enabled: string
+        disabled: string
+      }
+      editorRelativeLineNumbers: {
+        label: string
+        description: string
+        enabled: string
+        disabled: string
+      }
       autoExpandReasoning: {
         label: string
         description: string
@@ -4919,6 +4932,10 @@ export type Messages = {
     loadFailedHint: string
     tooLarge: string
     binary: string
+    revertChange: string
+    diffAdded: string
+    diffModified: string
+    diffDeleted: string
     office: {
       loading: string
       failed: string
@@ -6752,6 +6769,19 @@ export const en: Messages = {
       autoExpandFileDiffs: {
         label: 'Auto-Expand File Diffs',
         description: 'Automatically expand Edit, Write, and FileChange tools while streaming. When off, only the header with line counts is shown until you expand.',
+      },
+      editor: 'Editor',
+      editorVimMode: {
+        label: 'Vim Mode',
+        description: 'Enable modal Vim navigation, search (/ and ?), and Ex commands (:w, :s) in the code editor.',
+        enabled: 'Vim mode enabled',
+        disabled: 'Vim mode disabled',
+      },
+      editorRelativeLineNumbers: {
+        label: 'Relative Line Numbers',
+        description: 'Show relative distances in the gutter while keeping the current line number absolute. Also toggleable via :set rnu / :set nornu in Vim mode.',
+        enabled: 'Relative line numbers enabled',
+        disabled: 'Relative line numbers disabled',
       },
       autoExpandReasoning: {
         label: 'Auto-Expand Reasoning',
@@ -10067,6 +10097,10 @@ export const en: Messages = {
     loadFailedHint: 'It may have been moved or deleted, or the remote node is unreachable.',
     tooLarge: 'File too large to preview',
     binary: 'Binary file — preview not supported',
+    revertChange: 'Revert Change',
+    diffAdded: 'Added Lines',
+    diffModified: 'Modified Lines',
+    diffDeleted: 'Deleted Lines',
     office: {
       loading: 'Loading document…',
       failed: 'This document could not be opened.',

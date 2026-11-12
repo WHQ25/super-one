@@ -17,6 +17,18 @@ export const GENERAL_EXTRA_FIELDS: SettingsFieldDef[] = [
     toPatch: (v) => ({ experimentalClaudeOpenAiChatEnabled: v as boolean }),
   },
   {
+    key: 'editorVimMode', label: 'Vim Mode', type: 'boolean',
+    note: 'Enable modal Vim navigation, search (/ and ?), and Ex commands (:w, :s) in the code editor.',
+    read: (s) => s.editorVimMode,
+    toPatch: (v) => ({ editorVimMode: v as boolean }),
+  },
+  {
+    key: 'editorRelativeLineNumbers', label: 'Relative Line Numbers', type: 'boolean',
+    note: 'Show relative line distances in the code editor gutter while keeping the current line absolute.',
+    read: (s) => s.editorRelativeLineNumbers,
+    toPatch: (v) => ({ editorRelativeLineNumbers: v as boolean }),
+  },
+  {
     key: 'notificationsEnabled', label: 'Notifications', type: 'boolean',
     read: (s) => s.notifications.enabled,
     toPatch: (v) => ({ notifications: { enabled: v as boolean } }),

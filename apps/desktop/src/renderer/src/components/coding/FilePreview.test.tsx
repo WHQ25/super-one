@@ -8,14 +8,10 @@ import { FilePreview, imageActionPath } from './FilePreview'
 vi.mock('./MarkdownEditor', () => ({
   MarkdownEditor: () => <div data-testid="markdown-editor" />,
 }))
-vi.mock('./TextFileEditor', () => ({
-  TextFileEditor: () => <div data-testid="text-file-editor" />,
-}))
-vi.mock('./source-control/FileWithDiffView', () => ({
-  FileWithDiffView: () => <div data-testid="file-view" />,
-}))
-vi.mock('./source-control/FileDiffView', () => ({
-  FileDiffView: () => <div data-testid="diff-view" />,
+vi.mock('./CodeFileEditor', () => ({
+  CodeFileEditor: ({ filePath, gitDiff }: { filePath: string; gitDiff: string }) => (
+    <div data-testid="code-file-editor" data-filepath={filePath} data-has-diff={gitDiff ? 'true' : 'false'} />
+  ),
 }))
 
 interface FakeFile {
@@ -39,7 +35,14 @@ function tabLabels(): string[] {
   return Array.from(document.querySelectorAll('[role="tab"]')).map((el) => el.textContent ?? '')
 }
 
-describe('FilePreview tab derivation', () => {
+describe('FilePreview unified code editor mode', () => {
+  beforeEach(() => {
+    useAppStore.setState({ currentFolder: '/proj' })
+  })
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('keeps a remote target file bound to its own root while the foreground project changes', async () => {
     stubFile({ language: 'typescript', content: 'remote', diff: '' })
     const read = vi.spyOn(window.app, 'readProjectFile')
@@ -48,49 +51,33 @@ describe('FilePreview tab derivation', () => {
     useAppStore.setState({ currentFolder: '/other-project' })
     expect(read.mock.calls.every(([root]) => root === 'remote:node:/worktree')).toBe(true)
   })
-  beforeEach(() => {
-    useAppStore.setState({ currentFolder: '/proj' })
-  })
-  afterEach(() => {
-    vi.restoreAllMocks()
+
+  it('opens clean code files directly in the unified editor with no tab strip', async () => {
+    stubFile({ language: 'typescript', content: 'const a = 1', diff: '' })
+    render(<FilePreview filePath="src/app.ts" />)
+    const editor = await screen.findByTestId('code-file-editor')
+    expect(editor).toHaveAttribute('data-has-diff', 'false')
+    expect(tabLabels()).toEqual([])
   })
 
-  it('shows Preview + File for markdown, defaulting to Preview (editable WYSIWYG)', async () => {
-    stubFile({ language: 'markdown', content: '# hi', diff: '' })
+  it('opens dirty code files directly in the unified editor with gitDiff and no Changes/Editor tabs', async () => {
+    stubFile({ language: 'typescript', content: 'const a = 2', diff: '@@ -1 +1 @@\n-const a = 1\n+const a = 2' })
+    render(<FilePreview filePath="src/app.ts" />)
+    const editor = await screen.findByTestId('code-file-editor')
+    expect(editor).toHaveAttribute('data-has-diff', 'true')
+    expect(tabLabels()).toEqual([])
+  })
+
+  it('shows Preview + File for markdown (clean or dirty), defaulting to Preview without Changes tab', async () => {
+    stubFile({ language: 'markdown', content: '# v2', diff: '@@ -1 +1 @@\n-# v1\n+# v2' })
     render(<FilePreview filePath="docs/readme.md" />)
     await waitFor(() => expect(screen.getByTestId('markdown-editor')).toBeInTheDocument())
     expect(tabLabels()).toEqual(['Preview', 'File'])
     expect(screen.getByRole('tab', { name: 'Preview' })).toHaveAttribute('data-state', 'active')
     expect(screen.getByRole('tab', { name: 'File' })).toHaveAttribute('data-state', 'inactive')
-    expect(screen.queryByRole('tab', { name: 'Editor' })).not.toBeInTheDocument()
   })
 
-
-  it('shows Editor + File for non-markdown text, defaulting to the File view', async () => {
-    stubFile({ language: 'typescript', content: 'const a = 1', diff: '' })
-    render(<FilePreview filePath="src/app.ts" />)
-    await waitFor(() => expect(screen.getByTestId('file-view')).toBeInTheDocument())
-    expect(tabLabels()).toEqual(['Editor', 'File'])
-    expect(screen.getByRole('tab', { name: 'File' })).toHaveAttribute('data-state', 'active')
-    expect(screen.getByRole('tab', { name: 'Editor' })).toHaveAttribute('data-state', 'inactive')
-  })
-
-  it('adds Changes + Editor + File when a non-markdown file has a diff', async () => {
-    stubFile({ language: 'typescript', content: 'const a = 2', diff: '@@ -1 +1 @@\n-const a = 1\n+const a = 2' })
-    render(<FilePreview filePath="src/app.ts" />)
-    await waitFor(() => expect(screen.getByTestId('diff-view')).toBeInTheDocument())
-    expect(tabLabels()).toEqual(['Changes', 'Editor', 'File'])
-  })
-
-  it('exposes Changes, Preview and File for a markdown file with a diff (default Preview)', async () => {
-    stubFile({ language: 'markdown', content: '# v2', diff: '@@ -1 +1 @@\n-# v1\n+# v2' })
-    render(<FilePreview filePath="docs/readme.md" />)
-    await waitFor(() => expect(screen.getByTestId('markdown-editor')).toBeInTheDocument())
-    expect(tabLabels()).toEqual(['Changes', 'Preview', 'File'])
-    expect(screen.getByRole('tab', { name: 'Preview' })).toHaveAttribute('data-state', 'active')
-  })
-
-  it('shows Preview + File for a notebook, defaulting to the rendered cells', async () => {
+  it('shows Preview + File for a notebook, defaulting to rendered cells', async () => {
     const notebook = JSON.stringify({
       nbformat: 4,
       metadata: { language_info: { name: 'python' } },
@@ -104,12 +91,11 @@ describe('FilePreview tab derivation', () => {
         },
       ],
     })
-    stubFile({ language: 'json', content: notebook, diff: '' })
+    stubFile({ language: 'json', content: notebook, diff: '@@ -1 +1 @@\n-old\n+new' })
     render(<FilePreview filePath="notebooks/analysis.ipynb" />)
     await waitFor(() => expect(screen.getByText('In [1]:')).toBeInTheDocument())
     expect(tabLabels()).toEqual(['Preview', 'File'])
     expect(screen.getByRole('tab', { name: 'Preview' })).toHaveAttribute('data-state', 'active')
-    expect(screen.queryByRole('tab', { name: 'Editor' })).not.toBeInTheDocument()
     expect(screen.getByText('hi')).toBeInTheDocument()
   })
 
@@ -120,13 +106,11 @@ describe('FilePreview tab derivation', () => {
     expect(tabLabels()).toEqual(['Preview', 'File'])
   })
 
-  it('shows Editor + File for HTML (no in-editor Preview tab)', async () => {
+  it('opens HTML directly in the unified code editor without tabs', async () => {
     stubFile({ language: 'html', content: '<html><body>hi</body></html>', diff: '' })
     render(<FilePreview filePath="index.html" />)
-    await waitFor(() => expect(screen.getByTestId('file-view')).toBeInTheDocument())
-    expect(tabLabels()).toEqual(['Editor', 'File'])
-    expect(screen.getByRole('tab', { name: 'File' })).toHaveAttribute('data-state', 'active')
-    expect(screen.queryByRole('tab', { name: 'Preview' })).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.getByTestId('code-file-editor')).toBeInTheDocument())
+    expect(tabLabels()).toEqual([])
   })
 })
 
@@ -144,7 +128,7 @@ describe('FilePreview read failures', () => {
     render(<FilePreview filePath="docs/quarterly.docx" />)
     await waitFor(() => expect(screen.getByText('This document could not be opened.')).toBeInTheDocument())
     expect(screen.queryByText('Binary file — preview not supported')).not.toBeInTheDocument()
-    expect(screen.queryByTestId('text-file-editor')).not.toBeInTheDocument()
+    expect(screen.queryByTestId('code-file-editor')).not.toBeInTheDocument()
   })
 
   it('shows the error and hides tabs instead of rendering a blank editor', async () => {

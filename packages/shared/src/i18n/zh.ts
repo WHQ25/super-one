@@ -1686,6 +1686,19 @@ export const zh: Messages = {
         label: '自动展开文件 diff',
         description: '流式输出时自动展开 Edit、Write、FileChange 工具以实时显示 diff。关闭后默认只显示带行数变化的 header，点击后再展开。',
       },
+      editor: '编辑器',
+      editorVimMode: {
+        label: 'Vim 模式',
+        description: '在代码编辑器中启用 Vim 模态导航、搜索（/ 与 ?）及 Ex 命令（:w、:s）。',
+        enabled: '已开启 Vim 模式',
+        disabled: '已关闭 Vim 模式',
+      },
+      editorRelativeLineNumbers: {
+        label: '相对行号',
+        description: '在行号栏显示相对距离，当前行保持显示真实行号（Vim 模式下也可通过 :set rnu / :set nornu 切换）。',
+        enabled: '已开启相对行号',
+        disabled: '已关闭相对行号',
+      },
       autoExpandReasoning: {
         label: '自动展开推理',
         description: '流式输出时自动展开推理过程。关闭后保持折叠，点击标题后再查看。',
@@ -4995,6 +5008,10 @@ export const zh: Messages = {
     loadFailedHint: '文件可能已被移动或删除，也可能是远程节点不可达。',
     tooLarge: '文件过大，无法预览',
     binary: '二进制文件，暂不支持预览',
+    revertChange: '还原此变更',
+    diffAdded: '新增行',
+    diffModified: '修改行',
+    diffDeleted: '已删除行',
     office: {
       loading: '正在加载文档…',
       failed: '无法打开这个文档。',

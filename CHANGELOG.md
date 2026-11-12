@@ -19,8 +19,10 @@ Every alpha release keeps its own notes on its GitHub Release.
 - A harness whose external CLI is missing shows a command that installs it.
 - Remote nodes rewind Claude, Grok, and Codex with the same modes as the desktop. Antigravity has no rewind, so that control stays hidden.
 - Antigravity `manage_subagents` has its own card for listing agents, listing peers, and stopping one or all of them. The card shows the role, a short conversation id, and the state.
+- Antigravity schedule, define-subagent, and MCP resource calls have their own cards. Its task and subagent calls use the cards those actions already have.
 - Antigravity shows when a compaction starts and when it ends.
 - Claude and Codex model lists can be refreshed. Ordinary opens still read the 24-hour cache, and a refresh leaves the current list up until the new one arrives. Collaboration, suggested tasks, settings, and the remaining chat pickers use the same action. A phone paired with the desktop host still reads the saved catalog.
+- Word, Excel, and PowerPoint open read-only in the activity panel and in chat. Legacy Word, Excel, and PowerPoint files stay on the binary path. The phone keeps a file chip. Excel cells stay read-only, and columns and rows can still be resized. A workbook opens on the first sheet. PowerPoint uses its own thumbnail rail.
 
 ### Changed
 
@@ -38,6 +40,20 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Claude's context ring uses the session's reported window when the catalog misses that model. (#182)
 - A draft that was already sent is consumed on every host. Paste-only content restores from the saved document. (#188)
 - Antigravity streams a background command and wakes the turn when it, or a scheduled task, finishes.
+- Typing before the first send keeps a listed harness model. An empty preference still follows the agent.
+- A multi-host device takes its height from the rows on screen. Leftover pane height goes to the lists that still need it, up to the 256px cap.
+
+## [0.80.0-alpha.2] - 2026-11-12
+
+### Added
+
+- Word, Excel, and PowerPoint open read-only in the activity panel and in chat. Legacy Word, Excel, and PowerPoint files stay on the binary path. The phone keeps a file chip. Excel cells stay read-only, and columns and rows can still be resized. A workbook opens on the first sheet. PowerPoint uses its own thumbnail rail.
+- Antigravity schedule, define-subagent, and MCP resource calls have their own cards. Its task and subagent calls use the cards those actions already have.
+
+### Fixed
+
+- Typing before the first send keeps a listed harness model. Grok's config default and Antigravity's current model no longer replace it. An empty preference still follows the agent.
+- A multi-host device takes its height from the rows on screen. A short list is no longer held at the 256px cap, and leftover pane height goes to the lists that still need it. The height change eases over 120ms.
 
 ## [0.80.0-alpha.1] - 2026-11-12
 

@@ -21,15 +21,30 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Changed
 
-- Queued messages have one Steer action, on the desktop and on the phone. Claude delivers the message at the next step and leaves the running tool in place. Codex steers the active turn. Antigravity sends a concurrent prompt and does not cancel the turn. Grok injects the message and leaves the turn running. OpenCode V2 waits for the next safe point. OpenCode V1 keeps the message queued.
+- Queued messages have one Steer action, on the desktop and on the phone. Claude delivers the message at the next step and leaves the running tool in place. Codex steers the active turn. Antigravity sends a concurrent prompt and does not cancel the turn. Grok injects the message and leaves the turn running. OpenCode V2 waits for the next safe point. OpenCode V1 keeps the message queued. While a steerable turn is streaming, the first Enter on the desktop holds the send for 400ms. A second Enter in that window steers it now, including Codex.
 
 ### Fixed
 
 - A remote child uses the target harness permission mode and the Claude sandbox when the spawn leaves them unset. An explicit choice still wins. (#190)
+- Antigravity applies a switch among standard, auto, and bypass by restarting the process and resuming the session. The restart waits while a turn or a background task is still running.
+- An Antigravity scheduled wakeup settles when the agent cancels the timer without a system message. A permission request that arrives after the wakeup still streams, and the next prompt does not replay wakeup text that already rendered.
+- Alpha and stable keep separate Antigravity MCP entries, so the two desktop apps do not overwrite each other's config. SuperOne tool rows on the desktop and on the phone still use the product cards when that server is named `superone-alpha`.
 
 ### Performance
 
 - Syntax highlighting follows the lines on screen, so a large file stays responsive.
+
+## [0.81.0-alpha.1] - 2026-11-13
+
+### Changed
+
+- While a steerable turn is streaming, the first Enter on the desktop holds the send for 400ms. A second Enter in that window steers it now, including Codex.
+
+### Fixed
+
+- Antigravity applies a switch among standard, auto, and bypass by restarting the process and resuming the session. The restart waits while a turn or a background task is still running.
+- An Antigravity scheduled wakeup settles when the agent cancels the timer without a system message. A permission request that arrives after the wakeup still streams, and the next prompt does not replay wakeup text that already rendered.
+- Alpha and stable keep separate Antigravity MCP entries, so the two desktop apps do not overwrite each other's config. SuperOne tool rows on the desktop and on the phone still use the product cards when that server is named `superone-alpha`.
 
 ## [0.81.0-alpha] - 2026-11-12
 

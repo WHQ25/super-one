@@ -190,7 +190,7 @@ describe('production OpenCode V2 over node RPC', () => {
       expect(provider.requests[0]?.authorization).toBe('Bearer fixture-only-key')
       await client.rpc('session.send', { sessionId: session.sessionId, text: 'second', clientMessageId: 'second', priority: 'next', ...lease })
       expect(rt.sessions.load({ sessionId: session.sessionId }).state.queuedMessages).toContainEqual(expect.objectContaining({ id: 'second' }))
-      await client.rpc('session.steer', { sessionId: session.sessionId, clientMessageId: 'second', priority: 'now', ...lease })
+      await client.rpc('session.steer', { sessionId: session.sessionId, clientMessageId: 'second', ...lease })
       expect(rt.sessions.load({ sessionId: session.sessionId }).state.queuedMessages).toEqual([])
       provider.finish('first native answer')
       await vi.waitFor(() => expect(provider.requests.length).toBeGreaterThan(1), { timeout: 10_000 })

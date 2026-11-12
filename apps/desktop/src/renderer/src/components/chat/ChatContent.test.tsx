@@ -1053,7 +1053,7 @@ describe('ChatContent Codex durable queue', () => {
     expect(steerButtons).toHaveLength(2)
     fireEvent.click(steerButtons[1]!)
 
-    expect(hoisted.steerQueuedMessage).toHaveBeenCalledWith('u3', undefined, 'now')
+    expect(hoisted.steerQueuedMessage).toHaveBeenCalledWith('u3', undefined)
   })
 
   it('offers manual resume after an interrupted queued turn', () => {
@@ -1075,7 +1075,7 @@ describe('ChatContent Codex durable queue', () => {
 })
 
 describe('ChatContent Claude host queue', () => {
-  function claudeQueue() {
+  it('offers a single steer action for a queued message while a local Claude turn is active', () => {
     hoisted.steerQueuedMessage.mockClear()
     hoisted.sessionState.messages = [{ id: 'm1' }]
     hoisted.sessionState.queuedMessages = [{
@@ -1084,63 +1084,34 @@ describe('ChatContent Claude host queue', () => {
     hoisted.sessionState.sessionProvider = 'claude'
     hoisted.sessionState.preferredProvider = 'claude'
     hoisted.sessionState.status = 'streaming'
-  }
-
-  it('offers steer for a queued message while a local Claude turn is active', () => {
-    claudeQueue()
 
     renderContent()
     fireEvent.click(screen.getByRole('button', { name: 'Steer Now' }))
 
-    expect(hoisted.steerQueuedMessage).toHaveBeenCalledWith('u2', undefined, 'now')
+    expect(hoisted.steerQueuedMessage).toHaveBeenCalledWith('u2', undefined)
     expect(screen.queryByRole('button', { name: 'Start Queued Messages' })).toBeNull()
-  })
-
-  it('offers a non-interrupting steer beside it, sending priority next', () => {
-    claudeQueue()
-
-    renderContent()
-    fireEvent.click(screen.getByRole('button', { name: 'Steer Soon (no interrupt)' }))
-
-    expect(hoisted.steerQueuedMessage).toHaveBeenCalledWith('u2', undefined, 'next')
-  })
-})
-
-describe('ChatContent Codex queue has no non-interrupting steer', () => {
-  it('hides the steer-soon action for a streaming Codex turn', () => {
-    hoisted.steerQueuedMessage.mockClear()
-    hoisted.sessionState.messages = [{ id: 'm1' }]
-    hoisted.sessionState.queuedMessages = [{
-      id: 'u2', role: 'user', status: 'complete', content: [{ type: 'text', text: 'steer this' }], createdAt: '', providerId: 'codex',
-    }]
-    hoisted.sessionState.sessionProvider = 'codex'
-    hoisted.sessionState.preferredProvider = 'codex'
-    hoisted.sessionState.status = 'streaming'
-
-    renderContent()
-
-    expect(screen.getByRole('button', { name: 'Steer Now' })).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: 'Steer Soon (no interrupt)' })).toBeNull()
   })
 })
 
 describe('ChatContent ACP queue', () => {
-  it('offers steer now and hides steer soon for a streaming Grok turn', () => {
+  it.each([
+    { provider: 'acp-grok' as const, agentId: 'grok-build' },
+    { provider: 'acp-antigravity' as const, agentId: 'antigravity' },
+  ])('offers a single steer action for a streaming $provider turn', ({ provider, agentId }) => {
     hoisted.steerQueuedMessage.mockClear()
     hoisted.sessionState.messages = [{ id: 'm1' }]
     hoisted.sessionState.queuedMessages = [{
-      id: 'u2', role: 'user', status: 'complete', content: [{ type: 'text', text: 'steer this' }], createdAt: '', providerId: 'acp-grok',
+      id: 'u2', role: 'user', status: 'complete', content: [{ type: 'text', text: 'steer this' }], createdAt: '', providerId: provider,
     }]
-    hoisted.sessionState.sessionProvider = 'acp-grok'
-    hoisted.sessionState.preferredProvider = 'acp-grok'
-    hoisted.sessionState.acpAgentId = 'grok-build'
+    hoisted.sessionState.sessionProvider = provider
+    hoisted.sessionState.preferredProvider = provider
+    hoisted.sessionState.acpAgentId = agentId
     hoisted.sessionState.status = 'streaming'
 
     renderContent()
 
     fireEvent.click(screen.getByRole('button', { name: 'Steer Now' }))
-    expect(hoisted.steerQueuedMessage).toHaveBeenCalledWith('u2', undefined, 'now')
-    expect(screen.queryByRole('button', { name: 'Steer Soon (no interrupt)' })).toBeNull()
+    expect(hoisted.steerQueuedMessage).toHaveBeenCalledWith('u2', undefined)
   })
 })
 

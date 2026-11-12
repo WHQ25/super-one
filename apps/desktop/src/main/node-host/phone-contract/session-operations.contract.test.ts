@@ -75,7 +75,7 @@ describe('phone endpoint: fenced session operations', () => {
     const phone = await connectPhone(domain, { transport })
     cleanup.push(phone.close)
     const lease = await phone.rpc<ControlLease>('session.acquireControl', { sessionId: 'own' })
-    const request = { sessionId: 'own', leaseId: lease.leaseId, generation: lease.generation, clientMessageId: 'q-v2', priority: 'now' }
+    const request = { sessionId: 'own', leaseId: lease.leaseId, generation: lease.generation, clientMessageId: 'q-v2' }
     await phone.rpc('session.steer', request, 'opencode-steer')
     await phone.rpc('session.steer', request, 'opencode-steer')
     expect(operations.dispatchBackendCommand).toHaveBeenCalledTimes(1)
@@ -97,8 +97,8 @@ describe('phone endpoint: fenced session operations', () => {
     expect(operations.clearCodexGoal).toHaveBeenCalledWith(null)
     expect(await phone.rpc('session.recap', { ...proof, auto: true })).toEqual({ ok: true })
     expect(await phone.rpc('session.dequeue', { ...proof, clientMessageId: 'q1' })).toEqual({ removed: true })
-    await phone.rpc('session.steer', { ...proof, clientMessageId: 'q2', priority: 'next' })
-    expect(operations.dispatchBackendCommand).toHaveBeenCalledWith({ kind: 'claude.steer_queued', clientMessageId: 'q2', priority: 'next' })
+    await phone.rpc('session.steer', { ...proof, clientMessageId: 'q2' })
+    expect(operations.dispatchBackendCommand).toHaveBeenCalledWith({ kind: 'claude.steer_queued', clientMessageId: 'q2' })
   })
 
   it('rejects missing, stolen and stale proofs before touching the harness', async () => {
@@ -142,9 +142,10 @@ describe('phone endpoint: fenced session operations', () => {
     cleanup.push(phone.close)
     const lease = await phone.rpc<ControlLease>('session.acquireControl', { sessionId: 'own' })
     const proof = { sessionId: 'own', leaseId: lease.leaseId, generation: lease.generation }
+    own.harnessId = 'cursor'
+    await expect(phone.rpc('session.steer', { ...proof, clientMessageId: 'q' })).rejects.toMatchObject({ code: 'unsupported' })
     own.harnessId = 'codex'
-    await expect(phone.rpc('session.steer', { ...proof, clientMessageId: 'q', priority: 'next' })).rejects.toMatchObject({ code: 'unsupported' })
-    await phone.rpc('session.steer', { ...proof, clientMessageId: 'q', priority: 'now' })
+    await phone.rpc('session.steer', { ...proof, clientMessageId: 'q' })
     expect(operations.dispatchBackendCommand).toHaveBeenCalledWith({ kind: 'codex.steer_queued', clientMessageId: 'q' })
     await phone.rpc('session.respondPlan', { ...proof, decision: 'reject', options: { messageId: 'plan', feedback: 'Revise' } })
     expect(operations.dispatchBackendCommand).toHaveBeenCalledWith({ kind: 'codex.plan_approval', messageId: 'plan', status: 'rejected', feedback: 'Revise' })
@@ -179,7 +180,7 @@ describe('phone endpoint: fenced session operations', () => {
     const proof = { sessionId: 'own', leaseId: lease.leaseId, generation: lease.generation }
     const selections = { priority: 'later', steer: 'now', agent: 'build', modelParams: { fast: 'true' }, inputRequest: { requestId: 'request', values: { color: 'blue' } } }
     await phone.rpc('session.send', { ...proof, text: 'submit', clientMessageId: 'u', options: selections })
-    await vi.waitFor(() => expect(operations.dispatchBackendCommand).toHaveBeenCalledWith({ kind: 'claude.steer_queued', clientMessageId: 'u', priority: 'now' }))
+    await vi.waitFor(() => expect(operations.dispatchBackendCommand).toHaveBeenCalledWith({ kind: 'claude.steer_queued', clientMessageId: 'u' }))
     expect(own.sent[0]).toMatchObject({ priority: 'later', agent: 'build', cursor: { params: { fast: 'true' } }, inputRequest: selections.inputRequest })
     own.harnessId = 'codex'
     await phone.rpc('session.send', { ...proof, text: 'codex', clientMessageId: 'c', options: { permissionPreset: 'read-only', collaborationMode: 'plan', effort: 'high', serviceTier: null, threadId: 'thread' } })

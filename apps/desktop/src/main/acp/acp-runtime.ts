@@ -143,7 +143,6 @@ import {
   authenticateAntigravityRuntime,
   closeAntigravityThinkingStep,
   extractAntigravityApiRetryEvent,
-  extractAntigravityPromptResponseUsage,
   extractAntigravityWireTurnUsage,
   finalizeAntigravityTurnThinking,
   handleAntigravityElicitationCreate,
@@ -157,6 +156,7 @@ import {
   type AntigravityTurnThinkingScope,
   type AntigravityWireTurnUsage,
 } from './antigravity-runtime-bridge'
+import { createAntigravitySteerablePrompt } from './antigravity-steer'
 import {
   antigravityCompactTrigger,
   antigravityManualCompactStart,
@@ -174,10 +174,8 @@ import {
   cancelAntigravitySubagentWakeupWait,
   clearUnflushedAntigravityWakeupReplay,
   disposeAntigravitySubagentTracker,
-  hasPendingAntigravitySubagentWakeup,
   hasUnflushedAntigravityWakeupReplay,
   noteAntigravitySubagentEvents,
-  waitForAntigravitySubagentWakeup,
 } from './antigravity-subagent'
 import { pushBashOutput } from '../bash-output-watcher'
 import type {
@@ -1192,10 +1190,12 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     readonly stopWaiter: ((stopReason: string) => void) | null
     readonly settledPromise: Promise<void>
     superseded: boolean
-    /** `/compact` is a normal prompt. Its turn is the compaction start and end. */
     manualCompact: boolean
     compactStartedAt: number
     compactionSettled: boolean
+    steerAntigravity?: (
+      promptBlocks: Awaited<ReturnType<typeof buildAcpPromptContentAsync>>,
+    ) => Promise<AntigravityWireTurnUsage | null>
   }
   const newTurnScope = (lastMessageId: string | null = null): AcpTurnScope => ({
     agentMsgToLocal: new Map<string, string>(),
@@ -1808,12 +1808,9 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         compactStartedAt: 0,
         compactionSettled: false,
       }
-      const cancelPreviousBeforePrompt = launch.agentId === 'antigravity' && previousTurn !== null
-      if (!cancelPreviousBeforePrompt) {
-        currentTurn = turn
-        wakeScope = newTurnScope()
-        xaiCorrelation.lastMessageId = messageId
-      }
+      currentTurn = turn
+      wakeScope = newTurnScope()
+      xaiCorrelation.lastMessageId = messageId
 
       let promptBlocks: Awaited<ReturnType<typeof buildAcpPromptContentAsync>>
       try {
@@ -1832,36 +1829,6 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         resolveSettled()
         throw err
       }
-      if (cancelPreviousBeforePrompt && previousTurn) {
-        cancelAntigravitySubagentWakeupWait(activeSession.sessionId)
-        const prevWaiter = previousTurn.stopWaiter
-        try {
-          await activeConnection.agent.notify(methods.agent.session.cancel, {
-            sessionId: activeSession.sessionId,
-          })
-        } catch (err) {
-          log.debug('[acp-runtime] sendNow cancel failed:', err)
-        }
-        if (prevWaiter) {
-          const fallbackMs = opts.cancelStopFallbackMs ?? CANCEL_STOP_FALLBACK_MS
-          setTimeout(() => {
-            const idx = promptStopWaiters.indexOf(prevWaiter)
-            if (idx < 0) return
-            promptStopWaiters.splice(idx, 1)
-            log.warn('[acp-runtime] no agent stop %dms after sendNow cancel — settling turn locally', fallbackMs)
-            prevWaiter('cancelled')
-          }, fallbackMs).unref?.()
-        }
-        await previousTurn.settledPromise
-        currentTurn = turn
-        wakeScope = newTurnScope()
-        xaiCorrelation.lastMessageId = messageId
-        onEvent({ type: 'status_change', status: 'streaming' })
-      }
-      // Agents without a rules channel, and a resumed Grok session (rules are
-      // applied only at creation), get the block on the first non-slash prompt.
-      // Append so a leading `/goal` stays the first text block; GoalSet would
-      // drop a block that shared that prompt.
       if (!stampedRules && !systemPromptSent && mcpAttached && !isLeadingSlashPrompt(text)) {
         systemPromptSent = true
         promptBlocks.push({
@@ -1869,9 +1836,6 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
           text: acpHostContextText(opts.systemPromptAppend),
         })
       }
-      // ActiveSession.prompt() cannot stamp `_meta`. Grok's
-      // reconcile_plan_mode_with_prompt treats prompt `_meta.mode` as the only
-      // prompt-carried mode signal (`agent` | `ask` | `plan`).
       if (compactionWatch) {
         const now = Date.now()
         beginAntigravityCompactionTurn(
@@ -1887,56 +1851,36 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       }
       promptOpts?.onInputAccepted?.()
       let compactOutcome: 'success' | 'failed' = 'failed'
-      const promptPromise = activeConnection.agent.request(methods.agent.session.prompt, {
-        sessionId: activeSession.sessionId,
-        prompt: promptBlocks as never,
-        _meta: {
-          mode: grokPromptMetaMode(acpSessionMode),
-          ...(promptOpts?.sendNow ? { sendNow: true } : {}),
-        },
-      })
-      // A rejected session/prompt (Grok quota exhausted → JSON-RPC -32003) never
-      // produces a stop message, so its failure must be raced explicitly or the
-      // turn hangs in `streaming` forever. Success settles this turn's waiter
-      // (we skipped ActiveSession.prompt, which would have enqueued a stop).
-      // Remove by identity so a sendNow successor's waiter is not shifted when
-      // this RPC and the stop update both arrive.
+      const sendPromptLeg = (blocks: Awaited<ReturnType<typeof buildAcpPromptContentAsync>>, sendNow = false) =>
+        activeConnection.agent.request(methods.agent.session.prompt, {
+          sessionId: activeSession.sessionId,
+          prompt: blocks as never,
+          _meta: {
+            mode: grokPromptMetaMode(acpSessionMode),
+            ...(sendNow ? { sendNow: true } : {}),
+          },
+        })
+      const promptPromise = sendPromptLeg(promptBlocks, promptOpts?.sendNow === true)
       let promptResponseUsage: AntigravityWireTurnUsage | null = null
-      const promptFailure = promptPromise.then<string>(
-        async (value) => {
-          let effectiveStopReason = String(value.stopReason ?? 'end_turn')
-          if (launch.agentId === 'antigravity') {
-            promptResponseUsage = extractAntigravityPromptResponseUsage(value)
-            await new Promise((r) => setTimeout(r, 0))
-            if (
-              effectiveStopReason === 'end_turn' &&
-              !turn.superseded &&
-              hasPendingAntigravitySubagentWakeup(activeSession.sessionId)
-            ) {
-              const targetId = turn.lastMessageId ?? turn.primaryMessageId
-              if (turn.currentStepHasThinking && !turn.currentStepThinkingClosed) {
-                closeAntigravityThinkingStep(turn, targetId, onEvent)
-              }
-              turn.stepIndex += 1
-              turn.currentStepHasThinking = false
-              turn.currentStepHasThoughtText = false
-              turn.currentStepThinkingClosed = false
-              turn.stepStartedAt = Date.now()
-              syncAntigravityTurnFromDb(
-                activeSession.sessionId,
-                targetId,
-                turn,
-                xaiCorrelation,
-                onEvent,
-                false,
-                promptResponseUsage,
-              )
-              const wakeupOutcome = await waitForAntigravitySubagentWakeup(activeSession.sessionId)
-              if (wakeupOutcome === 'cancelled' || turn.superseded) {
-                effectiveStopReason = 'cancelled'
-              }
-            }
-          }
+      const antigravitySteer = launch.agentId === 'antigravity'
+        ? createAntigravitySteerablePrompt({
+          sessionId: activeSession.sessionId,
+          turn,
+          xaiCorrelation,
+          initialLeg: promptPromise,
+        })
+        : null
+      if (antigravitySteer) {
+        turn.steerAntigravity = (nextBlocks) => antigravitySteer.steer(() => sendPromptLeg(nextBlocks))
+      }
+      const promptFailure = (antigravitySteer
+        ? antigravitySteer.promise.then((res) => {
+          promptResponseUsage = res.usage
+          return res.stopReason
+        })
+        : promptPromise.then((value) => String(value.stopReason ?? 'end_turn'))
+      ).then<string>(
+        (effectiveStopReason) => {
           if (stopWaiter) {
             const idx = promptStopWaiters.indexOf(stopWaiter)
             if (idx >= 0) promptStopWaiters.splice(idx, 1)
@@ -1947,8 +1891,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
           return new Promise<string>(() => {})
         },
         (err) => {
-          // The replacement never started. Put streaming back on the live turn.
-          if (previousTurn && !cancelPreviousBeforePrompt) {
+          if (previousTurn) {
             previousTurn.superseded = false
             if (currentTurn === turn) currentTurn = previousTurn
           }
@@ -2108,8 +2051,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
             : observeAntigravityCompaction(compactionWatch, steps)
           for (const event of events) turn.onEvent(event)
         }
-        // Only the newest turn owns `currentTurn`; an older turn settling late
-        // must leave the live one alone.
+        antigravitySteer?.dispose()
         if (gen === promptGen && currentTurn === turn) currentTurn = null
         turn.agentMsgToLocal.clear()
         turn.openToolIds.clear()
@@ -2138,8 +2080,6 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       } catch (err) {
         log.debug('[acp-runtime] cancel failed:', err)
       }
-      // Grok drops session/cancel when the turn already died server-side, so the
-      // agent stop never arrives. Settle locally rather than leave Stop inert.
       if (!waiter) return
       const fallbackMs = opts.cancelStopFallbackMs ?? CANCEL_STOP_FALLBACK_MS
       setTimeout(() => {
@@ -2151,6 +2091,54 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       }, fallbackMs).unref?.()
     },
     async interject(text, interjectionId, images) {
+      if (launch.agentId === 'antigravity') {
+        const turn = currentTurn
+        if (!turn || turn.superseded || !turn.steerAntigravity) {
+          throw new Error('No active Antigravity turn to steer')
+        }
+        const promptBlocks = await buildAcpPromptContentAsync(text, {
+          images,
+          cwd: launch.cwd,
+          getUnsaved: (abs) => opts.getUnsaved?.(abs) ?? getUnsavedBuffer(abs),
+        })
+        if (currentTurn !== turn || turn.superseded || !turn.steerAntigravity) {
+          throw new Error('Antigravity turn settled before steer could be sent')
+        }
+        const targetId = turn.lastMessageId ?? turn.primaryMessageId
+        if (turn.currentStepHasThinking && !turn.currentStepThinkingClosed) {
+          closeAntigravityThinkingStep(turn, targetId, turn.onEvent)
+        }
+        const syncedPreSteer = syncAntigravityTurnFromDb(
+          activeSession.sessionId,
+          targetId,
+          turn,
+          xaiCorrelation,
+          turn.onEvent,
+        )
+        const preSteerUsage = await turn.steerAntigravity(promptBlocks)
+        if (!syncedPreSteer && preSteerUsage) {
+          syncAntigravityTurnFromDb(
+            activeSession.sessionId,
+            targetId,
+            turn,
+            xaiCorrelation,
+            turn.onEvent,
+            false,
+            preSteerUsage,
+          )
+        }
+        clearUnflushedAntigravityWakeupReplay(activeSession.sessionId)
+        turn.stepIndex = 0
+        turn.emittedStepThinkingIds.length = 0
+        turn.sawAgentThoughtChunk = false
+        turn.currentStepHasThinking = false
+        turn.currentStepThinkingClosed = false
+        turn.currentStepHasThoughtText = false
+        turn.pendingThoughtNewline = false
+        turn.stepStartedAt = Date.now()
+        turn.latestWireUsage = null
+        return
+      }
       const params = buildGrokInterjectParams(
         activeSession.sessionId,
         text,
@@ -2158,17 +2146,6 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         images,
       )
       await activeConnection.agent.request(xaiExtWireMethod(XAI_INTERJECT), params)
-      if (launch.agentId === 'antigravity' && currentTurn) {
-        const targetId = currentTurn.lastMessageId ?? currentTurn.primaryMessageId
-        if (currentTurn.currentStepHasThinking && !currentTurn.currentStepThinkingClosed) {
-          closeAntigravityThinkingStep(currentTurn, targetId, currentTurn.onEvent)
-        }
-        currentTurn.stepIndex += 1
-        currentTurn.currentStepHasThinking = false
-        currentTurn.currentStepThinkingClosed = false
-        currentTurn.currentStepHasThoughtText = false
-        currentTurn.stepStartedAt = Date.now()
-      }
     },
     async compactConversation(userContext) {
       await activeConnection.agent.request(xaiExtWireMethod(XAI_COMPACT_CONVERSATION), {

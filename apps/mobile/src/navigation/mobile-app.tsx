@@ -594,8 +594,7 @@ export function MobileApp() {
   const transcriptSync = useTranscriptSync(webRef, mobileVoice.state)
   const queuedSentRef = useRef<ChatMessage[] | null>(null)
   const inboxSentRef = useRef<ChatRuntime['session']['sessionInbox']>(undefined)
-  // Read at publish time, which runs from runtime callbacks rather than renders.
-  const queuedSteerCapabilities = useQueuedSteerCapabilities(selectedProvider, selectedAcpAgentId, `${activePairingId}:${routedEnvironmentId}:${sessionId}`)
+  const queuedSteerCapabilities = useQueuedSteerCapabilities(selectedProvider, `${activePairingId}:${routedEnvironmentId}:${sessionId}`)
   const queuedSteerRef = queuedSteerCapabilities.ref
   const promptKeywordsRef = useRef(HARNESS_CAPABILITIES[selectedProvider].promptKeywords)
   promptKeywordsRef.current = HARNESS_CAPABILITIES[selectedProvider].promptKeywords
@@ -655,7 +654,7 @@ export function MobileApp() {
       ...(includeQueued ? { queuedMessages: runtime.session.queuedMessages } : {}),
       ...(includeInbox ? { sessionInbox: runtime.session.sessionInbox ?? [] } : {}),
       harnessConnection: runtime.session.harnessConnection ?? null,
-      queuedSteer: runtime.streaming ? queuedSteerRef.current : { now: false, soon: false },
+      queuedSteer: runtime.streaming && queuedSteerRef.current,
       promptKeywords: [...promptKeywordsRef.current],
     }, hydrate)
     if (includeQueued) queuedSentRef.current = runtime.session.queuedMessages
@@ -796,7 +795,7 @@ export function MobileApp() {
     queuedMessageAction: async (messageId, action) => runUiAction(async () => {
       const runtime = runtimeRef.current
       if (!runtime) return
-      if (action !== 'edit') return runtime.steerQueuedMessage(messageId, action === 'steer' ? 'now' : 'next')
+      if (action !== 'edit') return runtime.steerQueuedMessage(messageId)
       const message = runtime.session.queuedMessages.find((item) => item.id === messageId)
       if (!message) return
       // Fetched before the dequeue: the host serves a queued original only while it is queued.
@@ -2106,7 +2105,7 @@ export function MobileApp() {
   const previewComposerMcpMention = useMemo(() => projectPath && sessionId
     ? (value: string) => clientRef.current ? previewMcpMention(clientRef.current, projectPath, sessionId, value) : Promise.resolve(null)
     : undefined, [projectPath, sessionId])
-  const pendingSendKind = useRef<'send' | 'steer' | 'soon'>('send')
+  const pendingSendKind = useRef<'send' | 'steer'>('send')
   const send = useComposerSend(composerDraft.editorRef, `${activePairingId}:${project?.path}:${sessionId}`, async () => {
     if (scheduledSend.controls.loading || scheduledSend.controls.busy || scheduledSend.controls.scheduled?.armed) return
     const kind = pendingSendKind.current
@@ -2193,17 +2192,13 @@ export function MobileApp() {
       ...(harnessSelection.ultracodePick !== null ? { ultracode: harnessSelection.ultracodePick } : {}),
       clientMessageId,
       ...(queued ? { priority: 'next' as const } : {}),
-      // Fold Stair into this send so it cannot race a follow-up steer RPC.
       ...(queued && kind === 'steer' ? { steer: 'now' as const } : {}),
-      ...(queued && kind === 'soon' ? { steer: 'next' as const } : {}),
     })
-    // A send the host refuses keeps its bubble with Resend / Edit, so the draft
-    // can always be cleared here — before the draft cleanup round trip.
     if (composerDraft.clearSent(sentDraft.revision) && !composerDraft.editorRef.current) suggestions.update('')
     setAttachments((current) => current.filter((item) => !attachments.includes(item)))
     await remoteDrafts.consume()
   }, setStatus)
-  const sendFromComposer = (kind: 'send' | 'steer' | 'soon') => {
+  const sendFromComposer = (kind: 'send' | 'steer') => {
     pendingSendKind.current = kind
     void send()
     mcpApp.closeComposer()
@@ -2953,8 +2948,7 @@ export function MobileApp() {
           projectDirs={sessionId ? [] : workspaceDirs}
           sessionDirs={sessionId ? [] : additionalDirs.sessionDirs}
           onManageDirectories={openAdditionalDirs}
-          canSteer={queuedSteerCapabilities.now}
-          canSteerSoon={queuedSteerCapabilities.soon}
+          canSteer={queuedSteerCapabilities.canSteer}
           todos={todos}
           onAllTodosCompleted={() => runtimeRef.current?.clearCompletedTodos()}
           collapsedPrompts={collapsedPendingPrompts({ permission: collabRequestOf(perm) ? null : perm, plan }, promptCollapse.collapsed)}
@@ -3049,7 +3043,6 @@ export function MobileApp() {
           }}
           onSend={() => sendFromComposer('send')}
           onSteer={() => sendFromComposer('steer')}
-          onSteerSoon={() => sendFromComposer('soon')}
           onStop={() => runUiAction(() => runtimeRef.current?.interrupt(), setStatus, 'interrupt failed')}
         />
       ) : null}

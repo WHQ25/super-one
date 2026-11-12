@@ -13,8 +13,6 @@ describe('HARNESS_CAPABILITIES', () => {
       expect(acp.supportsQueuedSteer).toBe(true)
       expect(acp.supportsFork).toBe(true)
     }
-    expect(HARNESS_CAPABILITIES['acp-grok'].supportsQueuedSteerSoon).toBe(false)
-    expect(HARNESS_CAPABILITIES['acp-antigravity'].supportsQueuedSteerSoon).toBe(true)
   })
 
   it('keeps Claude full-stack capabilities', () => {

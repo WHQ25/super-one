@@ -99,9 +99,9 @@ describe('native chat actions', () => {
   it('routes a queued bubble action to the shell and refuses an unknown one', async () => {
     const target = ports()
     await expect(resolveNativeRequest({
-      type: 'requestNative', requestId: 'q', action: 'queuedMessageAction', payload: { messageId: 'q1', action: 'steerSoon' },
+      type: 'requestNative', requestId: 'q', action: 'queuedMessageAction', payload: { messageId: 'q1', action: 'steer' },
     }, target)).resolves.toMatchObject({ result: { ok: true } })
-    expect(target.queuedMessageAction).toHaveBeenCalledWith('q1', 'steerSoon')
+    expect(target.queuedMessageAction).toHaveBeenCalledWith('q1', 'steer')
     await expect(resolveNativeRequest({
       type: 'requestNative', requestId: 'x', action: 'queuedMessageAction', payload: { messageId: 'q1', action: 'delete' },
     }, target)).resolves.toMatchObject({ error: 'invalid queued message action' })

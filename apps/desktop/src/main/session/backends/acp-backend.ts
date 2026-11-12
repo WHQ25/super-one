@@ -71,7 +71,7 @@ import {
   taskNotificationRequest,
   type TaskNotificationOptions,
 } from '../task-notification-queue'
-import { QueuedUserMessageQueue, type TakenQueuedUserMessage } from '../queued-user-message-queue'
+import { QueuedUserMessageQueue } from '../queued-user-message-queue'
 import type { BackendCommand, BackendStartOptions, HarnessId, SendDelivery, SessionBackend, TaskNotificationInjectResult } from '../types'
 import {
   isGrokGoalClear,
@@ -185,9 +185,6 @@ export class AcpBackend implements SessionBackend {
   private config: AcpBackendConfig = {}
   private runtime: AcpRuntime | null = null
   private activePrompt: Promise<void> | null = null
-  /** Replacement `session/prompt` (`_meta.sendNow`) started while a turn is live. */
-  private sendNowPrompt: Promise<void> | null = null
-  /** Fallback when `x.ai/interject` is unavailable — extra turn after the live one. */
   private readonly pendingQueued = new QueuedUserMessageQueue({
     isBusy: () => this.isTurnBusy(),
     isAlive: () => this.started && !this.disposed,
@@ -1380,23 +1377,17 @@ export class AcpBackend implements SessionBackend {
     const id = request.clientMessageId ?? `interject_${Date.now().toString(36)}`
     this.selfInterjectionIds.add(id)
     try {
-      // x.ai/interject hands the message to the live turn.
-      delivery?.onInputAccepted()
       await runtime.interject(request.content, id, request.images)
     } catch (err) {
       this.selfInterjectionIds.delete(id)
-      log.warn('[AcpBackend] x.ai/interject failed — falling back to queue:', err)
+      log.warn('[AcpBackend] ACP interject failed — falling back to queue:', err)
       return false
     }
+    delivery?.onInputAccepted()
     this.splitLiveAssistantAfterInterject(request)
     return true
   }
 
-  /**
-   * Seal the current assistant, splice the steered user message, then open a
-   * new assistant shell so later chunks land after the insert — not in the
-   * next turn and not still growing the sealed bubble.
-   */
   private splitLiveAssistantAfterInterject(request: SendMessageRequest): void {
     const sealedId = this.currentMessageId
     if (sealedId) {
@@ -1418,7 +1409,7 @@ export class AcpBackend implements SessionBackend {
     this.currentMessageId = nextId
     this.liveAssistantId = nextId
     this.interjectSplit = true
-    if (this.lastGrokUsageRecorded?.messageId === sealedId) {
+    if (!isAntigravityAcpAgent(this.config.agentId) && this.lastGrokUsageRecorded?.messageId === sealedId) {
       this.lastGrokUsageRecorded = { ...this.lastGrokUsageRecorded, messageId: nextId }
     }
     this.emit({
@@ -1617,18 +1608,6 @@ export class AcpBackend implements SessionBackend {
         this.emit({ type: 'status_change', status: 'error' })
       }
     } finally {
-      while (this.sendNowPrompt) {
-        const next = this.sendNowPrompt
-        this.sendNowPrompt = null
-        this.activePrompt = next
-        // Session.send stays in this call until the replacement turn ends.
-        // Returning here used to mark the session idle while sendNow was still running.
-        try {
-          await next
-        } catch (err) {
-          log.warn('[AcpBackend] sendNow prompt failed:', err)
-        }
-      }
       this.finishPrompt()
     }
   }
@@ -2083,86 +2062,12 @@ export class AcpBackend implements SessionBackend {
     const taken = this.pendingQueued.take(cmd.clientMessageId)
     if (!taken) throw new Error(`Queued ACP message not found: ${cmd.clientMessageId}`)
     try {
-      // Grok steer is x.ai/interject on the live turn. Antigravity steer now
-      // still replaces the turn with session/prompt _meta.sendNow.
-      if (cmd.priority === 'now' && isAntigravityAcpAgent(this.config.agentId)) {
-        this.steerNow(taken)
-        return
-      }
       const ok = await this.interjectRequest(taken.request, taken.delivery)
       if (!ok) throw new Error('ACP interject is unavailable')
     } catch (err) {
       this.pendingQueued.restore(taken)
       throw err
     }
-  }
-
-  /**
-   * Antigravity steer now: a new `session/prompt` with `_meta.sendNow`.
-   * The live turn is cancelled, then this message runs. Grok does not use
-   * this path; its steer is `x.ai/interject`.
-   */
-  private steerNow(taken: TakenQueuedUserMessage): void {
-    const runtime = this.runtime
-    if (!runtime) throw new Error('ACP sendNow is unavailable')
-    const request = taken.request
-    const messageId = request.assistantMessageId
-      ?? `acp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
-    let adopted = false
-    const adopt = () => {
-      if (adopted) return
-      adopted = true
-      this.terminalPermissionAbort.abort()
-      this.terminalPermissionAbort = new AbortController()
-      this.cancelPendingInteractions('abandoned')
-      this.promptMessageIds.clear()
-      this.promptMessageIds.add(messageId)
-      this.currentMessageId = messageId
-      this.liveAssistantId = messageId
-      this.interjectSplit = false
-      if (request.clientMessageId) {
-        this.emit({ type: 'queued_message_consumed', clientMessageId: request.clientMessageId })
-      }
-      this.emit({
-        type: 'message_start',
-        message: {
-          id: messageId,
-          role: 'assistant',
-          status: 'streaming',
-          content: [],
-          createdAt: new Date().toISOString(),
-          providerId: 'acp',
-        },
-      })
-      this.emit({ type: 'status_change', status: 'streaming' })
-    }
-    const next = runtime.prompt(
-      request.content,
-      messageId,
-      (event) => {
-        const failed = event.type === 'message_error'
-          || (event.type === 'status_change' && event.status === 'error')
-        if (!adopted && failed) return
-        adopt()
-        const routed = this.retargetPromptEvent(event)
-        if (!routed) return
-        if (
-          routed.type === 'message_complete'
-          || routed.type === 'message_interrupted'
-          || routed.type === 'message_error'
-          || (routed.type === 'status_change' && routed.status !== 'streaming')
-        ) {
-          this.cancelPendingInteractions('abandoned')
-        }
-        this.routeSessionEvent(routed, this.config.agentId ?? null, this.runtimeEpoch)
-      },
-      request.images,
-      { sendNow: true, onInputAccepted: taken.delivery?.onInputAccepted },
-    )
-    this.sendNowPrompt = next
-    void next.catch(() => {
-      if (!adopted) this.pendingQueued.restore(taken)
-    })
   }
 
   async authenticateMcp(serverName: string): Promise<void> {

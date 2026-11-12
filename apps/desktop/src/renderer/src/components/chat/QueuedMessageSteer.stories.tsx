@@ -44,7 +44,7 @@ const queuedMessages: ChatMessage[] = [
   },
 ]
 
-type SteerProvider = 'claude' | 'codex' | 'opencode' | 'acp-grok'
+type SteerProvider = 'claude' | 'codex' | 'opencode' | 'acp-grok' | 'acp-antigravity'
 
 const projectKey = (remote = false) => remote ? 'remote:queue-node:/work/app' : STORY_PROJECT
 
@@ -63,9 +63,10 @@ function seedQueuedMessages(provider: SteerProvider, nativeV2 = false, remote = 
     }],
     lastAssistantMessageId: 'active-assistant',
     queuedMessages,
-    ...(remote ? { runtimeCapabilities: { harnessId: provider, supportsQueuedSteer: provider !== 'acp-grok', supportsQueuedSteerSoon: provider === 'claude' } } : {}),
+    ...(remote ? { runtimeCapabilities: { harnessId: provider, supportsQueuedSteer: provider !== 'acp-grok' } } : {}),
     ...(provider === 'acp-grok' ? { acpAgentId: 'grok-build' } : {}),
-    ...(provider === 'opencode' ? { runtimeCapabilities: { harnessId: 'opencode' as const, supportsQueuedSteer: nativeV2, supportsQueuedSteerSoon: false } } : {}),
+    ...(provider === 'acp-antigravity' ? { acpAgentId: 'antigravity' } : {}),
+    ...(provider === 'opencode' ? { runtimeCapabilities: { harnessId: 'opencode' as const, supportsQueuedSteer: nativeV2 } } : {}),
   }
 
   useChatStore.setState({
@@ -140,16 +141,18 @@ function SeedQueuedMessages({ children, provider, nativeV2, remote }: { children
 
 function QueueSteerDemo({ provider, nativeV2, remote, narrow }: { provider: SteerProvider; nativeV2?: boolean; remote?: boolean; narrow?: boolean }) {
   const scrollViewportRef = useRef<HTMLDivElement>(null)
+  const label = provider === 'claude' ? 'Claude' : provider === 'codex' ? 'Codex' : provider === 'acp-grok' ? 'Grok' : provider === 'acp-antigravity' ? 'Antigravity' : 'OpenCode'
 
   return (
     <div className={narrow ? "flex w-[360px] flex-col gap-2" : "flex w-[720px] flex-col gap-2"}>
       <p className="text-xs text-muted-foreground">
-        Hover a queued message to steer the active {provider === 'claude' ? 'Claude' : provider === 'codex' ? 'Codex' : provider === 'acp-grok' ? 'Grok' : 'OpenCode'} turn.
+        Hover a queued message to steer the active {label} turn.
         {remote && ' Remote node queue; Edit and Delete withdraw the input from its host.'}
         {remote && provider === 'acp-grok' ? ' This node supports the queue without advertising native steering.' : provider === 'claude'
-          ? ' Claude offers both: the chevrons-up icon delivers at the next step boundary, the ship wheel interrupts the tool in flight.'
-          : provider === 'codex' ? ' Codex offers only the interrupting steer (ship wheel) — its Core queue has no non-aborting variant.'
-          : provider === 'acp-grok' ? ' Grok offers only the ship wheel. It calls x.ai/interject and leaves the live turn running.'
+          ? ' Claude delivers steered input at the next step boundary via SDK priority next without aborting running tools.'
+          : provider === 'codex' ? ' Codex steers the active turn through turn/steer.'
+          : provider === 'acp-grok' ? ' Grok calls x.ai/interject and leaves the live turn running.'
+          : provider === 'acp-antigravity' ? ' Antigravity sends a concurrent session/prompt to steer the live turn without cancelling it.'
           : nativeV2 ? ' OpenCode V2 admits the input at its next safe point without cancelling the running tool.' : ' OpenCode V1 keeps messages queued for the next turn.'}
       </p>
       <div className="@container flex h-[460px] overflow-hidden rounded-xl border border-border bg-card shadow-sm">
@@ -167,7 +170,7 @@ const meta: Meta<typeof QueueSteerDemo> = {
     docs: {
       description: {
         component:
-          'A local or remote turn is streaming with two SuperOne-visible queued messages. Hover either message to reveal the steer actions plus Edit and Delete; steering removes that message from the queue and injects it into the active Claude or Codex turn. Claude additionally offers a non-interrupting steer (SDK priority `next`), which is why the Claude story shows one more icon than the Codex one.',
+          'A local or remote turn is streaming with two SuperOne-visible queued messages. Hover either message to reveal the single Steer action plus Edit and Delete; steering removes that message from the queue and injects it into the active turn.',
       },
     },
   },
@@ -193,18 +196,17 @@ export const StreamingClaude: Story = {
 export const OpenCodeV2: Story = { args: { provider: 'opencode', nativeV2: true }, globals: { harness: 'opencode' } }
 export const OpenCodeV1: Story = { args: { provider: 'opencode', nativeV2: false }, globals: { harness: 'opencode' } }
 export const StreamingGrok: Story = { args: { provider: 'acp-grok' }, globals: { harness: 'acp-grok' } }
+export const StreamingAntigravity: Story = { args: { provider: 'acp-antigravity' }, globals: { harness: 'acp-antigravity' } }
 
-
-const steerActiveReply = (soon = false): NonNullable<Story['play']> => async ({ canvasElement }) => {
+const steerActiveReply: NonNullable<Story['play']> = async ({ canvasElement }) => {
   const canvas = within(canvasElement)
-  const name = soon ? /Steer Soon|尽快插入/ : /Steer Now|立即引导/
+  const name = /Steer Now|立即引导/
   await waitFor(() => expect(canvas.getAllByRole('button', { name })).toHaveLength(2))
   await userEvent.click(canvas.getAllByRole('button', { name })[0])
   const session = () => useChatStore.getState().projectSessions[projectKey(true)]._sessions[STORY_SESSION]
   await waitFor(() => expect(session().queuedMessages).toHaveLength(1))
   expect(session().awaitingAssistantReply).toBe(false)
   expect(canvasElement.querySelector('[data-pending-turn]')).toBeNull()
-  // Remote steering continues the original reply without a new message_start.
   useChatStore.getState().handleAgentEvent({ type: 'content_delta', projectPath: projectKey(true),
     sessionId: STORY_SESSION, messageId: 'active-assistant',
     delta: { type: 'text', text: ' Continuing with the steered request.' } })
@@ -212,9 +214,8 @@ const steerActiveReply = (soon = false): NonNullable<Story['play']> => async ({ 
   expect(canvasElement.querySelector('[data-pending-turn]')).toBeNull()
 }
 
-export const RemoteCodex: Story = { args: { provider: 'codex', remote: true }, globals: { harness: 'codex' }, play: steerActiveReply() }
-export const RemoteClaude: Story = { args: { provider: 'claude', remote: true }, globals: { harness: 'claude' } }
-export const RemoteClaudeSoon: Story = { ...RemoteClaude, play: steerActiveReply(true) }
+export const RemoteCodex: Story = { args: { provider: 'codex', remote: true }, globals: { harness: 'codex' }, play: steerActiveReply }
+export const RemoteClaude: Story = { args: { provider: 'claude', remote: true }, globals: { harness: 'claude' }, play: steerActiveReply }
 export const RemoteQueueWithoutSteer: Story = { args: { provider: 'acp-grok', remote: true }, globals: { harness: 'acp-grok' } }
 export const RemoteCodexDark: Story = { ...RemoteCodex, globals: { harness: 'codex', theme: 'dark' } }
 export const RemoteCodexNarrow: Story = { ...RemoteCodex, args: { provider: 'codex', remote: true, narrow: true } }

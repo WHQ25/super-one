@@ -84,8 +84,7 @@ export function createPhoneSessionMethods(host: PhoneSessionMethodHost): Record<
       })
     }),
     'session.steer': fenced(async (session, p) => {
-      if (p.priority !== undefined && p.priority !== 'now' && p.priority !== 'next') throw invalid('priority must be now|next')
-      const command = queuedSteerCommand(session.snapshot.harnessId, text(p, 'clientMessageId'), p.priority ?? 'now')
+      const command = queuedSteerCommand(session.snapshot.harnessId, text(p, 'clientMessageId'))
       if (!command) throw Object.assign(new Error('Queued steer is not supported on this harness'), { code: 'unsupported' })
       await enqueueSessionQueueOp(session.id, async () => {
         session.lease.assertMutation()

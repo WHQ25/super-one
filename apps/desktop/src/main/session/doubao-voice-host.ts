@@ -338,16 +338,13 @@ export class DoubaoVoiceHost {
           this.countParkedDelegate(call, continuing)
           return
         }
-        const steer = queuedSteerCommand(call.session.snapshot.harnessId, clientMessageId, 'now')
+        const steer = queuedSteerCommand(call.session.snapshot.harnessId, clientMessageId)
         if (!steer) {
           this.countParkedDelegate(call, continuing)
           return
         }
         try {
           await call.session.dispatchBackendCommand(steer)
-          // Antigravity now cancels the live turn and starts another. Grok
-          // interjects into the same turn, so one idle still closes the watch.
-          if (this.steerStartsAnotherTurn(call)) this.countParkedDelegate(call, continuing)
         } catch (error) {
           this.countParkedDelegate(call, continuing)
           log.warn(
@@ -362,13 +359,8 @@ export class DoubaoVoiceHost {
     }
   }
 
-  /** A second task that waits for its own turn. A same-turn steer does not. */
   private countParkedDelegate(call: ActiveCall, continuing: boolean): void {
     if (continuing) call.pendingDelegates += 1
-  }
-
-  private steerStartsAnotherTurn(call: ActiveCall): boolean {
-    return call.session.snapshot.harnessId === 'acp-antigravity'
   }
 
   private ready(call: ActiveCall, dialogId: string): void {

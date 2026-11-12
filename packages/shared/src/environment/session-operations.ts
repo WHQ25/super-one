@@ -9,7 +9,7 @@ export interface SessionOperationMethods {
   /** One answer per question of a Codex agent message's async question item. */
   'session.answerAsyncQuestion': { input: { messageId: string; itemId: string; answers: string[] }; result: { reply: string } }
   'session.dequeue': { input: { clientMessageId: string }; result: { removed: boolean } }
-  'session.steer': { input: { clientMessageId: string; priority?: 'now' | 'next' }; result: { ok: boolean } }
+  'session.steer': { input: { clientMessageId: string }; result: { ok: boolean } }
   'session.forceRecover': { input: { message?: string }; result: { ok: true } }
   'session.reportWorktreeRemoved': { input: Record<string, never>; result: null }
   'session.scheduledSend.get': { input: Record<string, never>; result: ScheduledSend | null }

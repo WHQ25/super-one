@@ -169,7 +169,6 @@ export async function runOpenCodeV2Turn(
       runtimeCapabilities: {
         harnessId: 'opencode',
         supportsQueuedSteer: false,
-        supportsQueuedSteerSoon: false,
         supportsStreamingToolInput: true,
       },
     })

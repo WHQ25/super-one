@@ -313,7 +313,7 @@ export const TabletStreamingScheduledSend = {
 export const PhoneFocusedStreamingEmpty = {
   args: {
     tablet: false, focused: true, streaming: true,
-    canSteer: true, canSteerSoon: true,
+    canSteer: true,
   },
   name: 'Phone · streaming empty hides send and steer',
 }
@@ -321,7 +321,7 @@ export const PhoneFocusedStreamingEmpty = {
 export const PhoneFocusedClaudeSteer = {
   args: {
     tablet: false, focused: true, streaming: true, draft: 'steer this',
-    canSteer: true, canSteerSoon: true,
+    canSteer: true,
   },
   name: 'Phone · focused Claude steer',
 }
@@ -329,18 +329,18 @@ export const PhoneFocusedClaudeSteer = {
 export const PhoneFocusedCodexSteer = {
   args: {
     tablet: false, focused: true, streaming: true, draft: 'steer this',
-    canSteer: true, canSteerSoon: false,
+    canSteer: true,
   },
-  name: 'Phone · focused Codex steer only',
+  name: 'Phone · focused Codex steer',
 }
 
 export const PhoneFocusedGrokSteer = {
   args: {
     provider: 'acp-grok',
     tablet: false, focused: true, streaming: true, draft: 'steer this',
-    canSteer: true, canSteerSoon: false,
+    canSteer: true,
   },
-  name: 'Phone · focused Grok steer only',
+  name: 'Phone · focused Grok steer',
 }
 
 export const Tablet = {

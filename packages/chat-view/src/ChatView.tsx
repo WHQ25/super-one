@@ -103,7 +103,7 @@ const EMPTY_SESSION: SessionFacts = {
   queuedMessages: [],
   sessionInbox: [],
   harnessConnection: null,
-  queuedSteer: { now: false, soon: false },
+  queuedSteer: false,
   promptKeywords: [],
   transcriptWindow: false,
   hasNewerHistory: false,

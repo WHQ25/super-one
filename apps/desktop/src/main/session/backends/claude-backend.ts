@@ -110,8 +110,6 @@ export class ClaudeBackend implements SessionBackend {
   private currentStartTime = 0
   private interrupted = false
   private interruptSettleTimer: ReturnType<typeof setTimeout> | null = null
-  /** Turn whose tools this backend aborted itself by steering — see `stripSteerAbort`. */
-  private steeredTurnMessageId: string | null = null
   private turnResolves = new Map<string, () => void>()
   private providerSessionId: string | null = null
   /** Init id of a run that has not produced conversation content yet — see `stageProviderSessionId`. */
@@ -865,19 +863,13 @@ export class ClaudeBackend implements SessionBackend {
     const taken = this.queuedUserMessages.take(cmd.clientMessageId)
     if (!taken) throw new Error(`Queued Claude message not found: ${cmd.clientMessageId}`)
 
-    const priority = cmd.priority ?? 'now'
     try {
       const userMsg = buildUserMessage(
-        { ...taken.request, priority },
+        { ...taken.request, priority: 'next' },
         this.providerSessionId ?? '',
       )
-      // Steered into the live turn: the parked message reaches the SDK here.
       taken.delivery?.onInputAccepted()
       this.bridge.push(userMsg, cmd.clientMessageId)
-      // Only `now` cancels tools, so only `now` produces the `aborted_tools`
-      // result `stripSteerAbort` exists to hide. Latching on `next` would swallow
-      // a genuine abort the user did not cause.
-      if (priority === 'now') this.steeredTurnMessageId = this.currentMessageId || null
     } catch (error) {
       this.queuedUserMessages.restore(taken)
       throw error
@@ -1143,25 +1135,8 @@ export class ClaudeBackend implements SessionBackend {
     return this.sessionSchedules.hasPending
   }
 
-  /**
-   * `claude.steer_queued` injects with SDK `priority: 'now'`, which by design
-   * aborts the in-flight tools; the SDK then closes that turn with
-   * `terminal_reason: 'aborted_tools'` on an otherwise successful result
-   * (`subtype: 'success'`, `is_error` false), so it lands in `message_complete`
-   * and the footer flags the user's own steer as a warning. Stop pressed by the
-   * user is a different shape (`message_interrupted`) and still reports.
-   */
-  private stripSteerAbort(event: AgentEvent): AgentEvent {
-    if (!this.steeredTurnMessageId) return event
-    if (event.type !== 'message_complete') return event
-    if (event.messageId !== this.steeredTurnMessageId) return event
-    if (event.metadata?.terminalReason !== 'aborted_tools') return event
-    const { terminalReason: _steered, ...metadata } = event.metadata
-    return { ...event, metadata }
-  }
-
   private emit(rawEvent: AgentEvent): void {
-    for (const event of this.goalTracker.reconcile(this.stripSteerAbort(rawEvent))) this.emitOne(event)
+    for (const event of this.goalTracker.reconcile(rawEvent)) this.emitOne(event)
   }
 
   private emitOne(event: AgentEvent): void {
@@ -1202,7 +1177,6 @@ export class ClaudeBackend implements SessionBackend {
       // The turn is over: the latch has served its purpose and must not leak
       // into the next one (see beginTurn).
       this.beginTurn()
-      this.steeredTurnMessageId = null
       const resolve = this.turnResolves.get(mid)
       if (resolve) {
         resolve()

@@ -13,7 +13,7 @@ import { AttachmentStrip } from '../ui/attachment-strip'
 import { SlashSuggestions, MentionSuggestions, PromptSuggestions } from '../ui/composer-suggestions'
 import { ModelPicker } from '../ui/model-picker'
 import { AgentSelector } from '../ui/agent-selector'
-import { ArrowUp, AtSign, ChevronsUp, FileText, Image as ImageIcon, Paperclip, ShipWheel, Square } from 'lucide-react-native'
+import { ArrowUp, AtSign, FileText, Image as ImageIcon, Paperclip, ShipWheel, Square } from 'lucide-react-native'
 import { ScrollView, TextInput, View, useWindowDimensions } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { shouldUseTabletComposer } from '../layout-state'
@@ -121,9 +121,7 @@ export type ChatComposerProps = {
   onPromptSuggestionsDismiss?: () => void
   onDraft: (value: string) => void; onSend: () => void; onStop: () => void
   onSteer?: () => void
-  onSteerSoon?: () => void
   canSteer?: boolean
-  canSteerSoon?: boolean
   onSubmitFromKeyboard: () => void; onAttachmentMenu: () => void
   onAttachImage: () => void
   onAttachPdf: () => void
@@ -248,16 +246,10 @@ export function ChatComposer(props: ChatComposerProps) {
   const steer = !empty && !deliveryHeld && props.streaming && props.canSteer
     ? <IconButton icon={ShipWheel} label="Steer now" chrome={tablet ? 'circle' : 'plain'}
       iconSize={tablet ? 13 : 18} onPress={() => props.onSteer?.()} /> : null
-  const steerSoon = !empty && !deliveryHeld && props.streaming && props.canSteerSoon
-    ? <IconButton icon={ChevronsUp} label="Steer soon" chrome={tablet ? 'circle' : 'plain'}
-      iconSize={tablet ? 13 : 18} onPress={() => props.onSteerSoon?.()} /> : null
   const voiceEntry = props.voiceEntry ? <View testID="composer-voice-entry">{props.voiceEntry}</View> : null
-  // Move both delivery modes together without remounting the native editor.
   const phoneDelivery = voiceEntry || send ? <View testID="phone-composer-delivery"
     style={{ flexDirection: 'row', alignItems: 'center' }}>{voiceEntry}{send}</View> : null
   const collapsedPhone = !tablet && !phoneActions
-  // Stop is already a column beside the field. A second line of draft puts
-  // voice and Send under it instead of spending that column twice.
   const stackDelivery = collapsedPhoneStacksDelivery({
     collapsed: collapsedPhone,
     hasStop: stop !== null,
@@ -266,7 +258,7 @@ export function ChatComposer(props: ChatComposerProps) {
     measuredWidth: lineSampleReady ? lineSample.columnWidth : 0,
     measuredLines: lineSampleReady ? lineSample.lines : 1,
   })
-  const sendCluster = <>{steerSoon}{steer}{tablet ? send : phoneDelivery}{stop}</>
+  const sendCluster = <>{steer}{tablet ? send : phoneDelivery}{stop}</>
   const actionBar = phoneActions ? <View testID="phone-composer-actions" style={{ flexDirection: 'row', alignItems: 'center' }}>
     <ScrollView horizontal showsHorizontalScrollIndicator={false} keyboardShouldPersistTaps="always"
       style={{ flex: 1 }} contentContainerStyle={{ alignItems: 'center' }}>

@@ -1,29 +1,15 @@
 import type { AgentStatus, ChatMessage, HarnessId } from '@superone/shared/agent-types'
-import { isAcpProtocolHarness, resolveLegacyHarnessId } from '@superone/shared/acp-brand'
+import { isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import { resolveHarnessCapabilities } from '@superone/shared/harness/harness-capabilities'
 import type { HarnessRuntimeCapabilities } from '@superone/shared/harness/session-catalog'
 
-/**
- * Desktop `isQueuedSend`: a live turn parks the composer send in the SuperOne-held
- * queue instead of appending it to the transcript. Cursor/dsh still live-send.
- *
- * Status is `AgentStatus` on purpose: a harness id is assignable to `string`,
- * so `shouldQueueComposerSend(selectedProvider)` type-checked and always
- * returned false (`'claude' !== 'streaming'`).
- */
 export function shouldQueueComposerSend(status: AgentStatus, harness: HarnessId): boolean {
   if (status !== 'streaming') return false
   return harness === 'claude' || isAcpProtocolHarness(harness) || harness === 'opencode' || harness === 'codex' || harness === 'dsh'
 }
 
-export type ComposerSendKind = 'send' | 'steer' | 'soon'
+export type ComposerSendKind = 'send' | 'steer'
 
-/**
- * Wire fields for a composer send. Mid-turn queueing (and steer/soon) must
- * carry `priority: 'next'` plus a client id so the runtime can park a bubble
- * and the host can consume it later — a bare `send_message` is serialized
- * behind the live turn and never appears in the transcript until then.
- */
 export function composerQueuedSendFields(
   status: AgentStatus,
   harness: HarnessId,
@@ -39,13 +25,6 @@ export function composerQueuedSendFields(
 
 export function canSteerQueued(harness: HarnessId, runtime?: HarnessRuntimeCapabilities): boolean {
   return resolveHarnessCapabilities(harness, runtime).supportsQueuedSteer === true
-}
-
-export function canSteerQueuedSoon(harness: HarnessId | string, acpAgentId?: string | null, runtime?: HarnessRuntimeCapabilities): boolean {
-  const resolved = resolveLegacyHarnessId(String(harness), { acpAgentId })
-  if (!resolved) return false
-  if (resolved === 'acp-grok') return false
-  return resolveHarnessCapabilities(resolved, runtime).supportsQueuedSteerSoon === true
 }
 
 export function queuedMessageText(message: ChatMessage): string {

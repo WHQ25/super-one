@@ -29,13 +29,9 @@ export async function operateNodeQueue(method: string, input: Record<string, unk
     return { removed: true }
   }
   if ((deps.session.harnessId === 'claude' || deps.session.harnessId === 'codex') && deps.promoteTurn) {
-    const priority = input.priority ?? 'now'
-    if (priority !== 'now' && priority !== 'next')
-      throw Object.assign(new Error('Invalid steer priority'), { code: 'invalid_argument' })
-    if (deps.session.harnessId === 'codex' && priority !== 'now')
-      throw Object.assign(new Error('Codex only supports immediate steering'), { code: 'unsupported' })
     if (deps.session.status !== 'streaming') throw new Error('Queued message can only steer an active turn')
     if (deps.admitting.has(deps.session.sessionId)) throw new Error('Another queued input is being submitted')
+    const priority = deps.session.harnessId === 'claude' ? 'next' : 'now'
     deps.admitting.add(deps.session.sessionId)
     deps.queue.splice(index, 1)
     try {
@@ -54,8 +50,6 @@ export async function operateNodeQueue(method: string, input: Record<string, unk
   }
   if (deps.session.harnessId !== 'opencode' || !deps.runner.steer)
     throw Object.assign(new Error('This session does not support queued steering'), { code: 'unsupported' })
-  if (input.priority !== undefined && input.priority !== 'now')
-    throw Object.assign(new Error('OpenCode only supports immediate steering'), { code: 'unsupported' })
   if (deps.admitting.has(deps.session.sessionId)) throw new Error('Another queued input is being submitted')
   deps.admitting.add(deps.session.sessionId)
   deps.queue.splice(index, 1)

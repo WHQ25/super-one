@@ -5,7 +5,6 @@ import type {
   AgentStatus,
   AgentInfo,
   ChatMessage,
-  ClaudeSteerPriority,
   CodexGoal,
   SessionGoal,
   CodexGoalStatus,
@@ -223,23 +222,10 @@ export type BackendCommand =
   | {
       kind: 'claude.steer_queued'
       clientMessageId: string
-      /**
-       * SDK delivery priority. `now` (default) aborts the tool in flight;
-       * `next` parks the message in the CLI command queue so it lands at the
-       * turn's next safe boundary with nothing cancelled.
-       */
-      priority?: ClaudeSteerPriority
     }
   | {
       kind: 'acp.steer_queued'
       clientMessageId: string
-      /**
-       * Grok ignores this and always uses `x.ai/interject` (same turn, next
-       * safe point, no abort). Antigravity `now` sends `session/prompt` with
-       * `_meta.sendNow` (cancel the live turn). `next` is `x.ai/interject`.
-       * Omitted means `next`.
-       */
-      priority?: ClaudeSteerPriority
     }
   | {
       /** dsh consumes a steer at the next step boundary; nothing is cancelled. */

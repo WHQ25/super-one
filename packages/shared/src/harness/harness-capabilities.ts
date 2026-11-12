@@ -66,18 +66,6 @@ export interface HarnessCapabilities {
   /** Can convert a SuperOne-held queued user message into an active-turn steer. */
   supportsQueuedSteer: boolean
   /**
-   * On top of {@link supportsQueuedSteer}, can deliver a queued message at the
-   * turn's next safe boundary *without* aborting the tool in flight.
-   *
-   * Claude only: the SDK's `priority: 'next'` parks the message in the CLI's own
-   * command queue, which drains between steps. `priority: 'now'` (plain steer)
-   * aborts instead. Codex's steer has no such middle setting — its Core queue
-   * item either interrupts or waits for the whole turn. Grok's `x.ai/interject`
-   * is also a single shape (next safe point, no abort), so it is plain steer,
-   * not a second "soon" action.
-   */
-  supportsQueuedSteerSoon: boolean
-  /**
    * Accepts working directories beyond the session cwd.
    *
    * Gates `/add-dir` and the workspace-folder UI: a harness without this reads
@@ -182,7 +170,6 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsCompact: true,
     supportsStreamingToolInput: true,
     supportsQueuedSteer: true,
-    supportsQueuedSteerSoon: true,
     // SDK `additionalDirectories`.
     supportsAdditionalDirs: true,
     // SDK `forkSession()` copies + remaps the transcript jsonl.
@@ -213,8 +200,6 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsCompact: true,
     supportsStreamingToolInput: false,
     supportsQueuedSteer: true,
-    // Core's queue item either interrupts the turn or waits it out.
-    supportsQueuedSteerSoon: false,
     // sandbox_workspace_write.writable_roots, re-sent every turn.
     supportsAdditionalDirs: true,
     // app-server thread fork, truncatable at a turn id.
@@ -235,9 +220,6 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
   },
   'acp-grok': {
     ...ACP_PROTOCOL_CAPABILITIES,
-    // Grok steer is `x.ai/interject` on the live turn, so the queue has no second soon button.
-    supportsQueuedSteerSoon: false,
-    // The agent owns the loop and reports back over `goal_updated`.
     goal: {
       lifecycleArgs: ['status', 'pause', 'resume', 'clear'],
       canPause: true,
@@ -248,8 +230,6 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
   },
   'acp-antigravity': {
     ...ACP_PROTOCOL_CAPABILITIES,
-    // Steer now is `session/prompt` `_meta.sendNow`; soon stays `x.ai/interject`.
-    supportsQueuedSteerSoon: true,
     goal: null,
     displayName: 'Antigravity',
   },
@@ -261,7 +241,6 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsCompact: true,
     supportsStreamingToolInput: false,
     supportsQueuedSteer: false,
-    supportsQueuedSteerSoon: false,
     // Single `directory` only.
     supportsAdditionalDirs: false,
     // Server-side `forkSession(id, anchor)` + `moveSession`.
@@ -286,7 +265,6 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsCompact: false,
     supportsStreamingToolInput: true,
     supportsQueuedSteer: false,
-    supportsQueuedSteerSoon: false,
     // Single cwd; multi-root parked in the harness design doc.
     supportsAdditionalDirs: false,
     // SDK has no transcript-fork API; the adapter creates a blank agent.
@@ -326,7 +304,6 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsCompact: true,
     supportsStreamingToolInput: true,
     supportsQueuedSteer: true,
-    supportsQueuedSteerSoon: false,
     // Single cwd.
     supportsAdditionalDirs: false,
     // `runtime.forkSession` copies the log prefix up to an event seq.

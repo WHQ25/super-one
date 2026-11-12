@@ -183,8 +183,8 @@ describe('local sessions on the environment route', () => {
     live.getSession = (id) => sessions.getSession(id)
     own.queued = ['q1']
     expect(await runWindowControl(7, () => host.callSession('local', 'own', 'session.dequeue', { clientMessageId: 'q1' }))).toEqual({ removed: true })
-    expect(await runWindowControl(7, () => host.callSession('local', 'own', 'session.steer', { clientMessageId: 'q2', priority: 'next' }))).toEqual({ ok: true })
-    expect(own.commands.at(-1)).toEqual({ kind: 'claude.steer_queued', clientMessageId: 'q2', priority: 'next' })
+    expect(await runWindowControl(7, () => host.callSession('local', 'own', 'session.steer', { clientMessageId: 'q2' }))).toEqual({ ok: true })
+    expect(own.commands.at(-1)).toEqual({ kind: 'claude.steer_queued', clientMessageId: 'q2' })
 
     own.harnessId = 'codex'
     await runWindowControl(7, () => host.callSession('local', 'own', 'session.setGoal', { objective: 'ship it' }))

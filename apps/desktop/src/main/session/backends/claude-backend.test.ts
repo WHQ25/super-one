@@ -638,7 +638,7 @@ describe('ClaudeBackend', () => {
       expect(bridgePushSpy).not.toHaveBeenCalled()
     })
 
-    it('converts one host-owned queued message to SDK priority now', async () => {
+    it('converts one host-owned queued message to SDK priority next', async () => {
       const backend = new ClaudeBackend()
       const events: AgentEvent[] = []
       backend.onEvent((e) => events.push(e))
@@ -653,7 +653,7 @@ describe('ClaudeBackend', () => {
       expect(bridgePushSpy).toHaveBeenCalledTimes(1)
       const [message, tag] = bridgePushSpy.mock.calls[0]!
       expect(tag).toBe('user_2')
-      expect(message).toMatchObject({ message: { content: 'steer this' }, priority: 'now' })
+      expect(message).toMatchObject({ message: { content: 'steer this' }, priority: 'next' })
 
       hoisted.captured.onStepBoundary?.()
       expect(bridgePushSpy).toHaveBeenCalledTimes(1)
@@ -672,7 +672,7 @@ describe('ClaudeBackend', () => {
       await firstSend
     })
 
-    it('does not flag the steered turn as aborted', async () => {
+    it('keeps reporting aborted_tools after a steer, which cancels nothing', async () => {
       const backend = new ClaudeBackend()
       const events: AgentEvent[] = []
       backend.onEvent((e) => events.push(e))
@@ -682,8 +682,6 @@ describe('ClaudeBackend', () => {
       await backend.send({ content: 'steer this', clientMessageId: 'user_2', priority: 'next' })
       await backend.handleCommand({ kind: 'claude.steer_queued', clientMessageId: 'user_2' })
 
-      // priority:'now' aborts the in-flight tools, so the SDK closes the turn
-      // with a successful result carrying terminal_reason 'aborted_tools'.
       hoisted.captured.emit?.({
         type: 'message_complete',
         messageId: hoisted.captured.getCurrentMessageId?.() ?? '',
@@ -692,51 +690,8 @@ describe('ClaudeBackend', () => {
       await firstSend
 
       const complete = events.find((e) => e.type === 'message_complete') as Extract<AgentEvent, { type: 'message_complete' }>
-      expect(complete.metadata?.terminalReason).toBeUndefined()
-      expect(complete.metadata?.durationMs).toBe(42)
-    })
-
-    it('steers with SDK priority next when asked not to interrupt', async () => {
-      const backend = new ClaudeBackend()
-      await backend.start(makeStartOpts())
-      const firstSend = backend.send({ content: 'turn 1', clientMessageId: 'user_1' })
-      await new Promise((r) => setTimeout(r, 0))
-      await backend.send({ content: 'steer this', clientMessageId: 'user_2', priority: 'next' })
-
-      const bridgePushSpy = vi.spyOn(hoisted.captured.bridge as { push: (...args: unknown[]) => void }, 'push')
-      await backend.handleCommand({ kind: 'claude.steer_queued', clientMessageId: 'user_2', priority: 'next' })
-
-      const [message, tag] = bridgePushSpy.mock.calls[0]!
-      expect(tag).toBe('user_2')
-      expect(message).toMatchObject({ message: { content: 'steer this' }, priority: 'next' })
-
-      hoisted.captured.emit?.({
-        type: 'message_complete',
-        messageId: hoisted.captured.getCurrentMessageId?.() ?? '',
-        metadata: {},
-      })
-      await firstSend
-    })
-
-    it('keeps reporting aborted_tools after a priority-next steer, which cancels nothing', async () => {
-      const backend = new ClaudeBackend()
-      const events: AgentEvent[] = []
-      backend.onEvent((e) => events.push(e))
-      await backend.start(makeStartOpts())
-      const firstSend = backend.send({ content: 'turn 1', clientMessageId: 'user_1' })
-      await new Promise((r) => setTimeout(r, 0))
-      await backend.send({ content: 'steer this', clientMessageId: 'user_2', priority: 'next' })
-      await backend.handleCommand({ kind: 'claude.steer_queued', clientMessageId: 'user_2', priority: 'next' })
-
-      hoisted.captured.emit?.({
-        type: 'message_complete',
-        messageId: hoisted.captured.getCurrentMessageId?.() ?? '',
-        metadata: { terminalReason: 'aborted_tools' },
-      })
-      await firstSend
-
-      const complete = events.find((e) => e.type === 'message_complete') as Extract<AgentEvent, { type: 'message_complete' }>
       expect(complete.metadata?.terminalReason).toBe('aborted_tools')
+      expect(complete.metadata?.durationMs).toBe(42)
     })
 
     it('still reports an aborted_tools turn that no steer caused', async () => {
@@ -758,7 +713,7 @@ describe('ClaudeBackend', () => {
       expect(complete.metadata?.terminalReason).toBe('aborted_tools')
     })
 
-    it('keeps the host queue closed while a priority-next steer runs its continuation turn', async () => {
+    it('keeps the host queue closed while a steered message runs its continuation turn', async () => {
       const backend = new ClaudeBackend()
       const events: AgentEvent[] = []
       backend.onEvent((e) => events.push(e))
@@ -766,10 +721,8 @@ describe('ClaudeBackend', () => {
       const firstSend = backend.send({ content: 'turn 1', clientMessageId: 'user_1' })
       await new Promise((r) => setTimeout(r, 0))
       await backend.send({ content: 'steer this', clientMessageId: 'user_2', priority: 'next' })
-      await backend.handleCommand({ kind: 'claude.steer_queued', clientMessageId: 'user_2', priority: 'next' })
+      await backend.handleCommand({ kind: 'claude.steer_queued', clientMessageId: 'user_2' })
 
-      // claude-query sees the SDK echo the steered message: it closes turn 1
-      // and opens a continuation turn that no send() is awaiting.
       hoisted.captured.emit?.({ type: 'message_complete', messageId: hoisted.captured.getCurrentMessageId?.() ?? '', metadata: {} })
       await firstSend
       hoisted.captured.onQueuedTurnStart?.('msg_continuation')
@@ -793,7 +746,7 @@ describe('ClaudeBackend', () => {
       hoisted.captured.emit?.({ type: 'message_complete', messageId: hoisted.captured.getCurrentMessageId?.() ?? '', metadata: {} })
     })
 
-    it('holds queued messages across the aborted result of a priority-now steer', async () => {
+    it('holds queued messages while a consumed steer awaits its continuation turn', async () => {
       const backend = new ClaudeBackend()
       await backend.start(makeStartOpts())
       const firstSend = backend.send({ content: 'turn 1', clientMessageId: 'user_1' })
@@ -802,19 +755,16 @@ describe('ClaudeBackend', () => {
       await backend.send({ content: 'queued', clientMessageId: 'user_3', priority: 'later' })
       await backend.handleCommand({ kind: 'claude.steer_queued', clientMessageId: 'user_2' })
 
-      // The SDK drains the bridge as it would live: the steer tag is consumed
-      // but claude-query has not yet seen its continuation turn start.
       const bridge = hoisted.captured.bridge as AsyncIterable<unknown> & { drainConsumedTag(): string | undefined }
       const iterator = bridge[Symbol.asyncIterator]()
       await iterator.next()
       await iterator.next()
 
       const bridgePushSpy = vi.spyOn(hoisted.captured.bridge as { push: (...args: unknown[]) => void }, 'push')
-      // priority:'now' aborts the tools; the SDK closes turn 1 before running the steer.
       hoisted.captured.emit?.({
         type: 'message_complete',
         messageId: hoisted.captured.getCurrentMessageId?.() ?? '',
-        metadata: { terminalReason: 'aborted_tools' },
+        metadata: {},
       })
       await firstSend
       await new Promise((r) => setTimeout(r, 0))

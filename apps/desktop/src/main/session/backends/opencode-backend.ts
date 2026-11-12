@@ -587,7 +587,7 @@ export class OpenCodeBackend implements SessionBackend {
   private publishRuntimeCatalog(runtime: OpenCodeRuntime): void {
     this.emit({ type: 'session_agents', agents: runtime.agents, commands: runtime.commands, models: runtime.models,
       runtimeCapabilities: { harnessId: 'opencode', supportsQueuedSteer: !!runtime.steer,
-        supportsQueuedSteerSoon: false, supportsStreamingToolInput: !!runtime.supportsStreamingToolInput } })
+        supportsStreamingToolInput: !!runtime.supportsStreamingToolInput } })
   }
 
   /**

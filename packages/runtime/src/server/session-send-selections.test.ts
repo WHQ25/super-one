@@ -9,7 +9,7 @@ describe('native composer send selections', () => {
   it('prefers explicit options over a top-level selection', () => {
     expect(parseSessionSendSelections({ priority: 'later', agent: 'old' }, { priority: 'next', agent: 'build' })).toEqual({ priority: 'next', agent: 'build' })
   })
-  it.each([{ priority: 'unknown' }, { steer: 'now' }, { inputRequest: { requestId: 'r', values: [] } }, { modelParams: { fast: true } }, { permissionPreset: 'all' }, { serviceTier: '' }])('refuses malformed selections: %j', (input) => {
+  it.each([{ priority: 'unknown' }, { steer: 'now' }, { clientMessageId: 'user', priority: 'next', steer: 'next' }, { inputRequest: { requestId: 'r', values: [] } }, { modelParams: { fast: true } }, { permissionPreset: 'all' }, { serviceTier: '' }])('refuses malformed selections: %j', (input) => {
     expect(() => parseSessionSendSelections(input, {})).toThrow()
   })
 })

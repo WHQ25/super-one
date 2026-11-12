@@ -425,35 +425,32 @@ test('a scheduling error keeps a short tap as Send and exposes retry on long pre
   expect(onSend).toHaveBeenCalledTimes(1)
 })
 
-test('a streaming Claude action bar offers steer now and steer soon', async () => {
+test('a streaming action bar offers steer when supported', async () => {
   await renderWithTheme(composer({
     tablet: false, focused: true, streaming: true, draft: 'hello',
-    canSteer: true, canSteerSoon: true,
+    canSteer: true,
   }))
 
   expect(screen.getByLabelText('Steer Now')).toBeTruthy()
-  expect(screen.getByLabelText('Steer Soon')).toBeTruthy()
 })
 
-test('a streaming Codex action bar offers steer now only', async () => {
+test('a streaming action bar hides steer when unsupported', async () => {
   await renderWithTheme(composer({
     tablet: false, focused: true, streaming: true, draft: 'hello',
-    canSteer: true, canSteerSoon: false,
+    canSteer: false,
   }))
 
-  expect(screen.getByLabelText('Steer Now')).toBeTruthy()
-  expect(screen.queryByLabelText('Steer Soon')).toBeNull()
+  expect(screen.queryByLabelText('Steer Now')).toBeNull()
 })
 
 test('a streaming action bar hides send and steer until the input has content', async () => {
   await renderWithTheme(composer({
     tablet: false, focused: true, streaming: true,
-    canSteer: true, canSteerSoon: true,
+    canSteer: true,
   }))
 
   expect(screen.queryByLabelText('Send')).toBeNull()
   expect(screen.queryByLabelText('Steer Now')).toBeNull()
-  expect(screen.queryByLabelText('Steer Soon')).toBeNull()
   expect(screen.getByLabelText('Stop')).toBeTruthy()
 })
 

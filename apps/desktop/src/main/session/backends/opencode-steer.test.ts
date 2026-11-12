@@ -55,7 +55,7 @@ describe('OpenCode native queued steering', () => {
   afterEach(async () => { await backend.close(); setOpenCodeRuntimeFactory(null) })
 
   it('routes the desktop and phone steer command to OpenCode', () => {
-    expect(queuedSteerCommand('opencode', 'u2', 'now')).toEqual({ kind: 'opencode.steer_queued', clientMessageId: 'u2' })
+    expect(queuedSteerCommand('opencode', 'u2')).toEqual({ kind: 'opencode.steer_queued', clientMessageId: 'u2' })
   })
 
   it('admits a queued prompt into the active execution without opening another assistant or cancelling tools', async () => {

@@ -108,7 +108,7 @@ export interface SessionCallMethods extends SessionOperationMethods {
   'session.launchSuggestedTask': { input: { taskId: string; choice?: import('../suggested-task').SuggestedTaskLaunchChoice }; result: { sessionId: string } }
   'composer.openInputRequest': { input: { messageId: string; spec: unknown }; result: ComposerOpenResult }
   'session.dequeue': { input: { clientMessageId: string }; result: { removed: boolean } }
-  'session.steer': { input: { clientMessageId: string; priority?: 'now' | 'next' }; result: { ok: boolean } }
+  'session.steer': { input: { clientMessageId: string }; result: { ok: boolean } }
   'session.recap': { input: { auto?: boolean }; result: { ok: boolean } }
   'session.getGoal': { input: Record<string, never>; result: { goal: CodexGoal | null } }
   /** A null objective clears the goal. */

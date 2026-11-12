@@ -177,7 +177,6 @@ export function createManagedOpenCodeTurnRunner(
       runtimeCapabilities: {
         harnessId: 'opencode',
         supportsQueuedSteer: true,
-        supportsQueuedSteerSoon: false,
         supportsStreamingToolInput: true,
       },
     })

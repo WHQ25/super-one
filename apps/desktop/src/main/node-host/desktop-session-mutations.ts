@@ -35,10 +35,9 @@ export async function applyDesktopSessionSettings(session: Session, patch: NodeS
   if (patch.additionalDirectories !== undefined) await session.dispatchBackendCommand({ kind: 'session.set_additional_dirs', dirs: patch.additionalDirectories ?? [] })
 }
 
-/** Admission returns promptly while the accepted turn streams through the domain. */
 export async function admitDesktopSessionSend(session: Session, request: SendMessageRequest, input: Parameters<SessionHostPort['send']>[0]): Promise<void> {
   await runFencedSessionControl(session.id, input.client.clientSessionId, input, () => new Promise<void>((resolve, reject) => {
-    const steer = input.steer && input.clientMessageId ? queuedSteerCommand(session.snapshot.harnessId, input.clientMessageId, input.steer) : null
+    const steer = input.steer && input.clientMessageId ? queuedSteerCommand(session.snapshot.harnessId, input.clientMessageId) : null
     if (input.steer && !steer) { reject(Object.assign(new Error('Queued steer is not supported on this harness'), { code: 'unsupported' })); return }
     const deliver = async () => {
       session.lease.assertMutation()
@@ -57,7 +56,7 @@ export async function admitDesktopSessionSend(session: Session, request: SendMes
 
 export function desktopSendRequest(input: Parameters<SessionHostPort['send']>[0], harnessId: string): SendMessageRequest {
   const additionalDirs = Object.hasOwn(input, 'callerAdditionalDirectories') ? input.callerAdditionalDirectories : input.additionalDirectories
-  if (input.steer && (!input.clientMessageId || !queuedSteerCommand(harnessId, input.clientMessageId, input.steer))) {
+  if (input.steer && (!input.clientMessageId || !queuedSteerCommand(harnessId, input.clientMessageId))) {
     throw Object.assign(new Error('Queued steer is not supported on this harness'), { code: 'unsupported' })
   }
   if (harnessId === 'codex' && input.collaborationMode != null && input.collaborationMode !== 'default' && input.collaborationMode !== 'plan') {

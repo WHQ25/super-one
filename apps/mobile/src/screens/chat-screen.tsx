@@ -152,9 +152,7 @@ export function ChatScreen(props: {
   onSend: () => void
   onStop: () => void
   onSteer?: () => void
-  onSteerSoon?: () => void
   canSteer?: boolean
-  canSteerSoon?: boolean
 }) {
   const styles = useMobileStyles()
   const { tokens } = useMobileTheme()

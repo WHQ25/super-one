@@ -1,8 +1,7 @@
-import type { ClaudeSteerPriority, CodexPermissionPreset, SendMessageRequest } from '../agent-types'
+import type { CodexPermissionPreset, SendMessageRequest } from '../agent-types'
 
-/** Native turn selections used by an existing phone composer on a desktop host. */
 export type SessionSendSelections = Pick<SendMessageRequest, 'priority' | 'agent' | 'inputRequest'> & {
-  steer?: ClaudeSteerPriority
+  steer?: 'now'
   modelParams?: Record<string, string>
   permissionPreset?: CodexPermissionPreset
   serviceTier?: string | null

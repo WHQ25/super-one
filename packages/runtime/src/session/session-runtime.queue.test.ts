@@ -187,7 +187,7 @@ describe('SessionRuntime send queue', () => {
     expect(users).toEqual(['first', 'second'])
   })
 
-  it.each(['now', 'next'] as const)('Claude queue cards support %s steering and withdrawal', async priority => {
+  it('Claude queue cards support next-boundary steering and withdrawal', async () => {
     const gates: Array<() => void> = []
     const inputs: Array<{ text: string; steerPriority?: string }> = []
     const runner: TurnRunner = async input => {
@@ -206,8 +206,8 @@ describe('SessionRuntime send queue', () => {
       await send('second')
       expect(inputs.map(input => input.text)).toEqual(['first'])
       expect(runtime.get(session.sessionId)?.transcript.find(row => row.id === 'second')).toMatchObject({ queuedInComposer: true })
-      await runtime.callOperation(session.sessionId, 'session.steer', { clientMessageId: 'second', priority }, () => {})
-      expect(inputs.map(input => [input.text, input.steerPriority])).toEqual([['first', undefined], ['second', priority]])
+      await runtime.callOperation(session.sessionId, 'session.steer', { clientMessageId: 'second' }, () => {})
+      expect(inputs.map(input => [input.text, input.steerPriority])).toEqual([['first', undefined], ['second', 'next']])
       await send('withdraw')
       expect(await runtime.callOperation(session.sessionId, 'session.dequeue', { clientMessageId: 'withdraw' }, () => {})).toEqual({ removed: true })
       expect(runtime.get(session.sessionId)?.transcript.some(row => row.id === 'withdraw')).toBe(false)

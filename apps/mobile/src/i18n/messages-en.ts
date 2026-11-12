@@ -228,7 +228,6 @@ export const mobileEnglish: Record<string, string> = {
   'Insert slash command': 'Insert Slash Command',
   'Insert mention': 'Insert Mention',
   'Steer now': 'Steer Now',
-  'Steer soon': 'Steer Soon',
   'Edit queued': 'Edit Queued Message',
   'Message': 'Message',
   'MCP servers': 'MCP Servers',

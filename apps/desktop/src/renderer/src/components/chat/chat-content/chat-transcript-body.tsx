@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AnimatePresence, motion } from 'motion/react'
-import { ArrowDown, ChevronsUp, PenLine, Play, ShipWheel, Trash2 } from 'lucide-react'
+import { ArrowDown, PenLine, Play, ShipWheel, Trash2 } from 'lucide-react'
 import type { ChatMessage as ChatMessageModel, ModelOption } from '@superone/shared/agent-types'
 import type { TranscriptRow } from '@superone/shared/transcript-segments'
 import { SystemNoticeRow } from '@superone/chat-view/presenters/SystemNoticeRow'
@@ -111,7 +111,6 @@ export interface ChatTranscriptBodyProps {
   onRetry: () => void
   queuedMessages: ChatMessageModel[]
   canStartCodexQueue: boolean
-  canSteerQueueSoon: boolean
   canSteerQueue: boolean
   queueTarget: SessionWriteTarget | undefined
   startQueuedMessages: ChatStore['startQueuedMessages']
@@ -154,7 +153,6 @@ export function ChatTranscriptBody({
   onRetry,
   queuedMessages,
   canStartCodexQueue,
-  canSteerQueueSoon,
   canSteerQueue,
   queueTarget,
   startQueuedMessages,
@@ -279,13 +277,8 @@ export function ChatTranscriptBody({
                             <Play className="size-3" />
                           </IconButton>
                         )}
-                        {canSteerQueueSoon && (
-                          <IconButton size="xs" variant="nested" tooltip={t('chat.queuedActions.steerSoon')} onClick={() => void steerQueuedMessage(msg.id, queueTarget, 'next')}>
-                            <ChevronsUp />
-                          </IconButton>
-                        )}
                         {canSteerQueue && (
-                          <IconButton size="xs" variant="nested" tooltip={t('chat.queuedActions.steer')} onClick={() => void steerQueuedMessage(msg.id, queueTarget, 'now')}>
+                          <IconButton size="xs" variant="nested" tooltip={t('chat.queuedActions.steer')} onClick={() => void steerQueuedMessage(msg.id, queueTarget)}>
                             <ShipWheel />
                           </IconButton>
                         )}

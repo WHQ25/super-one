@@ -594,20 +594,10 @@ describe('session-slice: queued-message edit/delete', () => {
     const sessionId = activeProjectState()._activeSessionId!
     patchSession({ queuedMessages: [queued('q1', 'steer this')] })
 
-    await expect(useChatStore.getState().steerQueuedMessage('q1', { projectPath: PATH, sessionId }, 'now')).resolves.toBe(true)
+    await expect(useChatStore.getState().steerQueuedMessage('q1', { projectPath: PATH, sessionId })).resolves.toBe(true)
 
-    expect(mockWindowEnvironment.callSession).toHaveBeenCalledWith('local', sessionId, 'session.steer', { clientMessageId: 'q1', priority: 'now' })
+    expect(mockWindowEnvironment.callSession).toHaveBeenCalledWith('local', sessionId, 'session.steer', { clientMessageId: 'q1' })
     expect(activeSession().queuedMessages.map((m) => m.id)).toEqual(['q1'])
-  })
-
-  it('forwards the non-interrupting priority when steering soon', async () => {
-    setupProject()
-    const sessionId = activeProjectState()._activeSessionId!
-    patchSession({ queuedMessages: [queued('q1', 'steer this')] })
-
-    await expect(useChatStore.getState().steerQueuedMessage('q1', { projectPath: PATH, sessionId }, 'next')).resolves.toBe(true)
-
-    expect(mockWindowEnvironment.callSession).toHaveBeenCalledWith('local', sessionId, 'session.steer', { clientMessageId: 'q1', priority: 'next' })
   })
 
   it('does not call steer IPC for an unknown queued message', async () => {

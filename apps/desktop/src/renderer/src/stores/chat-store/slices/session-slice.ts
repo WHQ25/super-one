@@ -1,5 +1,5 @@
 import type { StateCreator } from 'zustand'
-import type { ChatMessage, ClaudeSteerPriority, ContextUsageInfo, RewindFilesResult } from '@superone/shared/agent-types'
+import type { ChatMessage, ContextUsageInfo, RewindFilesResult } from '@superone/shared/agent-types'
 import { useActivityViewStateStore } from '../../activity-view-state'
 import { disposeModUiClient } from '@/lib/mod-ui/registry'
 import type { ChatStore, PerSessionState, SessionWriteTarget, SetDraftTextOptions } from '../types'
@@ -72,7 +72,7 @@ export interface SessionSlice {
   /** Drop a failed user message from the transcript and put it back into the composer. */
   editFailedMessage: (messageId: string, target?: SessionWriteTarget) => void
   deleteQueuedMessage: (messageId: string, target?: SessionWriteTarget) => void
-  steerQueuedMessage: (messageId: string, target?: SessionWriteTarget, priority?: ClaudeSteerPriority) => Promise<boolean>
+  steerQueuedMessage: (messageId: string, target?: SessionWriteTarget) => Promise<boolean>
   startQueuedMessages: (target?: SessionWriteTarget) => Promise<boolean>
   setDraftText: (text: string, target?: SessionWriteTarget, opts?: SetDraftTextOptions) => void
   setDraftJson: (json: object | null, target?: SessionWriteTarget) => void
@@ -152,12 +152,12 @@ export const createSessionSlice: StateCreator<ChatStore, [], [], SessionSlice> =
     })))
   },
 
-  steerQueuedMessage: async (messageId, target, priority) => {
+  steerQueuedMessage: async (messageId, target) => {
     const { projectPath, sessionId, session } = resolveWriteScope(get(), target)
     if (!projectPath || !sessionId) return false
     if (!session.queuedMessages.some((message) => message.id === messageId)) return false
     try {
-      return (await callSession(projectPath, sessionId, 'session.steer', { clientMessageId: messageId, priority: priority ?? 'now' })).ok
+      return (await callSession(projectPath, sessionId, 'session.steer', { clientMessageId: messageId })).ok
     } catch (error) {
       toastSendFailure(error)
       return false

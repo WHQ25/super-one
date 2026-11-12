@@ -13,6 +13,7 @@ vi.mock('../../usage-stats-service', async (importOriginal) => {
   const actual = await importOriginal<typeof import('../../usage-stats-service')>()
   return {
     ...actual,
+    recordAntigravityFromUsage: vi.fn(),
     recordGrokFromUsage: vi.fn(),
   }
 })
@@ -34,6 +35,7 @@ function manualTurnRuntime(
 ) {
   return mockAcpRuntime({
     prompt: async (text, messageId, onEvent, _images, opts) => {
+      opts?.onInputAccepted?.()
       await new Promise<void>((resolve) => {
         let settled = false
         const finish = () => {
@@ -178,8 +180,8 @@ describe('AcpBackend queued send / interject', () => {
       priority: 'next',
     })
 
-    await backend.handleCommand({ kind: 'acp.steer_queued', clientMessageId: 'u-now', priority: 'now' })
-    await backend.handleCommand({ kind: 'acp.steer_queued', clientMessageId: 'u-soon', priority: 'next' })
+    await backend.handleCommand({ kind: 'acp.steer_queued', clientMessageId: 'u-now' })
+    await backend.handleCommand({ kind: 'acp.steer_queued', clientMessageId: 'u-soon' })
 
     expect(interjects).toEqual(['cut in', 'after this tool'])
     expect(calls.map((call) => call.sendNow)).toEqual([false])
@@ -197,33 +199,10 @@ describe('AcpBackend queued send / interject', () => {
     await backend.close()
   })
 
-  it('puts a rejected sendNow message back on the queue', async () => {
+  it('restores an Antigravity queued message when steer interject rejects', async () => {
     const calls: PromptCall[] = []
-    setAcpRuntimeFactory(async () => mockAcpRuntime({
-      prompt: async (text, messageId, onEvent, _images, opts) => {
-        if (opts?.sendNow) {
-          onEvent({
-            type: 'message_error',
-            messageId,
-            error: 'sendNow rejected',
-          })
-          onEvent({ type: 'status_change', status: 'error' })
-          throw new Error('sendNow rejected')
-        }
-        await new Promise<void>((resolve) => {
-          calls.push({
-            text: typeof text === 'string' ? text : String(text),
-            messageId,
-            onEvent,
-            sendNow: false,
-            finish: () => {
-              onEvent({ type: 'message_complete', messageId })
-              onEvent({ type: 'status_change', status: 'idle' })
-              resolve()
-            },
-          })
-        })
-      },
+    setAcpRuntimeFactory(async () => manualTurnRuntime(calls, {
+      interject: async () => { throw new Error('steer rejected') },
     }))
     const backend = new AcpBackend('acp-antigravity')
     const events: AgentEvent[] = []
@@ -232,13 +211,21 @@ describe('AcpBackend queued send / interject', () => {
 
     void backend.send({ content: 'first', assistantMessageId: 'a1' })
     await vi.waitFor(() => expect(calls).toHaveLength(1))
-    await backend.send({ content: 'cut in', clientMessageId: 'u-now', assistantMessageId: 'a-now', priority: 'next' })
-    await backend.handleCommand({ kind: 'acp.steer_queued', clientMessageId: 'u-now', priority: 'now' })
+    const accepted = vi.fn()
+    await backend.send(
+      { content: 'cut in', clientMessageId: 'u-steer', assistantMessageId: 'a-steer', priority: 'next' },
+      { onInputAccepted: accepted },
+    )
+    await expect(backend.handleCommand({ kind: 'acp.steer_queued', clientMessageId: 'u-steer' }))
+      .rejects.toThrow(/interject is unavailable/)
 
+    expect(accepted).not.toHaveBeenCalled()
     expect(events.some((event) => event.type === 'queued_message_consumed')).toBe(false)
     calls[0]?.finish()
-    await vi.waitFor(() => expect(calls.some((call) => call.text.includes('cut in') && !call.sendNow)).toBe(true))
-    calls.find((call) => call.text.includes('cut in'))?.finish()
+    await vi.waitFor(() => expect(calls).toHaveLength(2))
+    expect(calls[1]?.text).toContain('cut in')
+    expect(accepted).toHaveBeenCalledOnce()
+    calls[1]?.finish()
     await backend.close()
   })
 
@@ -398,11 +385,13 @@ describe('AcpBackend queued send / interject', () => {
     await backend.close()
   })
 
-  it('supports both steer-now (sendNow) and steer-soon (interject) for antigravity agent', async () => {
+  it('steers an Antigravity queued message via interject and preserves per-leg usage', async () => {
+    const { recordAntigravityFromUsage } = await import('../../usage-stats-service')
+    vi.mocked(recordAntigravityFromUsage).mockClear()
     const calls: PromptCall[] = []
-    const interjects: string[] = []
+    const interjects: Array<{ text: string; id?: string }> = []
     setAcpRuntimeFactory(async () => manualTurnRuntime(calls, {
-      interject: async (text) => { interjects.push(text) },
+      interject: async (text, id) => { interjects.push({ text, id }) },
     }))
     const backend = new AcpBackend('acp-antigravity')
     const events: AgentEvent[] = []
@@ -411,36 +400,53 @@ describe('AcpBackend queued send / interject', () => {
 
     void backend.send({ content: 'first', assistantMessageId: 'a1' })
     await vi.waitFor(() => expect(calls).toHaveLength(1))
-    await backend.send({
-      content: 'steer now on antigravity',
-      clientMessageId: 'u-agy-now',
-      assistantMessageId: 'a-agy-now',
-      priority: 'next',
-    })
-    await backend.send({
-      content: 'steer soon on antigravity',
-      clientMessageId: 'u-agy-soon',
-      assistantMessageId: 'a-agy-soon',
-      priority: 'next',
+    calls[0]?.onEvent({
+      type: 'message_usage',
+      messageId: 'a1',
+      inputTokens: 200,
+      outputTokens: 40,
+      cacheReadTokens: 0,
     })
 
-    await backend.handleCommand({ kind: 'acp.steer_queued', clientMessageId: 'u-agy-now', priority: 'now' })
-    await backend.handleCommand({ kind: 'acp.steer_queued', clientMessageId: 'u-agy-soon', priority: 'next' })
+    await backend.send({
+      content: 'steer on antigravity',
+      clientMessageId: 'u-agy',
+      assistantMessageId: 'a-agy',
+      priority: 'next',
+    })
 
-    expect(interjects).toEqual(['steer soon on antigravity'])
-    expect(calls.map((c) => c.sendNow)).toEqual([false, true])
-    expect(calls[1]?.text).toContain('steer now on antigravity')
+    await backend.handleCommand({ kind: 'acp.steer_queued', clientMessageId: 'u-agy' })
 
-    calls[1]?.onEvent({
+    expect(interjects).toEqual([{ text: 'steer on antigravity', id: 'u-agy' }])
+    expect(calls).toHaveLength(1)
+    expect(messageStarts(events)).toEqual(['a1', 'a-agy'])
+    expect(events.some((e) => e.type === 'queued_message_consumed' && e.clientMessageId === 'u-agy')).toBe(true)
+
+    calls[0]?.onEvent({
       type: 'content_delta',
-      messageId: 'a-agy-now',
-      delta: { type: 'text', text: 'replaced' },
+      messageId: 'a1',
+      delta: { type: 'text', text: 'post-steer-text' },
     })
-    expect(events.some((e) => e.type === 'queued_message_consumed' && e.clientMessageId === 'u-agy-now')).toBe(true)
-    expect(events.some((e) => e.type === 'queued_message_consumed' && e.clientMessageId === 'u-agy-soon')).toBe(true)
+    calls[0]?.onEvent({
+      type: 'message_usage',
+      messageId: 'a1',
+      inputTokens: 120,
+      outputTokens: 25,
+      cacheReadTokens: 0,
+    })
+
+    const usageEvents = events.filter((e): e is Extract<AgentEvent, { type: 'message_usage' }> => e.type === 'message_usage')
+    expect(usageEvents).toContainEqual(expect.objectContaining({
+      messageId: 'a-agy',
+      inputTokens: 120,
+      outputTokens: 25,
+    }))
+    const recordedCalls = vi.mocked(recordAntigravityFromUsage).mock.calls
+    expect(recordedCalls).toHaveLength(2)
+    expect(recordedCalls[0]?.[0]).toMatchObject({ inputTokens: 200, outputTokens: 40 })
+    expect(recordedCalls[1]?.[0]).toMatchObject({ inputTokens: 120, outputTokens: 25 })
 
     calls[0]?.finish()
-    calls[1]?.finish()
     await backend.close()
   })
 })

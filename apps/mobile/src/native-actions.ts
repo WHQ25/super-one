@@ -347,7 +347,7 @@ export async function resolveNativeRequest(
       await ports.sessionInboxAction(payloadString(message, 'inboxId'), action)
     } else if (message.action === 'queuedMessageAction') {
       const action = payloadString(message, 'action')
-      if (action !== 'edit' && action !== 'steer' && action !== 'steerSoon') throw new Error('invalid queued message action')
+      if (action !== 'edit' && action !== 'steer') throw new Error('invalid queued message action')
       await ports.queuedMessageAction(payloadString(message, 'messageId'), action)
     } else if (message.action === 'mcpApp') {
       if (!ports.mcpApp) throw new Error('MCP Apps are unavailable')

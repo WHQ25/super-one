@@ -2,7 +2,6 @@ import { describe, expect, it } from 'vitest'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import {
   canSteerQueued,
-  canSteerQueuedSoon,
   composerQueuedSendFields,
   queuedMessageText,
   shouldQueueComposerSend,
@@ -35,18 +34,13 @@ describe('queued composer send', () => {
     })
   })
 
-  it('offers steer on Claude, Codex and Grok, and soon on Claude and Antigravity', () => {
+  it('offers steer on Claude, Codex, Grok and Antigravity', () => {
     expect(canSteerQueued('claude')).toBe(true)
     expect(canSteerQueued('codex')).toBe(true)
     expect(canSteerQueued('acp-grok')).toBe(true)
     expect(canSteerQueued('acp-antigravity')).toBe(true)
     expect(canSteerQueued('opencode')).toBe(false)
-    expect(canSteerQueuedSoon('claude')).toBe(true)
-    expect(canSteerQueuedSoon('acp')).toBe(false)
-    expect(canSteerQueuedSoon('acp', 'grok-build')).toBe(false)
-    expect(canSteerQueuedSoon('acp', 'antigravity')).toBe(true)
-    expect(canSteerQueuedSoon('acp', 'custom-agent')).toBe(false)
-    expect(canSteerQueuedSoon('codex')).toBe(false)
+    expect(canSteerQueued('cursor')).toBe(false)
   })
 
   it('joins text blocks for the edit-back path', () => {
@@ -61,10 +55,9 @@ describe('queued composer send', () => {
     expect(queuedMessageText(message)).toBe('fix the queue')
   })
 
-  it('enables only the steering action advertised by an OpenCode V2 session', () => {
-    const runtime = { harnessId: 'opencode' as const, supportsQueuedSteer: true, supportsQueuedSteerSoon: false }
+  it('enables steering when advertised by an OpenCode V2 session', () => {
+    const runtime = { harnessId: 'opencode' as const, supportsQueuedSteer: true }
     expect(canSteerQueued('opencode', runtime)).toBe(true)
-    expect(canSteerQueuedSoon('opencode', undefined, runtime)).toBe(false)
     expect(canSteerQueued('opencode', { ...runtime, harnessId: 'codex' })).toBe(false)
     expect(canSteerQueued('opencode')).toBe(false)
   })

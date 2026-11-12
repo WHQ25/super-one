@@ -1212,11 +1212,6 @@ export class SessionRuntime {
       }
       session.permissionPreset = input.permissionPreset
     }
-    if (session.harnessId === 'opencode' && input.steer !== undefined && input.steer !== 'now')
-      throw Object.assign(new Error('OpenCode only supports immediate steering'), { code: 'unsupported' })
-    // Each delivery attempt carries its own RPC idempotency key, so a Resend of
-    // a message this node already took (queued, running or answered) is held
-    // here. Only a message that never reached the agent runs again.
     const taken = this.userRow(session, input.clientMessageId)
     if (taken && !taken.metadata?.sendFailure) return this.clone(session)
     if (session.harnessId === 'opencode' && input.agent?.trim()) session.agent = input.agent.trim()
@@ -1287,13 +1282,11 @@ export class SessionRuntime {
           return this.clone(session)
         }
         this.enqueueTurn(session, turnOpts)
-        const steer = input.steer ?? (harnessId === 'claude' && input.priority === 'now' ? 'now' : undefined)
-        if ((harnessId === 'opencode' || harnessId === 'claude') && steer && turnOpts.parkInComposer) {
+        const shouldSteer = Boolean(input.steer || (harnessId === 'claude' && input.priority === 'now'))
+        if ((harnessId === 'opencode' || harnessId === 'claude') && shouldSteer && turnOpts.parkInComposer) {
           const assertControl = () => this.leases.assertValid({ resource: ref, leaseId: input.leaseId,
             generation: input.generation, holderClientId: input.client.clientSessionId })
-          // The send is already durable. A refused steer keeps that accepted input
-          // in the queue; do not turn it into a failed send or submit it twice.
-          await this.callOperation(session.sessionId, 'session.steer', { clientMessageId: turnOpts.clientMessageId, priority: steer }, assertControl).catch(() => {})
+          await this.callOperation(session.sessionId, 'session.steer', { clientMessageId: turnOpts.clientMessageId }, assertControl).catch(() => {})
         }
         return this.clone(session)
       }
@@ -1665,7 +1658,6 @@ export class SessionRuntime {
         capabilities: {
           harnessId: session.harnessId as HarnessId,
           supportsQueuedSteer: session.harnessId === 'claude' || session.harnessId === 'codex',
-          supportsQueuedSteerSoon: session.harnessId === 'claude',
         },
       })
       this.events.appendSession({

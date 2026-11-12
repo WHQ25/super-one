@@ -39,10 +39,9 @@ const QUEUES = {
   long: [user('q1', 'A long queued message that checks the bubble wraps, the pictures wrap, and the actions stay aligned on a narrow phone without spilling off the edge. '.repeat(2), [photo, fromDesktop, uncut, { ...photo, id: 'a5' }, { ...fromDesktop, id: 'a6' }])],
 }
 
-/** The last sent turn and the queue after it, as the phone's chat document draws them. */
 function QueueAfterTranscript({ queue, steer, width = 390, scheme = 'light' }: {
   queue: keyof typeof QUEUES
-  steer: { now: boolean; soon: boolean }
+  steer: boolean
   width?: number
   scheme?: 'light' | 'dark'
 }) {
@@ -55,29 +54,27 @@ function QueueAfterTranscript({ queue, steer, width = 390, scheme = 'light' }: {
 const meta = {
   title: 'Chat/Mobile queued messages',
   component: QueueAfterTranscript,
-  args: { queue: 'text', steer: { now: true, soon: true } },
+  args: { queue: 'text', steer: true },
   render: (args, context) => <QueueAfterTranscript {...args} scheme={context.globals.theme ?? 'light'} />,
 } satisfies Meta<typeof QueueAfterTranscript>
 export default meta
 type Story = StoryObj<typeof meta>
 
 export const Claude: Story = {
-  name: 'Claude · steer now and soon',
+  name: 'Claude · steer',
   play: async ({ canvas }) => {
-    // The sent bubble keeps its long-press menu; a queued one has nothing to copy yet.
-    await expect(canvas.getAllByRole('button', { name: 'Steer Soon (no interrupt)' })).toHaveLength(2)
+    await expect(canvas.getAllByRole('button', { name: 'Steer Now' })).toHaveLength(2)
     await expect(canvas.getAllByRole('button', { name: 'Edit Queued Message' })).toHaveLength(2)
   },
 }
-export const Codex: Story = { name: 'Codex · steer now only', args: { steer: { now: true, soon: false } } }
+export const Codex: Story = { name: 'Codex · steer', args: { steer: true } }
 export const OpenCodeV2: Story = {
-  name: 'OpenCode V2 · native steer', args: { steer: { now: true, soon: false } },
+  name: 'OpenCode V2 · native steer', args: { steer: true },
   play: async ({ canvas }) => {
     await expect(canvas.getAllByRole('button', { name: 'Steer Now' })).toHaveLength(2)
-    await expect(canvas.queryByRole('button', { name: 'Steer Soon (no interrupt)' })).toBeNull()
   },
 }
-export const OpenCodeV1: Story = { name: 'OpenCode V1 · edit only', args: { steer: { now: false, soon: false } } }
-export const Idle: Story = { name: 'Turn ended · no steer, edit only', args: { steer: { now: false, soon: false } } }
+export const OpenCodeV1: Story = { name: 'OpenCode V1 · edit only', args: { steer: false } }
+export const Idle: Story = { name: 'Turn ended · no steer, edit only', args: { steer: false } }
 export const Attachments: Story = { name: 'Attachments · own, from desktop, uncut, PDF, mention', args: { queue: 'attachments' } }
 export const LongNarrow: Story = { name: 'Long text and many pictures · narrow', args: { queue: 'long', width: 320 } }

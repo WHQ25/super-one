@@ -13,7 +13,7 @@ function fixture(submitted: boolean) {
   })
   const deps = { session, queue, runner, admitting: new Set<string>(), assertControl: () => {},
     consumed: vi.fn(), dequeued: vi.fn(), abandoned: vi.fn(), settled: vi.fn() }
-  const operation = operateNodeQueue('session.steer', { clientMessageId: 'steered', priority: 'now' }, deps)
+  const operation = operateNodeQueue('session.steer', { clientMessageId: 'steered' }, deps)
   void operation.catch(() => {})
   return { deps, operation, reject }
 }

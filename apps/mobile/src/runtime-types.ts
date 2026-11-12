@@ -88,6 +88,5 @@ export type SendMessageOptions = {
   clientMessageId?: string
   inputRequest?: import('@superone/shared/input-request').InputRequestSubmission
   priority?: 'now' | 'next' | 'later'
-  /** Park then steer in one host command — composer Stair. */
-  steer?: 'now' | 'next'
+  steer?: 'now'
 }

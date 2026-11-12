@@ -157,12 +157,10 @@ export const CachedSessionRevalidating = {
   name: 'Cached session · renderer uncovered while the host revalidates',
 }
 
-/** Queued messages themselves are drawn by the chat document; see `PortableQueuedMessages`. */
 export const SteerWhileStreaming = {
   args: {
     streaming: true,
     canSteer: true,
-    canSteerSoon: true,
     draft: 'another thought',
   },
   name: 'Streaming · steer from the composer',

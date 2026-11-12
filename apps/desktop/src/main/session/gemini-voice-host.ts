@@ -459,11 +459,10 @@ export class GeminiVoiceHost {
           codexTimeline: { provenance: 'realtime-delegated', turnId: clientMessageId },
         })
         if (!streaming) return
-        const steer = queuedSteerCommand(call.session.snapshot.harnessId, clientMessageId, 'now')
+        const steer = queuedSteerCommand(call.session.snapshot.harnessId, clientMessageId)
         if (!steer) return
         try {
           await call.session.dispatchBackendCommand(steer)
-          if (this.steerStartsAnotherTurn(call)) call.pendingDelegates += 1
         } catch (error) {
           log.warn(
             '[gemini-voice] steer failed sid=%s: %s',
@@ -475,10 +474,6 @@ export class GeminiVoiceHost {
     } catch (error) {
       this.fail(call, error instanceof Error ? error.message : 'Gemini voice delegation failed.')
     }
-  }
-
-  private steerStartsAnotherTurn(call: ActiveCall): boolean {
-    return call.session.snapshot.harnessId === 'acp-antigravity'
   }
 
   private partialInterim(call: ActiveCall, incoming: string): void {

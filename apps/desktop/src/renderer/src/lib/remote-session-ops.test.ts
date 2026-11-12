@@ -175,7 +175,7 @@ describe('hydrateRemoteSession', () => {
   it('restores the host queue and its runtime controls when adopting a running session', async () => {
     getSession.mockResolvedValueOnce({ sessionId: 'queued', harnessId: 'codex', status: 'streaming' })
     const queued = { ...msg('q1', 'later'), role: 'user' }
-    const runtimeCapabilities = { harnessId: 'codex', supportsQueuedSteer: true, supportsQueuedSteerSoon: false }
+    const runtimeCapabilities = { harnessId: 'codex', supportsQueuedSteer: true }
     openRemoteSession.mockResolvedValueOnce({ sessionId: 'queued', messages: [], state: {
       status: 'streaming', queuedMessages: [queued], runtimeCapabilities,
     }, before: null, cursor: { sequence: '1', epoch: 'e', version: 1 } })

@@ -132,8 +132,6 @@ function ChatTranscript({
   const canSteerQueue = canHostSteer
     && queueCapabilities.supportsQueuedSteer
     && sessionStatus === 'streaming'
-  const canSteerQueueSoon = canSteerQueue
-    && queueCapabilities.supportsQueuedSteerSoon
   const isLocalCodexQueue = canHostStartQueued && queueProvider === 'codex'
   const canStartCodexQueue = isLocalCodexQueue && sessionStatus !== 'streaming'
   // ChatTranscript doubles as the backing-thread view (see `showRealtime`). That view
@@ -223,7 +221,6 @@ function ChatTranscript({
       onRetry={retry}
       queuedMessages={queuedMessages}
       canStartCodexQueue={canStartCodexQueue}
-      canSteerQueueSoon={canSteerQueueSoon}
       canSteerQueue={canSteerQueue}
       queueTarget={queueTarget}
       startQueuedMessages={startQueuedMessages}

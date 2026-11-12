@@ -404,6 +404,17 @@ export function cancelAntigravitySubagentWakeupWait(parentSessionId: string): bo
   return hadWaiters
 }
 
+export function resumeAntigravityTurnOnSteer(parentSessionId: string): void {
+  const state = sessionStates.get(parentSessionId)
+  if (!state) return
+  state.parentTurnEnded = false
+  const waiters = state.wakeupWaiters.splice(0, state.wakeupWaiters.length)
+  for (const resolve of waiters) {
+    resolve('completed')
+  }
+  ensurePollingTimer(state)
+}
+
 export function hasUnflushedAntigravityWakeupReplay(parentSessionId: string): boolean {
   return sessionStates.get(parentSessionId)?.unflushedWakeupReplay === true
 }

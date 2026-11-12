@@ -226,7 +226,6 @@ export const mobileChinese: Record<string, string> = {
   'Insert slash command': '插入斜杠命令',
   'Insert mention': '插入提及',
   'Steer now': '立即引导',
-  'Steer soon': '尽快插入',
   'Edit queued': '编辑排队消息',
   'Message': '消息',
   'MCP servers': 'MCP 服务器',

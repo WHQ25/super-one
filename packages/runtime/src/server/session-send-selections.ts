@@ -14,7 +14,7 @@ export function parseSessionSendSelections(p: Record<string, unknown>, options: 
   }
   const steer = take('steer')
   if (steer !== undefined) {
-    if (steer !== 'now' && steer !== 'next') throw invalid('steer must be now|next')
+    if (steer !== 'now') throw invalid('steer must be now')
     if (typeof p.clientMessageId !== 'string' || !p.clientMessageId) throw invalid('steer requires clientMessageId')
     result.steer = steer
   }

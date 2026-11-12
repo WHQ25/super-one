@@ -871,9 +871,9 @@ export class ChatRuntime {
     return true
   }
 
-  async steerQueuedMessage(clientMessageId: string, priority: 'now' | 'next' = 'now'): Promise<boolean> {
+  async steerQueuedMessage(clientMessageId: string): Promise<boolean> {
     if (!this.sessionId || !this.projectPath) return false
-    const result = await this.control<{ ok: boolean }>('session.steer', { clientMessageId, priority })
+    const result = await this.control<{ ok: boolean }>('session.steer', { clientMessageId })
     return result.ok
   }
 

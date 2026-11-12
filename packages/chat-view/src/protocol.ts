@@ -62,9 +62,7 @@ export interface SessionProjection {
   queuedMessages?: ChatMessage[]
   sessionInbox?: import('@superone/shared/session-inbox').SessionInboxItem[]
   harnessConnection?: import('@superone/shared/session-inbox').HarnessConnectionState | null
-  /** Which steer actions the harness takes for a queued message. */
-  queuedSteer?: { now: boolean; soon: boolean }
-  /** The prompt keywords the session's harness acts on; sent bubbles paint them. */
+  queuedSteer?: boolean
   promptKeywords?: PromptKeyword[]
   /**
    * The transcript arrives as a fragment window: native owns paging, a row may
@@ -85,8 +83,7 @@ export interface TranscriptWindowPage {
   hasNewerHistory: boolean
 }
 
-/** What a tap on a queued message's action asks native to do. */
-export type QueuedMessageAction = 'edit' | 'steer' | 'steerSoon'
+export type QueuedMessageAction = 'edit' | 'steer'
 
 export interface ReductionProjection extends SessionProjection {
   /** Native selects the empty-history hint independently of media/history arrival. */

@@ -5,7 +5,7 @@ import type { HarnessId } from './harness-id'
 
 /** Facts negotiated with a live runtime, rather than guaranteed by its harness. */
 export interface HarnessRuntimeCapabilities extends Partial<Pick<HarnessCapabilities,
-  'supportsQueuedSteer' | 'supportsQueuedSteerSoon' | 'supportsStreamingToolInput'
+  'supportsQueuedSteer' | 'supportsStreamingToolInput'
 >> {
   harnessId: HarnessId
 }

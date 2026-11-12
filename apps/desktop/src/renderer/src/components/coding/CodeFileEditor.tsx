@@ -474,6 +474,7 @@ export function CodeFileEditor({
           change={hoveredTarget.change}
           anchorRect={hoveredTarget.anchorRect}
           language={language}
+          filePath={fullFilePath}
           fileRoot={fileRoot ?? null}
           onRevert={handleRevert}
           onMouseEnter={() => {

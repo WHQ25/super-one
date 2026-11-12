@@ -1,4 +1,5 @@
 import { structuredPatch } from 'diff'
+import { formatFilePrefix, lineKindToMarker } from '@superone/shared/file-quote-prefix'
 import { splitContentLines } from '@/lib/text-lines'
 import type { MinimapLine } from './CodeMinimap'
 
@@ -322,4 +323,18 @@ export function buildEditorMinimapLines(content: string, changes: readonly Edito
     }
   }
   return result
+}
+
+/** Composer quote for one gutter hunk, in the same `path:Lx:D` shape as a diff selection. */
+export function formatDiffHunkQuote(filePath: string, change: EditorDiffChange): string {
+  const range = change.kind === 'deleted'
+    ? `L${change.anchorLine}`
+    : change.newStartLine === change.newEndLine
+      ? `L${change.newStartLine}`
+      : `L${change.newStartLine}-L${change.newEndLine}`
+  const body = [
+    ...change.oldLines.map((line) => `${lineKindToMarker('removed')}${line}`),
+    ...change.newLines.map((line) => `${lineKindToMarker('added')}${line}`),
+  ].join('\n')
+  return `${formatFilePrefix(filePath, range, undefined, undefined, true)}\n${body}`
 }

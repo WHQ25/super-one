@@ -1,16 +1,18 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { RotateCcw } from 'lucide-react'
+import { MessageSquarePlus, RotateCcw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { Button } from '@superone/ui/components/ui/button'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { gutterWidth, useHighlightedTokens } from '@/lib/diff-utils'
 import { getHighlightCache } from '@/lib/highlight-cache'
-import type { EditorDiffChange } from './editor-diff'
+import { useChatStore } from '@/stores/chat-store'
+import { formatDiffHunkQuote, type EditorDiffChange } from './editor-diff'
 
 interface DiffHunkHoverCardProps {
   change: EditorDiffChange
   anchorRect: { top: number; bottom: number; left: number; right: number }
   language: string
+  filePath: string
   fileRoot: string | null
   onRevert: (change: EditorDiffChange) => void
   onMouseEnter: () => void
@@ -21,12 +23,14 @@ export function DiffHunkHoverCard({
   change,
   anchorRect,
   language,
+  filePath,
   fileRoot,
   onRevert,
   onMouseEnter,
   onMouseLeave,
 }: DiffHunkHoverCardProps) {
   const { t } = useTranslation()
+  const addUserSelection = useChatStore((s) => s.addUserSelection)
   const cardRef = useRef<HTMLDivElement>(null)
   const [pos, setPos] = useState(() => ({
     left: Math.max(8, anchorRect.right + 6),
@@ -94,16 +98,26 @@ export function DiffHunkHoverCard({
             )}
           </span>
         </div>
-        <Button
-          variant="ghost"
-          size="sm"
-          data-testid="diff-hunk-revert"
-          onClick={() => onRevert(change)}
-          className="h-6 gap-1 px-2 text-[11px]"
-        >
-          <RotateCcw className="size-3" />
-          {t('filePreview.revertChange')}
-        </Button>
+        <div className="flex shrink-0 items-center gap-0.5">
+          <IconButton
+            size="sm"
+            variant="ghost"
+            data-testid="diff-hunk-add-to-chat"
+            tooltip={t('chat.selectionMenu.addToChat')}
+            onClick={() => addUserSelection(formatDiffHunkQuote(filePath, change))}
+          >
+            <MessageSquarePlus />
+          </IconButton>
+          <IconButton
+            size="sm"
+            variant="ghost"
+            data-testid="diff-hunk-revert"
+            tooltip={t('filePreview.revertChange')}
+            onClick={() => onRevert(change)}
+          >
+            <RotateCcw />
+          </IconButton>
+        </div>
       </div>
       <div className="max-h-60 overflow-auto py-1 font-mono text-xs leading-relaxed">
         <div className="min-w-max">

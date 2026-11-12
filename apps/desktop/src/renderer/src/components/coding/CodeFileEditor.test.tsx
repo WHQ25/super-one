@@ -6,6 +6,7 @@ import { EditorView } from '@codemirror/view'
 import { createTwoFilesPatch } from 'diff'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAppStore } from '@/stores/app'
+import { useChatStore } from '@/stores/chat-store'
 import { CodeFileEditor } from './CodeFileEditor'
 
 describe('CodeFileEditor', () => {
@@ -91,6 +92,9 @@ describe('CodeFileEditor', () => {
     const card = await screen.findByTestId('diff-hunk-hover-card')
     expect(card).toHaveTextContent('const b = 2')
     expect(card).toHaveTextContent('const b = 999')
+    const revert = screen.getByTestId('diff-hunk-revert')
+    expect(revert).toHaveAttribute('aria-label', 'Revert Change')
+    expect(revert.textContent ?? '').not.toMatch(/\S/)
 
     await act(async () => {
       fireEvent.click(screen.getByTestId('diff-hunk-revert'))
@@ -102,6 +106,39 @@ describe('CodeFileEditor', () => {
     expect(onSaved).toHaveBeenCalledWith('const a = 1\nconst b = 2\n')
     expect(container.querySelector('.cm-content')?.textContent).toContain('const b = 2')
     expect(container.querySelector('[data-diff-marker="modified"]')).toBeNull()
+  })
+
+  it('adds the hovered hunk to the chat composer', async () => {
+    const previous = useChatStore.getState().addUserSelection
+    const addUserSelection = vi.fn()
+    useChatStore.setState({ addUserSelection })
+    const base = 'const a = 1\nconst b = 2\n'
+    const current = 'const a = 1\nconst b = 999\n'
+    const gitDiff = createTwoFilesPatch('a/app.ts', 'b/app.ts', base, current)
+
+    try {
+      const { container } = render(
+        <CodeFileEditor
+          content={current}
+          diskContent={current}
+          gitDiff={gitDiff}
+          filePath="src/app.ts"
+        />,
+      )
+
+      const marker = await waitFor(() => {
+        const el = container.querySelector('[data-diff-marker="modified"][data-diff-line="2"]')
+        expect(el).not.toBeNull()
+        return el as HTMLElement
+      })
+      fireEvent.mouseOver(marker)
+      await screen.findByTestId('diff-hunk-hover-card')
+      fireEvent.click(screen.getByTestId('diff-hunk-add-to-chat'))
+
+      expect(addUserSelection).toHaveBeenCalledWith('/proj/src/app.ts:L2:D\n-const b = 2\n+const b = 999')
+    } finally {
+      useChatStore.setState({ addUserSelection: previous })
+    }
   })
 
   it('tracks live edits with live diff markers, dirty state, and debounced autosave', async () => {

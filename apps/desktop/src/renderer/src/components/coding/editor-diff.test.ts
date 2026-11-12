@@ -4,6 +4,7 @@ import {
   buildEditorMinimapLines,
   computeLiveDiffChanges,
   findChangeForGutterLine,
+  formatDiffHunkQuote,
   parseEditorDiffChanges,
   reconstructBaseContent,
   revertDiffChange,
@@ -122,5 +123,10 @@ describe('editor-diff', () => {
     expect(minimap[2]).toMatchObject({ lineNum: 3, kind: 'unchanged', deletedBelow: true })
     expect(minimap[3]).toMatchObject({ lineNum: 4, kind: 'unchanged' })
     expect(minimap[4]).toMatchObject({ lineNum: 5, kind: 'added' })
+  })
+
+  it('quotes a hunk with the diff selection prefix', () => {
+    const changes = computeLiveDiffChanges('const b = 2\n', 'const b = 999\n')
+    expect(formatDiffHunkQuote('src/app.ts', changes[0])).toBe('src/app.ts:L1:D\n-const b = 2\n+const b = 999')
   })
 })

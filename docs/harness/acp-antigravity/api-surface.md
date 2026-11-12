@@ -15,8 +15,11 @@ Version: `1.5.3` (`@agentclientprotocol/sdk` `^1.4.0`)
 | `session/set_model` | `used` | Selects the active model on the session | `apps/desktop/src/main/acp/acp-runtime.ts` |
 | `session/set_mode` | `used` | Selects the active ACP session mode (`default` or `plan` only; `agy` `1.5.3` rejects `auto`/`bypassPermissions` with `-32602`, so `auto` and `bypassPermissions` use CLI launch flags `--sandbox` / `--dangerously-skip-permissions` plus runtime restart + `session/resume`) | `apps/desktop/src/main/acp/antigravity-runtime-bridge.ts`, `apps/desktop/src/main/session/backends/acp-backend.ts` |
 | `session/set_config_option` | `used` | Applies reasoning effort / thinking level (`category === 'thought_level'`) | `apps/desktop/src/main/acp/acp-runtime.ts` |
+| `logout`, `session/list`, `session/close` | `backlog` | Present in `(*ACPServer).handleRequest` (`1.5.3`); SuperOne manages auth sign-out and session archive/teardown via `AntigravityAuthService` and process lifecycle | `docs/harness/acp-antigravity/backlog.md` |
 
 ## Session Updates & Permissions
+
+`agy` `1.5.3` (`third_party/jetski/cli/acp/server.go`) emits **only** standard ACP client methods (`session/update`, `session/request_permission`, `elicitation/create`, `fs/read_text_file`, `fs/write_text_file`, `terminal/*`) and zero private `antigravity/*` or `_x.*` JSON-RPC extension notifications.
 
 | Name | Status | Usage | Code |
 |---|---|---|---|
@@ -24,3 +27,4 @@ Version: `1.5.3` (`@agentclientprotocol/sdk` `^1.4.0`)
 | `session/update` (`usage_update`) | `used` | Real-time per-step context window (`used`, `size`) and cumulative per-turn token breakdown (`_meta.antigravityTurnUsage`) merged with conversation SQLite `.db` step metadata | `apps/desktop/src/main/acp/antigravity-site-customize.ts`, `apps/desktop/src/main/acp/antigravity-runtime-bridge.ts`, `apps/desktop/src/main/acp/antigravity-db-usage.ts` |
 | `session/update` (`config_option_update`) | `used` | Updates cached models, modes, and reasoning effort options on the session | `apps/desktop/src/main/acp/acp-event-map.ts` |
 | `session/request_permission` | `used` | Maps tool approval requests, `agy.security.warning` PolicyGuardian advisories, and `interaction_*` structured questions to SuperOne permission prompts | `apps/desktop/src/main/acp/acp-permission-map.ts`, `apps/desktop/src/main/acp/antigravity-protocol.ts` |
+| `elicitation/create` | `used` | Handles structured `ask_question` tool invocations when `clientCapabilities.elicitation.form` is advertised on `initialize` | `apps/desktop/src/main/acp/acp-runtime.ts`, `apps/desktop/src/main/acp/antigravity-runtime-bridge.ts` |

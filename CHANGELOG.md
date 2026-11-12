@@ -15,6 +15,46 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
+- Preview, diff, and editing share one code editor. The gutter marks added, modified, and deleted lines. Hover a hunk to inspect it, revert it, or add it to chat. Edits autosave. Settings adds Vim mode and relative line numbers (`:set rnu`). Vim mode keeps a Chinese IME from taking its shortcuts.
+- Comment on a selection or a diff hunk. The comment uses the same composer chips as a transcript comment. The pin sits on the first quoted line, and the highlight scrolls with the text.
+- Focus a folder to switch to a sibling, step back to its parent, and list only the git changes under it. Search stays inside that folder.
+
+### Changed
+
+- Queued messages have one Steer action, on the desktop and on the phone. Claude delivers the message at the next step and leaves the running tool in place. Codex steers the active turn. Antigravity sends a concurrent prompt and does not cancel the turn. Grok injects the message and leaves the turn running. OpenCode V2 waits for the next safe point. OpenCode V1 keeps the message queued.
+
+### Fixed
+
+- A remote child uses the target harness permission mode and the Claude sandbox when the spawn leaves them unset. An explicit choice still wins. (#190)
+
+### Performance
+
+- Syntax highlighting follows the lines on screen, so a large file stays responsive.
+
+## [0.81.0-alpha] - 2026-11-12
+
+### Added
+
+- Preview, diff, and editing share one code editor. The gutter marks added, modified, and deleted lines. Hover a hunk to inspect it, revert it, or add it to chat. Edits autosave. Settings adds Vim mode and relative line numbers (`:set rnu`). Vim mode keeps a Chinese IME from taking its shortcuts.
+- Comment on a selection or a diff hunk. The comment uses the same composer chips as a transcript comment. The pin sits on the first quoted line, and the highlight scrolls with the text.
+- Focus a folder to switch to a sibling, step back to its parent, and list only the git changes under it. Search stays inside that folder.
+
+### Changed
+
+- Queued messages have one Steer action, on the desktop and on the phone. Claude delivers the message at the next step and leaves the running tool in place. Codex steers the active turn. Antigravity sends a concurrent prompt and does not cancel the turn. Grok injects the message and leaves the turn running. OpenCode V2 waits for the next safe point. OpenCode V1 keeps the message queued.
+
+### Fixed
+
+- A remote child uses the target harness permission mode and the Claude sandbox when the spawn leaves them unset. An explicit choice still wins. (#190)
+
+### Performance
+
+- Syntax highlighting follows the lines on screen, so a large file stays responsive.
+
+## [0.80.0] - 2026-11-12
+
+### Added
+
 - MCP Apps speak ext-apps 2.1. An app can register tools the model calls, and each call waits for consent. The desktop app drawer and Apps panel list global apps and apps for the open thread. A global app opens with no session and no project; the first message starts one. Chat, including the phone, asks before an app tool runs, and downloads from an app stay on the safety list.
 - A harness whose external CLI is missing shows a command that installs it.
 - Remote nodes rewind Claude, Grok, and Codex with the same modes as the desktop. Antigravity has no rewind, so that control stays hidden.
@@ -42,57 +82,6 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Antigravity streams a background command and wakes the turn when it, or a scheduled task, finishes.
 - Typing before the first send keeps a listed harness model. An empty preference still follows the agent.
 - A multi-host device takes its height from the rows on screen. Leftover pane height goes to the lists that still need it, up to the 256px cap.
-
-## [0.80.0-alpha.2] - 2026-11-12
-
-### Added
-
-- Word, Excel, and PowerPoint open read-only in the activity panel and in chat. Legacy Word, Excel, and PowerPoint files stay on the binary path. The phone keeps a file chip. Excel cells stay read-only, and columns and rows can still be resized. A workbook opens on the first sheet. PowerPoint uses its own thumbnail rail.
-- Antigravity schedule, define-subagent, and MCP resource calls have their own cards. Its task and subagent calls use the cards those actions already have.
-
-### Fixed
-
-- Typing before the first send keeps a listed harness model. Grok's config default and Antigravity's current model no longer replace it. An empty preference still follows the agent.
-- A multi-host device takes its height from the rows on screen. A short list is no longer held at the 256px cap, and leftover pane height goes to the lists that still need it. The height change eases over 120ms.
-
-## [0.80.0-alpha.1] - 2026-11-12
-
-### Added
-
-- Remote nodes rewind Claude, Grok, and Codex with the same modes as the desktop. Antigravity has no rewind API, so that control stays hidden.
-- Antigravity `manage_subagents` has its own card for listing agents, listing peers, and stopping one or all of them. The card shows the role, a short conversation id, and the state.
-- Antigravity shows when a compaction starts and when it ends. A manual `/compact` is both. An automatic compaction is read when the next tool call arrives and again when the turn settles.
-- Claude and Codex model lists can be refreshed. A normal open still uses the 24-hour cache, and a refresh keeps the current list on screen until the new one arrives. Collaboration, suggested tasks, settings, and the other chat pickers share that action. A phone paired with this desktop still reads the saved catalog. ACP chat models come from the live session, so that selector has no refresh button.
-
-### Changed
-
-- Grok and Antigravity are separate harnesses. An old `acp` session still opens. A new session is stored as Grok or Antigravity. Custom experimental ACP commands are no longer launched. A custom agent keeps its own mark, and `/recap` intercepts only a known Grok agent.
-
-### Fixed
-
-- A suggested task lists only harnesses this host can start. On a remote card, harnesses the node does not advertise are hidden too.
-- Claude's context ring uses the window the session reports when the catalog has no entry, so a 1M model is not shown against a hardcoded 200k. An empty model selection no longer skips the session model. (#182)
-- Grok and Antigravity usage gauges stay separate. A stale in-flight fetch is ignored, and switching to an empty draft clears the previous rate limit. The harness you picked stays selected when a new session changes project.
-- A sent draft is consumed on every known host, so the previous node cannot offer it again. A paste with no plain text restores from the saved document, including after the editor remounts. (#188)
-- Antigravity streams a background command and wakes the parent when that command or a scheduled task finishes. A task asked to keep running does not hold the turn open.
-
-## [0.80.0-alpha] - 2026-11-11
-
-### Added
-
-- MCP Apps speak ext-apps 2.1. An app can register tools the model calls, and each call waits for consent. The app drawer and the Apps panel list global apps and apps for the open thread. A global app opens with no session and no project; the first message starts one. The phone asks before an app tool runs, and a download whose name is on the blocklist is refused.
-- Settings shows a command that installs a harness's missing external CLI.
-
-### Fixed
-
-- Antigravity tool calls that arrive before the session is ready still map onto SuperOne tools.
-- Antigravity uses the config already on the machine, and the SuperOne MCP bridge reaches the host.
-- A long session title ellipsizes inside the sidebar row. The hover card anchors to the visible row.
-- The usage hub matches a node's default Codex login. A session that omits its account keeps that login's email on the one OpenAI card.
-- Desktop hosts and CLI nodes advertise Antigravity on its own, so a ready install appears in the remote picker.
-- Ending a stream keeps a reply's blocks on screen. (#184)
-- A short transcript keeps its place while scrolling up through a turn that is still streaming. (#184)
-- Remote Claude sessions keep bash working-tree diffs, including subagent calls. (#183)
 
 ## [0.79.0] - 2026-11-11
 

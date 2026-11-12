@@ -173,7 +173,7 @@ export const AUTOMATION_AGENT_CONFIG_INPUT_SCHEMA = {
     },
     sandboxMode: { type: 'string', enum: ['off', 'on', 'auto'], description: 'Claude sandbox (ignored by other harnesses).' },
     apiProviderId: {
-      type: ['string', 'null'],
+      type: 'string',
       description: 'Optional third-party AI provider credential id (claude/codex).',
     },
     acpAgentId: { type: 'string', description: 'ACP only: agent id (e.g. grok-build).' },
@@ -260,7 +260,7 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
                     type: 'boolean',
                     description: 'Codex only. Enable the selected model\'s Fast service tier for this agent session.',
                   },
-                  apiProviderId: { type: ['string', 'null'] },
+                  apiProviderId: { type: 'string' },
                   permissionMode: {
                     type: 'string',
                     enum: ['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto', 'agent'],
@@ -377,8 +377,8 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
             properties: {
               key: { type: 'string', description: 'The settings field key, exactly as returned by config_read.' },
               value: {
-                type: ['string', 'number', 'boolean', 'null', 'array', 'object'],
-                description: 'The new value. Use null (or "") to reset a clearable field to its default.',
+                type: ['string', 'number', 'boolean', 'array', 'object'],
+                description: 'The new value. Use "" to reset a clearable field to its default.',
               },
             },
             required: ['key', 'value'],
@@ -692,7 +692,7 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
           description: SESSION_READ_AROUND_DESCRIPTION,
         },
         cursor: {
-          type: ['integer', 'null'],
+          type: 'integer',
           description: SESSION_READ_CURSOR_DESCRIPTION,
         },
         limit: { type: 'integer', minimum: 1, maximum: 50, description: SESSION_READ_LIMIT_DESCRIPTION },

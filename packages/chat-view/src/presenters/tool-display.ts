@@ -1,7 +1,7 @@
 import type { ContentBlock, ImageGenerationItem, VideoGenerationItem } from '@superone/shared/agent-types'
 import { shortenPath } from '@superone/shared/path-display'
 import { coordinationToolSummary } from '@superone/shared/coordination-tool-summary'
-import { isAlwaysHiddenToolName, isSubagentToolName, normalizeTranscriptTool, parseMcpToolName } from '@superone/shared/tool-ui'
+import { isAlwaysHiddenToolName, isSubagentToolName, isSuperoneMcpServerName, normalizeTranscriptTool, parseMcpToolName } from '@superone/shared/tool-ui'
 import { CODEX_IMAGE_GENERATION_TOOL } from '@superone/shared/codex-content'
 import { DEVICE_AGENT_TOOL_NAMES } from '@superone/shared/superone-host-owned-tools'
 import { extractPartialToolInput } from '@superone/chat-core'
@@ -103,7 +103,7 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
   // MCP tools: `mcp__{server}__{tool}` (Claude/Codex) or `{server}__{tool}` (Grok).
   const mcpTool = parseMcpToolName(toolName)
   if (mcpTool) {
-    const glyph = mcpTool.serverName === 'superone' ? superoneToolGlyph(mcpTool.mcpToolName) : null
+    const glyph = isSuperoneMcpServerName(mcpTool.serverName) ? superoneToolGlyph(mcpTool.mcpToolName) : null
     return { icon: glyph ?? 'mcp', summary: '' }
   }
 

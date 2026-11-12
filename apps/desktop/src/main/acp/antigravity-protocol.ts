@@ -4,7 +4,7 @@ import type { SessionUpdate } from '@agentclientprotocol/sdk'
 import type { PermissionMode } from '@superone/shared/agent-types'
 import { looksLikeComputerUseOutline } from '@superone/shared/computer-use-result-shape'
 import { looksLikeSessionArchiveToon } from '@superone/shared/session-archive-result-shape'
-import { claudeMcpToolRuleName, formatAgentToolOutput, parseMcpToolName, SUPERONE_KNOWN_MCP_BARE_TOOLS } from '@superone/shared/tool-ui'
+import { claudeMcpToolRuleName, formatAgentToolOutput, isSuperoneMcpServerName, parseMcpToolName, SUPERONE_KNOWN_MCP_BARE_TOOLS } from '@superone/shared/tool-ui'
 import {
   applyAntigravityBuiltinToolInput, compactDiffPair, inferAntigravityWireTool,
   isAntigravityNonBashExecuteTool, isAntigravityTranscriptOutputTool, resolveAntigravityTranscriptToolOutput,
@@ -176,6 +176,26 @@ function pickNumber(obj: Record<string, unknown>, keys: readonly string[]): numb
   return undefined
 }
 
+function canonicalAntigravityMcpServer(server: string): string {
+  return isSuperoneMcpServerName(server) ? 'superone' : server
+}
+
+function parseMcpArgumentsRecord(rawArgs: unknown): Record<string, unknown> | null {
+  if (isRecord(rawArgs)) return rawArgs
+  if (typeof rawArgs === 'string') {
+    const trimmed = rawArgs.trim()
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(trimmed)
+        if (isRecord(parsed)) return parsed
+      } catch {
+        return null
+      }
+    }
+  }
+  return null
+}
+
 function resolveAntigravityMcpMeta(
   title: string | undefined,
   strippedName: string | undefined,
@@ -187,7 +207,7 @@ function resolveAntigravityMcpMeta(
   const mcpObj = metaObj && isRecord(metaObj.mcp) ? metaObj.mcp : null
   const prompt = metaObj && typeof metaObj.prompt === 'string' && metaObj.prompt.trim() ? metaObj.prompt.trim() : undefined
   if (mcpObj && typeof mcpObj.server === 'string' && typeof mcpObj.tool === 'string') {
-    const server = mcpObj.server.trim()
+    const server = canonicalAntigravityMcpServer(mcpObj.server.trim())
     const tool = mcpObj.tool.trim()
     if (server && tool) return { server, tool, ...(prompt ? { prompt } : {}) }
   }
@@ -196,16 +216,16 @@ function resolveAntigravityMcpMeta(
     return null
   }
   if (inObj) {
-    const server = pickNonEmptyString(inObj, ['server', 'ServerName'])
-    const tool = pickNonEmptyString(inObj, ['tool', 'ToolName'])
-    if (server && tool && (isRecord(inObj.arguments) || isRecord(inObj.Arguments) || strippedName === 'call_mcp_tool')) {
-      return { server, tool, ...(prompt ? { prompt } : {}) }
+    const server = pickNonEmptyString(inObj, ['server', 'ServerName', 'serverName', 'server_name'])
+    const tool = pickNonEmptyString(inObj, ['tool', 'ToolName', 'toolName', 'tool_name'])
+    if (server && tool) {
+      return { server: canonicalAntigravityMcpServer(server), tool, ...(prompt ? { prompt } : {}) }
     }
   }
   for (const candidate of [strippedName, title]) {
     if (!candidate) continue
     const parsed = parseMcpToolName(candidate.trim())
-    if (parsed) return { server: parsed.serverName, tool: parsed.mcpToolName, ...(prompt ? { prompt } : {}) }
+    if (parsed) return { server: canonicalAntigravityMcpServer(parsed.serverName), tool: parsed.mcpToolName, ...(prompt ? { prompt } : {}) }
   }
   if (
     strippedName &&
@@ -234,12 +254,13 @@ export function normalizeAntigravityRawInput(
   const mcpInfo = resolveAntigravityMcpMeta(title, strippedToolName, meta, kind, inObj)
 
   if (mcpInfo) {
-    const rawArgs = isRecord(inObj.arguments) ? inObj.arguments : isRecord(inObj.Arguments) ? inObj.Arguments : {}
+    const rawArgs = parseMcpArgumentsRecord(inObj.arguments) ?? parseMcpArgumentsRecord(inObj.Arguments) ?? {}
     const inner = { ...rawArgs }
     for (const [k, v] of Object.entries(inObj)) {
       if (
         k !== 'arguments' && k !== 'Arguments' && k !== 'server' && k !== 'ServerName' &&
-        k !== 'tool' && k !== 'ToolName' && k !== 'toolAction' && k !== 'toolSummary' && !(k in inner)
+        k !== 'serverName' && k !== 'server_name' && k !== 'tool' && k !== 'ToolName' &&
+        k !== 'toolName' && k !== 'tool_name' && k !== 'toolAction' && k !== 'toolSummary' && !(k in inner)
       ) {
         inner[k] = v
       }

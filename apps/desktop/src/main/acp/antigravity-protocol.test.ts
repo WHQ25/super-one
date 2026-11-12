@@ -1372,5 +1372,90 @@ describe('antigravity-protocol', () => {
       rmSync(tmpRoot, { recursive: true, force: true })
     }
   })
+
+  it('routes lazy call_mcp_tool envelopes for SuperOne variants and third-party MCP servers', () => {
+    const superoneDevCall = normalizeAntigravitySessionUpdate({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'lazy_so_dev',
+      title: 'Running call_mcp_tool',
+      kind: 'other',
+      status: 'in_progress',
+      rawInput: {
+        ServerName: 'superone-dev',
+        ToolName: 'widget_show',
+        Arguments: JSON.stringify({ title: 'Status Chart', widget_code: '<div />' }),
+      },
+    } as unknown as SessionUpdate)
+    expect(mapSessionUpdate(superoneDevCall, { messageId: 'msg_lazy_1' })).toEqual([
+      {
+        type: 'content_delta',
+        messageId: 'msg_lazy_1',
+        delta: {
+          type: 'tool_use',
+          toolUseId: 'lazy_so_dev',
+          toolName: 'mcp__superone__widget_show',
+          toolFilePath: undefined,
+          toolSummary: undefined,
+          input: JSON.stringify({ title: 'Status Chart', widget_code: '<div />' }),
+          status: 'streaming',
+        },
+      },
+    ])
+
+    const context7Call = normalizeAntigravitySessionUpdate({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'lazy_ctx7',
+      title: 'Running call_mcp_tool',
+      kind: 'other',
+      status: 'in_progress',
+      rawInput: {
+        ServerName: 'context7',
+        ToolName: 'query-docs',
+        Arguments: { libraryId: '/reactjs/react.dev', query: 'useEffect' },
+      },
+    } as unknown as SessionUpdate)
+    expect(mapSessionUpdate(context7Call, { messageId: 'msg_lazy_2' })).toEqual([
+      {
+        type: 'content_delta',
+        messageId: 'msg_lazy_2',
+        delta: {
+          type: 'tool_use',
+          toolUseId: 'lazy_ctx7',
+          toolName: 'mcp__context7__query-docs',
+          toolFilePath: undefined,
+          toolSummary: undefined,
+          input: JSON.stringify({ libraryId: '/reactjs/react.dev', query: 'useEffect' }),
+          status: 'streaming',
+        },
+      },
+    ])
+
+    const zeroArgCall = normalizeAntigravitySessionUpdate({
+      sessionUpdate: 'tool_call',
+      toolCallId: 'lazy_mem',
+      title: 'Memory stats',
+      kind: 'other',
+      status: 'in_progress',
+      rawInput: {
+        serverName: 'agent-memory',
+        toolName: 'memory_stats',
+      },
+    } as unknown as SessionUpdate)
+    expect(mapSessionUpdate(zeroArgCall, { messageId: 'msg_lazy_3' })).toEqual([
+      {
+        type: 'content_delta',
+        messageId: 'msg_lazy_3',
+        delta: {
+          type: 'tool_use',
+          toolUseId: 'lazy_mem',
+          toolName: 'mcp__agent-memory__memory_stats',
+          toolFilePath: undefined,
+          toolSummary: undefined,
+          input: '{}',
+          status: 'streaming',
+        },
+      },
+    ])
+  })
 })
 

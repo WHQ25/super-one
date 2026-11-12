@@ -7,6 +7,7 @@
  */
 
 import type { MiniAppToolDefinition } from '@superone/shared/miniapp-types'
+import { isSuperoneMcpServerName, parseMcpToolName } from '@superone/shared/tool-ui'
 
 export interface MiniAppLike {
   id: string
@@ -100,8 +101,9 @@ export function resolveMiniAppToolIdentity(
 
 /** Whether a Claude-style full tool name is a mini-app tool call (fixed or legacy). */
 export function isMiniAppMcpToolName(fullToolName: string): boolean {
-  if (!fullToolName.startsWith('mcp__superone__')) return false
-  const bare = fullToolName.slice('mcp__superone__'.length)
+  const mcp = parseMcpToolName(fullToolName)
+  if (!mcp || !isSuperoneMcpServerName(mcp.serverName)) return false
+  const bare = mcp.mcpToolName
   if (bare === 'miniapp_call') return true
   return bare.includes('__')
 }

@@ -97,11 +97,10 @@ export const HOST_ACTION_SETUP_DESCRIPTORS: HostActionSuperoneToolDescriptor[] =
                   "string",
                   "number",
                   "boolean",
-                  "null",
                   "array",
                   "object"
                 ],
-                "description": "The new value. Use null (or \"\") to reset a clearable field to its default."
+                "description": "The new value. Use \"\" to reset a clearable field to its default."
               }
             },
             "required": [

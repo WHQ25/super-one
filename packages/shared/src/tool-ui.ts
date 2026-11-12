@@ -244,6 +244,11 @@ export const SUPERONE_KNOWN_MCP_BARE_TOOLS = new Set<string>([
  * cannot otherwise distinguish a server name from a native/third-party tool id.
  */
 const MCP_BARE_SEGMENT_RE = /^[a-zA-Z0-9_.-]+$/
+const SUPERONE_MCP_SERVER_NAMES = new Set(['superone', 'superone-alpha', 'superone-dev'])
+
+export function isSuperoneMcpServerName(name: string): boolean {
+  return SUPERONE_MCP_SERVER_NAMES.has(name)
+}
 
 export function parseMcpToolName(toolName: string): { serverName: string; mcpToolName: string } | null {
   if (!toolName) return null
@@ -252,10 +257,12 @@ export function parseMcpToolName(toolName: string): { serverName: string; mcpToo
     if (/\s/.test(prefixed[1]) || /\s/.test(prefixed[2])) return null
     return { serverName: prefixed[1], mcpToolName: prefixed[2] }
   }
-  for (const prefix of ['superone_', 'mcp_superone_'] as const) {
-    if (toolName.startsWith(prefix)) {
-      const bare = toolName.slice(prefix.length)
-      if (SUPERONE_KNOWN_MCP_BARE_TOOLS.has(bare)) return { serverName: 'superone', mcpToolName: bare }
+  for (const serverName of SUPERONE_MCP_SERVER_NAMES) {
+    for (const prefix of [`${serverName}_`, `mcp_${serverName}_`]) {
+      if (toolName.startsWith(prefix)) {
+        const bare = toolName.slice(prefix.length)
+        if (SUPERONE_KNOWN_MCP_BARE_TOOLS.has(bare)) return { serverName, mcpToolName: bare }
+      }
     }
   }
   const delimiter = toolName.indexOf('__')
@@ -320,7 +327,7 @@ export function isAlwaysHiddenToolName(toolName: string): boolean {
   const harnessKey = ui.trim().toLowerCase().replace(/[^a-z0-9]/g, '')
   if (HIDDEN_HARNESS_TOOL_KEYS.has(harnessKey)) return true
   const mcp = parseMcpToolName(ui) ?? parseMcpToolName(toolName)
-  return mcp?.serverName === 'superone' && HIDDEN_SUPERONE_MCP_TOOLS.has(mcp.mcpToolName)
+  return Boolean(mcp && isSuperoneMcpServerName(mcp.serverName) && HIDDEN_SUPERONE_MCP_TOOLS.has(mcp.mcpToolName))
 }
 
 /**

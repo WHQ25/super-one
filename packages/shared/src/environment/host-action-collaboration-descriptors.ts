@@ -126,10 +126,7 @@ export const HOST_ACTION_COLLABORATION_DESCRIPTORS: HostActionSuperoneToolDescri
                     "description": "Codex only. Enable the selected model's Fast service tier for this agent session."
                   },
                   "apiProviderId": {
-                    "type": [
-                      "string",
-                      "null"
-                    ]
+                    "type": "string"
                   },
                   "permissionMode": {
                     "type": "string",

@@ -123,12 +123,15 @@ export function buildAcpSessionMcpServers(opts: {
    * Default true keeps non-Grok sessions unchanged.
    */
   includeProjectScope?: boolean
+  omitSuperone?: boolean
 }): McpServer[] {
   const servers: McpServer[] = []
   const reserved = new Set<string>()
   const caps = mcpTransportCapsFromAgent(opts.agentCapabilities, opts.agentId)
 
-  if (opts.superoneSessionId) {
+  if (opts.omitSuperone) {
+    reserved.add(SUPERONE_ACP_MCP_NAME)
+  } else if (opts.superoneSessionId) {
     const superone = buildSuperoneAcpMcpServer(opts.superoneSessionId, caps)
     if (superone) {
       servers.push(superone)

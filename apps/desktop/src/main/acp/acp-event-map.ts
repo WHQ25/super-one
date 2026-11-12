@@ -21,6 +21,7 @@ import {
   applyDescriptionPersonaLabel,
   claudeMcpToolRuleName,
   formatAgentToolOutput,
+  isSuperoneMcpServerName,
   normalizeCustomBuiltinInput,
   normalizeToolIdKey,
   parseMcpToolName,
@@ -612,6 +613,26 @@ function isUseToolEnvelope(tool: AcpToolLike, raw: Record<string, unknown>): boo
     || uiToolNameFromId(typeof tool.title === 'string' ? tool.title : null) === 'UseTool'
 }
 
+function parseMcpEnvelopeArgs(value: unknown): Record<string, unknown> | null {
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    return { ...(value as Record<string, unknown>) }
+  }
+  if (typeof value === 'string') {
+    const trimmed = value.trim()
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(trimmed)
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          return { ...(parsed as Record<string, unknown>) }
+        }
+      } catch {
+        return null
+      }
+    }
+  }
+  return null
+}
+
 function unwrapMcpEnvelope(tool: AcpToolLike, raw: Record<string, unknown>): NormalizedAcpTool | null {
   if (isUseToolEnvelope(tool, raw)) {
     const id = raw.tool_name
@@ -626,30 +647,27 @@ function unwrapMcpEnvelope(tool: AcpToolLike, raw: Record<string, unknown>): Nor
   const metaTool = typeof mcpMeta.tool === 'string' ? mcpMeta.tool.trim() : ''
   const rawTitle = typeof tool.title === 'string' ? tool.title.trim() : ''
   const parsedFromTitle = rawTitle ? parseMcpToolName(rawTitle) : null
-  const rawServer =
-    typeof raw.server === 'string'
-      ? raw.server.trim()
-      : typeof raw.ServerName === 'string'
-        ? raw.ServerName.trim()
-        : ''
-  const rawTool =
-    typeof raw.tool === 'string'
-      ? raw.tool.trim()
-      : typeof raw.ToolName === 'string'
-        ? raw.ToolName.trim()
-        : ''
+  const rawServer = pickString(raw, ['server', 'ServerName', 'serverName', 'server_name'])?.trim() ?? ''
+  const rawTool = pickString(raw, ['tool', 'ToolName', 'toolName', 'tool_name'])?.trim() ?? ''
   const serverName = metaServer || parsedFromTitle?.serverName || rawServer || ''
   const mcpToolName = metaTool || parsedFromTitle?.mcpToolName || rawTool || ''
   if (!serverName || !mcpToolName) return null
-  const toolName = claudeMcpToolRuleName(serverName, mcpToolName)
-  const innerArgs =
-    raw.arguments && typeof raw.arguments === 'object' && !Array.isArray(raw.arguments)
-      ? { ...(raw.arguments as Record<string, unknown>) }
-      : raw.Arguments && typeof raw.Arguments === 'object' && !Array.isArray(raw.Arguments)
-        ? { ...(raw.Arguments as Record<string, unknown>) }
-        : { ...raw }
-  delete innerArgs.arguments
-  delete innerArgs.Arguments
+  const canonicalServer = isSuperoneMcpServerName(serverName) ? 'superone' : serverName
+  const toolName = claudeMcpToolRuleName(canonicalServer, mcpToolName)
+  const parsedArgs = parseMcpEnvelopeArgs(raw.arguments) ?? parseMcpEnvelopeArgs(raw.Arguments)
+  const innerArgs = parsedArgs ?? { ...raw }
+  if (!parsedArgs) {
+    delete innerArgs.arguments
+    delete innerArgs.Arguments
+    delete innerArgs.server
+    delete innerArgs.ServerName
+    delete innerArgs.serverName
+    delete innerArgs.server_name
+    delete innerArgs.tool
+    delete innerArgs.ToolName
+    delete innerArgs.toolName
+    delete innerArgs.tool_name
+  }
   const rawSummary =
     typeof raw.toolSummary === 'string' && raw.toolSummary.trim()
       ? raw.toolSummary.trim()

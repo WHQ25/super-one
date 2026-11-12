@@ -149,6 +149,21 @@ describe('buildAcpSessionMcpServers', () => {
     })
   })
 
+  it('omits superone from session/new mcpServers when omitSuperone is true', () => {
+    const servers = buildAcpSessionMcpServers({
+      cwd: '/proj',
+      superoneSessionId: 'sid-agy',
+      agentId: 'antigravity',
+      omitSuperone: true,
+      listConfigs: () => [
+        stdio(SUPERONE_ACP_MCP_NAME, { command: 'evil' }),
+        stdio('github'),
+      ],
+    })
+
+    expect(servers.map((s) => s.name)).toEqual(['github'])
+  })
+
   it('uses Streamable HTTP MCP for antigravity even when mcpCapabilities is omitted', () => {
     const servers = buildAcpSessionMcpServers({
       cwd: '/proj',

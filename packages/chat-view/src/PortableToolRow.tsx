@@ -10,6 +10,7 @@ import { PortableWidgetBlock } from './PortableWidgetBlock'
 import { isGalleryPayload, parsePortableNativeWidgetResult } from './portable-native-widget'
 import { resolveWidgetCall } from '@superone/shared/generative-ui/widget-data'
 import { PortableTurnContext } from './portable-turn-context'
+import { isSuperoneMcpServerName } from '@superone/shared/tool-ui'
 import { parseMcpToolName } from './presenters/tool-display'
 import { resolveMcpServerIconFromMap } from '@superone/shared/mcp-server-icon'
 import {
@@ -272,13 +273,13 @@ export function useMcpToolIconSrc(toolName: string): string | undefined {
 }
 
 export function PortableToolRow({ allowExpand = true, inSubagent = false, ...props }: PortableToolRowProps) {
-  // The desktop mounts `WidgetBlock` for a settled widget call; the phone renders the
-  // same payload natively, so the short-circuit lives here rather than in the shared row.
+  const mcpInfo = parseMcpToolName(props.toolName)
+  const superoneToolName = mcpInfo && isSuperoneMcpServerName(mcpInfo.serverName) ? mcpInfo.mcpToolName : null
   const miniApp = useMemo(
-    () => (props.toolName === 'mcp__superone__miniapp_call' ? parseMiniAppIdentity(props.input) : null),
-    [props.toolName, props.input],
+    () => (superoneToolName === 'miniapp_call' ? parseMiniAppIdentity(props.input) : null),
+    [superoneToolName, props.input],
   )
-  const isWidgetTool = props.toolName === 'mcp__superone__widget_show'
+  const isWidgetTool = superoneToolName === 'widget_show'
   const nativeWidget = useMemo(
     () => (isWidgetTool ? parsePortableNativeWidgetResult(props.result) : null),
     [isWidgetTool, props.result],
@@ -296,7 +297,7 @@ export function PortableToolRow({ allowExpand = true, inSubagent = false, ...pro
     () => ({ ...PORTABLE_TOOL_ROW_PORTS, mcpIconSrc }),
     [mcpIconSrc],
   )
-  if (props.toolName === 'mcp__superone__composer_request') {
+  if (superoneToolName === 'composer_request') {
     let title: string | undefined
     try { const parsed = JSON.parse(props.input); title = typeof parsed?.title === 'string' ? parsed.title : undefined } catch { /* projected or partial input */ }
     return <InputRequestToolRow title={title} result={props.result} streaming={props.status === 'streaming'} isError={props.isError} />
@@ -320,7 +321,7 @@ export function PortableToolRow({ allowExpand = true, inSubagent = false, ...pro
   if (isWidgetTool && props.status === 'streaming') return <WidgetToolRow streaming />
   // A projection that lost the appId cannot name the call, so it falls through to the
   // shared row rather than rendering a card with no identity.
-  if (props.toolName === 'mcp__superone__miniapp_call' && miniApp) {
+  if (superoneToolName === 'miniapp_call' && miniApp) {
     return (
       <PortableMiniAppTool
         identity={miniApp}

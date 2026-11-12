@@ -138,6 +138,7 @@ import { describeAcpRequestFailure } from './acp-request-error'
 import {
   ANTIGRAVITY_CLIENT_INFO,
   advanceAntigravityThinkingStepAfterTools,
+  antigravityPermissionLaunchProfile,
   antigravitySessionMeta,
   applyAntigravityPermissionMode,
   authenticateAntigravityRuntime,
@@ -174,8 +175,8 @@ import {
   cancelAntigravitySubagentWakeupWait,
   clearUnflushedAntigravityWakeupReplay,
   disposeAntigravitySubagentTracker,
-  hasUnflushedAntigravityWakeupReplay,
   noteAntigravitySubagentEvents,
+  shouldDropAntigravityPreUserReplay,
 } from './antigravity-subagent'
 import { pushBashOutput } from '../bash-output-watcher'
 import type {
@@ -519,6 +520,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
   let stream: Stream
   let exitInfo: { code: number | null; signal: NodeJS.Signals | null; stderr: string } | null = null
 
+  let antigravityGlobalMcpReady = false
   if (opts.streamFactory) {
     const custom = await opts.streamFactory(launch)
     stream = custom.stream
@@ -532,7 +534,14 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       launch.command = resolved.command
       launch.args = resolved.args
     } else if (launch.agentId === 'antigravity') {
-      spawnOptions = await prepareAntigravityProcessLaunch(launch, opts.launch)
+      const antigravityLaunch = await prepareAntigravityProcessLaunch(
+        launch,
+        opts.launch,
+        opts.permissionMode,
+        opts.superoneSessionId,
+      )
+      antigravityGlobalMcpReady = Boolean(antigravityLaunch.globalSuperoneMcpReady)
+      spawnOptions = antigravityLaunch
     }
     try {
       processHandle = spawnAcpProcess(launch, spawnOptions)
@@ -913,9 +922,11 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       cwd: launch.cwd,
       superoneSessionId: opts.superoneSessionId,
       agentCapabilities,
+      agentId: launch.agentId,
       includeProjectScope: launch.agentId !== 'grok-build',
+      omitSuperone: antigravityGlobalMcpReady,
     })
-    mcpAttached = mcpServers.some((s) => s.name === 'superone')
+    mcpAttached = antigravityGlobalMcpReady || mcpServers.some((s) => s.name === 'superone')
     const extraRoots = fsRoots.slice(1)
     const supportsExtraRoots = agentCapabilities?.sessionCapabilities.additionalDirectories ?? false
     const permissionMeta = grokSessionPermissionMeta(opts.permissionMode, {
@@ -1381,16 +1392,26 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         if (launch.agentId === 'antigravity') {
           if (message.update.sessionUpdate === 'user_message_chunk') {
             turnScope.sawUserMessageChunk = true
-            clearUnflushedAntigravityWakeupReplay(activeSession.sessionId)
+            const streamedPostStall = clearUnflushedAntigravityWakeupReplay(activeSession.sessionId)
+            if (streamedPostStall && turn) {
+              if (turn.currentStepHasThinking && !turn.currentStepThinkingClosed) {
+                closeAntigravityThinkingStep(
+                  turn,
+                  turn.lastMessageId ?? turn.primaryMessageId,
+                  turn.onEvent,
+                )
+              }
+              turn.stepIndex += 1
+              turn.currentStepHasThinking = false
+              turn.currentStepThinkingClosed = false
+              turn.currentStepHasThoughtText = false
+              turn.pendingThoughtNewline = false
+              turn.stepStartedAt = Date.now()
+            }
           } else if (
             turn &&
             !turnScope.sawUserMessageChunk &&
-            hasUnflushedAntigravityWakeupReplay(activeSession.sessionId) &&
-            (message.update.sessionUpdate === 'agent_thought_chunk' ||
-              message.update.sessionUpdate === 'agent_message_chunk' ||
-              message.update.sessionUpdate === 'tool_call' ||
-              message.update.sessionUpdate === 'tool_call_update' ||
-              message.update.sessionUpdate === 'usage_update')
+            shouldDropAntigravityPreUserReplay(activeSession.sessionId, message.update)
           ) {
             log.debug(
               '[acp-runtime] dropping stale pre-user_message_chunk antigravity wakeup replay update=%s',
@@ -1557,6 +1578,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
               isPromptActive: () => Boolean(liveTurn()),
               ensureMessage: () => ensureAgentInitiatedMessage(null),
               completeMessage: () => completeAgentInitiated('complete'),
+              permissionProfile: () => antigravityPermissionLaunchProfile(currentPermissionMode),
             },
           )
         }

@@ -1,4 +1,4 @@
-import { claudeMcpToolRuleName, normalizeToolIdKey, parseMcpToolName, uiToolNameFromId } from './tool-ui'
+import { claudeMcpToolRuleName, isSuperoneMcpServerName, normalizeToolIdKey, parseMcpToolName, uiToolNameFromId } from './tool-ui'
 
 export const FULL_RESULT_TOOL_NAMES = new Set([
   'Bash',
@@ -214,6 +214,26 @@ export function normalizeCustomBuiltinInput(
   }
 }
 
+function parseTranscriptMcpArgs(rawArgs: unknown): Record<string, unknown> | null {
+  if (rawArgs && typeof rawArgs === 'object' && !Array.isArray(rawArgs)) {
+    return rawArgs as Record<string, unknown>
+  }
+  if (typeof rawArgs === 'string') {
+    const trimmed = rawArgs.trim()
+    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
+      try {
+        const parsed = JSON.parse(trimmed)
+        if (parsed && typeof parsed === 'object' && !Array.isArray(parsed)) {
+          return parsed as Record<string, unknown>
+        }
+      } catch {
+        return null
+      }
+    }
+  }
+  return null
+}
+
 export function normalizeTranscriptTool(
   rawName: string,
   rawInput: Record<string, unknown>,
@@ -228,15 +248,12 @@ export function normalizeTranscriptTool(
     return { toolName: `mcp__${envelopeId}`, input: mcpInput }
   }
   if (normalizedRawKey === 'call_mcp_tool') {
-    const server = pickStr(rawInput, ['ServerName', 'server']) ?? ''
-    const tool = pickStr(rawInput, ['ToolName', 'tool']) ?? ''
+    const server = pickStr(rawInput, ['ServerName', 'server', 'serverName', 'server_name']) ?? ''
+    const tool = pickStr(rawInput, ['ToolName', 'tool', 'toolName', 'tool_name']) ?? ''
     if (server && tool) {
-      const args = rawInput.Arguments && typeof rawInput.Arguments === 'object' && !Array.isArray(rawInput.Arguments)
-        ? rawInput.Arguments as Record<string, unknown>
-        : rawInput.arguments && typeof rawInput.arguments === 'object' && !Array.isArray(rawInput.arguments)
-          ? rawInput.arguments as Record<string, unknown>
-          : {}
-      return { toolName: claudeMcpToolRuleName(server, tool), input: { ...args } }
+      const canonicalServer = isSuperoneMcpServerName(server) ? 'superone' : server
+      const args = parseTranscriptMcpArgs(rawInput.Arguments) ?? parseTranscriptMcpArgs(rawInput.arguments) ?? {}
+      return { toolName: claudeMcpToolRuleName(canonicalServer, tool), input: { ...args } }
     }
   }
   const parsedMcp = parseMcpToolName(rawName)
@@ -246,7 +263,8 @@ export function normalizeTranscriptTool(
       delete input.toolSummary
       delete input.toolAction
     }
-    return { toolName: claudeMcpToolRuleName(parsedMcp.serverName, parsedMcp.mcpToolName), input }
+    const canonicalServer = isSuperoneMcpServerName(parsedMcp.serverName) ? 'superone' : parsedMcp.serverName
+    return { toolName: claudeMcpToolRuleName(canonicalServer, parsedMcp.mcpToolName), input }
   }
 
   const toolName = uiToolNameFromId(rawName) ?? rawName

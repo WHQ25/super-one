@@ -372,10 +372,7 @@ export const HOST_ACTION_ARCHIVE_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
           "description": SESSION_READ_AROUND_DESCRIPTION
         },
         "cursor": {
-          "type": [
-            "integer",
-            "null"
-          ],
+          "type": "integer",
           "description": SESSION_READ_CURSOR_DESCRIPTION
         },
         "limit": {

@@ -1,5 +1,6 @@
 import { FileText } from 'lucide-react'
 import type { ReactNode } from 'react'
+import { isSuperoneMcpServerName, parseMcpToolName } from '@superone/shared/tool-ui'
 import { requestNative } from './bridge'
 import { BrowserToolBlockPresenter } from './presenters/BrowserToolBlock'
 import { getBrowserOp, type BrowserOp } from './presenters/browser-tool-display'
@@ -30,8 +31,8 @@ function portableToolParams(input: unknown): Record<string, unknown> {
 }
 
 function portableSuperoneToolName(toolName: string): string | null {
-  const prefix = 'mcp__superone__'
-  return toolName.startsWith(prefix) ? toolName.slice(prefix.length) : null
+  const parsed = parseMcpToolName(toolName)
+  return parsed && isSuperoneMcpServerName(parsed.serverName) ? parsed.mcpToolName : null
 }
 
 export function portableBrowserOp(toolName: string, input: unknown): BrowserOp | null {

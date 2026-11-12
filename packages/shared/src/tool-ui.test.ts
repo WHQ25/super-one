@@ -208,6 +208,22 @@ describe('normalizeTranscriptTool', () => {
       toolName: 'mcp__superone__session_rename',
       input: { title: 'x' },
     })
+    expect(normalizeTranscriptTool('call_mcp_tool', {
+      ServerName: 'superone-dev',
+      ToolName: 'session_read',
+      Arguments: '{"sessionId":"s1"}',
+    })).toEqual({
+      toolName: 'mcp__superone__session_read',
+      input: { sessionId: 's1' },
+    })
+    expect(normalizeTranscriptTool('call_mcp_tool', {
+      ServerName: 'context7',
+      ToolName: 'query-docs',
+      Arguments: '{"query":"hooks"}',
+    })).toEqual({
+      toolName: 'mcp__context7__query-docs',
+      input: { query: 'hooks' },
+    })
   })
 
   it('aliases Cursor SDK fields onto Claude-shaped ToolBlock input', () => {

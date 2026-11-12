@@ -176,10 +176,7 @@ export const HOST_ACTION_AUTOMATION_DESCRIPTORS: HostActionSuperoneToolDescripto
               "description": "Claude sandbox (ignored by other harnesses)."
             },
             "apiProviderId": {
-              "type": [
-                "string",
-                "null"
-              ],
+              "type": "string",
               "description": "Optional third-party AI provider credential id (claude/codex)."
             },
             "acpAgentId": {

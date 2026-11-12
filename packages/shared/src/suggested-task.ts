@@ -13,7 +13,7 @@
  */
 import type { ChatMessage, SessionAgentLaunchSettings, SessionAgentProfile } from './agent-types'
 import { readableContent } from './codex-content'
-import { parseMcpToolName } from './tool-ui'
+import { isSuperoneMcpServerName, parseMcpToolName } from './tool-ui'
 export { parseSuggestedTaskChoice, suggestedTaskSettings, suggestedTaskRunSettings, suggestedTaskInitialChoice, suggestedTaskBranchName } from './suggested-task-launch'
 
 export const SUGGEST_TASK_TOOL_NAME = 'session_suggest_task' as const
@@ -76,7 +76,7 @@ function record(value: unknown): Row {
 export function isSuggestTaskTool(toolName: unknown): boolean {
   if (typeof toolName !== 'string') return false
   const mcp = parseMcpToolName(toolName)
-  return mcp?.serverName === 'superone' && mcp.mcpToolName === SUGGEST_TASK_TOOL_NAME
+  return Boolean(mcp && isSuperoneMcpServerName(mcp.serverName) && mcp.mcpToolName === SUGGEST_TASK_TOOL_NAME)
 }
 
 function parseInput(raw: unknown): SuggestedTaskInput | null {

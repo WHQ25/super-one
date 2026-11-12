@@ -5,9 +5,11 @@ import { HOST_ACTION_WIDGET_DESCRIPTORS, WIDGET_SAVE_DESCRIPTOR } from '@superon
 import { jsonSchemaToZodShape } from './json-schema-zod'
 import { BUILT_IN_SUPERONE_TOOL_DEFS } from './superone-mcp-builtin-defs'
 import {
+  SUPERONE_MCP_EXPECTED_VARIANT_ENV,
   SUPERONE_MCP_IPC_ENDPOINT_ENV,
   SUPERONE_MCP_IPC_TOKEN_ENV,
   SUPERONE_MCP_SESSION_ID_ENV,
+  SUPERONE_MCP_VARIANT_ENV,
 } from './superone-mcp-stdio-env'
 import { wireBridgeShutdown } from './superone-mcp-stdio-shutdown'
 import { startBridgeRuntime } from './superone-mcp-stdio-startup'
@@ -180,10 +182,22 @@ class SuperoneIpcClient {
   }
 }
 
-function requiredEnv(name: string): string {
-  const value = process.env[name]
-  if (!value) throw new Error(`Missing ${name}`)
-  return value
+function optionalEnv(name: string): string | undefined {
+  const value = process.env[name]?.trim()
+  return value ? value : undefined
+}
+
+async function startEmptyBridge(): Promise<void> {
+  const server = new McpServer({ name: 'superone', version: '1.0.0' })
+  const placeholder = server.registerTool(
+    'superone_unavailable',
+    { description: 'Unavailable outside SuperOne', inputSchema: {} },
+    async () => ({ content: [{ type: 'text' as const, text: 'Unavailable outside SuperOne' }], isError: true }),
+  )
+  placeholder.remove()
+  const transport = new StdioServerTransport()
+  await server.connect(transport)
+  wireBridgeShutdown({ stdin: process.stdin, transport, ipc: { onClose: null }, exit: () => process.exit(0) })
 }
 
 function toolSignature(tool: SuperoneMcpToolDescriptor): string {
@@ -191,7 +205,15 @@ function toolSignature(tool: SuperoneMcpToolDescriptor): string {
 }
 
 async function main(): Promise<void> {
-  const sessionId = requiredEnv(SUPERONE_MCP_SESSION_ID_ENV)
+  const sessionId = optionalEnv(SUPERONE_MCP_SESSION_ID_ENV)
+  const endpoint = optionalEnv(SUPERONE_MCP_IPC_ENDPOINT_ENV)
+  const token = optionalEnv(SUPERONE_MCP_IPC_TOKEN_ENV)
+  const expectedVariant = optionalEnv(SUPERONE_MCP_EXPECTED_VARIANT_ENV)
+  const activeVariant = optionalEnv(SUPERONE_MCP_VARIANT_ENV)
+  if (!sessionId || !endpoint || !token || (expectedVariant && expectedVariant !== activeVariant)) {
+    await startEmptyBridge()
+    return
+  }
   // Do NOT set `process.title` here. On macOS it calls into LaunchServices to
   // register the process as an app, which is safe when we control the spawn, but
   // this process is exec'd by Codex's/ACP's/OpenCode's own process launcher — a
@@ -205,8 +227,8 @@ async function main(): Promise<void> {
   // ELECTRON_RUN_AS_NODE. Its executable basename intentionally retains the
   // required " Helper" suffix so Electron resolves ICU through the helper path.
   const ipc = new SuperoneIpcClient(
-    requiredEnv(SUPERONE_MCP_IPC_ENDPOINT_ENV),
-    requiredEnv(SUPERONE_MCP_IPC_TOKEN_ENV),
+    endpoint,
+    token,
     sessionId,
   )
 

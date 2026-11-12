@@ -6,7 +6,7 @@ import { DeferredInteractiveTool, isPortableInteractiveTool } from './DeferredIn
 import { DeferredTool, DeferredDetailStatus, useDeferredToolDetail } from './DeferredTool'
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
 import type { ChatMessage, ContentBlock, ProcessFold } from '@superone/shared/agent-types'
-import { applyDescriptionPersonaLabel, isAlwaysHiddenToolName, parseMcpToolName } from '@superone/shared/tool-ui'
+import { applyDescriptionPersonaLabel, isAlwaysHiddenToolName, isSuperoneMcpServerName, parseMcpToolName } from '@superone/shared/tool-ui'
 import { SUGGEST_TASK_TOOL_NAME, suggestedTaskIdFromResult } from '@superone/shared/suggested-task'
 import { resolveMcpServerIconFromMap } from '@superone/shared/mcp-server-icon'
 import { mcpAppToolFailed } from '@superone/shared/mcp-apps'
@@ -247,7 +247,7 @@ function renderDedicatedTool(props: TurnToolPresenterProps, brandIconSrc?: strin
   const deviceOp = portableDeviceOp(props.toolName)
   const terminalOp = portableTerminalOp(props.toolName)
   const mcpInfo = parseMcpToolName(props.toolName)
-  const collabToolName = mcpInfo?.serverName === 'superone' ? mcpInfo.mcpToolName : null
+  const collabToolName = mcpInfo && isSuperoneMcpServerName(mcpInfo.serverName) ? mcpInfo.mcpToolName : null
   if (props.toolName === 'EnterPlanMode') return <EnterPlanModeBlock />
   if (props.toolName === 'ExitPlanMode') return <ExitPlanModeBlockPresenter result={props.result} />
   if (props.toolName === 'ListAgents') {
@@ -523,12 +523,14 @@ function renderDedicatedTool(props: TurnToolPresenterProps, brandIconSrc?: strin
 }
 
 function isImageGenerationTool(toolName: string): boolean {
-  return toolName === 'mcp__superone__media_generate_image'
+  const mcp = parseMcpToolName(toolName)
+  return Boolean(mcp && isSuperoneMcpServerName(mcp.serverName) && mcp.mcpToolName === 'media_generate_image')
     || ['ImageGen', 'ImageEdit', 'image_gen', 'image_edit'].includes(toolName)
 }
 
 function isVideoGenerationTool(toolName: string): boolean {
-  return toolName === 'mcp__superone__media_generate_video'
+  const mcp = parseMcpToolName(toolName)
+  return Boolean(mcp && isSuperoneMcpServerName(mcp.serverName) && mcp.mcpToolName === 'media_generate_video')
     || ['ImageToVideo', 'ReferenceToVideo', 'image_to_video', 'reference_to_video'].includes(toolName)
 }
 

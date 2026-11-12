@@ -6,6 +6,7 @@ import { Ban, ChevronRight, TriangleAlert } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { resolveWidgetCall } from '@superone/shared/generative-ui/widget-data'
 import { parseNativeWidgetResult } from '@superone/shared/generative-ui/native-widgets'
+import { isSuperoneMcpServerName } from '@superone/shared/tool-ui'
 import { AutomationToolBlock, isAutomationToolName } from './AutomationToolBlock'
 import { AgentProfileToolBlock, isAgentProfileToolName } from './AgentProfileToolBlock'
 import { BrowserToolBlock } from './BrowserToolBlock'
@@ -86,8 +87,6 @@ function isCompleteJson(s: string): boolean {
   try { JSON.parse(s); return true } catch { return false }
 }
 
-const SUPERONE_SERVER = 'superone'
-
 function toolRowTone(isDenied?: boolean, isError?: boolean): ToolRowTone {
   if (isDenied) return 'denied'
   if (isError) return 'error'
@@ -166,7 +165,8 @@ export function hasDedicatedToolRow(toolName: string): boolean {
     toolName === 'ManageSubagents' ||
     toolName === 'manage_subagents'
   ) return true
-  return parseMcpToolName(toolName)?.serverName === SUPERONE_SERVER
+  const serverName = parseMcpToolName(toolName)?.serverName
+  return Boolean(serverName && isSuperoneMcpServerName(serverName))
 }
 
 export interface BashToolPresenterProps {
@@ -359,7 +359,7 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
     allowExpand,
   })
   if (antigravityBuiltinBlock) return antigravityBuiltinBlock
-  if (mcpInfo?.serverName === SUPERONE_SERVER) {
+  if (mcpInfo && isSuperoneMcpServerName(mcpInfo.serverName)) {
     if (mcpInfo.mcpToolName === 'composer_request') {
       return <InputRequestToolRow title={typeof params.title === 'string' ? params.title : undefined}
         result={cleanResult} streaming={isStreaming} isError={isError} isDenied={isDenied} />

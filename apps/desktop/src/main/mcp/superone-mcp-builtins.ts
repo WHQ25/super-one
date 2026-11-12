@@ -473,7 +473,7 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
             effort: z.string().optional(),
             fastMode: z.boolean().optional()
               .describe('Codex only. Enable the selected model\'s Fast service tier for this agent session.'),
-            apiProviderId: z.string().nullable().optional(),
+            apiProviderId: z.string().optional(),
             permissionMode: z.enum(['default', 'acceptEdits', 'bypassPermissions', 'plan', 'dontAsk', 'auto', 'agent'])
               .optional()
               .describe(LAUNCH_PERMISSION_MODE_DESCRIPTION),
@@ -641,7 +641,7 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
       inputSchema: {
         changes: z.array(z.object({
           key: z.string().describe('The settings field key, exactly as returned by config_read.'),
-          value: z.union([z.string(), z.number(), z.boolean(), z.null(), z.array(z.unknown()), z.record(z.string(), z.unknown())]).describe('The new value. Use null or "" to reset a clearable field to its default.'),
+          value: z.union([z.string(), z.number(), z.boolean(), z.array(z.unknown()), z.record(z.string(), z.unknown())]).describe('The new value. Use "" to reset a clearable field to its default.'),
         })).optional().describe('Settings changes to propose. Mutually exclusive with `resource`.'),
         resource: z.object({
           resource: z.string().describe('The resource domain, e.g. "credential" — as returned by config_read.'),
@@ -814,7 +814,7 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
         messageId: z.string().optional().describe(SESSION_READ_MESSAGE_ID_DESCRIPTION),
         around: z.number().int().min(0).max(50).optional()
           .describe(SESSION_READ_AROUND_DESCRIPTION),
-        cursor: z.number().int().nullable().optional()
+        cursor: z.number().int().optional()
           .describe(SESSION_READ_CURSOR_DESCRIPTION),
         limit: z.number().int().min(1).max(50).optional().describe(SESSION_READ_LIMIT_DESCRIPTION),
         includeThinking: z.boolean().optional().describe(SESSION_READ_THINKING_DESCRIPTION),
@@ -872,7 +872,7 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
       .optional()
       .describe('Unified permission mode. Prefer bypassPermissions for unattended runs.'),
     sandboxMode: z.enum(['off', 'on', 'auto']).optional().describe('Claude sandbox (ignored by other harnesses).'),
-    apiProviderId: z.string().nullable().optional().describe('Optional third-party AI provider credential id.'),
+    apiProviderId: z.string().optional().describe('Optional third-party AI provider credential id.'),
     acpAgentId: z.string().optional().describe('ACP only: agent id (e.g. grok-build).'),
     reasoningEffort: z
       .enum(['minimal', 'low', 'medium', 'high', 'xhigh', 'max', 'ultra'])

@@ -11,6 +11,15 @@ describe('getToolVerb', () => {
     expect(getToolVerb('mcp__GitHub__list_issues')).toBe('Running')
     expect(getToolVerb('GitHub__list_issues')).toBe('Running')
   })
+
+  it('resolves SuperOne variant server names to SuperOne glyphs', () => {
+    expect(getToolDisplay('mcp__superone-dev__widget_show', {})).toEqual(
+      getToolDisplay('mcp__superone__widget_show', {}),
+    )
+    expect(getToolDisplay('mcp__superone-alpha__browser_snapshot', {})).toEqual(
+      getToolDisplay('mcp__superone__browser_snapshot', {}),
+    )
+  })
 })
 
 describe('native widget_show results — hide/collect contract', () => {

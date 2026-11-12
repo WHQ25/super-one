@@ -9,7 +9,12 @@ import {
 import type { PermissionMode } from '@superone/shared/agent-types'
 import { ANTIGRAVITY_AUTH_REQUIRED } from '@superone/shared/antigravity-auth'
 import { resolveDesktopAntigravityLaunch } from '../harness/antigravity-launch'
+import { getSuperoneMcpStdioConfig } from '../mcp/superone-mcp-stdio-state'
 import type { SpawnAcpProcessOptions } from './acp-process'
+import {
+  ensureAntigravityGlobalSuperoneMcpConfig,
+  extractSuperoneSessionEnv,
+} from './antigravity-mcp-config'
 import type {
   AcpAskUserQuestionGate,
   AcpPermissionGate,
@@ -76,16 +81,56 @@ export {
 
 const interactiveAuthPromptListeners = new Set<() => void>()
 
+export type AntigravityPermissionLaunchProfile = 'standard' | 'auto' | 'bypass'
+
+export function antigravityPermissionLaunchProfile(
+  mode?: PermissionMode | null,
+): AntigravityPermissionLaunchProfile {
+  if (mode === 'bypassPermissions') return 'bypass'
+  if (mode === 'auto') return 'auto'
+  return 'standard'
+}
+
+export function applyAntigravityPermissionLaunchArgs(
+  baseArgs: readonly string[],
+  mode?: PermissionMode | null,
+): string[] {
+  const args = [...baseArgs]
+  const profile = antigravityPermissionLaunchProfile(mode)
+  if (profile === 'standard') return args
+  const flagsToAdd: string[] = []
+  if (profile === 'auto' && !args.includes('--sandbox')) {
+    flagsToAdd.push('--sandbox')
+  }
+  if (!args.includes('--dangerously-skip-permissions')) {
+    flagsToAdd.push('--dangerously-skip-permissions')
+  }
+  if (flagsToAdd.length === 0) return args
+  const separatorIdx = args.indexOf('--')
+  if (separatorIdx >= 0) {
+    args.splice(separatorIdx, 0, ...flagsToAdd)
+    return args
+  }
+  args.push(...flagsToAdd)
+  return args
+}
+
 function notifyInteractiveAuthPrompt(): void {
   for (const listener of [...interactiveAuthPromptListeners]) {
     listener()
   }
 }
 
+export interface AntigravityProcessLaunchOptions extends SpawnAcpProcessOptions {
+  globalSuperoneMcpReady?: boolean
+}
+
 export async function prepareAntigravityProcessLaunch(
   launch: ResolvedAcpLaunch,
   rawLaunch: AcpRuntimeLaunchConfig,
-): Promise<SpawnAcpProcessOptions> {
+  permissionMode?: PermissionMode | null,
+  superoneSessionId?: string,
+): Promise<AntigravityProcessLaunchOptions> {
   const resolved = resolveDesktopAntigravityLaunch(rawLaunch)
   if (!resolved) {
     throw new Error('Antigravity runtime not found. Check Settings → Harnesses → Antigravity.')
@@ -94,10 +139,19 @@ export async function prepareAntigravityProcessLaunch(
     extraEnv: launch.env,
   })
   launch.command = resolved.command
-  launch.args = resolved.args
+  launch.args = applyAntigravityPermissionLaunchArgs(resolved.args, permissionMode)
   launch.env = spawnCtx.extraEnv
+  let globalSuperoneMcpReady = false
+  if (superoneSessionId) {
+    const stdioConfig = getSuperoneMcpStdioConfig(superoneSessionId)
+    if (stdioConfig && ensureAntigravityGlobalSuperoneMcpConfig(stdioConfig)) {
+      launch.env = { ...launch.env, ...extractSuperoneSessionEnv(stdioConfig) }
+      globalSuperoneMcpReady = true
+    }
+  }
   return {
     baseEnv: spawnCtx.baseEnv,
+    globalSuperoneMcpReady,
     onStdoutLine: (line) => {
       if (extractAntigravityAuthUrlFromStdoutLine(line)) {
         notifyInteractiveAuthPrompt()

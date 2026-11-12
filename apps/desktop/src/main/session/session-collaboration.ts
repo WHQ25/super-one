@@ -170,10 +170,16 @@ function assertKnownApiProviderId(
   )
 }
 
+interface PlannedRemoteLaunch {
+  remote: SessionAgentRemoteLaunch
+  /** Target permission and sandbox when the agent omits them. Not stored on `remote`. */
+  defaults?: Pick<SessionAgentLaunchConfig, 'permissionMode' | 'sandboxMode'>
+}
+
 function normalizeLaunches(
   args: RequestSessionAgentsArgs,
   parent: Session,
-  remotes: ReadonlyMap<number, SessionAgentRemoteLaunch> = new Map(),
+  remotes: ReadonlyMap<number, PlannedRemoteLaunch> = new Map(),
 ): SessionAgentLaunchProposal[] {
   if (!Array.isArray(args.launches)) throw new Error('launches must contain at least one proposed session')
   assertLaunchCount(args.launches.length)
@@ -252,8 +258,8 @@ function normalizeLaunches(
     if (!profile) throw new Error(`Unknown agent profile: ${rawAgentId}`)
     const agentId = profile.id
     const { summary, name, role } = normalizeLaunchLabels(mode, launch)
-    const remote = remotes.get(index)
-    if (remote) return remoteLaunchProposal(launch, { launchId, profile, summary, name, role, remote })
+    const planned = remotes.get(index)
+    if (planned) return remoteLaunchProposal(launch, { launchId, profile, summary, name, role, ...planned })
     assertKnownApiProviderId(launch.config, profile)
     return {
       launchId,
@@ -283,28 +289,46 @@ function normalizeLaunches(
 async function planRemoteLaunches(
   args: RequestSessionAgentsArgs,
   parent: Session,
-): Promise<Map<number, SessionAgentRemoteLaunch>> {
+): Promise<Map<number, PlannedRemoteLaunch>> {
   const localEnvironmentId = await localCollabEnvironmentId()
   const profiles = new Map(listSessionAgentProfiles().map((profile) => [profile.id, profile]))
-  const plans = new Map<number, SessionAgentRemoteLaunch>()
+  const plans = new Map<number, PlannedRemoteLaunch>()
   await Promise.all(args.launches.map(async (launch, index) => {
     if (isLocalEnvironment(launch.environment, localEnvironmentId)) return
     if (resolveLaunchMode(launch.mode) !== 'spawn') throw new Error('Only spawn launches can run on another machine')
-    const profile = profiles.get(launch.agentId?.trim() ?? '')
+    const agentId = launch.agentId?.trim() ?? ''
+    const profile = profiles.get(agentId)
     if (profile && profile.id !== remoteProviderId(profile.harnessId)) {
       throw new Error(
         `Agent ${profile.id} is a configuration of this machine; launch ${remoteProviderId(profile.harnessId)} on another machine.`,
       )
     }
     const environmentId = launch.environment!.trim()
+    // Model, effort and keys stay on the target. Only an omitted permission
+    // mode or sandbox follows the target harness default.
+    let target: SessionAgentProfile | undefined
     if (launch.config?.apiProviderId) {
-      const remote = await remoteAgentProfile(environmentId, launch.agentId?.trim() ?? '')
-      if (!remote) {
+      const resolved = await remoteAgentProfile(environmentId, agentId)
+      if (!resolved) {
         throw new Error('That machine cannot list its provider keys; omit apiProviderId to use its default provider.')
       }
-      assertKnownApiProviderId(launch.config, remote.profile)
+      assertKnownApiProviderId(launch.config, resolved.profile)
+      target = resolved.profile
+    } else {
+      const catalog = await remoteAgentProfiles(environmentId)
+      target = catalog.supported ? catalog.profiles.find((item) => item.id === agentId) : undefined
     }
-    plans.set(index, await planRemoteLaunch(defaultLaunchCwd(parent), environmentId))
+    const { permissionMode, sandboxMode } = target?.defaultConfig ?? {}
+    const defaults = permissionMode || sandboxMode
+      ? {
+          ...(permissionMode ? { permissionMode } : {}),
+          ...(sandboxMode ? { sandboxMode } : {}),
+        }
+      : undefined
+    plans.set(index, {
+      remote: await planRemoteLaunch(defaultLaunchCwd(parent), environmentId),
+      ...(defaults ? { defaults } : {}),
+    })
   }))
   return plans
 }
@@ -365,14 +389,18 @@ function remoteLaunchProposal(
     name: string
     role: string
     remote: SessionAgentRemoteLaunch
+    defaults?: PlannedRemoteLaunch['defaults']
   },
 ): SessionAgentLaunchProposal {
   const { profile, remote } = input
-  // This machine's profile defaults (model, effort, keys) name its own catalog;
-  // the target uses its own defaults unless the agent asked for others.
+  // Model, effort and keys name a catalog, so they stay unset unless the agent
+  // asked. Permission and sandbox follow the target harness default when omitted;
+  // an explicit launch.config value still wins. A node that cannot list its
+  // catalog keeps the hardcoded fallback.
   const { cwd: _cwd, worktree: _worktree, ...config } = {
     permissionMode: 'default' as const,
     sandboxMode: 'off' as const,
+    ...input.defaults,
     ...launch.config,
   }
   return {

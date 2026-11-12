@@ -2227,7 +2227,7 @@ describe('spawning a child on another machine', () => {
     expect((listed as { value: { agents: object[] } }).value.agents[0]).not.toHaveProperty('models')
 
     expect(await listCollaborationAgents({ id: 'claude-base', environment: 'env-b' })).toEqual({ ok: true, value: {
-      id: 'claude-base', name: 'Claude', harnessId: 'claude', models: STUDIO_CLAUDE.models, efforts: STUDIO_CLAUDE.efforts, apiProviders: STUDIO_CLAUDE.apiProviders,
+      id: 'claude-base', name: 'Claude', harnessId: 'claude', defaultConfig: STUDIO_CLAUDE.defaultConfig, models: STUDIO_CLAUDE.models, efforts: STUDIO_CLAUDE.efforts, apiProviders: STUDIO_CLAUDE.apiProviders,
     } })
     const local = await listCollaborationAgents({ id: 'claude-base' })
     expect(local).toMatchObject({ ok: true, value: { id: 'claude-base', defaultConfig: expect.any(Object), models: expect.any(Array), apiProviders: expect.any(Array) } })
@@ -2241,6 +2241,49 @@ describe('spawning a child on another machine', () => {
     expect(await listCollaborationAgents({ id: 'claude-custom', environment: 'env-b' })).toMatchObject({
       ok: false, error: expect.stringMatching(/not available on environment env-b.*environments\[\]\.agents/),
     })
+  })
+
+  it('returns the target defaultConfig, including its permission mode, when asked by id', async () => {
+    const studio = {
+      ...STUDIO_CLAUDE,
+      defaultConfig: { ...STUDIO_CLAUDE.defaultConfig, permissionMode: 'bypassPermissions' as const, sandboxMode: 'off' as const },
+    }
+    remoteProfiles = [studio]
+    expect(await listCollaborationAgents({ id: 'claude-base', environment: 'env-b' })).toMatchObject({
+      ok: true,
+      value: { defaultConfig: { permissionMode: 'bypassPermissions', sandboxMode: 'off' } },
+    })
+  })
+
+  it('starts a remote child on the target harness permission default when the agent omits it', async () => {
+    remoteProfiles = [{
+      ...STUDIO_CLAUDE,
+      defaultConfig: { ...STUDIO_CLAUDE.defaultConfig, permissionMode: 'bypassPermissions' as const, sandboxMode: 'off' as const },
+    }]
+    const { parent, host } = remoteParent()
+    const launch = await requestRemote(parent, host, 'env-b', {
+      config: { model: 'claude-opus', effort: 'high' },
+    })
+    expect(launch.config.permissionMode).toBe('bypassPermissions')
+    expect(launch.config.sandboxMode).toBe('off')
+    expect(launch.config.model).toBe('claude-opus')
+
+    await startSessionAgent('parent', { launchId: 'remote', task: 'Implement export' }, host)
+    expect(calls.createSession).toEqual([expect.objectContaining({
+      options: expect.objectContaining({ permissionMode: 'bypassPermissions', sandboxMode: 'off', model: 'claude-opus' }),
+    })])
+  })
+
+  it('keeps an explicit remote permission mode ahead of the target default', async () => {
+    remoteProfiles = [{
+      ...STUDIO_CLAUDE,
+      defaultConfig: { ...STUDIO_CLAUDE.defaultConfig, permissionMode: 'bypassPermissions' as const, sandboxMode: 'off' as const },
+    }]
+    const { parent, host } = remoteParent()
+    const launch = await requestRemote(parent, host, 'env-b', {
+      config: { permissionMode: 'plan' },
+    })
+    expect(launch.config.permissionMode).toBe('plan')
   })
 
   it('creates the child on the model and key picked from the target catalog', async () => {

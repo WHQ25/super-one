@@ -28,6 +28,27 @@ describe('searchMentionsInEntries', () => {
 })
 
 describe('searchFilesInEntries', () => {
+  it('ranks inside the folder before applying the limit', () => {
+    const outside = Array.from({ length: 30 }, (_, i) => ({ path: `other/file-${i}.ts`, isDirectory: false }))
+    const hits = searchFilesInEntries(
+      [...outside, { path: 'src/components/Button.tsx', isDirectory: false }],
+      'Button',
+      5,
+      'src',
+    )
+    expect(hits.map((hit) => hit.path)).toEqual(['src/components/Button.tsx'])
+    expect(hits[0]?.matchIndices).toContain('src/components/Button.tsx'.indexOf('B'))
+  })
+
+  it('matches without regard to case', () => {
+    const hits = searchFilesInEntries(
+      [{ path: 'src/Button.tsx', isDirectory: false }],
+      'button',
+      5,
+    )
+    expect(hits.map((hit) => hit.path)).toEqual(['src/Button.tsx'])
+  })
+
   it('returns ranked paths', () => {
     const hits = searchFilesInEntries(
       [

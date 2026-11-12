@@ -1,4 +1,4 @@
-import type { FileSearchResult } from '@superone/shared/agent-types'
+import type { FileSearchResult, GitFileStatus, GitStatusFile } from '@superone/shared/agent-types'
 
 export interface FlatSearchNode {
   path: string
@@ -75,4 +75,58 @@ export function buildSearchTree(results: FileSearchResult[]): FlatSearchNode[] {
   }
   walk('', 0)
   return flat
+}
+
+export interface SearchGitPair {
+  gitIndex: GitFileStatus | null
+  gitWorktree: GitFileStatus | null
+}
+
+const EMPTY_GIT_PAIR: SearchGitPair = { gitIndex: null, gitWorktree: null }
+
+/** Higher wins when a directory takes its color from the files inside it. */
+const GIT_RANK: Record<string, number> = { U: 6, D: 5, R: 4, C: 4, T: 3, M: 3, A: 2, '?': 1 }
+
+function pairOf(file: GitStatusFile): SearchGitPair {
+  if (file.staged && file.status !== '?') return { gitIndex: file.status, gitWorktree: null }
+  return { gitIndex: null, gitWorktree: file.status }
+}
+
+function worse(current: GitFileStatus | null, next: GitFileStatus | null): GitFileStatus | null {
+  if (!next || next === '!') return current
+  if (!current || (GIT_RANK[next] ?? 0) > (GIT_RANK[current] ?? 0)) return next
+  return current
+}
+
+/**
+ * Git color for a search row. Paths compare case-insensitively.
+ * A directory uses the strongest status of the files under it.
+ */
+export function buildSearchGitIndex(files: GitStatusFile[]) {
+  const entries = files.map((file) => ({
+    path: file.path.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase(),
+    ...pairOf(file),
+  }))
+  return (projectPath: string, isDirectory: boolean): SearchGitPair => {
+    const path = projectPath.replace(/\\/g, '/').replace(/\/+$/, '').toLowerCase()
+    if (!path) return EMPTY_GIT_PAIR
+    if (!isDirectory) {
+      const hit = entries.find((entry) => entry.path === path)
+      return hit ? { gitIndex: hit.gitIndex, gitWorktree: hit.gitWorktree } : EMPTY_GIT_PAIR
+    }
+    const self = entries.find((entry) => entry.path === path)
+    if (self?.gitIndex === '!' || self?.gitWorktree === '!') {
+      return { gitIndex: self.gitIndex, gitWorktree: self.gitWorktree }
+    }
+    const prefix = `${path}/`
+    let gitIndex: GitFileStatus | null = null
+    let gitWorktree: GitFileStatus | null = null
+    for (const entry of entries) {
+      if (entry.path !== path && !entry.path.startsWith(prefix)) continue
+      if (entry.gitIndex === '!' || entry.gitWorktree === '!') continue
+      gitIndex = worse(gitIndex, entry.gitIndex)
+      gitWorktree = worse(gitWorktree, entry.gitWorktree)
+    }
+    return { gitIndex, gitWorktree }
+  }
 }

@@ -1,6 +1,6 @@
 import { useEffect, useCallback, useRef, useState, useMemo, type DragEvent, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
-import { FilePlus, FolderPlus, RefreshCw, Search } from 'lucide-react'
+import { FilePlus, Folder, FolderPlus, GitCompare, Plus, RefreshCw, Search } from 'lucide-react'
 import { useVirtualizer } from '@tanstack/react-virtual'
 import { useAppStore, useEffectiveProjectRoot } from '@/stores/app'
 import { projectDisplayName } from '@/lib/project-display-name'
@@ -10,6 +10,8 @@ import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import { useEnvironmentServes } from '@/hooks/use-environment-serves'
 import { TreeRow, DraftEntryRow, autoExpandedDirs } from './TreeRow'
 import { FileTreeSearch } from './FileTreeSearch'
+import { ancestorFolders, basename, buildChangedFileTree, parentDir, siblingDirectories } from './file-tree-focus'
+import { projectFocusIcon, SidebarFocusBar, type FocusSwitchItem } from './SidebarFocusView'
 import { getDropAction, shouldCollapseAutoExpanded, computeDropOverlay, getDropTargetName, isWithinFolder, internalDragSource } from './drag-drop-utils'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import {
@@ -21,6 +23,12 @@ import {
   DialogTitle,
 } from '@superone/ui/components/ui/dialog'
 import { Button } from '@superone/ui/components/ui/button'
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+} from '@superone/ui/components/ui/dropdown-menu'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
 
@@ -73,14 +81,97 @@ interface DeleteTarget {
   isDirectory: boolean
 }
 
+function FileTreeActions({
+  fileRoot,
+  focusPath,
+  isRemote,
+  servesFiles,
+  refreshing,
+  changesOnly,
+  onRefresh,
+  onToggleChanges,
+  onSearch,
+}: {
+  fileRoot: string | null
+  focusPath: string
+  isRemote: boolean
+  servesFiles: boolean
+  refreshing: boolean
+  changesOnly: boolean
+  onRefresh: () => void
+  onToggleChanges: () => void
+  onSearch: () => void
+}) {
+  const { t } = useTranslation()
+  const startDraft = useFileTreeStore((s) => s.startDraft)
+  // The menu returns focus to this button on a timeout. Starting the draft
+  // before that focuses the empty name and the blur cancels it.
+  const openDraft = (kind: 'file' | 'directory') => {
+    window.setTimeout(() => {
+      window.setTimeout(() => { void startDraft(fileRoot, focusPath, kind) }, 0)
+    }, 0)
+  }
+  return (
+    <>
+      {isRemote && servesFiles && (
+        <IconButton
+          size="sm"
+          onClick={onRefresh}
+          disabled={refreshing}
+          tooltip={t('sidebar.refreshFiles')}
+        >
+          <RefreshCw className={refreshing ? 'animate-spin' : undefined} />
+        </IconButton>
+      )}
+      {fileRoot && servesFiles && (
+        <>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <IconButton size="sm" tooltip={t('sidebar.newEntry')} data-testid="file-tree-new">
+                <Plus />
+              </IconButton>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuItem onClick={() => openDraft('file')}>
+                <FilePlus />
+                {t('sidebar.contextMenu.newFile')}
+              </DropdownMenuItem>
+              <DropdownMenuItem onClick={() => openDraft('directory')}>
+                <FolderPlus />
+                {t('sidebar.contextMenu.newFolder')}
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+          <IconButton
+            size="sm"
+            aria-pressed={changesOnly}
+            data-testid="file-tree-changes-only"
+            className={changesOnly ? 'bg-sidebar-accent text-sidebar-accent-foreground' : undefined}
+            onClick={onToggleChanges}
+            tooltip={t('sidebar.showChangedFiles')}
+          >
+            <GitCompare />
+          </IconButton>
+          <IconButton size="sm" onClick={onSearch} tooltip={t('sidebar.search.placeholder')}>
+            <Search />
+          </IconButton>
+        </>
+      )}
+    </>
+  )
+}
+
 export function FileTree() {
   const { t } = useTranslation()
   const currentFolder = useAppStore((s) => s.currentFolder)
   const fileRoot = useEffectiveProjectRoot()
   const loading = useFileTreeStore((s) => s.loading)
-  const visibleList = useFileTreeStore((s) => s._visibleList)
+  const storeList = useFileTreeStore((s) => s._visibleList)
+  const focusPath = useFileTreeStore((s) => s.focusPath)
+  const visibleVersion = useFileTreeStore((s) => s._visibleVersion)
   const fetchTree = useFileTreeStore((s) => s.fetchTree)
   const refreshTree = useFileTreeStore((s) => s.refreshTree)
+  const enterFolder = useFileTreeStore((s) => s.enterFolder)
   const renamingPath = useFileTreeStore((s) => s.renamingPath)
   const toggleDir = useFileTreeStore((s) => s.toggleDir)
   const copyFilesIn = useFileTreeStore((s) => s.copyFilesIn)
@@ -90,8 +181,8 @@ export function FileTree() {
   const deleteFile = useFileTreeStore((s) => s.deleteFile)
   const revealedPath = useFileTreeStore((s) => s.revealedPath)
   const clearRevealed = useFileTreeStore((s) => s.clearRevealed)
-  const startDraft = useFileTreeStore((s) => s.startDraft)
   const selectedFile = useSourceControlStore((s) => s.selectedFile)
+  const gitFiles = useSourceControlStore((s) => s.files)
   // Registry name so a renamed project reads the same here as in the sidebar.
   const recentFolders = useAppStore((s) => s.recentFolders)
   const folderName = projectDisplayName(recentFolders, currentFolder) || 'Project'
@@ -106,7 +197,45 @@ export function FileTree() {
   const [altKeyHeld, setAltKeyHeld] = useState(false)
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null)
   const [searching, setSearching] = useState(false)
+  const [changesOnly, setChangesOnly] = useState(false)
   const [refreshing, setRefreshing] = useState(false)
+
+  const visibleList = useMemo(() => {
+    if (!changesOnly) return storeList
+    const changed = buildChangedFileTree(gitFiles, focusPath)
+    const draft = storeList.find((item) => item.isDraft)
+    return draft ? [draft, ...changed] : changed
+  }, [changesOnly, storeList, gitFiles, focusPath])
+  const parentPath = focusPath ? parentDir(focusPath) : ''
+  const parentName = parentPath ? basename(parentPath) : folderName
+
+  const siblingItems = useMemo((): FocusSwitchItem[] => {
+    if (!focusPath || !fileRoot) return []
+    const dirs = siblingDirectories(useFileTreeStore.getState().nodes, focusPath)
+    const listed = dirs.length > 0 ? dirs : [{ path: focusPath, name: basename(focusPath) }]
+    return listed.map((dir) => ({
+      id: dir.path,
+      label: dir.name,
+      current: dir.path === focusPath,
+      icon: projectFocusIcon({ open: dir.path === focusPath }),
+      onSelect: () => { void enterFolder(fileRoot, dir.path) },
+    }))
+  }, [focusPath, fileRoot, enterFolder, visibleVersion])
+
+  const levelItems = useMemo((): FocusSwitchItem[] => {
+    if (!focusPath || !fileRoot) return []
+    const ancestors = ancestorFolders(focusPath)
+    // The parent is the project root. The back icon opens it, so the level menu would repeat that one step.
+    if (ancestors.length <= 1) return []
+    // Nearest parent first, project root last.
+    return [...ancestors].reverse().map((path) => ({
+      id: path || 'project',
+      label: path ? basename(path) : folderName,
+      icon: <Folder className="size-4 shrink-0" aria-hidden />,
+      onSelect: () => { void enterFolder(fileRoot, path) },
+    }))
+  }, [focusPath, fileRoot, folderName, enterFolder])
+
   const autoScroll = useAutoScroll(scrollRef)
 
   const virtualizer = useVirtualizer({
@@ -175,7 +304,13 @@ export function FileTree() {
 
   useEffect(() => {
     setSearching(false)
+    setChangesOnly(false)
   }, [fileRoot])
+
+  useEffect(() => {
+    if (!changesOnly || !fileRoot) return
+    void useSourceControlStore.getState().fetchFiles(fileRoot)
+  }, [changesOnly, fileRoot])
 
   useEffect(() => {
     if (!revealedPath) return
@@ -268,40 +403,47 @@ export function FileTree() {
 
   const isEmpty = visibleList.length === 0 && !loading
 
+  const actions = (
+    <FileTreeActions
+      fileRoot={fileRoot}
+      focusPath={focusPath}
+      isRemote={isRemote}
+      servesFiles={servesFiles}
+      refreshing={refreshing}
+      changesOnly={changesOnly}
+      onRefresh={() => { void handleRefresh() }}
+      onToggleChanges={() => setChangesOnly((on) => !on)}
+      onSearch={() => {
+        setSearching(true)
+        if (fileRoot) void useSourceControlStore.getState().fetchFiles(fileRoot)
+      }}
+    />
+  )
+
   if (searching && fileRoot) {
-    return <FileTreeSearch projectRoot={fileRoot} onClose={() => setSearching(false)} />
+    return <FileTreeSearch projectRoot={fileRoot} scopeDir={focusPath} onClose={() => setSearching(false)} />
   }
 
   return (
     <div className="flex h-full flex-col">
-      <div className="flex items-center gap-1 px-3 py-1.5">
-        <span className="min-w-0 flex-1 truncate text-md font-medium text-sidebar-foreground/70">
-          {folderName}
-        </span>
-        {isRemote && servesFiles && (
-          <IconButton
-            size="sm"
-            onClick={handleRefresh}
-            disabled={refreshing}
-            tooltip={t('sidebar.refreshFiles')}
-          >
-            <RefreshCw className={refreshing ? 'animate-spin' : undefined} />
-          </IconButton>
-        )}
-        {fileRoot && servesFiles && (
-          <>
-            <IconButton size="sm" onClick={() => startDraft(fileRoot, '', 'file')} tooltip={t('sidebar.contextMenu.newFile')}>
-              <FilePlus />
-            </IconButton>
-            <IconButton size="sm" onClick={() => startDraft(fileRoot, '', 'directory')} tooltip={t('sidebar.contextMenu.newFolder')}>
-              <FolderPlus />
-            </IconButton>
-            <IconButton size="sm" onClick={() => setSearching(true)} tooltip={t('sidebar.search.placeholder')}>
-              <Search />
-            </IconButton>
-          </>
-        )}
-      </div>
+      {focusPath ? (
+        <SidebarFocusBar
+          title={basename(focusPath)}
+          siblings={siblingItems}
+          levels={levelItems}
+          menuLabel={t('sidebar.focusSwitchFolder')}
+          actions={actions}
+          backLabel={t('sidebar.parentFolder', { name: parentName })}
+          onBack={() => { if (fileRoot) void enterFolder(fileRoot, parentPath) }}
+        />
+      ) : (
+        <div className="flex items-center gap-1 px-3 py-1.5">
+          <span className="min-w-0 flex-1 truncate text-md font-medium text-sidebar-foreground/70">
+            {folderName}
+          </span>
+          {actions}
+        </div>
+      )}
 
       <div
         ref={dropZoneRef}
@@ -314,7 +456,7 @@ export function FileTree() {
       >
         {isEmpty ? (
           <div className="flex h-full items-center justify-center p-4 text-xs text-sidebar-foreground/50">
-            {servesFiles ? t('sidebar.noFiles') : t('sidebar.filesUnavailable')}
+            {changesOnly ? t('sidebar.noChangedFiles') : servesFiles ? t('sidebar.noFiles') : t('sidebar.filesUnavailable')}
           </div>
         ) : (
           <ScrollArea

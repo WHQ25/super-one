@@ -10,15 +10,20 @@ import { useFileTreeStore } from '@/stores/file-tree'
 import { useSourceControlStore } from '@/stores/source-control'
 import { openFileTab } from '@/components/activity/activity-panel-api'
 import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
-import { buildSearchTree, type FlatSearchNode } from './file-search-tree'
+import { buildSearchGitIndex, buildSearchTree, type FlatSearchNode } from './file-search-tree'
+import { getStatusClass } from './TreeRow'
+import { scopeSearchResults } from './file-tree-focus'
 
 const DEBOUNCE_MS = 150
 
 export function FileTreeSearch({
   projectRoot,
+  scopeDir = '',
   onClose,
 }: {
   projectRoot: string
+  /** Project-relative folder the search is limited to. Empty searches the whole project. */
+  scopeDir?: string
   onClose: () => void
 }) {
   const { t } = useTranslation()
@@ -29,7 +34,10 @@ export function FileTreeSearch({
   const debounceRef = useRef<ReturnType<typeof setTimeout>>(undefined)
   const itemRefs = useRef<Map<number, HTMLButtonElement>>(new Map())
 
-  const nodes = useMemo(() => buildSearchTree(results), [results])
+  const gitFiles = useSourceControlStore((s) => s.files)
+  const scoped = useMemo(() => scopeSearchResults(results, scopeDir), [results, scopeDir])
+  const nodes = useMemo(() => buildSearchTree(scoped), [scoped])
+  const gitPair = useMemo(() => buildSearchGitIndex(gitFiles), [gitFiles])
 
   useEffect(() => {
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -40,8 +48,10 @@ export function FileTreeSearch({
       return
     }
     debounceRef.current = setTimeout(() => {
-      window.environment
-        .searchFiles(projectRoot, q)
+      const pending = scopeDir
+        ? window.environment.searchFiles(projectRoot, q, undefined, scopeDir)
+        : window.environment.searchFiles(projectRoot, q)
+      pending
         .then((r) => {
           setResults(r)
           setSelectedIndex(0)
@@ -55,7 +65,7 @@ export function FileTreeSearch({
     return () => {
       if (debounceRef.current) clearTimeout(debounceRef.current)
     }
-  }, [query, projectRoot])
+  }, [query, projectRoot, scopeDir])
 
   useEffect(() => {
     itemRefs.current.get(selectedIndex)?.scrollIntoView({ block: 'nearest' })
@@ -63,15 +73,16 @@ export function FileTreeSearch({
 
   const activate = useCallback(
     (node: FlatSearchNode) => {
+      const path = scopeDir ? `${scopeDir}/${node.path}` : node.path
       if (node.isDirectory) {
-        useFileTreeStore.getState().revealPath(projectRoot, node.path)
+        useFileTreeStore.getState().revealPath(projectRoot, path)
       } else {
-        useSourceControlStore.getState().selectFile(projectRoot, node.path)
-        openFileTab(node.path)
+        useSourceControlStore.getState().selectFile(projectRoot, path)
+        openFileTab(path)
       }
       onClose()
     },
-    [projectRoot, onClose],
+    [projectRoot, scopeDir, onClose],
   )
 
   const handleKeyDown = useCallback(
@@ -122,40 +133,45 @@ export function FileTreeSearch({
             {t('sidebar.search.noResults')}
           </div>
         ) : (
-          nodes.map((node, i) => (
-            <button
-              key={node.path}
-              ref={(el) => {
-                if (el) itemRefs.current.set(i, el)
-                else itemRefs.current.delete(i)
-              }}
-              onClick={() => activate(node)}
-              onMouseEnter={() => setSelectedIndex(i)}
-              style={{ paddingLeft: `${node.depth * 8 + 8}px` }}
-              className={cn(
-                'flex w-full items-center gap-1 py-[3px] pr-2 text-left text-[15px] transition-colors',
-                i === selectedIndex
-                  ? 'bg-sidebar-accent sidebar-selected'
-                  : 'text-sidebar-foreground hover:bg-sidebar-hover',
-              )}
-            >
-              {node.isDirectory ? (
-                <ChevronRight className="size-3.5 shrink-0 rotate-90 text-sidebar-foreground/70" />
-              ) : (
-                <span className="w-3.5 shrink-0" />
-              )}
-              {node.isDirectory ? (
-                <FolderIcon name={node.name} size={15} />
-              ) : (
-                <FileIcon name={node.name} size={15} />
-              )}
-              <HighlightedText
-                text={node.name}
-                indices={node.matchIndices}
-                className="min-w-0 truncate"
-              />
-            </button>
-          ))
+          nodes.map((node, i) => {
+            const path = scopeDir ? `${scopeDir}/${node.path}` : node.path
+            const pair = gitPair(path, node.isDirectory)
+            return (
+              <button
+                key={node.path}
+                ref={(el) => {
+                  if (el) itemRefs.current.set(i, el)
+                  else itemRefs.current.delete(i)
+                }}
+                onClick={() => activate(node)}
+                onMouseEnter={() => setSelectedIndex(i)}
+                style={{ paddingLeft: `${node.depth * 8 + 8}px` }}
+                className={cn(
+                  'flex w-full items-center gap-1 py-[3px] pr-2 text-left text-[15px] transition-colors',
+                  i === selectedIndex
+                    ? 'bg-sidebar-accent sidebar-selected'
+                    : 'text-sidebar-foreground hover:bg-sidebar-hover',
+                )}
+              >
+                {node.isDirectory ? (
+                  <ChevronRight className="size-3.5 shrink-0 rotate-90 text-sidebar-foreground/70" />
+                ) : (
+                  <span className="w-3.5 shrink-0" />
+                )}
+                {node.isDirectory ? (
+                  <FolderIcon name={node.name} size={15} />
+                ) : (
+                  <FileIcon name={node.name} size={15} />
+                )}
+                <HighlightedText
+                  text={node.name}
+                  indices={node.matchIndices}
+                  highlightClassName="font-semibold"
+                  className={cn('min-w-0 truncate', getStatusClass(pair.gitIndex, pair.gitWorktree))}
+                />
+              </button>
+            )
+          })
         )}
       </ScrollArea>
     </div>

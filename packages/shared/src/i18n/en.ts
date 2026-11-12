@@ -412,6 +412,12 @@ export type Messages = {
     focusSwitchEnvironment: string
     /** Title of the sibling menu when a parent session is focused. */
     focusSwitchSession: string
+    /** Title of the sibling menu when a file-tree folder is focused. */
+    focusSwitchFolder: string
+    /** Hover label for the file-tree control that returns to the parent folder. */
+    parentFolder: string
+    /** Hover label for the file-tree control that creates a file or a folder. */
+    newEntry: string
     focusChildrenLoadFailed: string
     thisMac: string
     thisPc: string
@@ -517,6 +523,10 @@ export type Messages = {
     noFiles: string
     filesUnavailable: string
     refreshFiles: string
+    /** File tree filter: only files git reports as changed under the current folder. */
+    showChangedFiles: string
+    /** Empty state for that filter. */
+    noChangedFiles: string
     createFailed: string
     search: {
       allEnvironments: string
@@ -5508,6 +5518,9 @@ export const en: Messages = {
     focusLevels: 'Focus Levels',
     focusSwitchEnvironment: 'Select Environment',
     focusSwitchSession: 'Select Session',
+    focusSwitchFolder: 'Select Folder',
+    parentFolder: 'Back to {{name}}',
+    newEntry: 'New',
     focusChildrenLoadFailed: 'Could not load child sessions. Retry',
     thisMac: 'This Mac',
     thisPc: 'This PC',
@@ -5613,6 +5626,8 @@ export const en: Messages = {
     noFiles: 'No files',
     filesUnavailable: 'This machine does not share its files',
     refreshFiles: 'Refresh file tree',
+    showChangedFiles: 'Only Changed Files',
+    noChangedFiles: 'No changes in this folder',
     createFailed: 'Could not create {{name}}: {{error}}',
     search: {
       allEnvironments: 'All Environments',

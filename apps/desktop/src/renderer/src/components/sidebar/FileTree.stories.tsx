@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useEffect, useRef, type RefObject } from 'react'
-import type { FileEntryKind, FileTreeEntry, GitFileStatus } from '@superone/shared/agent-types'
+import type { FileEntryKind, FileTreeEntry, GitFileStatus, GitStatusFile } from '@superone/shared/agent-types'
 import { FileTree } from './FileTree'
 import { useAppStore } from '@/stores/app'
 import { useFileTreeStore } from '@/stores/file-tree'
@@ -112,7 +112,15 @@ function installListDirMock(items: Mock[]): void {
     const taken = (flat.get(parent) ?? []).some((e) => e.name === name)
     return taken ? { ok: false, error: `Target already exists: ${name}` } : { ok: true }
   }
-  w.app = { ...(w.app ?? {}), listDir: fn, createEntry, startDrag: () => {}, getPathForFile: () => '', trace: () => {} }
+  w.app = {
+    ...(w.app ?? {}),
+    listDir: fn,
+    createEntry,
+    startDrag: () => {},
+    getPathForFile: () => '',
+    trace: () => {},
+    getGitStatusFiles: async () => useSourceControlStore.getState().files,
+  }
 }
 
 interface DraftSpec {
@@ -189,10 +197,29 @@ function installRemoteNode(methods: string[]): void {
   }
 }
 
-function StoryHost({ items, drag, draft, remoteMethods }: { items: Mock[]; drag?: SimulatedDrag; draft?: DraftSpec; remoteMethods?: string[] }) {
+function StoryHost({
+  items,
+  drag,
+  draft,
+  remoteMethods,
+  focusPath,
+  changedFiles,
+  changesOnly,
+  narrow,
+}: {
+  items: Mock[]
+  drag?: SimulatedDrag
+  draft?: DraftSpec
+  remoteMethods?: string[]
+  focusPath?: string
+  changedFiles?: GitStatusFile[]
+  changesOnly?: boolean
+  narrow?: boolean
+}) {
   const project = remoteMethods ? REMOTE_PROJECT : PROJECT
   const hostRef = useRef<HTMLDivElement>(null)
   const visibleCount = useFileTreeStore((s) => s._visibleList.length)
+  const focused = useFileTreeStore((s) => s.focusPath)
 
   useEffect(() => {
     if (!draft || visibleCount === 0 || useFileTreeStore.getState().draft) return
@@ -203,20 +230,32 @@ function StoryHost({ items, drag, draft, remoteMethods }: { items: Mock[]; drag?
     installListDirMock(remoteMethods && !remoteMethods.includes('workspace.listDir') ? [] : items)
     if (remoteMethods) installRemoteNode(remoteMethods)
     useFileTreeStore.getState().reset()
-    useSourceControlStore.setState({ selectedFile: null })
+    useSourceControlStore.setState({ selectedFile: null, files: changedFiles ?? [] })
     useAppStore.setState({ currentFolder: project, _worktrees: {} })
     void useFileTreeStore.getState().fetchTree(project)
     return () => {
       useFileTreeStore.getState().reset()
     }
-  }, [items, project, remoteMethods])
+  }, [items, project, remoteMethods, changedFiles])
+
+  useEffect(() => {
+    if (!focusPath || visibleCount === 0 || focused === focusPath) return
+    void useFileTreeStore.getState().enterFolder(project, focusPath)
+  }, [focusPath, focused, visibleCount, project])
+
+  useEffect(() => {
+    if (!changesOnly || visibleCount === 0) return
+    if (focusPath && focused !== focusPath) return
+    const button = hostRef.current?.querySelector('[data-testid="file-tree-changes-only"]')
+    if (button instanceof HTMLButtonElement && button.getAttribute('aria-pressed') !== 'true') button.click()
+  }, [changesOnly, focusPath, focused, visibleCount])
 
   useSimulatedFileDrag(hostRef, drag, visibleCount)
 
   return (
     <div
       ref={hostRef}
-      className="flex h-[640px] w-72 flex-col rounded-md border border-sidebar-border bg-sidebar text-sidebar-foreground"
+      className={`flex h-[640px] ${narrow ? 'w-56' : 'w-72'} flex-col rounded-md border border-sidebar-border bg-sidebar text-sidebar-foreground`}
     >
       <FileTree />
     </div>
@@ -366,6 +405,99 @@ export const NewFileDark: Story = {
   name: 'New file · dark',
   globals: { theme: 'dark' },
   args: { items: TREE, draft: { parentDir: 'src', kind: 'file' } },
+}
+
+const FOCUS_TREE: Mock[] = [
+  {
+    name: 'src',
+    isDirectory: true,
+    worktree: 'M',
+    children: [
+      {
+        name: 'components',
+        isDirectory: true,
+        worktree: 'M',
+        children: [
+          { name: 'Button.tsx', worktree: 'M' },
+          { name: 'clean.ts' },
+        ],
+      },
+      {
+        name: 'components-with-a-very-long-directory-name',
+        isDirectory: true,
+        children: [{ name: 'index.ts' }],
+      },
+      { name: 'app.ts', worktree: 'M' },
+      { name: 'clean.ts' },
+    ],
+  },
+  {
+    name: 'docs',
+    isDirectory: true,
+    children: [{ name: 'guide.md', worktree: 'M' }],
+  },
+  { name: 'package.json' },
+]
+
+const CHANGED_FILES: GitStatusFile[] = [
+  { path: 'src/app.ts', status: 'M', staged: false },
+  { path: 'src/components/Button.tsx', status: 'M', staged: true },
+  { path: 'docs/guide.md', status: 'A', staged: true },
+  { path: 'package.json', status: 'M', staged: false },
+]
+
+export const FocusedFolder: Story = {
+  name: 'Focus · inside components',
+  args: { items: FOCUS_TREE, focusPath: 'src/components' },
+}
+
+export const FocusedProjectChild: Story = {
+  name: 'Focus · parent is the project root',
+  args: { items: FOCUS_TREE, focusPath: 'src' },
+}
+
+export const FocusedFolderNarrow: Story = {
+  name: 'Focus · narrow',
+  args: { items: FOCUS_TREE, focusPath: 'src/components-with-a-very-long-directory-name', narrow: true },
+}
+
+export const FocusedFolderDark: Story = {
+  name: 'Focus · dark',
+  globals: { theme: 'dark' },
+  args: { items: FOCUS_TREE, focusPath: 'src/components' },
+}
+
+export const FocusedFolderZh: Story = {
+  name: 'Focus · Chinese',
+  globals: { locale: 'zh' },
+  args: { items: FOCUS_TREE, focusPath: 'src/components' },
+}
+
+export const ChangedFiles: Story = {
+  name: 'Changes · project root',
+  args: { items: FOCUS_TREE, changedFiles: CHANGED_FILES, changesOnly: true },
+}
+
+export const ChangedFilesInFolder: Story = {
+  name: 'Changes · inside src',
+  args: { items: FOCUS_TREE, focusPath: 'src', changedFiles: CHANGED_FILES, changesOnly: true },
+}
+
+export const ChangedFilesEmpty: Story = {
+  name: 'Changes · none in this folder',
+  args: { items: FOCUS_TREE, changedFiles: [], changesOnly: true },
+}
+
+export const ChangedFilesEmptyZh: Story = {
+  name: 'Changes · none in this folder, Chinese',
+  globals: { locale: 'zh' },
+  args: { items: FOCUS_TREE, changedFiles: [], changesOnly: true },
+}
+
+export const ChangedFilesDark: Story = {
+  name: 'Changes · dark',
+  globals: { theme: 'dark' },
+  args: { items: FOCUS_TREE, changedFiles: CHANGED_FILES, changesOnly: true },
 }
 
 /*

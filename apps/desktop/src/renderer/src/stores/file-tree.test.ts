@@ -293,3 +293,55 @@ describe('new file / new folder draft', () => {
     expect(useFileTreeStore.getState().draft).toEqual({ parentDir: '', kind: 'file' })
   })
 })
+
+describe('enterFolder', () => {
+  function entry(name: string, path: string, isDirectory: boolean): FileTreeEntry {
+    return { name, path, isDirectory, gitIndex: null, gitWorktree: null }
+  }
+
+  beforeEach(() => {
+    listDirMock.mockImplementation(async (_folder, rel) => {
+      if (rel === '') return [entry('src', 'src', true), entry('docs', 'docs', true), entry('readme.md', 'readme.md', false)]
+      if (rel === 'src') return [entry('app.ts', 'src/app.ts', false), entry('lib', 'src/lib', true)]
+      if (rel === 'src/lib') return [entry('util.ts', 'src/lib/util.ts', false)]
+      if (rel === 'docs') return [entry('guide.md', 'docs/guide.md', false)]
+      return []
+    })
+  })
+
+  it('roots the tree at the folder and rebases depth', async () => {
+    await useFileTreeStore.getState().fetchTree('/proj')
+    await useFileTreeStore.getState().enterFolder('/proj', 'src/lib')
+
+    expect(useFileTreeStore.getState().focusPath).toBe('src/lib')
+    expect(useFileTreeStore.getState()._visibleList.map((item) => [item.name, item.depth])).toEqual([['util.ts', 0]])
+  })
+
+  it('returns to the project root without a level above it', async () => {
+    await useFileTreeStore.getState().fetchTree('/proj')
+    await useFileTreeStore.getState().enterFolder('/proj', 'src')
+    await useFileTreeStore.getState().enterFolder('/proj', '')
+
+    const names = useFileTreeStore.getState()._visibleList.map((item) => item.name)
+    expect(useFileTreeStore.getState().focusPath).toBe('')
+    expect(names).toEqual(expect.arrayContaining(['src', 'app.ts', 'docs', 'readme.md']))
+  })
+
+  it('places a new draft at the focused folder', async () => {
+    await useFileTreeStore.getState().fetchTree('/proj')
+    await useFileTreeStore.getState().enterFolder('/proj', 'src')
+    await useFileTreeStore.getState().startDraft('/proj', 'src', 'file')
+
+    expect(useFileTreeStore.getState()._visibleList[0]).toMatchObject({ isDraft: true, depth: 0 })
+  })
+
+  it('drops the focus when the project changes', async () => {
+    await useFileTreeStore.getState().fetchTree('/proj')
+    await useFileTreeStore.getState().enterFolder('/proj', 'src')
+    listDirMock.mockResolvedValueOnce([entry('other.ts', 'other.ts', false)])
+    await useFileTreeStore.getState().fetchTree('/other')
+
+    expect(useFileTreeStore.getState().focusPath).toBe('')
+    expect(useFileTreeStore.getState()._visibleList.map((item) => item.name)).toEqual(['other.ts'])
+  })
+})

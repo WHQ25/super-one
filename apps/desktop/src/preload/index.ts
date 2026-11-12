@@ -165,8 +165,8 @@ const environmentAPI = {
   findLineNumber: (projectPath: string, filePath: string, text: string) =>
     ipcRenderer.invoke(AgentIpcChannels.FIND_LINE_NUMBER, projectPath, filePath, text),
 
-  searchFiles: (projectPath: string, query: string, additionalDirs?: string[]) =>
-    ipcRenderer.invoke(AgentIpcChannels.SEARCH_FILES, projectPath, query, additionalDirs),
+  searchFiles: (projectPath: string, query: string, additionalDirs?: string[], scopeDir?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SEARCH_FILES, projectPath, query, additionalDirs, scopeDir),
 
   getMentionCatalog: (projectPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_MENTION_CATALOG, projectPath) as Promise<import('@superone/shared/mention-catalog').MentionCatalog>,

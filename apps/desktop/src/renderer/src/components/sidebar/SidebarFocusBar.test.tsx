@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { render, screen } from '@testing-library/react'
+import { fireEvent, render, screen } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { Folder, FolderOpen } from 'lucide-react'
 import { describe, expect, it, vi } from 'vitest'
@@ -66,6 +66,24 @@ describe('SidebarFocusBar', () => {
     )
     expect(screen.getByText('Only').tagName).toBe('SPAN')
   })
+})
+
+it('turns the level control into back while the hover menu stays', () => {
+  const onBack = vi.fn()
+  render(<SidebarFocusBar
+    title="desktop"
+    siblings={[{ id: 'desktop', label: 'desktop', current: true, icon: <Folder className="size-4" />, onSelect: vi.fn() }]}
+    levels={[{ id: 'src', label: 'src', onSelect: vi.fn() }]}
+    backLabel="Back to src"
+    onBack={onBack}
+  />)
+  const back = screen.getByRole('button', { name: 'Back to src' })
+  expect(screen.queryByRole('button', { name: 'Focus Levels' })).not.toBeInTheDocument()
+  expect(back.querySelector('.lucide-list')).toHaveClass('size-4')
+  expect(back.querySelector('.lucide-circle-chevron-left')).toHaveClass('hidden', 'size-4')
+  expect(document.querySelector('[data-sidebar-focus-title] svg')).toHaveClass('size-4')
+  fireEvent.click(back)
+  expect(onBack).toHaveBeenCalledOnce()
 })
 
 it('opens the focused parent from its title while keeping sibling selection on a separate button', async () => {

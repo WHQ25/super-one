@@ -128,9 +128,17 @@ export function searchFilesInEntries(
   entries: Array<{ path: string; isDirectory: boolean; root?: string }>,
   query: string,
   limit = 20,
+  scopeDir?: string,
 ): FileSearchResult[] {
+  // Rank inside the folder first. A project-wide top-N drops every in-folder
+  // hit once files outside the folder fill the limit.
+  const scope = scopeDir?.replace(/\\/g, '/').replace(/\/+$/, '') ?? ''
+  const prefix = scope ? `${scope}/` : ''
+  const scoped = prefix
+    ? entries.filter((entry) => entry.path.replace(/\\/g, '/').startsWith(prefix))
+    : entries
   if (!query) {
-    return entries.slice(0, limit).map((f) => ({
+    return scoped.slice(0, limit).map((f) => ({
       path: f.path,
       isDirectory: f.isDirectory,
       matchIndices: [],
@@ -138,18 +146,22 @@ export function searchFilesInEntries(
       rootPath: f.root,
     }))
   }
-  const fzf = new Fzf(entries, {
-    selector: (f) => f.path,
+  const fzf = new Fzf(scoped, {
+    // Score the path under the folder. Indices are shifted back onto the full path.
+    selector: (f) => (prefix ? f.path.replace(/\\/g, '/').slice(scope.length) : f.path),
     casing: 'case-insensitive',
     tiebreakers: [byLengthAsc],
     limit,
   })
-  const matches = fzf.find(query) as FzfResultItem<(typeof entries)[number]>[]
-  return matches.map((m) => ({
-    path: m.item.path,
-    isDirectory: m.item.isDirectory,
-    matchIndices: indicesFromPositions(m.positions),
-    score: m.score,
-    rootPath: m.item.root,
-  }))
+  const matches = fzf.find(query) as FzfResultItem<(typeof scoped)[number]>[]
+  return matches.map((m) => {
+    const local = indicesFromPositions(m.positions)
+    return {
+      path: m.item.path,
+      isDirectory: m.item.isDirectory,
+      matchIndices: prefix ? local.map((index) => index + scope.length) : local,
+      score: m.score,
+      rootPath: m.item.root,
+    }
+  })
 }

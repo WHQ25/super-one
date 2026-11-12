@@ -41,6 +41,8 @@ interface FileTreeState {
   dragOverPath: string | null
   revealedPath: string | null
   draft: DraftEntry | null
+  /** Directory the tree is rooted at. '' is the project root. */
+  focusPath: string
   _visibleList: VisibleItem[]
   _visibleVersion: number
   _currentRoot: string | null
@@ -58,6 +60,8 @@ interface FileTreeState {
   renameFile: (projectPath: string, oldPath: string, newName: string) => Promise<FileOpResult>
   revealPath: (projectPath: string, path: string) => Promise<void>
   clearRevealed: () => void
+  /** Show `path` as the tree root. '' returns to the project root. There is no level above that. */
+  enterFolder: (projectPath: string, path: string) => Promise<void>
   /** Open an inline name input under `parentDir` (expanding it first). */
   startDraft: (projectPath: string, parentDir: string, kind: FileEntryKind) => Promise<void>
   cancelDraft: () => void
@@ -105,16 +109,21 @@ function computeVisible(
   expandedDirs: Set<string>,
   loadingDirs: Set<string>,
   draft: DraftEntry | null = null,
+  focusPath = '',
 ): VisibleItem[] {
   const result: VisibleItem[] = []
 
-  const rootNode = nodes.get('')
+  const rootNode = nodes.get(focusPath)
   if (!rootNode) return result
+  // Children of the focused folder render at depth 0. The project root's own
+  // depth is -1, so an unfocused tree keeps the depths it always had.
+  const offset = rootNode.depth + 1
 
   const walk = (parentPath: string, childPaths: string[]) => {
     // The draft sits first among its parent's children, like VS Code's new-file row.
     if (draft && draft.parentDir === parentPath) {
-      result.push(draftItem(draft, (nodes.get(parentPath)?.depth ?? -1) + 1))
+      const item = draftItem(draft, (nodes.get(parentPath)?.depth ?? -1) + 1)
+      result.push({ ...item, depth: item.depth - offset })
     }
     for (const path of childPaths) {
       const node = nodes.get(path)
@@ -127,7 +136,7 @@ function computeVisible(
         isDirectory: node.entry.isDirectory,
         gitIndex: node.entry.gitIndex,
         gitWorktree: node.entry.gitWorktree,
-        depth: node.depth,
+        depth: node.depth - offset,
         isExpanded,
         isLoading,
         hasChildren: node.childPaths.length > 0 || !node.isLoaded,
@@ -138,7 +147,7 @@ function computeVisible(
     }
   }
 
-  walk('', rootNode.childPaths)
+  walk(focusPath, rootNode.childPaths)
   return result
 }
 
@@ -195,7 +204,8 @@ function recomputeAndSet(
   const expandedDirs = (extra?.expandedDirs as Set<string> | undefined) ?? s.expandedDirs
   const loadingDirs = (extra?.loadingDirs as Set<string> | undefined) ?? s.loadingDirs
   const draft = extra?.draft !== undefined ? extra.draft : s.draft
-  const _visibleList = computeVisible(nodes, expandedDirs, loadingDirs, draft)
+  const focusPath = extra?.focusPath !== undefined ? extra.focusPath : s.focusPath
+  const _visibleList = computeVisible(nodes, expandedDirs, loadingDirs, draft, focusPath)
   set({ ...extra, _visibleList, _visibleVersion: s._visibleVersion + 1 })
 }
 
@@ -238,6 +248,7 @@ export const useFileTreeStore = create<FileTreeState>((set, get) => ({
   dragOverPath: null,
   revealedPath: null,
   draft: null,
+  focusPath: '',
   _visibleList: [],
   _visibleVersion: 0,
   _currentRoot: null,
@@ -245,7 +256,7 @@ export const useFileTreeStore = create<FileTreeState>((set, get) => ({
   fetchTree: async (projectPath) => {
     const s = get()
     if (s._currentRoot === projectPath && (s.loading || s.nodes.size > 0)) return
-    set({ loading: true, _currentRoot: projectPath })
+    set({ loading: true, _currentRoot: projectPath, focusPath: '' })
     try {
       const entries = await window.app.listDir(projectPath, '')
       if (get()._currentRoot !== projectPath) return
@@ -253,7 +264,7 @@ export const useFileTreeStore = create<FileTreeState>((set, get) => ({
       const rootChildPaths = entriesToNodes(entries, '', 0, nodes)
       nodes.set('', { entry: { name: '', path: '', isDirectory: true }, depth: -1, parentPath: '', childPaths: rootChildPaths, isLoaded: true })
       const _visibleList = computeVisible(nodes, new Set(), new Set())
-      set({ nodes, expandedDirs: new Set(), loadingDirs: new Set(), loading: false, draft: null, _visibleList, _visibleVersion: get()._visibleVersion + 1 })
+      set({ nodes, expandedDirs: new Set(), loadingDirs: new Set(), loading: false, draft: null, focusPath: '', _visibleList, _visibleVersion: get()._visibleVersion + 1 })
     } catch {
       if (get()._currentRoot !== projectPath) return
       set({ nodes: new Map(), loading: false, _visibleList: [], _visibleVersion: get()._visibleVersion + 1 })
@@ -336,6 +347,7 @@ export const useFileTreeStore = create<FileTreeState>((set, get) => ({
       dragOverPath: null,
       revealedPath: null,
       draft: null,
+      focusPath: '',
       _visibleList: [],
       _visibleVersion: get()._visibleVersion + 1,
       _currentRoot: null,
@@ -390,6 +402,27 @@ export const useFileTreeStore = create<FileTreeState>((set, get) => ({
   },
 
   clearRevealed: () => set({ revealedPath: null }),
+
+  enterFolder: async (projectPath, path) => {
+    const clean = path.replace(/\/+$/, '')
+    if (get()._currentRoot !== projectPath) return
+    if (!clean) {
+      recomputeAndSet(get, set, { focusPath: '' })
+      return
+    }
+    // Load every ancestor. A changes-only row can name a folder the tree has
+    // not listed yet; expanding the parent is what creates that node.
+    let prefix = ''
+    for (const seg of clean.split('/')) {
+      if (get()._currentRoot !== projectPath) return
+      prefix = prefix ? `${prefix}/${seg}` : seg
+      const node = get().nodes.get(prefix)
+      if (!node?.entry.isDirectory) return
+      await ensureExpanded(get, set, projectPath, prefix)
+    }
+    if (get()._currentRoot !== projectPath) return
+    recomputeAndSet(get, set, { focusPath: clean })
+  },
 
   startDraft: async (projectPath, parentDir, kind) => {
     if (parentDir) await ensureExpanded(get, set, projectPath, parentDir)

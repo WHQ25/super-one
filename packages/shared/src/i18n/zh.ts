@@ -440,6 +440,9 @@ export const zh: Messages = {
     focusLevels: '聚焦层级',
     focusSwitchEnvironment: '选择环境',
     focusSwitchSession: '选择会话',
+    focusSwitchFolder: '选择文件夹',
+    parentFolder: '返回到 {{name}}',
+    newEntry: '新建',
     focusChildrenLoadFailed: '无法加载子会话，点击重试',
     thisMac: '这台 Mac',
     thisPc: '这台电脑',
@@ -542,6 +545,8 @@ export const zh: Messages = {
     noFiles: '没有文件',
     filesUnavailable: '这台机器不提供文件浏览',
     refreshFiles: '刷新文件树',
+    showChangedFiles: '只显示改动',
+    noChangedFiles: '此文件夹没有改动',
     createFailed: '无法创建 {{name}}：{{error}}',
     search: {
       allEnvironments: '全部环境',

@@ -94,10 +94,11 @@ export function collectFiles(
 export function searchFiles(
   roots: string[],
   query: string,
-  limit = 20
+  limit = 20,
+  scopeDir?: string,
 ): FileSearchResult[] {
   const files = collectFiles(roots)
-  const results = searchFilesInEntries(files, query, limit)
+  const results = searchFilesInEntries(files, query, limit, scopeDir)
   if (roots.length > 1) return results
   return results.map((r) => ({ ...r, rootPath: undefined }))
 }

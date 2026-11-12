@@ -192,34 +192,39 @@ export const TreeRow = memo(function TreeRow({
 
   const expandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dragIconRef = useRef<HTMLImageElement | null>(null)
+  const clickTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   useEffect(() => {
     return () => {
       if (expandTimerRef.current) clearTimeout(expandTimerRef.current)
+      clearTimeout(clickTimer.current)
     }
   }, [])
-
-  const clickTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   const handleClick = useCallback(() => {
     if (isRenaming) return
     if (Date.now() - internalDragSource.lastEndMs < 200) return
-    if (item.isDirectory) {
-      toggleDir(currentFolder, item.path)
-      return
-    }
     clearTimeout(clickTimer.current)
+    // A directory waits out a second click: double-click enters that folder,
+    // and the expand must not also run.
     clickTimer.current = setTimeout(() => {
-      useSourceControlStore.getState().selectFile(currentFolder, item.path)
-      openFileTab(item.path)
+      if (item.isDirectory) toggleDir(currentFolder, item.path)
+      else {
+        useSourceControlStore.getState().selectFile(currentFolder, item.path)
+        openFileTab(item.path)
+      }
     }, 200)
   }, [item.path, item.isDirectory, currentFolder, toggleDir, isRenaming])
 
   const handleDoubleClick = useCallback(() => {
-    if (isRenaming || item.isDirectory) return
+    if (isRenaming) return
     clearTimeout(clickTimer.current)
+    if (item.isDirectory) {
+      void useFileTreeStore.getState().enterFolder(currentFolder, item.path)
+      return
+    }
     openNewFileTab(item.path)
-  }, [item.path, item.isDirectory, isRenaming])
+  }, [item.path, item.isDirectory, currentFolder, isRenaming])
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return
@@ -402,6 +407,8 @@ export const TreeRow = memo(function TreeRow({
   )
 }, (prev, next) =>
   prev.item.path === next.item.path &&
+  // Entering a folder rebases depth while the path stays the same.
+  prev.item.depth === next.item.depth &&
   prev.item.isExpanded === next.item.isExpanded &&
   prev.item.gitIndex === next.item.gitIndex &&
   prev.item.gitWorktree === next.item.gitWorktree &&

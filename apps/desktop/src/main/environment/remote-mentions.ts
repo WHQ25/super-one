@@ -109,10 +109,11 @@ export async function searchRemoteFiles(
   folderPath: string,
   query: string,
   limit = 20,
+  scopeDir?: string,
 ): Promise<FileSearchResult[] | null> {
-  const inventory = await fetchRemoteFileInventory(host, folderPath)
+  const inventory = await fetchRemoteFileInventory(host, folderPath, scopeDir)
   if (inventory === null) return null
-  return searchFilesInEntries(inventory, query, limit)
+  return searchFilesInEntries(inventory, query, limit, scopeDir)
 }
 
 export async function listRemoteSkillsAndCommands(

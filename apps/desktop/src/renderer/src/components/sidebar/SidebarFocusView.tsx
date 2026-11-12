@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, type ReactNode, type RefObject } from 'react'
-import { CalendarClock, Check, ChevronDown, Folder, FolderOpen, FolderX, List, Loader2, LogOut, MessageSquare, Monitor, Pin, Plus, Search, SquarePen, Undo2 } from 'lucide-react'
+import { CalendarClock, Check, ChevronDown, CircleChevronLeft, Folder, FolderOpen, FolderX, List, Loader2, LogOut, MessageSquare, Monitor, Pin, Plus, Search, SquarePen, Undo2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { RecentFolder, SessionHistoryEntry } from '@superone/shared/agent-types'
 import {
@@ -136,6 +136,8 @@ export function SidebarFocusBar({
   menuLabel,
   onAddProject,
   onOpenCurrent,
+  onBack,
+  backLabel,
 }: {
   title: string
   siblings: FocusSwitchItem[]
@@ -143,6 +145,10 @@ export function SidebarFocusBar({
   actions?: ReactNode
   /** Heading on the sibling menu. Project focus uses the chat project picker title. */
   menuLabel?: string
+  /** One step up. File-tree focus uses this; session focus does not. */
+  onBack?: () => void
+  /** Hover label naming the folder `onBack` opens. */
+  backLabel?: string
   /** Project focus reuses the chat picker, including its add-project row. */
   onAddProject?: () => void
   /** A focused session remains directly openable; its sibling picker is a separate control. */
@@ -199,37 +205,47 @@ export function SidebarFocusBar({
   )
   return (
     <div data-sidebar-focus-bar className="flex h-9 shrink-0 items-center gap-1 px-1.5">
-      <div className="group/levels relative shrink-0">
-        <IconButton
-          size="sm"
-          variant="nested"
-          aria-label={t('sidebar.focusLevels')}
-          data-sidebar-focus-levels-trigger
-        >
-          <List />
-        </IconButton>
-        <div
-          data-sidebar-focus-levels
-          className="invisible absolute left-0 top-full z-30 pt-1 group-hover/levels:visible group-focus-within/levels:visible"
-        >
-          {/* brand-scope re-resolves popover tokens. Inside the sidebar the
-              remapped accent would paint item hover as a dark slab on this light menu. */}
-          <div className="brand-scope min-w-40 rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
-            {orderedLevels.map((level) => (
-              <button
-                key={level.id}
-                type="button"
-                data-focus-level={level.id}
-                onClick={level.onSelect}
-                className="flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent hover:text-accent-foreground"
-              >
-                {level.icon}
-                <span className="min-w-0 flex-1 truncate">{level.label}</span>
-              </button>
-            ))}
-          </div>
+      {(orderedLevels.length > 0 || onBack) && (
+        <div className="group/levels relative shrink-0">
+          <IconButton
+            size="sm"
+            variant="nested"
+            tooltip={onBack ? backLabel : undefined}
+            aria-label={onBack ? undefined : t('sidebar.focusLevels')}
+            data-sidebar-focus-levels-trigger
+            data-testid={onBack ? 'file-tree-parent-back' : undefined}
+            onClick={onBack}
+          >
+            <List className={onBack ? 'size-4 group-hover/levels:hidden group-focus-within/levels:hidden' : 'size-4'} />
+            {onBack && (
+              <CircleChevronLeft className="hidden size-4 group-hover/levels:block group-focus-within/levels:block" />
+            )}
+          </IconButton>
+          {orderedLevels.length > 0 && (
+            <div
+              data-sidebar-focus-levels
+              className="invisible absolute left-0 top-full z-30 pt-1 group-hover/levels:visible group-focus-within/levels:visible"
+            >
+              {/* brand-scope re-resolves popover tokens. Inside the sidebar the
+                  remapped accent would paint item hover as a dark slab on this light menu. */}
+              <div className="brand-scope min-w-40 rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
+                {orderedLevels.map((level) => (
+                  <button
+                    key={level.id}
+                    type="button"
+                    data-focus-level={level.id}
+                    onClick={level.onSelect}
+                    className="flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent hover:text-accent-foreground"
+                  >
+                    {level.icon}
+                    <span className="min-w-0 flex-1 truncate">{level.label}</span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
-      </div>
+      )}
       {canSwitch && !onOpenCurrent ? (
         <DropdownMenu>
           <DropdownMenuTrigger asChild>

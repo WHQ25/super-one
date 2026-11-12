@@ -1368,20 +1368,25 @@ export class AgentService {
       }
     })
 
-    windowIpc.handle(AgentIpcChannels.SEARCH_FILES, async (_event, projectPath: string, query: string, additionalDirs?: string[]) => {
+    windowIpc.handle(AgentIpcChannels.SEARCH_FILES, async (_event, projectPath: string, query: string, additionalDirs?: string[], scopeDir?: string) => {
       const { parseRemoteProjectKey } = await import('@superone/shared/remote-resource-key')
+      const scope = scopeDir?.replace(/\\/g, '/').replace(/\/+$/, '') || undefined
       if (parseRemoteProjectKey(projectPath)) {
         try {
           const { getEnvironmentHost } = await import('../environment')
           const { searchRemoteFiles } = await import('../environment/remote-mentions')
-          return (await searchRemoteFiles(getEnvironmentHost(), projectPath, query, 20)) ?? []
+          return (await searchRemoteFiles(getEnvironmentHost(), projectPath, query, 20, scope)) ?? []
         } catch {
           return []
         }
       }
-      const cwd = this.sessionManager?.getActiveSession(projectPath)?.snapshot.cwd ?? projectPath
+      // A folder scope uses the file tree's project root so paths stay project-relative.
+      // Unscoped search keeps following the active session cwd.
+      const cwd = scope
+        ? projectPath
+        : (this.sessionManager?.getActiveSession(projectPath)?.snapshot.cwd ?? projectPath)
       const roots = [cwd, ...(additionalDirs || [])]
-      return searchFiles(roots, query, 20)
+      return searchFiles(roots, query, 20, scope)
     })
 
     windowIpc.handle(AgentIpcChannels.SEARCH_MENTIONS, async (_event, projectPath: string, query: string, agents: AgentEntry[], additionalDirs?: string[], scopeDir?: string) => {

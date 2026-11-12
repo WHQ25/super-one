@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { FileSearchResult } from '@superone/shared/agent-types'
-import { buildSearchTree } from './file-search-tree'
+import { buildSearchGitIndex, buildSearchTree } from './file-search-tree'
 
 function r(path: string, isDirectory = false, matchIndices: number[] = []): FileSearchResult {
   return { path, isDirectory, matchIndices, score: 1 }
@@ -43,5 +43,25 @@ describe('buildSearchTree', () => {
     const comp = flat.find((n) => n.name === 'components')!
     expect(comp.isDirectory).toBe(true)
     expect(comp.matchIndices).toEqual([0, 1, 2, 3])
+  })
+})
+
+describe('buildSearchGitIndex', () => {
+  const lookup = buildSearchGitIndex([
+    { path: 'Src/App.ts', status: 'M', staged: false },
+    { path: 'src/lib/util.ts', status: 'A', staged: true },
+    { path: 'docs/guide.md', status: '!', staged: false },
+  ])
+
+  it('matches a file even when the path case differs', () => {
+    expect(lookup('src/app.ts', false)).toEqual({ gitIndex: null, gitWorktree: 'M' })
+  })
+
+  it('paints a directory from the strongest file inside it', () => {
+    expect(lookup('src', true)).toEqual({ gitIndex: 'A', gitWorktree: 'M' })
+  })
+
+  it('keeps an ignored file ignored', () => {
+    expect(lookup('docs/guide.md', false)).toEqual({ gitIndex: null, gitWorktree: '!' })
   })
 })

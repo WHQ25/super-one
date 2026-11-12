@@ -14,8 +14,9 @@ import { HarnessManager } from './harness-manager'
 import { ProviderStore } from '../provider/provider-store'
 import { ProjectRegistry } from '../workspace/project-registry'
 import { WorkspaceGitService } from '@superone/runtime/workspace/git-service'
-import { CollaborationService } from './collaboration'
+import { normalizeNodeAgentSettings } from '@superone/runtime/settings'
 import { createSessionProviderStore, type TurnRunner } from '@superone/runtime/session'
+import { CollaborationService } from './collaboration'
 import type { NodeDatabase } from '../db/database'
 
 function grantIdFor(db: NodeDatabase, launchId: string): string {
@@ -33,7 +34,7 @@ afterEach(() => {
   for (const d of dirs.splice(0)) rmSync(d, { recursive: true, force: true })
 })
 
-function bootCollab(opts?: { simulateReady?: boolean; turnRunner?: TurnRunner; agentProfilesEnabled?: () => boolean }) {
+function bootCollab(opts?: { simulateReady?: boolean; turnRunner?: TurnRunner; agentProfilesEnabled?: () => boolean; agentSettings?: () => ReturnType<typeof normalizeNodeAgentSettings> }) {
   const nodeHome = mkdtempSync(join(tmpdir(), 'collab-unit-'))
   dirs.push(nodeHome)
   const db = openNodeDatabase(join(nodeHome, 'state.sqlite'))
@@ -64,6 +65,7 @@ function bootCollab(opts?: { simulateReady?: boolean; turnRunner?: TurnRunner; a
     workspaceGit,
     sessionProviders,
     experimentalAgentProfilesEnabled: opts?.agentProfilesEnabled ?? (() => true),
+    ...(opts?.agentSettings ? { agentSettings: opts.agentSettings } : {}),
   }
   const collab = new CollaborationService(deps)
   collaborations.push(collab)
@@ -107,6 +109,14 @@ describe('collaboration grants + mailbox', () => {
       expect(calls('codex')).toBe(2)
       expect(probe.mock.calls.filter((call) => call[0]?.harness === 'claude').at(-1)?.[0]?.force).toBe(true)
     } finally { probe.mockRestore() }
+  })
+
+  it('lists the node Claude sandbox default and does not copy it onto Codex', () => {
+    const { collab } = bootCollab({
+      agentSettings: () => normalizeNodeAgentSettings({ claude: { sandboxMode: 'auto' } }),
+    })
+    expect(collab.listProfiles().find((profile) => profile.id === 'claude-base')?.defaultConfig.sandboxMode).toBe('auto')
+    expect(collab.listProfiles().find((profile) => profile.id === 'codex-base')?.defaultConfig).not.toHaveProperty('sandboxMode')
   })
 
   it('requires user confirmation for defaults while Agent Profiles is disabled', async () => {

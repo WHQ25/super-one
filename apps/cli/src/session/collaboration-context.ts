@@ -1,5 +1,5 @@
 import type { SessionAgentLaunchConfig, SessionAgentProfile } from '@superone/shared/agent-types'
-import { normalizeSessionHarnessId } from '@superone/shared/environment'
+import { normalizeSessionHarnessId, type NodeAgentSettings } from '@superone/shared/environment'
 import type { SessionProviderStore } from '@superone/runtime/session'
 import type {
   CollaborationGrantRow,
@@ -33,6 +33,12 @@ export interface CollaborationDeps {
   sessionProviders?: SessionProviderStore
   experimentalClaudeOpenAiChatEnabled?: () => boolean
   experimentalAgentProfilesEnabled?: () => boolean
+  /**
+   * This node's harness defaults (`config.json` agent block). Claude's sandbox
+   * is copied onto the catalog so a remote spawn can inherit it. Desktop nodes
+   * serve their own profiles and leave this unset.
+   */
+  agentSettings?: () => NodeAgentSettings
 }
 
 /** What every node collaboration operation works against. */

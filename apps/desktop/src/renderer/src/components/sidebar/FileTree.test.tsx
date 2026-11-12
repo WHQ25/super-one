@@ -3,6 +3,7 @@
 import { fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import type { FileTreeEntry } from '@superone/shared/agent-types'
 import { useAppStore } from '@/stores/app'
 import { useFileTreeStore } from '@/stores/file-tree'
 import { useSourceControlStore } from '@/stores/source-control'
@@ -25,7 +26,7 @@ vi.mock('@/components/activity/activity-panel-api', async (importOriginal) => ({
   openFileTab,
 }))
 
-const listDir = vi.fn(async () => [])
+const listDir = vi.fn(async (_folderPath: string, _dirRelPath: string): Promise<FileTreeEntry[]> => [])
 
 async function chooseCreate(name: 'New File' | 'New Folder') {
   fireEvent.keyDown(screen.getByTestId('file-tree-new'), { key: 'Enter' })
@@ -74,7 +75,7 @@ describe('FileTree new file / new folder', () => {
     listDir.mockReset()
     listDir.mockImplementation(async () => [
       { name: 'a.ts', path: 'a.ts', isDirectory: false, gitIndex: null, gitWorktree: null },
-    ] as never)
+    ])
     createEntry.mockReset()
     openFileTab.mockClear()
     const w = globalThis.window as unknown as Record<string, unknown>

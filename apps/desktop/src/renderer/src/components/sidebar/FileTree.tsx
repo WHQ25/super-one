@@ -107,8 +107,10 @@ function FileTreeActions({
   // The menu returns focus to this button on a timeout. Starting the draft
   // before that focuses the empty name and the blur cancels it.
   const openDraft = (kind: 'file' | 'directory') => {
+    if (!fileRoot) return
+    const root = fileRoot
     window.setTimeout(() => {
-      window.setTimeout(() => { void startDraft(fileRoot, focusPath, kind) }, 0)
+      window.setTimeout(() => { void startDraft(root, focusPath, kind) }, 0)
     }, 0)
   }
   return (

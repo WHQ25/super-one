@@ -7,12 +7,13 @@ import {
   findTextRange,
   highlightBandsFromRects,
   rangeRects,
-  topRightOfRects,
+  firstLineTopRight,
   type HighlightBand,
   type ViewportCorner,
 } from './plan-annotation-dom'
 import { stickyForComment, stickyForDraft, type StickySwatch } from './plan-sticky-palette'
-import { MarkerStroke, STICKY_UI_ATTR, StickyNoteEditor, StickyPinButton, strokeSeed } from './plan-sticky-visuals'
+import { MarkerStroke, STICKY_UI_ATTR, StickyNoteEditor, StickyPinButton, markerBlendMode, strokeSeed } from './plan-sticky-visuals'
+import { newReplyCommentId } from '@/stores/chat-store/helpers/reply-comments'
 import { onReplyCommentEditRequest, type ReplyCommentAnchor } from './reply-comment-target'
 
 /** A selection about to be commented on: where it is, and how it quotes. */
@@ -126,12 +127,16 @@ export function ReplyCommentLayer({ rootRef, ref }: { rootRef: RefObject<HTMLEle
       const range = locate(root, anchor)
       if (!range) return
       const rects = localRects(range, origin)
-      const corner = topRightOfRects(rects, PIN)
+      const corner = firstLineTopRight(rects, PIN)
       if (!corner) return
       strokes.push({ key, bands: highlightBandsFromRects(rects), swatch })
       pins[key] = corner
     }
-    for (const c of comments) place(c.id, c, stickyForComment(c.id, comments))
+    // Code comments share this list's numbers but have no transcript passage to paint.
+    for (const c of comments) {
+      if (c.surface === 'code') continue
+      place(c.id, c, stickyForComment(c.id, comments))
+    }
     if (open && !open.id) place(DRAFT_KEY, open, stickyForDraft(comments.length))
     const pin = open ? pins[open.id ?? DRAFT_KEY] : undefined
     // Nothing drawn: keep the same empty layout so React skips the render.
@@ -172,7 +177,7 @@ export function ReplyCommentLayer({ rootRef, ref }: { rootRef: RefObject<HTMLEle
 
   useEffect(() => onReplyCommentEditRequest((id) => {
     const comment = comments.find((c) => c.id === id)
-    if (comment) openSaved(comment)
+    if (comment && comment.surface !== 'code') openSaved(comment)
   }), [comments, openSaved])
 
   // A click on a saved highlight (not the end of a drag) opens its note.
@@ -201,8 +206,13 @@ export function ReplyCommentLayer({ rootRef, ref }: { rootRef: RefObject<HTMLEle
       if (text) actions.update(current.id, text, target)
       else actions.remove(current.id, target)
     } else if (text) {
-      const id = `reply-comment-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-      actions.add({ id, messageId: current.messageId, anchorText: current.anchorText, quote: current.quote, text }, target)
+      actions.add({
+        id: newReplyCommentId(),
+        messageId: current.messageId,
+        anchorText: current.anchorText,
+        quote: current.quote,
+        text,
+      }, target)
     }
     setNote(null)
   }, [actions, target])
@@ -235,11 +245,17 @@ export function ReplyCommentLayer({ rootRef, ref }: { rootRef: RefObject<HTMLEle
 
   return (
     <div ref={layerRef} className="pointer-events-none absolute inset-0">
-      {/* No z-index on strokes: a stacking context would isolate their blend from the text. */}
-      {layout.strokes.flatMap(({ key, bands, swatch }) => bands.map((band, i) => (
-        <MarkerStroke key={`${key}-${i}`} band={band} swatch={swatch} isDark={isDark} seed={strokeSeed(key, i)} className="absolute" />
-      )))}
+      {/* One blend for the whole passage. Per-line screen/multiply stacks where
+          strokes meet, so a multi-line highlight went brighter (dark) or darker (light). */}
+      {layout.strokes.map(({ key, bands, swatch }) => (
+        <div key={key} className="pointer-events-none absolute inset-0" style={{ mixBlendMode: markerBlendMode(isDark) }}>
+          {bands.map((band, i) => (
+            <MarkerStroke key={`${key}:${band.top}:${band.left}:${band.width}`} band={band} swatch={swatch} isDark={isDark} seed={strokeSeed(key, i)} blend={false} className="absolute" />
+          ))}
+        </div>
+      ))}
       {comments.map((c, index) => {
+        if (c.surface === 'code') return null
         const pos = layout.pins[c.id]
         if (!pos || openKey === c.id) return null
         const swatch = swatchOf(c.id)

@@ -22,6 +22,7 @@ import { SetupPage } from '@/components/SetupPage'
 import { OnboardingPage } from '@/components/onboarding/OnboardingPage'
 import { HarnessAlignPage } from '@/components/onboarding/HarnessAlignPage'
 import { ExternalLinkConfirm } from '@/components/ExternalLinkConfirm'
+import { CodeCommentNoteHost } from '@/components/chat/CodeCommentNoteHost'
 import { MiniAppClipboardGuard } from '@/components/MiniAppClipboardGuard'
 import { MiniAppMediaIndicator } from '@/components/miniapp/MiniAppMediaIndicator'
 import { MiniWindowHeader } from '@/components/MiniWindowApp'
@@ -755,6 +756,7 @@ function App(): React.JSX.Element {
       </div>
       </>
       {activityFillsWindow && !inMiniWindow && <ChatPanel anchorBoundaryRef={mainWrapperRef} />}
+      <CodeCommentNoteHost />
       <ExternalLinkConfirm />
       <MiniAppClipboardGuard />
       {import.meta.env.DEV && <DebugPanel />}

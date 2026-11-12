@@ -1,8 +1,11 @@
-import { useMemo, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { expect, waitFor } from 'storybook/test'
 import { createTwoFilesPatch } from 'diff'
 import { mockIpc } from '../../../../../.storybook/mock-ipc'
+import { CodeCommentNoteHost } from '@/components/chat/CodeCommentNoteHost'
 import { useAppStore } from '@/stores/app'
+import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
 import { CodeFileEditor } from './CodeFileEditor'
 
 const ROOT = '/storybook'
@@ -227,4 +230,53 @@ export const VimMode: Story = {
       vimMode
     />
   ),
+}
+
+const HOST_QUOTE = [
+  '/storybook/src/server.ts:L11:D',
+  "-  const host = options.host ?? '127.0.0.1'",
+  "+  const host = options.host ?? '0.0.0.0'",
+].join('\n')
+
+/** A code comment shares the conversation's numbering and paints a stroke plus a pin on the line. */
+function CommentedFile() {
+  useEffect(() => {
+    const previous = useChatStore.getState()
+    useChatStore.setState({
+      activeProject: ROOT,
+      projectSessions: {
+        ...previous.projectSessions,
+        [ROOT]: {
+          ...createDefaultProjectState(),
+          _activeSessionId: 'story',
+          _sessions: {
+            story: {
+              ...createDefaultPerSessionState(),
+              replyComments: [
+                { id: 'c-chat', messageId: 'm1', anchorText: 'a passage', quote: 'a passage', text: 'from chat' },
+                { id: 'c-code', messageId: null, anchorText: HOST_QUOTE, quote: HOST_QUOTE, text: 'Bind every interface', surface: 'code' },
+              ],
+            },
+          },
+        },
+      },
+    })
+    return () => { useChatStore.setState(previous) }
+  }, [])
+  return (
+    <>
+      <CodeCommentNoteHost />
+      <InteractiveHarness filePath="src/server.ts" baseContent={BASE_TS} initialContent={MODIFIED_TS} />
+    </>
+  )
+}
+
+export const WithComments: Story = {
+  render: () => <CommentedFile />,
+  play: async ({ canvasElement }) => {
+    await waitFor(() => {
+      const pin = canvasElement.querySelector('[data-testid="code-comment-layer"] button')
+      expect(pin?.textContent).toBe('2')
+    })
+  },
 }

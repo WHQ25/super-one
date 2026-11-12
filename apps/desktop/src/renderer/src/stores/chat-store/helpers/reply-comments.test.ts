@@ -27,6 +27,15 @@ describe('buildReplyCommentsText', () => {
       '</reply_comments>',
     ].join('\n'))
   })
+
+  it('numbers a code diff comment in the same sequence as transcript comments', () => {
+    const text = buildReplyCommentsText([
+      comment('a', 'passage', 'chat note'),
+      { ...comment('b', 'src/a.ts:L2:D\n-old\n+new', 'diff note'), surface: 'code' },
+    ])
+    expect(text).toContain('1. On this passage:\n> passage\nComment: chat note')
+    expect(text).toContain('2. On this passage:\n> src/a.ts:L2:D\n> -old\n> +new\nComment: diff note')
+  })
 })
 
 describe('replyCommentSelection', () => {

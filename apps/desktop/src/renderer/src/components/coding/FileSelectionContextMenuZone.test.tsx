@@ -2,6 +2,7 @@
 
 import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { closeCodeCommentNote, getCodeCommentNote } from '@/components/chat/code-comment-note'
 import {
   FileSelectionContextMenuZone,
   captureFileSelection,
@@ -11,8 +12,11 @@ import {
 
 const addUserSelection = vi.fn()
 vi.mock('@/stores/chat', () => ({
-  useChatStore: (selector: (state: { addUserSelection: typeof addUserSelection }) => unknown) =>
-    selector({ addUserSelection }),
+  useChatStore: Object.assign(
+    (selector: (state: { addUserSelection: typeof addUserSelection }) => unknown) =>
+      selector({ addUserSelection }),
+    { getState: () => ({ activeProject: null, projectSessions: {}, addUserSelection }) },
+  ),
 }))
 
 vi.mock('react-i18next', () => ({
@@ -21,6 +25,7 @@ vi.mock('react-i18next', () => ({
       const map: Record<string, string> = {
         'chat.selectionMenu.copy': '复制',
         'chat.selectionMenu.addToChat': '添加到聊天',
+        'chat.selectionMenu.addComment': '添加评论',
       }
       return map[key] ?? key
     },
@@ -217,6 +222,7 @@ describe('FileSelectionContextMenuZone', () => {
   afterEach(() => {
     vi.restoreAllMocks()
     addUserSelection.mockClear()
+    closeCodeCommentNote()
     ;(navigator.clipboard.writeText as ReturnType<typeof vi.fn>).mockClear()
     document.body.innerHTML = ''
   })
@@ -288,5 +294,22 @@ describe('FileSelectionContextMenuZone', () => {
       screen.getByText('复制').click()
     })
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith('a = 1\nconst b')
+  })
+
+  it('adds a comment on the editor selection quote, including its diff', () => {
+    const quote = '/abs/path/foo.ts:L2:C0-C13:D\n-const b = 2\n+const b = 999'
+    render(
+      <FileSelectionContextMenuZone
+        filePath="/abs/path/foo.ts"
+        captureSelection={() => ({ copyText: 'const b', quoteText: quote })}
+      >
+        <p>editor</p>
+      </FileSelectionContextMenuZone>,
+    )
+    fireEvent.contextMenu(screen.getByText('editor'), { clientX: 12, clientY: 40 })
+    act(() => {
+      screen.getByText('添加评论').click()
+    })
+    expect(getCodeCommentNote()).toMatchObject({ mode: 'draft', quote, x: 12, y: 40 })
   })
 })

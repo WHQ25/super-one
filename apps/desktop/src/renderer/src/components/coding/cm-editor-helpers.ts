@@ -1,7 +1,7 @@
 import { Compartment, EditorState, type Extension, StateField } from '@codemirror/state'
 import { EditorView, lineNumbers } from '@codemirror/view'
-import { compressLineRanges, formatFilePrefix } from '@superone/shared/file-quote-prefix'
-import { setFlashLineEffect } from './cm-diff-gutter'
+import { diffChangesField, setFlashLineEffect } from './cm-diff-gutter'
+import { formatEditorSelectionQuote } from './editor-diff'
 import type { CapturedFileSelection } from './FileSelectionContextMenuZone'
 
 export interface LineNumbersController {
@@ -117,17 +117,18 @@ export function captureViewSelection(
     endCol = endLineObj.length
   }
 
-  const lineNums: number[] = []
-  const bodyLines: string[] = []
-  for (let ln = startLine; ln <= endLine; ln++) {
-    lineNums.push(ln)
-    bodyLines.push(doc.line(ln).text)
-  }
-  const compressed = compressLineRanges(lineNums)
-  if (!compressed) return { copyText, quoteText: copyText }
-
-  const prefix = formatFilePrefix(fullFilePath, compressed, startCol, endCol, false)
-  return { copyText, quoteText: `${prefix}\n${bodyLines.join('\n')}` }
+  const changes = view.state.field(diffChangesField, false) ?? []
+  const quoteText = formatEditorSelectionQuote({
+    filePath: fullFilePath,
+    lineText: (line) => doc.line(line).text,
+    lineCount: doc.lines,
+    startLine,
+    endLine,
+    startCol,
+    endCol,
+    changes,
+  })
+  return { copyText, quoteText: quoteText || copyText }
 }
 
 export function attachHorizontalGutterClip(view: EditorView, onScroll: () => void): () => void {

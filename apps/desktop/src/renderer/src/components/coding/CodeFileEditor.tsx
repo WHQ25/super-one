@@ -37,6 +37,7 @@ import {
   setDiffChangesEffect,
   type GutterHoverPayload,
 } from './cm-diff-gutter'
+import { CodeCommentLayer } from './CodeCommentLayer'
 import { DiffHunkHoverCard } from './DiffHunkHoverCard'
 import {
   buildEditorMinimapLines,
@@ -458,6 +459,14 @@ export function CodeFileEditor({
         data-dirty={isDirty ? 'true' : 'false'}
         className="size-full overflow-hidden"
       />
+      {editorDom && (
+        <CodeCommentLayer
+          editorDom={editorDom}
+          viewRef={viewRef}
+          fullPath={fullFilePath}
+          relPath={filePath}
+        />
+      )}
       {overflowsPage &&
         editorDom &&
         createPortal(

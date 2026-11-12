@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest'
 import {
   clearStickyMarks,
+  firstLineTopRight,
   highlightBandsFromMarks,
   quoteFromLines,
   STICKY_DRAFT_ATTR,
@@ -107,5 +108,26 @@ describe('highlightBandsFromMarks', () => {
 
     const bands = highlightBandsFromMarks([a, b])
     expect(bands).toHaveLength(2)
+  })
+})
+
+const PIN = 18
+
+describe('firstLineTopRight', () => {
+  it('hangs on the top-right of the first line', () => {
+    const rects = [new DOMRect(80, 40, 60, 22), new DOMRect(40, 70, 400, 22)]
+    expect(firstLineTopRight(rects, PIN)).toEqual({
+      left: 80 + 60 - PIN / 2,
+      top: 40 - PIN / 2,
+    })
+  })
+
+  it('uses the rightmost fragment when the first line is split', () => {
+    const rects = [new DOMRect(70, 40, 40, 22), new DOMRect(120, 40, 30, 22)]
+    expect(firstLineTopRight(rects, PIN)?.left).toBe(150 - PIN / 2)
+  })
+
+  it('returns null when there is no selection', () => {
+    expect(firstLineTopRight([], PIN)).toBeNull()
   })
 })

@@ -9,8 +9,9 @@
  * - `marker`     → light theme, `mix-blend-mode: multiply` (subtractive, like real ink)
  * - `markerDark` → dark theme, `mix-blend-mode: screen` (additive, so ink must be *dark*)
  *
- * In both variants `deep` means "more ink" (pen dwell at stroke ends / bottom
- * settle): darker under multiply, brighter under screen.
+ * `deep` is more ink at the ends and the bottom edge. Under multiply (light
+ * theme) that reads darker. Dark-theme strokes do not use it: under screen a
+ * darker ink is brighter, so a ramp made some lines hotter than the rest.
  */
 
 export interface StickyInk {

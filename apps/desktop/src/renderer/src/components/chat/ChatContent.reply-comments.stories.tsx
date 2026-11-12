@@ -92,8 +92,49 @@ export const Saved: Story = {
 
 export const Narrow: Story = { args: { width: 340 } }
 
-/** A lone comment: the chip shows its text and opens its note directly. */
-export const Single: Story = { args: { comments: SAVED.slice(0, 1) } }
+const CODE_QUOTE = [
+  '/storybook/src/server.ts:L11:D',
+  "-  const host = options.host ?? '127.0.0.1'",
+  "+  const host = options.host ?? '0.0.0.0'",
+].join('\n')
+
+const WITH_CODE: ReplyComment[] = [
+  SAVED[0]!,
+  {
+    id: 'c-code',
+    messageId: null,
+    anchorText: CODE_QUOTE,
+    quote: CODE_QUOTE,
+    text: 'Bind every interface',
+    surface: 'code',
+  },
+]
+
+/** A lone comment uses the same count chip and card list as several. */
+export const Single: Story = {
+  args: { comments: SAVED.slice(0, 1) },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await waitFor(() => expect(canvas.getByText('1 comment')).toBeInTheDocument())
+    expect(canvas.queryByText('Is this only a problem while streaming?')).toBeNull()
+    await userEvent.click(canvas.getByText('1 comment'))
+    await within(document.body).findByText('Is this only a problem while streaming?')
+  },
+}
+
+/** A code comment's card quotes the passage as a diff, flush with the card's pin. */
+export const CodeQuote: Story = {
+  args: { comments: WITH_CODE },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(await canvas.findByText('2 comments'))
+    const body = within(document.body)
+    await body.findByText("Bind every interface")
+    expect(body.getByText(/0\.0\.0\.0/)).toBeInTheDocument()
+    expect(document.body.querySelector('[data-comment-diff="added"]')).not.toBeNull()
+    expect(document.body.querySelector('[data-comment-diff="removed"]')).not.toBeNull()
+  },
+}
 
 /** Right-click a selection in the reply → Add Comment: the selection becomes a stroke and a note opens. */
 export const AddFromSelection: Story = {
@@ -120,8 +161,8 @@ export const AddFromSelection: Story = {
     Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype, 'value')!.set!.call(note, 'Range offsets go stale after a remount.')
     note.dispatchEvent(new Event('input', { bubbles: true }))
     await userEvent.keyboard('{Meta>}{Enter}{/Meta}')
-    // The lone comment's chip shows its text.
-    await waitFor(() => expect(canvas.getByText('Range offsets go stale after a remount.')).toBeInTheDocument())
+    // One comment still uses the count chip; the text lives in the list.
+    await waitFor(() => expect(canvas.getByText('1 comment')).toBeInTheDocument())
   },
 }
 

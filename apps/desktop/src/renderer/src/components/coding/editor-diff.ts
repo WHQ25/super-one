@@ -1,5 +1,5 @@
 import { structuredPatch } from 'diff'
-import { formatFilePrefix, lineKindToMarker } from '@superone/shared/file-quote-prefix'
+import { compressLineRanges, formatFilePrefix, lineKindToMarker } from '@superone/shared/file-quote-prefix'
 import { splitContentLines } from '@/lib/text-lines'
 import type { MinimapLine } from './CodeMinimap'
 
@@ -323,6 +323,88 @@ export function buildEditorMinimapLines(content: string, changes: readonly Edito
     }
   }
   return result
+}
+
+function selectionOverlapsChange(change: EditorDiffChange, startLine: number, endLine: number): boolean {
+  if (change.kind === 'deleted') return change.anchorLine >= startLine && change.anchorLine <= endLine
+  return change.newEndLine >= startLine && change.newStartLine <= endLine
+}
+
+/**
+ * Quote a manual editor selection. Lines that sit on a diff include that diff
+ * (`:D`, removed and added lines); a selection with no change stays plain text.
+ * An added or modified hunk is quoted whole when any of its lines are selected.
+ */
+export function formatEditorSelectionQuote(args: {
+  filePath: string
+  lineText: (line: number) => string
+  lineCount: number
+  startLine: number
+  endLine: number
+  startCol: number
+  endCol: number
+  changes: readonly EditorDiffChange[]
+}): string {
+  const { filePath, lineText, lineCount, startLine, endLine, startCol, endCol, changes } = args
+  const hunks = changes.filter((change) => change.kind !== 'deleted' && selectionOverlapsChange(change, startLine, endLine))
+  const deletions = changes.filter((change) => change.kind === 'deleted' && selectionOverlapsChange(change, startLine, endLine))
+
+  let lo = startLine
+  let hi = endLine
+  for (const change of hunks) {
+    lo = Math.min(lo, Math.max(1, change.newStartLine))
+    hi = Math.max(hi, change.newEndLine)
+  }
+
+  const lineNums: number[] = []
+  for (let line = lo; line <= hi; line++) lineNums.push(line)
+  const compressed = compressLineRanges(lineNums)
+  if (!compressed) return ''
+
+  if (hunks.length === 0 && deletions.length === 0) {
+    const body: string[] = []
+    for (let line = startLine; line <= endLine; line++) body.push(lineText(line))
+    return `${formatFilePrefix(filePath, compressed, startCol, endCol, false)}\n${body.join('\n')}`
+  }
+
+  const emitted = new Set<string>()
+  const body: string[] = []
+  const coveringHunk = (line: number) => hunks.find((change) => line >= change.newStartLine && line <= change.newEndLine)
+  const deletionsAt = (line: number, above: boolean) => deletions.filter((change) =>
+    change.anchorLine === line && (above ? change.deletePosition === 'above' : change.deletePosition !== 'above'))
+
+  const pushOld = (change: EditorDiffChange) => {
+    if (emitted.has(change.id)) return
+    for (const line of change.oldLines) body.push(`${lineKindToMarker('removed')}${line}`)
+    emitted.add(change.id)
+  }
+
+  for (let line = lo; line <= hi; line++) {
+    for (const change of deletionsAt(line, true)) pushOld(change)
+
+    const hunk = coveringHunk(line)
+    if (hunk) {
+      if (!emitted.has(hunk.id)) {
+        for (const oldLine of hunk.oldLines) body.push(`${lineKindToMarker('removed')}${oldLine}`)
+        for (const newLine of hunk.newLines) body.push(`${lineKindToMarker('added')}${newLine}`)
+        emitted.add(hunk.id)
+      }
+    } else if (line >= startLine && line <= endLine && line >= 1 && line <= lineCount) {
+      body.push(`${lineKindToMarker('unchanged')}${lineText(line)}`)
+    }
+
+    for (const change of deletionsAt(line, false)) pushOld(change)
+  }
+
+  const expanded = lo !== startLine || hi !== endLine
+  const prefix = formatFilePrefix(
+    filePath,
+    compressed,
+    expanded ? undefined : startCol,
+    expanded ? undefined : endCol,
+    true,
+  )
+  return `${prefix}\n${body.join('\n')}`
 }
 
 /** Composer quote for one gutter hunk, in the same `path:Lx:D` shape as a diff selection. */

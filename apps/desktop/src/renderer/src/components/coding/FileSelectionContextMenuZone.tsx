@@ -1,6 +1,7 @@
 import { useState } from 'react'
-import { Copy, MessageSquarePlus } from 'lucide-react'
+import { Copy, MessageSquarePlus, StickyNote } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { openCodeCommentDraft } from '@/components/chat/code-comment-note'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { showNativeContextMenu } from '@/lib/native-context-menu'
@@ -14,6 +15,7 @@ interface MenuState {
   y: number
   copyText: string
   quoteText: string
+  addComment: () => void
 }
 
 interface FileSelectionContextMenuZoneProps {
@@ -204,14 +206,17 @@ export function FileSelectionContextMenuZone({ filePath, fileContent, captureSel
     const captured = captureSelection ? captureSelection() : captureFileSelection(filePath, window.getSelection(), fileContent)
     if (!captured) return
     if (!captured.copyText && !captured.quoteText) return
+    const quote = captured.quoteText
+    const addComment = () => openCodeCommentDraft(quote, event.clientX, event.clientY)
     if (liquidGlass) {
       void showNativeContextMenu([
         { id: 'copy', label: t('chat.selectionMenu.copy'), icon: Copy, onSelect: () => navigator.clipboard.writeText(captured.copyText) },
-        { id: 'addToChat', label: t('chat.selectionMenu.addToChat'), icon: MessageSquarePlus, onSelect: () => addUserSelection(captured.quoteText) },
+        { id: 'addToChat', label: t('chat.selectionMenu.addToChat'), icon: MessageSquarePlus, onSelect: () => addUserSelection(quote) },
+        { id: 'addComment', label: t('chat.selectionMenu.addComment'), icon: StickyNote, onSelect: addComment },
       ])
       return
     }
-    setMenu({ x: event.clientX, y: event.clientY, copyText: captured.copyText, quoteText: captured.quoteText })
+    setMenu({ x: event.clientX, y: event.clientY, copyText: captured.copyText, quoteText: quote, addComment })
   }
 
   return (
@@ -222,6 +227,7 @@ export function FileSelectionContextMenuZone({ filePath, fileContent, captureSel
           pos={{ x: menu.x, y: menu.y }}
           onCopy={() => navigator.clipboard.writeText(menu.copyText)}
           onAddToChat={() => addUserSelection(menu.quoteText)}
+          onAddComment={menu.addComment}
           onClose={() => setMenu(null)}
         />
       )}

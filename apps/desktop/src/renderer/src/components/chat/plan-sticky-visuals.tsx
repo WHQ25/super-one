@@ -33,54 +33,61 @@ export function strokeSeed(key: string, index: number): number {
 /** Extra width painted past the text, mimicking marker overshoot. */
 export const MARKER_OVERSHOOT = 3
 
+/** How a stroke meets the page. One group shares this; strokes inside it do not. */
+export function markerBlendMode(isDark: boolean): CSSProperties['mixBlendMode'] {
+  return isDark ? 'screen' : 'multiply'
+}
+
 /**
  * A chisel-tip highlighter stroke.
  *
- * Layers, top-down: fibre grain → dry stripe → bottom ink settle → end pooling.
- * The two upper layers use a *veil* color that is a no-op for the blend mode in
- * use (white under `multiply`, black under `screen`), so they subtract ink
- * instead of adding a wash of their own.
+ * Light mode layers grain, a dry stripe, and darker ink at the ends: under
+ * `multiply`, more ink reads darker. Dark mode is a flat `base` fill. Under
+ * `screen`, darker ink is *brighter*, so a bottom ramp lit the ends of a line.
+ * A second band on the same line — inline code sits a few pixels off the text
+ * and used to be its own stroke — screened again and lit that whole line.
+ * `blend` is false when a parent group already blends the passage once;
+ * overlapping strokes then cannot screen (or multiply) on top of each other.
  */
 export function markerStrokeStyle(
   swatch: StickySwatch,
   isDark: boolean,
   seed: number,
+  blend = true,
 ): CSSProperties {
   const ink = isDark ? swatch.markerDark : swatch.marker
-  const veil = isDark ? '0 0 0' : '255 255 255'
+  const veil = '255 255 255'
   // Each end gets its own chisel angle, so the stroke is a hand-drawn
-  // trapezoid rather than a mechanical parallelogram.
+  // trapezoid rather than a mechanical parallelogram. No vertical shift:
+  // a moved stroke overlaps the next line and the seam picks up extra ink.
   const slantL = span(seed, 1, 1, 6.5)
   const slantR = span(seed, 5, 1, 6.5)
-  const tilt = span(seed, 2, -1.8, 1.8)
   const dryAt = span(seed, 3, 26, 46)
-  // Hand height varies per stroke — nobody lands the pen twice alike. Kept
-  // inside the line box's slack so a stroke never drifts off its own text.
-  const dy = span(seed, 6, -2.6, 2.6)
 
   const clip = `polygon(
-    ${slantL.toFixed(1)}px ${Math.max(0, tilt).toFixed(1)}px,
-    100% ${Math.max(0, -tilt).toFixed(1)}px,
+    ${slantL.toFixed(1)}px 0px,
+    100% 0px,
     calc(100% - ${slantR.toFixed(1)}px) 100%,
     0% 100%
   )`
 
+  const paint: CSSProperties = isDark
+    ? { backgroundColor: ink.base }
+    : {
+        backgroundImage: [
+          `repeating-linear-gradient(87deg, rgb(${veil} / 0) 0 2px, rgb(${veil} / 0.1) 2px 3px)`,
+          `linear-gradient(180deg, rgb(${veil} / 0) ${dryAt - 7}%, rgb(${veil} / 0.16) ${dryAt}%, rgb(${veil} / 0) ${dryAt + 8}%)`,
+          `linear-gradient(180deg, rgb(0 0 0 / 0) 58%, ${ink.deep} 100%)`,
+          `linear-gradient(90deg, ${ink.deep} 0px, ${ink.base} 7px, ${ink.base} calc(100% - 9px), ${ink.deep} 100%)`,
+        ].join(','),
+      }
+
   return {
-    backgroundImage: [
-      // fibre grain of the felt tip
-      `repeating-linear-gradient(87deg, rgb(${veil} / 0) 0 2px, rgb(${veil} / 0.1) 2px 3px)`,
-      // dry stripe where the tip lifted slightly
-      `linear-gradient(180deg, rgb(${veil} / 0) ${dryAt - 7}%, rgb(${veil} / 0.16) ${dryAt}%, rgb(${veil} / 0) ${dryAt + 8}%)`,
-      // ink settling along the bottom edge
-      `linear-gradient(180deg, rgb(0 0 0 / 0) 58%, ${ink.deep} 100%)`,
-      // pen dwell at both ends
-      `linear-gradient(90deg, ${ink.deep} 0px, ${ink.base} 7px, ${ink.base} calc(100% - 9px), ${ink.deep} 100%)`,
-    ].join(','),
+    ...paint,
     clipPath: clip,
     WebkitClipPath: clip,
-    transform: `translateY(${dy.toFixed(2)}px) rotate(${span(seed, 4, -0.4, 0.4).toFixed(2)}deg)`,
-    filter: 'blur(0.4px)',
-    mixBlendMode: isDark ? 'screen' : 'multiply',
+    filter: 'blur(0.3px)',
+    ...(blend ? { mixBlendMode: markerBlendMode(isDark) } : {}),
   }
 }
 
@@ -200,10 +207,15 @@ export interface MarkerStrokeProps {
   seed: number
   /** Positioning (`fixed` / `absolute`) and stacking. */
   className?: string
+  /**
+   * False when this stroke sits in a `markerBlendMode` group. The group blends
+   * the whole passage once, so line overlaps stay the same brightness.
+   */
+  blend?: boolean
 }
 
 /** One line of highlighter ink over a highlight band. */
-export function MarkerStroke({ band, swatch, isDark, seed, className }: MarkerStrokeProps) {
+export function MarkerStroke({ band, swatch, isDark, seed, className, blend = true }: MarkerStrokeProps) {
   return (
     <div
       aria-hidden
@@ -213,7 +225,7 @@ export function MarkerStroke({ band, swatch, isDark, seed, className }: MarkerSt
         left: band.left - MARKER_OVERSHOOT,
         width: Math.max(band.width, 8) + MARKER_OVERSHOOT * 2,
         height: band.height,
-        ...markerStrokeStyle(swatch, isDark, seed),
+        ...markerStrokeStyle(swatch, isDark, seed, blend),
       }}
     />
   )
@@ -241,6 +253,7 @@ export function StickyPinButton({ swatch, isDark = false, index, size = 18, posi
         transform: `rotate(${index % 2 === 0 ? -3 : 2.5}deg)`,
         filter: `drop-shadow(1px 1.5px 1.5px rgb(0 0 0 / ${isDark ? 0.5 : 0.28}))`,
       }}
+      onMouseDown={(event) => event.stopPropagation()}
       onClick={onClick}
     >
       <StickyPinFace swatch={swatch} isDark={isDark} index={index} size={size} />

@@ -5,8 +5,11 @@ import { openSearchPanel } from '@codemirror/search'
 import { EditorView } from '@codemirror/view'
 import { createTwoFilesPatch } from 'diff'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { CodeCommentNoteHost } from '@/components/chat/CodeCommentNoteHost'
+import { closeCodeCommentNote } from '@/components/chat/code-comment-note'
 import { useAppStore } from '@/stores/app'
-import { useChatStore } from '@/stores/chat-store'
+import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat-store'
+import { buildReplyCommentsText } from '@/stores/chat-store/helpers/reply-comments'
 import { CodeFileEditor } from './CodeFileEditor'
 
 describe('CodeFileEditor', () => {
@@ -95,6 +98,7 @@ describe('CodeFileEditor', () => {
     const revert = screen.getByTestId('diff-hunk-revert')
     expect(revert).toHaveAttribute('aria-label', 'Revert Change')
     expect(revert.textContent ?? '').not.toMatch(/\S/)
+    expect(screen.getByTestId('diff-hunk-add-comment')).toHaveAttribute('aria-label', 'Add Comment')
 
     await act(async () => {
       fireEvent.click(screen.getByTestId('diff-hunk-revert'))
@@ -138,6 +142,92 @@ describe('CodeFileEditor', () => {
       expect(addUserSelection).toHaveBeenCalledWith('/proj/src/app.ts:L2:D\n-const b = 2\n+const b = 999')
     } finally {
       useChatStore.setState({ addUserSelection: previous })
+    }
+  })
+
+  it('quotes a manual selection with the diff when the lines are changed, and comments share the transcript sequence', async () => {
+    const previous = {
+      activeProject: useChatStore.getState().activeProject,
+      projectSessions: useChatStore.getState().projectSessions,
+    }
+    useChatStore.setState({
+      activeProject: '/proj',
+      projectSessions: {
+        '/proj': {
+          ...createDefaultProjectState(),
+          _activeSessionId: 's1',
+          _sessions: {
+            s1: {
+              ...createDefaultPerSessionState(),
+              replyComments: [{
+                id: 'c-chat',
+                messageId: 'm1',
+                anchorText: 'a passage',
+                quote: 'a passage',
+                text: 'from chat',
+              }],
+            },
+          },
+        },
+      },
+    })
+
+    const base = 'const a = 1\nconst b = 2\n'
+    const current = 'const a = 1\nconst b = 999\n'
+    const gitDiff = createTwoFilesPatch('a/app.ts', 'b/app.ts', base, current)
+    const { container } = render(
+      <>
+        <CodeCommentNoteHost />
+        <CodeFileEditor content={current} diskContent={current} gitDiff={gitDiff} filePath="src/app.ts" />
+      </>,
+    )
+
+    try {
+      await waitFor(() => {
+        expect(container.querySelector('[data-diff-marker="modified"][data-diff-line="2"]')).not.toBeNull()
+      })
+      const cmDom = container.querySelector('.cm-editor') as HTMLElement
+      const view = EditorView.findFromDOM(cmDom)!
+      const unchanged = view.state.doc.line(1)
+      const changed = view.state.doc.line(2)
+
+      act(() => {
+        view.dispatch({ selection: { anchor: unchanged.from, head: unchanged.to } })
+      })
+      fireEvent.contextMenu(view.contentDOM)
+      fireEvent.click(screen.getByText('Add to Chat'))
+      expect(useChatStore.getState().projectSessions['/proj']._sessions.s1.userSelections).toEqual([
+        '/proj/src/app.ts:L1:C0-C11\nconst a = 1',
+      ])
+
+      act(() => {
+        view.dispatch({ selection: { anchor: changed.from, head: changed.to } })
+      })
+      fireEvent.contextMenu(view.contentDOM)
+      fireEvent.click(screen.getByText('Add Comment'))
+      const input = await screen.findByTestId('code-comment-note').then((note) => note.querySelector('textarea')!)
+      fireEvent.change(input, { target: { value: 'keep the old default' } })
+      fireEvent.blur(input)
+
+      const comments = useChatStore.getState().projectSessions['/proj']._sessions.s1.replyComments
+      expect(comments.map((comment) => comment.text)).toEqual(['from chat', 'keep the old default'])
+      expect(comments[1]).toMatchObject({
+        surface: 'code',
+        quote: '/proj/src/app.ts:L2:C0-C13:D\n-const b = 2\n+const b = 999',
+      })
+      const injected = buildReplyCommentsText(comments)
+      expect(injected).toContain('1. On this passage:\n> a passage\nComment: from chat')
+      expect(injected).toContain('2. On this passage:\n> /proj/src/app.ts:L2:C0-C13:D\n> -const b = 2\n> +const b = 999\nComment: keep the old default')
+      await waitFor(() => {
+        const pin = container.querySelector('[data-testid="code-comment-layer"] button')
+        expect(pin?.textContent).toBe('2')
+        const strokes = container.querySelector('[data-testid="code-comment-strokes"]')
+        expect(strokes?.closest('.cm-scroller')).not.toBeNull()
+        expect(strokes?.closest('[data-testid="code-comment-layer"]')).toBeNull()
+      })
+    } finally {
+      act(() => closeCodeCommentNote())
+      useChatStore.setState(previous)
     }
   })
 

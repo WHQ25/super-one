@@ -55,7 +55,7 @@ export const codeEditorTheme = EditorView.theme({
   '.cm-scroller[data-scrolled-x="true"] .cm-content': {
     clipPath: 'inset(0 0 0 var(--cm-scroll-x, 0px))',
   },
-  '.cm-scroller[data-scrolled-x="true"] .cm-layer': {
+  '.cm-scroller[data-scrolled-x="true"] .cm-layer, .cm-scroller[data-scrolled-x="true"] .cm-comment-marks': {
     clipPath: 'inset(0 0 0 var(--cm-layer-clip-x, 0px))',
   },
   '.cm-gutters, .cm-gutter': {

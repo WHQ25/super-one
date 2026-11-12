@@ -1,8 +1,9 @@
 import { useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { MessageSquarePlus, RotateCcw } from 'lucide-react'
+import { MessageSquarePlus, RotateCcw, StickyNote } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
+import { openCodeCommentDraft } from '@/components/chat/code-comment-note'
 import { gutterWidth, useHighlightedTokens } from '@/lib/diff-utils'
 import { getHighlightCache } from '@/lib/highlight-cache'
 import { useChatStore } from '@/stores/chat-store'
@@ -107,6 +108,18 @@ export function DiffHunkHoverCard({
             onClick={() => addUserSelection(formatDiffHunkQuote(filePath, change))}
           >
             <MessageSquarePlus />
+          </IconButton>
+          <IconButton
+            size="sm"
+            variant="ghost"
+            data-testid="diff-hunk-add-comment"
+            tooltip={t('chat.selectionMenu.addComment')}
+            onClick={(event) => {
+              const rect = event.currentTarget.getBoundingClientRect()
+              openCodeCommentDraft(formatDiffHunkQuote(filePath, change), rect.left, rect.bottom)
+            }}
+          >
+            <StickyNote />
           </IconButton>
           <IconButton
             size="sm"

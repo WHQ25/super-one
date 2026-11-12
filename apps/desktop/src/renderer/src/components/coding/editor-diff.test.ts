@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { createTwoFilesPatch } from 'diff'
+import { splitContentLines } from '@/lib/text-lines'
 import {
   buildEditorMinimapLines,
   computeLiveDiffChanges,
   findChangeForGutterLine,
   formatDiffHunkQuote,
+  formatEditorSelectionQuote,
   parseEditorDiffChanges,
   reconstructBaseContent,
   revertDiffChange,
@@ -128,5 +130,40 @@ describe('editor-diff', () => {
   it('quotes a hunk with the diff selection prefix', () => {
     const changes = computeLiveDiffChanges('const b = 2\n', 'const b = 999\n')
     expect(formatDiffHunkQuote('src/app.ts', changes[0])).toBe('src/app.ts:L1:D\n-const b = 2\n+const b = 999')
+  })
+
+  describe('formatEditorSelectionQuote', () => {
+    const base = 'l1\nl2\nl3\nl4\nl5\nl6\nl7\n'
+    const current = 'l1\nL2A\nL2B\nl3\nl4\nl6\nl7\nL8\n'
+    const lines = splitContentLines(current)
+    const changes = computeLiveDiffChanges(base, current)
+
+    function quote(start: number, end: number, startCol = 0, endCol = 2) {
+      return formatEditorSelectionQuote({
+        filePath: 'src/app.ts',
+        lineText: (line) => lines[line - 1] ?? '',
+        lineCount: lines.length,
+        startLine: start,
+        endLine: end,
+        startCol,
+        endCol,
+        changes,
+      })
+    }
+
+    it('leaves a selection that misses every change as plain text', () => {
+      expect(quote(1, 1)).toBe('src/app.ts:L1:C0-C2\nl1')
+      expect(quote(6, 7)).toBe('src/app.ts:L6-L7:C0-C2\nl6\nl7')
+    })
+
+    it('includes the whole hunk when the selection touches a modified or added line', () => {
+      expect(quote(2, 2)).toBe('src/app.ts:L2-L3:D\n-l2\n+L2A\n+L2B')
+      expect(quote(8, 8, 0, 2)).toBe('src/app.ts:L8:C0-C2:D\n+L8')
+    })
+
+    it('includes a deletion anchored on a selected line and keeps surrounding context', () => {
+      expect(quote(4, 8)).toBe('src/app.ts:L4-L8:C0-C2:D\n l3\n l4\n-l5\n l6\n l7\n+L8')
+      expect(quote(5, 5)).toBe('src/app.ts:L5:C0-C2:D\n l4\n-l5')
+    })
   })
 })

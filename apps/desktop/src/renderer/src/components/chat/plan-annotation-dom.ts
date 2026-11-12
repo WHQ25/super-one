@@ -290,6 +290,24 @@ export function topRightOfRects(rects: readonly DOMRectReadOnly[], pinSize = 18)
   }
 }
 
+/**
+ * Top-right corner of the first line, half a pin outside it.
+ * A longer line below does not pull the pin across.
+ */
+export function firstLineTopRight(rects: readonly DOMRectReadOnly[], pinSize = 18): ViewportCorner | null {
+  if (rects.length === 0) return null
+  let minTop = Infinity
+  for (const rect of rects) minTop = Math.min(minTop, rect.top)
+  let top = minTop
+  let right = -Infinity
+  for (const rect of rects) {
+    if (rect.top > minTop + 6) continue
+    top = Math.min(top, rect.top)
+    right = Math.max(right, rect.right)
+  }
+  return { left: right - pinSize / 2, top: top - pinSize / 2 }
+}
+
 /** Viewport band for continuous pen-stroke painting (fixed position). */
 export interface HighlightBand {
   top: number

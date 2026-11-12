@@ -26,6 +26,7 @@ import {
   MarkerStroke,
   StickyNoteEditor,
   StickyPinButton,
+  markerBlendMode,
   strokeSeed,
 } from './plan-sticky-visuals'
 import { useIsDark } from '@/hooks/use-is-dark'
@@ -354,21 +355,25 @@ export function PlanLineReview({
 
   const portalTarget = typeof document !== 'undefined' ? document.body : null
 
-  const strokeLayers = portalTarget
-    ? strokeBands.flatMap(({ key, bands, swatch }) =>
-        bands.map((b, i) =>
-          createPortal(
+  const strokeLayers = portalTarget && strokeBands.length > 0
+    ? createPortal(
+        <div
+          className={cn('pointer-events-none fixed inset-0', Z_CLASS.PLAN_MARKER)}
+          style={{ mixBlendMode: markerBlendMode(isDark) }}
+        >
+          {strokeBands.flatMap(({ key, bands, swatch }) => bands.map((b, i) => (
             <MarkerStroke
-              key={`stroke-${key}-${i}`}
+              key={`stroke-${key}:${b.top}:${b.left}:${b.width}`}
               band={b}
               swatch={swatch}
               isDark={isDark}
               seed={strokeSeed(key, i)}
-              className={cn('fixed', Z_CLASS.PLAN_MARKER)}
-            />,
-            portalTarget,
-          ),
-        ),
+              blend={false}
+              className="absolute"
+            />
+          )))}
+        </div>,
+        portalTarget,
       )
     : null
 

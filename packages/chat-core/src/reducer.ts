@@ -226,7 +226,14 @@ function reduceEvent(
         return patch
       }
       if (event.selectedModelId && !session.modelUserChosen) {
-        patch.selectedModel = event.selectedModelId
+        const current = session.selectedModel
+        const currentListed = !!current && event.models.some((model) => model.id === current)
+        // A composer model this catalog still offers stays. The agent's own
+        // current model (Grok's config default is often a faster variant)
+        // only fills an empty picker, or replaces an id the catalog dropped.
+        if (!current || (event.models.length > 0 && !currentListed)) {
+          patch.selectedModel = event.selectedModelId
+        }
       } else if (event.selectedModelId && !session.selectedModel) {
         patch.selectedModel = event.selectedModelId
       }

@@ -797,6 +797,7 @@ export class AcpBackend implements SessionBackend {
       this.emit({ type: 'provider_session_id', providerSessionId: runtime.sessionId })
       this.emitConfigFromRuntime(runtime, agentId, epoch)
       await this.applyPendingSelections(runtime)
+      await this.applyRequestedModel(runtime)
       return runtime
     })()
     this.ensureRuntimePromise = promise
@@ -1805,6 +1806,23 @@ export class AcpBackend implements SessionBackend {
       epoch,
     )
     this.persistConfigCache(null, { ...cfg, selectedModelId: model }, agentId)
+  }
+
+  /**
+   * The host model (harness preference or picker) is not Grok's config default.
+   * session/new advertises that default; apply the requested id before the turn.
+   */
+  private async applyRequestedModel(runtime: AcpRuntime): Promise<void> {
+    const model = this.startOpts?.model?.trim()
+    if (!model) return
+    if (runtime.getModelConfig()?.selectedModelId === model) return
+    const effort = asGrokReasoningEffort(this.grokReasoningEffort)
+      ?? asGrokReasoningEffort(typeof this.startOpts?.effort === 'string' ? this.startOpts.effort : null)
+    try {
+      await this.applyModel(runtime, model, effort ? { reasoningEffort: effort } : undefined)
+    } catch (err) {
+      log.warn('[AcpBackend] apply start model %s failed:', model, err)
+    }
   }
 
   /** Context window and session mode chosen while no runtime existed. A refusal leaves the agent's own default. */

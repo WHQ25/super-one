@@ -1703,6 +1703,11 @@ export class Session implements SessionContract {
     const dirs = hint?.additionalDirs === undefined
       ? this.additionalDirectories
       : withProjectExtraDirs(this.getProjectExtraDirs?.(this.projectPath), hint.additionalDirs)
+    // Record the composer model before the runtime can advertise its own default.
+    if (hint?.model) {
+      this.model = hint.model
+      this.mergeUiSettings({ selectedModel: hint.model })
+    }
     const opts: BackendStartOptions = {
       sessionId: this.id,
       projectPath: this.projectPath,
@@ -2533,8 +2538,10 @@ export class Session implements SessionContract {
     if (pluginNoticeRow) this.appendTranscriptMessage(pluginNoticeRow)
     if (tagged.type === 'acp_models') {
       this._cachedAcpModels = tagged
-      // Keep Session.model aligned with agent-advertised selection for snapshots.
-      if (tagged.selectedModelId) {
+      // The agent's current model fills a session that has none. A model the
+      // host already chose (harness preference, picker) stays; Grok announces
+      // its own config default as soon as the runtime starts.
+      if (tagged.selectedModelId && !this.model) {
         this.model = tagged.selectedModelId
         this.mergeUiSettings({ selectedModel: tagged.selectedModelId })
       }

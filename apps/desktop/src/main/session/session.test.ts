@@ -819,6 +819,24 @@ describe('Session state machine', () => {
       model: 'override',
       additionalDirectories: ['/extra'],
     })
+    expect(session.snapshot.selectedModel).toBe('override')
+  })
+
+  it('keeps the prewarm model when the agent advertises its own default', () => {
+    ;({ session, backend } = makeSession({ harnessId: 'acp-grok', providerId: 'acp-base', acpAgentId: 'grok-build' }))
+    session.prewarm({ model: 'grok-4.7', acpAgentId: 'grok-build' })
+    backend.emit({
+      type: 'acp_models',
+      agentId: 'grok-build',
+      models: [
+        { id: 'grok-4.7', name: 'Grok 4.7', description: '' },
+        { id: 'grok-4.7-build-fast', name: 'Grok 4.7 Fast', description: '' },
+      ],
+      selectedModelId: 'grok-4.7-build-fast',
+      configId: null,
+      status: 'ready',
+    })
+    expect(session.snapshot.selectedModel).toBe('grok-4.7')
   })
 
   it('prewarm to another ACP agent drops empty-draft Grok context and resume id', () => {

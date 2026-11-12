@@ -127,6 +127,30 @@ describe('applyEventToSession: acp_models', () => {
     expect(patch).toEqual({})
   })
 
+  it('keeps a harness preference when the agent advertises a different current model', () => {
+    const session = {
+      ...createDefaultPerSessionState(),
+      preferredProvider: 'acp-grok' as const,
+      sessionProvider: 'acp-grok' as const,
+      acpAgentId: 'grok-build',
+      selectedModel: 'grok-4.7',
+      modelUserChosen: false,
+    }
+    const patch = applyEventToSession(session, {
+      type: 'acp_models',
+      agentId: 'grok-build',
+      models: [
+        { id: 'grok-4.7', name: 'Grok 4.7', description: '' },
+        { id: 'grok-4.7-build-fast', name: 'Grok 4.7 Fast', description: '' },
+      ],
+      selectedModelId: 'grok-4.7-build-fast',
+      configId: null,
+      status: 'ready',
+    })
+    expect(patch.selectedModel).toBeUndefined()
+    expect(patch.acpModels?.map((model) => model.id)).toEqual(['grok-4.7', 'grok-4.7-build-fast'])
+  })
+
   it('preserves user-chosen model when still in the catalog', () => {
     const session = {
       ...createDefaultPerSessionState(),

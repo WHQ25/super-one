@@ -857,6 +857,32 @@ describe('AcpBackend', () => {
     await backend.close()
   })
 
+  it('applies the host model when session/new advertises a different current model', async () => {
+    const setModel = vi.fn(async () => {})
+    setAcpRuntimeFactory(async () => mockRuntime({
+      getConfigOptions: () => [],
+      getModelConfig: () => ({
+        configId: null,
+        selectedModelId: 'grok-4.7-build-fast',
+        models: [
+          { id: 'grok-4.7', name: 'Grok 4.7', description: '' },
+          { id: 'grok-4.7-build-fast', name: 'Grok 4.7 Fast', description: '' },
+        ],
+      }),
+      setModel,
+    }))
+    const backend = new AcpBackend()
+    const events: AgentEvent[] = []
+    backend.onEvent((e) => events.push(e))
+    await backend.start({ ...startOpts({ agentId: 'grok-build' }), model: 'grok-4.7' })
+    await backend.send({ content: 'hi', assistantMessageId: 'm1' })
+    expect(setModel).toHaveBeenCalledWith('grok-4.7', undefined)
+    const applied = events.filter((e): e is Extract<AgentEvent, { type: 'acp_models' }> =>
+      e.type === 'acp_models' && e.selectedModelId === 'grok-4.7')
+    expect(applied.length).toBeGreaterThan(0)
+    await backend.close()
+  })
+
   it('setModel uses session/set_model when model configId is null (Grok path)', async () => {
     const setModel = vi.fn(async () => {})
     const setConfigOption = vi.fn(async () => [])

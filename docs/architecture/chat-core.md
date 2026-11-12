@@ -75,7 +75,10 @@ publish `queued_messages_changed`, and move a row into history with
 `queued_message_consumed` when it runs. They also consume a queue-priority
 request that arrives after the active turn ended, clearing the sender's
 optimistic card. Editing or deleting a pending card withdraws it with the
-lease-fenced `session.dequeue` operation. Reopening a remote session restores
+lease-fenced `session.dequeue` operation. On desktop, while a turn that supports
+queued steering runs, Enter clears the composer and holds the send for 400 ms; a
+second Enter on the empty composer in that window sends it with `steer: now`,
+otherwise it queues normally. Reopening a remote session restores
 host queue membership while preserving local attachment copies and queue
 changes made during the read.
 

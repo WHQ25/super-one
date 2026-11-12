@@ -28,7 +28,8 @@ import { ChatRootContext } from './is-focus-in-chat'
 import { DesktopModUi } from '@/lib/mod-ui/DesktopModUi'
 import { ModPaneDockSync } from './mod/ModSurfaces'
 import { dateSeparators } from '@superone/chat-view/presenters/message-time'
-import { HARNESS_CAPABILITIES, resolveHarnessCapabilities } from '@superone/shared/harness/harness-capabilities'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
+import { useCanSteerQueue } from './queued-steer'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { DetailScopeProvider } from '@superone/chat-view/detail-scope'
 import { desktopDetailClient } from '@/lib/desktop-detail-client'
@@ -126,12 +127,8 @@ function ChatTranscript({
   const awaitingRealtimeTimeline = queueProvider === 'codex'
     && !!providerSessionId
     && (realtimeTimelineLoadStatus === 'idle' || realtimeTimelineLoadStatus === 'loading')
-  const canHostSteer = useEnvironmentServes(scope?.projectPath ?? activeProject, 'session.steer')
   const canHostStartQueued = useEnvironmentServes(scope?.projectPath ?? activeProject, 'session.startQueued')
-  const queueCapabilities = resolveHarnessCapabilities(queueProvider, runtimeCapabilities)
-  const canSteerQueue = canHostSteer
-    && queueCapabilities.supportsQueuedSteer
-    && sessionStatus === 'streaming'
+  const canSteerQueue = useCanSteerQueue(scope?.projectPath ?? activeProject, queueProvider, runtimeCapabilities, sessionStatus)
   const isLocalCodexQueue = canHostStartQueued && queueProvider === 'codex'
   const canStartCodexQueue = isLocalCodexQueue && sessionStatus !== 'streaming'
   // ChatTranscript doubles as the backing-thread view (see `showRealtime`). That view

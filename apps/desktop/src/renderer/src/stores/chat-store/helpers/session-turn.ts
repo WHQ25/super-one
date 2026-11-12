@@ -294,6 +294,7 @@ export interface SessionTurnOptions {
   userSelections?: string[]
   /** Run after the turn in progress (`priority: 'next'`). */
   queued?: boolean
+  steer?: boolean
   /** The session's first turn, which carries what a prewarmed runtime may not have taken yet. */
   firstTurn?: boolean
   inputRequest?: SessionSendRequest['inputRequest']
@@ -341,7 +342,7 @@ export function sessionTurnRequest(state: ChatStore, projectPath: string, sessio
     ...(turn.userMessageContent ? { userMessageContent: turn.userMessageContent } : {}),
     ...(turn.contexts ? { contexts: turn.contexts } : {}),
     ...(turn.userSelections?.length ? { userSelections: turn.userSelections } : {}),
-    ...(turn.queued ? { priority: 'next' as const } : {}),
+    ...(turn.queued ? { priority: 'next' as const, ...(turn.steer ? { steer: 'now' as const } : {}) } : {}),
     ...(desktop ? {
       ...(turn.inputRequest ? { inputRequest: turn.inputRequest } : {}),
       ...fields.desktop,

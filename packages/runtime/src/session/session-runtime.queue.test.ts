@@ -86,6 +86,25 @@ describe('SessionRuntime send queue', () => {
     } finally { finish?.(); await runtime.dispose() }
   })
 
+  it('steers a Codex send that asks to steer now into the active turn', async () => {
+    let finish!: () => void
+    const inputs: Array<{ text: string; kind: string | null | undefined }> = []
+    const { store, events, leases } = memoryPorts()
+    const runtime = new SessionRuntime(store, events, leases, 'env-codex-send-steer', async input => {
+      inputs.push({ text: input.text, kind: input.turnKind })
+      input.onInputAccepted?.()
+      if (input.text === 'first') await new Promise<void>(resolve => { finish = resolve })
+      return { finalText: '', skipAssistantTranscript: input.turnKind === 'steer' }
+    })
+    const session = runtime.create({ projectId: 'p', harnessId: 'codex' })
+    try {
+      await runtime.send({ sessionId: session.sessionId, text: 'first', clientMessageId: 'first', client, ...lease })
+      await runtime.send({ sessionId: session.sessionId, text: 'second', clientMessageId: 'second', priority: 'next', steer: 'now', client, ...lease })
+      expect(inputs).toEqual([{ text: 'first', kind: undefined }, { text: 'second', kind: 'steer' }])
+      expect(runtime.get(session.sessionId)?.transcript.find(row => row.id === 'second')?.queuedInComposer).toBeUndefined()
+    } finally { finish?.(); await runtime.dispose() }
+  })
+
   it('does not acknowledge Stop or admit the next send until the runner has settled', async () => {
     let release!: () => void
     let aborted = false

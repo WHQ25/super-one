@@ -501,7 +501,7 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
 
   ensureSession: (projectPath) => ensureSessionImpl(set, projectPath, get),
 
-  sendMessage: async (content, segments, explicitMentions, attachments, target) => sendMessageImpl(set, get, content, segments, explicitMentions, attachments, target),
+  sendMessage: async (content, segments, explicitMentions, attachments, target, options) => sendMessageImpl(set, get, content, segments, explicitMentions, attachments, target, options),
 
   sendInputRequest: async (requestId, values, target) => sendInputRequestImpl(set, get, requestId, values, target),
   approveCodexPlan: async () => approveCodexPlanImpl(set, get),

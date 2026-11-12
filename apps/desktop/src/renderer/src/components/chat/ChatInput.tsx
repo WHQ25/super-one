@@ -111,6 +111,7 @@ import { chatInputAPI } from './chat-input-api'
 import { isUnsentSession } from '@/stores/chat-store/helpers/session-liveness'
 import { prepareComposerSession } from '@/lib/prepare-composer-session'
 import { useEnvironmentServes } from '@/hooks/use-environment-serves'
+import { useCanSteerQueue, useDoubleEnterSteer } from './queued-steer'
 import { callSession } from '@/lib/session-client'
 import { useResolvedProviderId } from './model-selector/useSelectorProviders'
 
@@ -202,7 +203,7 @@ export function ChatInput({
       slashCommands, preferredProvider, sessionProvider, agents,
       selectedCodexCollaborationMode, codexPlanRejectHintActive, chatInputFocusNonce, chatInputRestoreFocusNonce,
       promptSuggestion, promptSuggestions, showReviewPanel,
-      displayedSessionId,
+      displayedSessionId, runtimeCapabilities,
     } = useActiveSession(useShallow((s) => ({
       slashCommands: s.slashCommands,
       preferredProvider: s.preferredProvider,
@@ -216,6 +217,7 @@ export function ChatInput({
       promptSuggestions: s.promptSuggestions ?? [],
       showReviewPanel: s.showReviewPanel,
       displayedSessionId: sessionScope?.sessionId ?? s._activeSessionId,
+      runtimeCapabilities: s.runtimeCapabilities,
     })))
     const focusMountSessionRef = useRef(displayedSessionId)
     const previousRestoreFocusNonceRef = useRef(chatInputRestoreFocusNonce)
@@ -380,6 +382,8 @@ export function ChatInput({
     }, [attachments])
     const canSend = hasContent && !interruptPending && !isRemoteLocked && !codexDirsPendingNextTurn
       && !scheduledLoading && !scheduled && !originalsHeld
+    const canSteerQueue = useCanSteerQueue(sessionProject, activeProviderForResources, runtimeCapabilities, status)
+    const doubleEnterSteer = useDoubleEnterSteer(canSteerQueue)
     const showAgentMentions = activeProviderForResources === 'claude'
 
 
@@ -1204,8 +1208,11 @@ export function ChatInput({
       clearAttachments()
     }, [clearAttachments, clearDraft, deliveredNonce])
 
-    const handleSend = useCallback(() => {
-      if (!canSend) return
+    const handleSend = useCallback((fromEnter = false) => {
+      if (!canSend) {
+        if (fromEnter) doubleEnterSteer.steer()
+        return
+      }
       try { validateTurnAttachments(attachmentsRef.current, text) }
       catch (error) { toast.error(error instanceof Error ? error.message : 'Invalid attachment'); return }
       const trimmed = text.trim()
@@ -1245,16 +1252,20 @@ export function ChatInput({
       // session even when project-active still points at a sibling tile mid-switch.
       // A send the host never took is kept on its bubble (Resend / Edit); this
       // catch only covers failures before the bubble exists.
-      void sendMessage(
-        fullText,
-        segments,
-        editorMentions,
-        sentAttachments,
-        sessionScope ?? undefined,
-      ).catch((err) => {
-        console.error('[ChatInput] sendMessage failed:', err)
-      })
-    }, [clearFirstLine, goalCapability, goalComposing, goalActions, enterGoalCompose, t, canSend, sendMessage, serializeAndClear, sessionScope, text, displayedSessionId, activeProviderForResources, realtimeVoiceEngaged])
+      const target = sessionScope ?? (sessionProject && displayedSessionId ? { projectPath: sessionProject, sessionId: displayedSessionId } : undefined)
+      doubleEnterSteer.submit((steer) => {
+        void sendMessage(
+          fullText,
+          segments,
+          editorMentions,
+          sentAttachments,
+          target,
+          steer ? { steer } : undefined,
+        ).catch((err) => {
+          console.error('[ChatInput] sendMessage failed:', err)
+        })
+      }, fromEnter)
+    }, [clearFirstLine, goalCapability, goalComposing, goalActions, enterGoalCompose, t, canSend, sendMessage, serializeAndClear, sessionScope, sessionProject, text, displayedSessionId, activeProviderForResources, realtimeVoiceEngaged, doubleEnterSteer])
 
     const handleKeyDownCore = useCallback(
       (e: KeyboardEvent | React.KeyboardEvent): boolean => {
@@ -1439,7 +1450,7 @@ export function ChatInput({
 
         if (e.key === 'Enter') {
           e.preventDefault()
-          handleSend()
+          if (!e.repeat) handleSend(true)
           return true
         }
 

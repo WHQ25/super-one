@@ -53,6 +53,10 @@ export interface SessionWriteTarget {
   sessionId: string
 }
 
+export interface SendMessageOptions {
+  steer?: boolean
+}
+
 export interface SetDraftTextOptions {
   /**
    * The write is the composer echoing its own content, so `draftJson` stays —
@@ -460,7 +464,7 @@ export interface ChatStore {
   focusProject: (projectPath: string, opts?: { carryOpenDraft?: boolean }) => Promise<void>
   ensureSession: (projectPath: string) => void
 
-  sendMessage: (content: string, segments?: InputSegment[], explicitMentions?: Mention[], attachments?: ImageAttachment[], target?: SessionWriteTarget) => Promise<void>
+  sendMessage: (content: string, segments?: InputSegment[], explicitMentions?: Mention[], attachments?: ImageAttachment[], target?: SessionWriteTarget, options?: SendMessageOptions) => Promise<void>
   sendInputRequest: (requestId: string, values: Record<string, SchemaFormValue>, target?: SessionWriteTarget) => Promise<boolean>
   approveCodexPlan: () => Promise<void>
   rejectCodexPlan: (feedback?: string) => Promise<void>

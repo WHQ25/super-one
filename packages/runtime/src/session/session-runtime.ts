@@ -1203,7 +1203,7 @@ export class SessionRuntime {
       && !(key === 'priority' && queuePriority)
       && !(session.harnessId === 'opencode' && (key === 'agent' || key === 'priority' || key === 'steer'))
       && !(session.harnessId === 'claude' && (key === 'priority' || key === 'steer'))
-      && !(session.harnessId === 'codex' && key === 'permissionPreset'))) {
+      && !(session.harnessId === 'codex' && (key === 'permissionPreset' || key === 'steer')))) {
       throw Object.assign(new Error('This node does not support desktop composer send selections'), { code: 'unsupported' })
     }
     if (session.harnessId === 'codex' && input.permissionPreset !== undefined) {
@@ -1283,7 +1283,7 @@ export class SessionRuntime {
         }
         this.enqueueTurn(session, turnOpts)
         const shouldSteer = Boolean(input.steer || (harnessId === 'claude' && input.priority === 'now'))
-        if ((harnessId === 'opencode' || harnessId === 'claude') && shouldSteer && turnOpts.parkInComposer) {
+        if (shouldSteer && turnOpts.parkInComposer) {
           const assertControl = () => this.leases.assertValid({ resource: ref, leaseId: input.leaseId,
             generation: input.generation, holderClientId: input.client.clientSessionId })
           await this.callOperation(session.sessionId, 'session.steer', { clientMessageId: turnOpts.clientMessageId }, assertControl).catch(() => {})

@@ -836,7 +836,54 @@ describe('ChatInput', () => {
       expect.any(Array),
       expect.any(Array),
       { projectPath: '/project', sessionId: 'sid-new' },
+      undefined,
     )
+  })
+
+  it('steers a send made while the agent works when Enter is pressed twice', async () => {
+    activeSessionState.status = 'streaming'
+    activeSessionState.sessionProvider = 'claude'
+    const { rerender } = render(<ChatInput />)
+    await waitFor(() => expect(scheduledSend.get).toHaveBeenCalled())
+    await act(async () => {})
+    typeInEditor('change course')
+    rerender(<ChatInput />)
+
+    act(() => { editorState.handleKeyDown?.(null, new KeyboardEvent('keydown', { key: 'Enter' })) })
+    expect(chatActions.sendMessage).not.toHaveBeenCalled()
+    rerender(<ChatInput />)
+    act(() => { editorState.handleKeyDown?.(null, new KeyboardEvent('keydown', { key: 'Enter' })) })
+
+    expect(chatActions.sendMessage).toHaveBeenCalledExactlyOnceWith(
+      'change course',
+      expect.any(Array),
+      expect.any(Array),
+      expect.any(Array),
+      { projectPath: '/project', sessionId: 'session-1' },
+      { steer: true },
+    )
+  })
+
+  it('queues a send made while the agent works after a single Enter', async () => {
+    activeSessionState.status = 'streaming'
+    activeSessionState.sessionProvider = 'claude'
+    const { rerender } = render(<ChatInput />)
+    await waitFor(() => expect(scheduledSend.get).toHaveBeenCalled())
+    await act(async () => {})
+    typeInEditor('later please')
+    rerender(<ChatInput />)
+
+    act(() => { editorState.handleKeyDown?.(null, new KeyboardEvent('keydown', { key: 'Enter' })) })
+
+    await waitFor(() => expect(chatActions.sendMessage).toHaveBeenCalledOnce())
+    expect(chatActions.sendMessage.mock.calls[0]).toEqual([
+      'later please',
+      expect.any(Array),
+      expect.any(Array),
+      expect.any(Array),
+      { projectPath: '/project', sessionId: 'session-1' },
+      undefined,
+    ])
   })
 
   it('places the realtime voice control immediately after the send control', () => {

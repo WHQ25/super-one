@@ -16,7 +16,7 @@ import { applyCachedCodexPermissionPreset } from './prefs-cache'
 import { commitPerSession, getProject, getScopedPerSession } from './store-helpers'
 import { isControlledElsewhere } from './remote-control'
 import { CLAUDE_INTERCEPTED_COMMANDS, isRemoteSession } from '../index'
-import type { ChatProvider, ChatStore, InputSegment, Mention, SessionWriteTarget } from '../types'
+import type { ChatProvider, ChatStore, InputSegment, Mention, SendMessageOptions, SessionWriteTarget } from '../types'
 import { callSession, hostTakesDesktopChoices, resetHostSession } from '@/lib/session-client'
 import { formatEnvironmentMentionReminder } from '@superone/shared/environment-mention'
 import { expandPathRefTagsForAgent } from '@superone/shared/miniapp-prompt-tags'
@@ -69,6 +69,7 @@ export async function sendMessageImpl(
   explicitMentions?: Mention[],
   explicitAttachments?: ImageAttachment[],
   target?: SessionWriteTarget,
+  options?: SendMessageOptions,
 ): Promise<void> {
   const projectPath = target?.projectPath ?? get().activeProject
   if (!projectPath) return
@@ -700,6 +701,7 @@ export async function sendMessageImpl(
         contexts: messageContexts,
         userSelections: displaySelections.length > 0 ? displaySelections : undefined,
         queued: isQueuedSend,
+        steer: options?.steer,
         firstTurn: session.messages.length === 0,
         ...codexTurn,
       }, turnChoices),

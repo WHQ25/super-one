@@ -3745,6 +3745,50 @@ export type Messages = {
           unknown: string
         }
       }
+      schedule: {
+        scheduling: string
+        schedule: string
+        scheduled: string
+        settingTimer: string
+        setTimer: string
+        timerSet: string
+        schedulingCron: string
+        scheduleCron: string
+        cronScheduled: string
+        promptLabel: string
+        taskLabel: string
+        conditionLabel: string
+        conditionAny: string
+        daemonBadge: string
+        exactBadge: string
+        maxIterations_one: string
+        maxIterations_other: string
+      }
+      defineSubagent: {
+        defining: string
+        defineSubagent: string
+        subagentDefined: string
+        capabilitiesLabel: string
+        systemPromptLabel: string
+        capWriteTools: string
+        capMcpTools: string
+        capSubagentTools: string
+        capReadOnly: string
+      }
+      mcpResource: {
+        listing: string
+        listResources: string
+        resourcesListed: string
+        reading: string
+        readResource: string
+        resourceRead: string
+        none: string
+        resourceCount_one: string
+        resourceCount_other: string
+        offloadedTo: string
+        mediaContent: string
+        binarySkipped: string
+      }
       mcpAppTools: {
         toolsList: string
         listingTools: string
@@ -8823,6 +8867,50 @@ export const en: Messages = {
           errored: 'Failed',
           unknown: 'Unknown',
         },
+      },
+      schedule: {
+        scheduling: 'Scheduling',
+        schedule: 'Schedule',
+        scheduled: 'Scheduled',
+        settingTimer: 'Setting timer',
+        setTimer: 'Set Timer',
+        timerSet: 'Timer Set',
+        schedulingCron: 'Scheduling cron',
+        scheduleCron: 'Schedule Cron',
+        cronScheduled: 'Cron Scheduled',
+        promptLabel: 'Wakeup prompt',
+        taskLabel: 'Background task',
+        conditionLabel: 'Cancel early on',
+        conditionAny: 'Any message',
+        daemonBadge: 'Daemon',
+        exactBadge: 'Exact timing',
+        maxIterations_one: '{{count}} run max',
+        maxIterations_other: '{{count}} runs max',
+      },
+      defineSubagent: {
+        defining: 'Defining subagent',
+        defineSubagent: 'Define Subagent',
+        subagentDefined: 'Subagent Defined',
+        capabilitiesLabel: 'Capabilities',
+        systemPromptLabel: 'System prompt',
+        capWriteTools: 'Write & shell',
+        capMcpTools: 'MCP tools',
+        capSubagentTools: 'Subagents',
+        capReadOnly: 'Read-only',
+      },
+      mcpResource: {
+        listing: 'Listing MCP resources',
+        listResources: 'List MCP Resources',
+        resourcesListed: 'MCP Resources Listed',
+        reading: 'Reading MCP resource',
+        readResource: 'Read MCP Resource',
+        resourceRead: 'MCP Resource Read',
+        none: 'No resources found',
+        resourceCount_one: '{{count}} resource',
+        resourceCount_other: '{{count}} resources',
+        offloadedTo: 'Saved to {{path}}',
+        mediaContent: 'Media: {{media}}',
+        binarySkipped: 'Binary content omitted',
       },
       mcpAppTools: {
         toolsList: 'List App Tools',

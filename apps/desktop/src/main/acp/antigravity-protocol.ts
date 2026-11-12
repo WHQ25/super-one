@@ -4,10 +4,10 @@ import type { SessionUpdate } from '@agentclientprotocol/sdk'
 import type { PermissionMode } from '@superone/shared/agent-types'
 import { looksLikeComputerUseOutline } from '@superone/shared/computer-use-result-shape'
 import { looksLikeSessionArchiveToon } from '@superone/shared/session-archive-result-shape'
-import { claudeMcpToolRuleName, formatAgentToolOutput, parseMcpToolName, SUPERONE_KNOWN_MCP_BARE_TOOLS, uiToolNameFromId } from '@superone/shared/tool-ui'
+import { claudeMcpToolRuleName, formatAgentToolOutput, parseMcpToolName, SUPERONE_KNOWN_MCP_BARE_TOOLS } from '@superone/shared/tool-ui'
 import {
-  applyAntigravityBuiltinToolInput, compactDiffPair,
-  isAntigravityTranscriptOutputTool, resolveAntigravityTranscriptToolOutput,
+  applyAntigravityBuiltinToolInput, compactDiffPair, inferAntigravityWireTool,
+  isAntigravityNonBashExecuteTool, isAntigravityTranscriptOutputTool, resolveAntigravityTranscriptToolOutput,
 } from './antigravity-manage-task'
 import {
   antigravityPermissionDisposition, antigravityPermissionMode, consumeAntigravityAnsweredQuestionSummary,
@@ -225,7 +225,7 @@ export function normalizeAntigravityRawInput(
   rawInput: unknown, rawOutput?: unknown, title?: string, meta?: unknown, kind?: string | null, toolNameHint?: string,
 ): {
   rawInput: Record<string, unknown>; inferredKind?: 'execute' | 'other'; isSubagent?: boolean;
-  normalizedTitle?: string; normalizedMeta?: Record<string, unknown>
+  wasWireInferred?: boolean; normalizedTitle?: string; normalizedMeta?: Record<string, unknown>
 } {
   const sanitizedIn = sanitizeAntigravityToolInput(rawInput)
   const inObj = isRecord(sanitizedIn) ? { ...sanitizedIn } : {}
@@ -288,14 +288,13 @@ export function normalizeAntigravityRawInput(
     return { rawInput: inObj, isSubagent: true, normalizedTitle: typeof inObj.description === 'string' ? inObj.description : strippedToolName }
   }
 
-  const mappedUiName = uiToolNameFromId(strippedToolName ?? title) ??
-    (typeof inObj.variant === 'string' ? uiToolNameFromId(inObj.variant) ?? inObj.variant : null)
+  const { mappedUiName, inferredTitle } = inferAntigravityWireTool(strippedToolName, title, kind, inObj, true)
   setStringIfMissing(inObj, 'variant', mappedUiName ?? undefined)
   if (mappedUiName === 'ImageGen' || mappedUiName === 'ImageEdit') {
     setStringIfMissing(inObj, 'prompt', pickNonEmptyString(inObj, ['prompt', 'Prompt', 'description', 'text']))
     setStringIfMissing(inObj, 'aspect_ratio', pickNonEmptyString(inObj, ['aspect_ratio', 'aspectRatio', 'AspectRatio']))
   }
-  applyAntigravityBuiltinToolInput(mappedUiName, inObj)
+  applyAntigravityBuiltinToolInput(mappedUiName, inObj, strippedToolName)
   const isFileTool = mappedUiName === 'Read' || mappedUiName === 'Write' || mappedUiName === 'Edit' || mappedUiName === 'Delete'
   const fileKeys = ['file_path', 'AbsolutePath', 'TargetFile', 'FilePath', 'filePath', 'target_file']
   setStringIfMissing(inObj, 'file_path', pickNonEmptyString(inObj, isFileTool ? [...fileKeys, 'Path', 'path'] : fileKeys))
@@ -321,11 +320,12 @@ export function normalizeAntigravityRawInput(
   setStringIfMissing(inObj, 'query', pickNonEmptyString(inObj, ['query', 'Query', 'q', 'search']))
   setStringIfMissing(inObj, 'url', pickNonEmptyString(inObj, ['url', 'Url', 'Uri', 'uri']))
 
-  const normalizedTitle = strippedToolName ??
+  const normalizedTitle = strippedToolName ?? inferredTitle ??
     (typeof title === 'string' && (title === 'Run command' || title === 'Run command?') && summaryDesc ? summaryDesc : title)
   return {
     rawInput: inObj,
     ...(cmd ? { inferredKind: 'execute' as const } : {}),
+    ...(inferredTitle ? { wasWireInferred: true } : {}),
     ...(normalizedTitle !== undefined ? { normalizedTitle } : {}),
   }
 }
@@ -366,13 +366,13 @@ export function normalizeAntigravitySessionUpdate(
     update.rawInput !== undefined
       ? update.rawInput
       : (update.toolCallId ? knownAntigravitySubagentInputs.get(update.toolCallId) : undefined)
-  const mappedUiName = uiToolNameFromId(strippedToolName ?? titleStr)
   const inObj = isRecord(effectiveRawInput) ? effectiveRawInput : null
   const outObj = isRecord(update.rawOutput) ? update.rawOutput : null
+  const { mappedUiName } = inferAntigravityWireTool(strippedToolName, titleStr, update.kind, inObj ?? {})
   let isBash =
     !isMcp &&
     (mappedUiName === 'Bash' ||
-      (update.kind === 'execute' && mappedUiName !== 'ImageGen' && mappedUiName !== 'ImageEdit') ||
+      (update.kind === 'execute' && !isAntigravityNonBashExecuteTool(mappedUiName)) ||
       Boolean(inObj && pickNonEmptyString(inObj, ['command', 'CommandLine', 'command_line', 'commandLine'])) ||
       Boolean(
         outObj &&
@@ -418,7 +418,7 @@ export function normalizeAntigravitySessionUpdate(
   const normalizedIn = normalizeAntigravityRawInput(effectiveRawInput, sanitizedOutput, titleStr, metaVal, update.kind, rawNameStr)
   const isTranscriptTool = isAntigravityTranscriptOutputTool(normalizedIn.rawInput.variant)
   if (
-    (normalizedIn.isSubagent || normalizedIn.rawInput.variant === 'AskUserQuestion' || normalizedIn.rawInput.variant === 'Edit' || isTranscriptTool) &&
+    (normalizedIn.isSubagent || normalizedIn.wasWireInferred || normalizedIn.rawInput.variant === 'AskUserQuestion' || normalizedIn.rawInput.variant === 'Edit' || isTranscriptTool) &&
     update.toolCallId && update.status !== 'completed' && update.status !== 'failed' && update.rawInput !== undefined
   ) {
     recordAntigravitySubagentInput(update.toolCallId, normalizedIn.rawInput)

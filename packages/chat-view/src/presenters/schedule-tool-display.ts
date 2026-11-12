@@ -1,4 +1,5 @@
 import { formatCompactDuration } from './duration-format'
+import { scheduleBlockSummaryText } from './schedule-block-display'
 
 const text = (value: unknown): string => (typeof value === 'string' ? value.trim() : '')
 const join = (...parts: string[]): string => parts.filter(Boolean).join(' · ')
@@ -10,6 +11,9 @@ const join = (...parts: string[]): string => parts.filter(Boolean).join(' · ')
  */
 export function scheduleToolSummary(toolName: string, input: Record<string, unknown>): string | null {
   switch (toolName) {
+    case 'Schedule':
+    case 'schedule':
+      return scheduleBlockSummaryText(input)
     case 'CronCreate':
       return join(text(input.cron), input.recurring === false ? 'once' : '', text(input.prompt))
     case 'SchedulerCreate': {

@@ -36,7 +36,9 @@ describe('tool catalog', () => {
     for (const tool of [
       'Read', 'Edit', 'Write', 'FileChange', 'NotebookEdit',
       'Bash', 'Grep', 'Glob', 'LS', 'WebSearch', 'WebFetch',
-      'Skill', 'Task', 'AskUserQuestion', 'ReportFindings', 'ListAgents', 'ManageTask', 'ManageSubagents', 'ExitPlanMode',
+      'Skill', 'Task', 'AskUserQuestion', 'ReportFindings', 'ListAgents',
+      'ManageTask', 'ManageSubagents', 'Schedule', 'DefineSubagent', 'ListMcpResources', 'ReadMcpResource',
+      'ExitPlanMode',
       'mcp__superone__browser_snapshot', 'mcp__superone__browser_act',
       'mcp__superone__device_snapshot', 'mcp__superone__computer_query',
       'mcp__superone__media_generate_image', 'mcp__superone__media_generate_video',

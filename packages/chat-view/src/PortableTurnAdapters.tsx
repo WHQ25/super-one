@@ -50,8 +50,7 @@ import { EnterPlanModeBlock, ExitPlanModeBlockPresenter } from './presenters/Pla
 import { ImageGenToolBlockPresenter } from './presenters/ImageGenToolBlock'
 import { VideoGenToolBlockPresenter } from './presenters/VideoGenToolBlock'
 import { ListAgentsToolBlockPresenter } from './presenters/ListAgentsToolBlock'
-import { ManageSubagentsToolBlockPresenter } from './presenters/ManageSubagentsToolBlock'
-import { ManageTaskToolBlockPresenter } from './presenters/ManageTaskToolBlock'
+import { renderAntigravityBuiltinToolBlock } from './presenters/AntigravityBuiltinToolBlocks'
 import { ReportFindingsToolBlockPresenter } from './presenters/ReportFindingsToolBlock'
 import {
   AutomationToolBlockPresenter,
@@ -262,30 +261,16 @@ function renderDedicatedTool(props: TurnToolPresenterProps, brandIconSrc?: strin
       />
     )
   }
-  if (props.toolName === 'ManageTask' || props.toolName === 'manage_task') {
-    const isDenied = Boolean(props.result?.startsWith('[denied] '))
-    return (
-      <ManageTaskToolBlockPresenter
-        params={parseRecord(props.input)}
-        result={isDenied ? props.result?.slice('[denied] '.length) : props.result}
-        isStreaming={props.status === 'streaming'}
-        isError={props.isError}
-        isDenied={isDenied}
-      />
-    )
-  }
-  if (props.toolName === 'ManageSubagents' || props.toolName === 'manage_subagents') {
-    const isDenied = Boolean(props.result?.startsWith('[denied] '))
-    return (
-      <ManageSubagentsToolBlockPresenter
-        params={parseRecord(props.input)}
-        result={isDenied ? props.result?.slice('[denied] '.length) : props.result}
-        isStreaming={props.status === 'streaming'}
-        isError={props.isError}
-        isDenied={isDenied}
-      />
-    )
-  }
+  const isDeniedCall = Boolean(props.result?.startsWith('[denied] '))
+  const antigravityBuiltin = renderAntigravityBuiltinToolBlock({
+    toolName: props.toolName,
+    params: parseRecord(props.input),
+    result: isDeniedCall ? props.result?.slice('[denied] '.length) : props.result,
+    isStreaming: props.status === 'streaming',
+    isError: props.isError,
+    isDenied: isDeniedCall,
+  })
+  if (antigravityBuiltin) return antigravityBuiltin
   if (props.toolName === 'ReportFindings') {
     const isDenied = Boolean(props.result?.startsWith('[denied] '))
     return (

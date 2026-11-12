@@ -125,6 +125,48 @@ describe('deferred tool rows on the phone', () => {
     expect(container.querySelectorAll('.tool-node')).toHaveLength(1)
   })
 
+  it('mounts dedicated presenters for Schedule, DefineSubagent, and ReadMcpResource on the phone', async () => {
+    restore = installFakeHost({
+      [detailRef('Schedule')]: JSON.stringify({
+        input: JSON.stringify({ durationSeconds: 90, prompt: 'Check staging rollout' }),
+        result: 'Tool is running as a background task with task id: sess-1/task-14',
+      }),
+    })
+    const scheduleRender = render(
+      <PortableMessage message={deferredTurn('Schedule')} scheme="dark" pendingPermission={null} />,
+    )
+    await waitFor(() => expect(scheduleRender.container.textContent).toContain('task-14'))
+    expect(scheduleRender.container.querySelectorAll('.tool-node')).toHaveLength(1)
+    scheduleRender.unmount()
+    restore()
+
+    restore = installFakeHost({
+      [detailRef('DefineSubagent')]: JSON.stringify({
+        input: JSON.stringify({ name: 'db-migrator', description: 'Runs migrations safely' }),
+        result: 'Subagent "db-migrator" defined successfully.',
+      }),
+    })
+    const defineRender = render(
+      <PortableMessage message={deferredTurn('DefineSubagent')} scheme="dark" pendingPermission={null} />,
+    )
+    await waitFor(() => expect(defineRender.container.textContent).toContain('db-migrator'))
+    expect(defineRender.container.textContent).not.toContain('DefineSubagent')
+    defineRender.unmount()
+    restore()
+
+    restore = installFakeHost({
+      [detailRef('ReadMcpResource')]: JSON.stringify({
+        input: JSON.stringify({ server: 'context7', uri: 'mcp://context7/react' }),
+        result: 'Resource (mcp://context7/react):\n# React Guide',
+      }),
+    })
+    const resourceRender = render(
+      <PortableMessage message={deferredTurn('ReadMcpResource')} scheme="dark" pendingPermission={null} />,
+    )
+    await waitFor(() => expect(resourceRender.container.textContent).toContain('mcp://context7/react'))
+    expect(resourceRender.container.textContent).not.toContain('ReadMcpResource')
+  })
+
   it('renders session_list as the archive row, not a superone · session list shell', async () => {
     restore = installFakeHost({
       [detailRef('mcp__superone__session_list')]: JSON.stringify({

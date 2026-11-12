@@ -18,8 +18,7 @@ import { getDeviceOp } from './device-tool-display'
 import { getTerminalOp } from './terminal-tool-display'
 import { ImageGenToolBlock } from './ImageGenToolBlock'
 import { ListAgentsToolBlock } from './ListAgentsToolBlock'
-import { ManageSubagentsToolBlock } from './ManageSubagentsToolBlock'
-import { ManageTaskToolBlock } from './ManageTaskToolBlock'
+import { renderAntigravityBuiltinToolBlock } from '@superone/chat-view/presenters/AntigravityBuiltinToolBlocks'
 import { MediaProvidersBlock } from './MediaProvidersBlock'
 import { isMediaToolErrorResult } from './media-generation'
 import { ReportFindingsToolBlock } from './ReportFindingsToolBlock'
@@ -350,30 +349,16 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
       />
     )
   }
-  if (toolName === 'ManageTask' || toolName === 'manage_task') {
-    return (
-      <ManageTaskToolBlock
-        params={params}
-        result={cleanResult}
-        isStreaming={isStreaming}
-        isError={isError}
-        isDenied={isDenied}
-        allowExpand={allowExpand}
-      />
-    )
-  }
-  if (toolName === 'ManageSubagents' || toolName === 'manage_subagents') {
-    return (
-      <ManageSubagentsToolBlock
-        params={params}
-        result={cleanResult}
-        isStreaming={isStreaming}
-        isError={isError}
-        isDenied={isDenied}
-        allowExpand={allowExpand}
-      />
-    )
-  }
+  const antigravityBuiltinBlock = renderAntigravityBuiltinToolBlock({
+    toolName,
+    params,
+    result: cleanResult,
+    isStreaming,
+    isError,
+    isDenied,
+    allowExpand,
+  })
+  if (antigravityBuiltinBlock) return antigravityBuiltinBlock
   if (mcpInfo?.serverName === SUPERONE_SERVER) {
     if (mcpInfo.mcpToolName === 'composer_request') {
       return <InputRequestToolRow title={typeof params.title === 'string' ? params.title : undefined}

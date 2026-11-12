@@ -1,7 +1,13 @@
 import type { ContentBlock } from '@superone/shared/agent-types'
 import type { ToolCall, ToolCallUpdate } from '@agentclientprotocol/sdk'
 import { getBuiltinCapability } from '@superone/shared/capability-prompt-tags'
-import { applyDescriptionPersonaLabel, normalizeToolIdKey, uiToolNameFromId } from '@superone/shared/tool-ui'
+import {
+  applyDescriptionPersonaLabel,
+  normalizeCustomBuiltinInput,
+  normalizeToolIdKey,
+  resolveCustomVariantToolName,
+  uiToolNameFromId,
+} from '@superone/shared/tool-ui'
 
 type AcpToolLike = ToolCall | ToolCallUpdate
 
@@ -108,7 +114,8 @@ function nameFromVariant(raw: Record<string, unknown>): string | null {
   if (variant) {
     const mapped = nameFromToolId(variant)
     if (mapped) return mapped
-    // PascalCase variants: ListDir, WebSearch, Todo, TaskOutput, AskUserQuestion, …
+    const customVariant = resolveCustomVariantToolName(variant)
+    if (customVariant) return customVariant
     if (variant === 'ListDir') return 'LS'
     if (variant === 'WebSearch') return 'WebSearch'
     if (variant === 'SearchTool') return 'SearchTools'
@@ -119,8 +126,6 @@ function nameFromVariant(raw: Record<string, unknown>): string | null {
     if (variant === 'MemorySearch') return 'MemorySearch'
     if (variant === 'AskUserQuestion') return 'AskUserQuestion'
     if (variant === 'TaskOutput') return 'TaskOutput'
-    if (variant === 'ManageTask') return 'ManageTask'
-    if (variant === 'ManageSubagents') return 'ManageSubagents'
     if (variant === 'EnterPlanMode') return 'EnterPlanMode'
     if (variant === 'ExitPlanMode') return 'ExitPlanMode'
     if (variant === 'KillTask') return 'KillTask'
@@ -359,6 +364,8 @@ function normalizeInput(
   diffs: AcpDiff[],
   terminalCommand?: string,
 ): Record<string, unknown> {
+  const customInput = normalizeCustomBuiltinInput(toolName, raw)
+  if (customInput) return customInput
   switch (toolName) {
     case 'Read': {
       const out: Record<string, unknown> = {}
@@ -505,7 +512,7 @@ function normalizeInput(
         ? raw.task_ids.filter((id): id is string => typeof id === 'string' && id.length > 0)
         : []
       const single =
-        pickString(raw, ['task_id', 'taskId', 'id'])
+        pickString(raw, ['task_id', 'taskId', 'CommandId', 'commandId', 'command_id', 'id'])
         ?? (taskIds.length > 0 ? taskIds[0] : undefined)
       if (single) out.task_id = single
       if (taskIds.length > 0) out.task_ids = taskIds
@@ -516,32 +523,8 @@ function normalizeInput(
     }
     case 'KillTask': {
       const out: Record<string, unknown> = {}
-      const id = pickString(raw, ['task_id', 'taskId', 'id'])
+      const id = pickString(raw, ['task_id', 'taskId', 'CommandId', 'id'])
       if (id) out.task_id = id
-      return Object.keys(out).length > 0 ? out : { ...raw }
-    }
-    case 'ManageTask': {
-      const out: Record<string, unknown> = {}
-      const action = pickString(raw, ['action', 'Action'])
-      if (action) out.action = action.toLowerCase()
-      const taskId = pickString(raw, ['taskId', 'TaskId', 'task_id'])
-      if (taskId) out.taskId = taskId
-      const input =
-        pickString(raw, ['input', 'Input'])
-        ?? (typeof raw.input === 'string' ? raw.input : typeof raw.Input === 'string' ? raw.Input : undefined)
-      if (input !== undefined) out.input = input
-      return Object.keys(out).length > 0 ? out : { ...raw }
-    }
-    case 'ManageSubagents': {
-      const out: Record<string, unknown> = {}
-      const action = pickString(raw, ['action', 'Action'])
-      if (action) out.action = action.toLowerCase()
-      const rawIds = pickUnknown(raw, ['conversationIds', 'ConversationIds', 'conversation_ids'])
-      if (Array.isArray(rawIds)) {
-        out.conversationIds = rawIds
-          .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
-          .map((id) => id.trim())
-      }
       return Object.keys(out).length > 0 ? out : { ...raw }
     }
     case 'EnterPlanMode':
@@ -608,7 +591,7 @@ export function normalizeAcpTool(
   const terminalId = extractEmbeddedTerminalId(tool.content)
   const toolName = resolveToolName(tool, raw, diffs, !!terminalId)
   if (!toolName) return null
-  const filePath = extractFilePath(tool, raw, diffs)
+  const filePath = toolName === 'SendMessage' ? undefined : extractFilePath(tool, raw, diffs)
   const title = typeof tool.title === 'string' && tool.title.trim() ? tool.title.trim() : undefined
   const input = enrichSearchInput(
     toolName,

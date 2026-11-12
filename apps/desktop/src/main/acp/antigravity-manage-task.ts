@@ -1,5 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
+import { normalizeCustomBuiltinInput, uiToolNameFromId } from '@superone/shared/tool-ui'
 import { resolveAntigravityBrainRoots } from './antigravity-profile'
 
 const MAX_CONSUMED_TRANSCRIPT_RESULTS = 1000
@@ -33,6 +34,18 @@ function pickStringArg(obj: Record<string, unknown>, keys: readonly string[], tr
     if (raw === undefined) continue
     const val = trim ? raw.trim() : raw
     if (val.length > 0 || !trim) return val
+  }
+  return undefined
+}
+
+function pickNumberArg(obj: Record<string, unknown>, keys: readonly string[]): number | undefined {
+  for (const key of keys) {
+    const val = obj[key]
+    if (typeof val === 'number' && Number.isFinite(val)) return val
+    if (typeof val === 'string' && /^-?\d+(?:\.\d+)?$/.test(val.trim())) {
+      const parsed = Number(val.trim())
+      if (Number.isFinite(parsed)) return parsed
+    }
   }
   return undefined
 }
@@ -81,45 +94,143 @@ export function compactDiffPair(oldText: string, newText: string): { oldText: st
   }
 }
 
+const NON_BASH_EXECUTE_TOOLS = new Set([
+  'ImageGen',
+  'ImageEdit',
+  'TaskOutput',
+  'ManageTask',
+  'KillTask',
+  'NotebookEdit',
+])
+
+export function isAntigravityNonBashExecuteTool(mappedUiName: string | null | undefined): boolean {
+  return Boolean(mappedUiName && NON_BASH_EXECUTE_TOOLS.has(mappedUiName))
+}
+
+function unquoteTitleValue(raw: string): string {
+  const trimmed = raw.trim()
+  if ((trimmed.startsWith('"') && trimmed.endsWith('"')) || (trimmed.startsWith("'") && trimmed.endsWith("'"))) {
+    return trimmed.slice(1, -1).trim()
+  }
+  return trimmed
+}
+
+export function inferAntigravityWireTool(
+  strippedToolName: string | undefined,
+  title: string | undefined,
+  kind: string | null | undefined,
+  inObj: Record<string, unknown>,
+  mutateInput = false,
+): { mappedUiName: string | null; inferredTitle?: string } {
+  const direct =
+    uiToolNameFromId(strippedToolName ?? title) ??
+    (typeof inObj.variant === 'string' ? uiToolNameFromId(inObj.variant) ?? inObj.variant : null)
+  if (direct) return { mappedUiName: direct }
+
+  const trimmedTitle = typeof title === 'string' ? title.trim() : ''
+  const hasToolField = Boolean(pickStringArg(inObj, ['ToolName', 'tool', 'tool_name']))
+  const serverName = pickStringArg(inObj, ['ServerName', 'server_name', 'serverName'])
+  const uriVal = pickStringArg(inObj, ['Uri', 'uri'])
+
+  const resourceTitleMatch = /^Resource\s+(.+?)(?:\s+on Web)?$/i.exec(trimmedTitle)
+  if (resourceTitleMatch && !/^Resource\s*\(/i.test(trimmedTitle)) {
+    const parsedUri = unquoteTitleValue(resourceTitleMatch[1]!)
+    if (mutateInput && parsedUri && !inObj.uri && !inObj.Uri) inObj.uri = parsedUri
+    return { mappedUiName: 'ReadMcpResource', inferredTitle: 'ReadMcpResource' }
+  }
+  if (!hasToolField && serverName && uriVal) {
+    return { mappedUiName: 'ReadMcpResource', inferredTitle: 'ReadMcpResource' }
+  }
+  if (!hasToolField && serverName && !uriVal && kind !== 'execute') {
+    return { mappedUiName: 'ListMcpResources', inferredTitle: 'ListMcpResources' }
+  }
+
+  const urlTitleMatch =
+    /^URL\s+(https?:\/\/\S+)$/i.exec(trimmedTitle) ??
+    /^\*Opened the URL\s+(https?:\/\/\S+?)\s*\*$/i.exec(trimmedTitle)
+  if (urlTitleMatch) {
+    if (mutateInput && !inObj.url && !inObj.Url) inObj.url = urlTitleMatch[1]!
+    return { mappedUiName: 'WebFetch', inferredTitle: 'WebFetch' }
+  }
+  const hasExplicitFile = Boolean(
+    pickStringArg(inObj, ['file_path', 'AbsolutePath', 'TargetFile', 'FilePath', 'filePath', 'target_file', 'Path', 'path', 'NotebookPath', 'notebookPath']),
+  )
+  const httpUrl = pickStringArg(inObj, ['Url', 'url'])
+  if (kind === 'read' && !hasExplicitFile && httpUrl && /^https?:\/\//i.test(httpUrl)) {
+    return { mappedUiName: 'WebFetch', inferredTitle: 'WebFetch' }
+  }
+
+  const commandId = pickStringArg(inObj, ['CommandId', 'commandId', 'command_id'])
+  const hasSendInput = inObj.Input !== undefined || inObj.input !== undefined || inObj.Terminate !== undefined || inObj.terminate !== undefined
+  if (trimmedTitle === 'Waiting for command completion' || (commandId && !hasSendInput)) {
+    return { mappedUiName: 'TaskOutput', inferredTitle: 'TaskOutput' }
+  }
+  if (/^Send\s+.+\s+to command$/i.test(trimmedTitle) || (commandId && hasSendInput)) {
+    return { mappedUiName: 'ManageTask', inferredTitle: 'ManageTask' }
+  }
+
+  const notebookTitleMatch = /^Notebook\s+(.+)$/.exec(trimmedTitle)
+  const notebookPath = pickStringArg(inObj, ['NotebookPath', 'notebookPath', 'notebook_path']) ??
+    (notebookTitleMatch ? unquoteTitleValue(notebookTitleMatch[1]!) : undefined)
+  if (notebookPath) {
+    const nbTool = kind === 'read' ? 'Read' : 'NotebookEdit'
+    if (mutateInput) {
+      if (!inObj.notebook_path) inObj.notebook_path = notebookPath
+      if (!inObj.file_path) inObj.file_path = notebookPath
+    }
+    return { mappedUiName: nbTool, inferredTitle: nbTool }
+  }
+
+  if (trimmedTitle === 'Waiting...' && kind === 'think') {
+    return { mappedUiName: 'Wait', inferredTitle: 'Wait' }
+  }
+
+  return { mappedUiName: null }
+}
+
 export function applyAntigravityManageTaskInput(inObj: Record<string, unknown>): void {
-  const action = pickStringArg(inObj, ['action', 'Action'])
-  if (action && typeof inObj.action !== 'string') {
-    inObj.action = action.toLowerCase()
-  }
-  const taskId = pickStringArg(inObj, ['taskId', 'TaskId', 'task_id'])
-  if (taskId && typeof inObj.taskId !== 'string') {
-    inObj.taskId = taskId
-  }
-  const input = pickStringArg(inObj, ['input', 'Input'], false)
-  if (input !== undefined && typeof inObj.input !== 'string') {
-    inObj.input = input
-  }
+  const normalized = normalizeCustomBuiltinInput('ManageTask', inObj)
+  if (normalized) Object.assign(inObj, normalized)
 }
 
 export function applyAntigravityManageSubagentsInput(inObj: Record<string, unknown>): void {
-  const action = pickStringArg(inObj, ['action', 'Action'])
-  if (action && typeof inObj.action !== 'string') {
-    inObj.action = action.toLowerCase()
-  }
-  const conversationIds = pickStringArrayArg(inObj, ['conversationIds', 'ConversationIds', 'conversation_ids'])
-  if (conversationIds !== undefined && !Array.isArray(inObj.conversationIds)) {
-    inObj.conversationIds = conversationIds
-  }
+  const normalized = normalizeCustomBuiltinInput('ManageSubagents', inObj)
+  if (normalized) Object.assign(inObj, normalized)
 }
 
 export function applyAntigravityBuiltinToolInput(
   mappedUiName: string | null,
   inObj: Record<string, unknown>,
+  strippedToolName?: string,
 ): void {
-  if (mappedUiName === 'ManageTask') {
-    applyAntigravityManageTaskInput(inObj)
-  } else if (mappedUiName === 'ManageSubagents') {
-    applyAntigravityManageSubagentsInput(inObj)
+  if (!mappedUiName) return
+  const normalized = normalizeCustomBuiltinInput(mappedUiName, inObj)
+  if (normalized) {
+    for (const [key, val] of Object.entries(normalized)) {
+      if (inObj[key] === undefined) inObj[key] = val
+    }
+  }
+  if (mappedUiName === 'TaskOutput') {
+    const taskId = pickStringArg(inObj, ['task_id', 'taskId', 'CommandId', 'commandId', 'command_id'])
+    if (taskId && typeof inObj.task_id !== 'string') inObj.task_id = taskId
+  } else if (mappedUiName === 'Wait' && strippedToolName === 'wait_5_seconds' && inObj.durationSeconds === undefined) {
+    inObj.durationSeconds = 5
   }
 }
 
+const TRANSCRIPT_OUTPUT_VARIANTS = new Set([
+  'ManageTask',
+  'ManageSubagents',
+  'Schedule',
+  'DefineSubagent',
+  'SendMessage',
+  'ListMcpResources',
+  'ReadMcpResource',
+  'ManageInbox',
+])
+
 export function isAntigravityTranscriptOutputTool(variant: unknown): boolean {
-  return variant === 'ManageTask' || variant === 'ManageSubagents'
+  return typeof variant === 'string' && TRANSCRIPT_OUTPUT_VARIANTS.has(variant)
 }
 
 function findTranscriptFile(sessionId: string, brainRoots: string[]): string | null {
@@ -230,8 +341,14 @@ function selectMatchingTranscriptOutput(
   return undefined
 }
 
-const MANAGE_TASK_NAMES = new Set(['manage_task', 'ManageTask'])
+const MANAGE_TASK_NAMES = new Set(['manage_task', 'ManageTask', 'send_command_input'])
 const MANAGE_SUBAGENTS_NAMES = new Set(['manage_subagents', 'ManageSubagents'])
+const SCHEDULE_NAMES = new Set(['schedule', 'Schedule'])
+const DEFINE_SUBAGENT_NAMES = new Set(['define_subagent', 'DefineSubagent'])
+const SEND_MESSAGE_NAMES = new Set(['send_message', 'SendMessage'])
+const LIST_RESOURCES_NAMES = new Set(['list_resources', 'list_mcp_resources', 'ListMcpResources'])
+const READ_RESOURCE_NAMES = new Set(['read_resource', 'read_mcp_resource', 'ReadMcpResource'])
+const MANAGE_INBOX_NAMES = new Set(['manage_inbox', 'ManageInbox'])
 
 export function resolveAntigravityManageTaskOutput(
   sessionId: string | undefined,
@@ -243,12 +360,12 @@ export function resolveAntigravityManageTaskOutput(
   if (candidates.length === 0) return undefined
 
   const wantAction = pickStringArg(rawInput, ['action', 'Action'])?.toLowerCase()
-  const wantTaskId = pickStringArg(rawInput, ['taskId', 'TaskId', 'task_id'])
+  const wantTaskId = pickStringArg(rawInput, ['taskId', 'TaskId', 'task_id', 'CommandId'])
   const wantInput = pickStringArg(rawInput, ['input', 'Input'], false)
 
   return selectMatchingTranscriptOutput(candidates, (args) => {
     const cAction = pickStringArg(args, ['action', 'Action'])?.toLowerCase()
-    const cTaskId = pickStringArg(args, ['taskId', 'TaskId', 'task_id'])
+    const cTaskId = pickStringArg(args, ['taskId', 'TaskId', 'task_id', 'CommandId'])
     const cInput = pickStringArg(args, ['input', 'Input'], false)
     if (wantAction && cAction && cAction !== wantAction) return false
     if (wantTaskId && cTaskId && cTaskId !== wantTaskId) return false
@@ -292,6 +409,67 @@ export function resolveAntigravityTranscriptToolOutput(
   }
   if (variant === 'ManageSubagents') {
     return resolveAntigravityManageSubagentsOutput(sessionId, rawInput, unwrapOutput, customBrainRoots)
+  }
+  if (variant === 'Schedule') {
+    const candidates = collectTranscriptGenericOutputs(sessionId, SCHEDULE_NAMES, unwrapOutput, customBrainRoots)
+    if (candidates.length === 0) return undefined
+    const wantPrompt = pickStringArg(rawInput, ['prompt', 'Prompt'])
+    const wantCron = pickStringArg(rawInput, ['cronExpression', 'CronExpression'])
+    const wantDuration = pickNumberArg(rawInput, ['durationSeconds', 'DurationSeconds'])
+    return selectMatchingTranscriptOutput(candidates, (args) => {
+      const cPrompt = pickStringArg(args, ['prompt', 'Prompt'])
+      const cCron = pickStringArg(args, ['cronExpression', 'CronExpression'])
+      const cDuration = pickNumberArg(args, ['durationSeconds', 'DurationSeconds'])
+      if (wantPrompt && cPrompt && cPrompt !== wantPrompt) return false
+      if (wantCron && cCron && cCron !== wantCron) return false
+      if (wantDuration !== undefined && cDuration !== undefined && cDuration !== wantDuration) return false
+      return true
+    })
+  }
+  if (variant === 'DefineSubagent') {
+    const candidates = collectTranscriptGenericOutputs(sessionId, DEFINE_SUBAGENT_NAMES, unwrapOutput, customBrainRoots)
+    if (candidates.length === 0) return undefined
+    const wantName = pickStringArg(rawInput, ['name', 'Name'])
+    return selectMatchingTranscriptOutput(candidates, (args) => {
+      const cName = pickStringArg(args, ['name', 'Name'])
+      return !(wantName && cName && cName !== wantName)
+    })
+  }
+  if (variant === 'SendMessage') {
+    const candidates = collectTranscriptGenericOutputs(sessionId, SEND_MESSAGE_NAMES, unwrapOutput, customBrainRoots)
+    if (candidates.length === 0) return undefined
+    const wantTo = pickStringArg(rawInput, ['to', 'Recipient', 'recipient'])
+    return selectMatchingTranscriptOutput(candidates, (args) => {
+      const cTo = pickStringArg(args, ['to', 'Recipient', 'recipient'])
+      return !(wantTo && cTo && cTo !== wantTo)
+    })
+  }
+  if (variant === 'ListMcpResources') {
+    const candidates = collectTranscriptGenericOutputs(sessionId, LIST_RESOURCES_NAMES, unwrapOutput, customBrainRoots)
+    if (candidates.length === 0) return undefined
+    const wantServer = pickStringArg(rawInput, ['server', 'ServerName', 'server_name'])
+    return selectMatchingTranscriptOutput(candidates, (args) => {
+      const cServer = pickStringArg(args, ['server', 'ServerName', 'server_name'])
+      return !(wantServer && cServer && cServer !== wantServer)
+    })
+  }
+  if (variant === 'ReadMcpResource') {
+    const candidates = collectTranscriptGenericOutputs(sessionId, READ_RESOURCE_NAMES, unwrapOutput, customBrainRoots)
+    if (candidates.length === 0) return undefined
+    const wantUri = pickStringArg(rawInput, ['uri', 'Uri'])
+    return selectMatchingTranscriptOutput(candidates, (args) => {
+      const cUri = pickStringArg(args, ['uri', 'Uri'])
+      return !(wantUri && cUri && cUri !== wantUri)
+    })
+  }
+  if (variant === 'ManageInbox') {
+    const candidates = collectTranscriptGenericOutputs(sessionId, MANAGE_INBOX_NAMES, unwrapOutput, customBrainRoots)
+    if (candidates.length === 0) return undefined
+    const wantAction = pickStringArg(rawInput, ['action', 'Action'])?.toLowerCase()
+    return selectMatchingTranscriptOutput(candidates, (args) => {
+      const cAction = pickStringArg(args, ['action', 'Action'])?.toLowerCase()
+      return !(wantAction && cAction && cAction !== wantAction)
+    })
   }
   return undefined
 }

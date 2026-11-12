@@ -17,75 +17,15 @@ import {
   toVideoStatusItems,
 } from './media-generation'
 import { topFindingSummary } from './report-findings-display'
+import { defineSubagentSummaryText } from './define-subagent-display'
 import { manageSubagentsSummaryText } from './manage-subagents-display'
 import { manageTaskSummaryText } from './manage-task-display'
+import { mcpResourceSummaryText } from './mcp-resource-display'
 import { artifactToolSummary } from './artifact-link'
 import { isWorkflowSmokeCheck, workflowToolTargetLabel } from './workflow-utils'
 import { scheduleToolSummary } from './schedule-tool-display'
-
-const TOOL_VERBS: Record<string, string> = {
-  // Same copy as BashTerminalPresenter (`chat.toolBlock.running`). The portable
-  // Bash row uses that presenter for live and deferred calls alike.
-  Bash: 'Running',
-  Patch: 'Applying patch',
-  CodeExecution: 'Executing code',
-  Read: 'Reading',
-  Edit: 'Editing',
-  Delete: 'Deleting',
-  Write: 'Writing',
-  FileChange: 'Editing',
-  NotebookEdit: 'Editing',
-  Grep: 'Searching',
-  Glob: 'Searching',
-  WebSearch: 'Searching',
-  WebFetch: 'Fetching',
-  Skill: 'Running',
-  Task: 'Spawning',
-  TaskOutput: 'Waiting',
-  AgentWait: 'Waiting',
-  TaskCreate: 'Adding task',
-  TaskUpdate: 'Updating task',
-  TaskGet: 'Reading task',
-  TaskList: 'Listing tasks',
-  AskUserQuestion: 'Asking questions',
-  EnterPlanMode: 'Planning',
-  ExitPlanMode: 'Reviewing',
-  ReportFindings: 'Reporting findings',
-  ListAgents: 'Listing agents',
-  ManageTask: 'Managing task',
-  manage_task: 'Managing task',
-  ManageSubagents: 'Managing subagents',
-  manage_subagents: 'Managing subagents',
-  SendMessage: 'Sending message',
-  SubagentHandback: 'Handing back',
-  EnterWorktree: 'Entering worktree',
-  ExitWorktree: 'Leaving worktree',
-  KillTask: 'Stopping task',
-  ImageGen: 'Generating image',
-  ImageEdit: 'Editing image',
-  Monitor: 'Monitoring',
-  CronCreate: 'Scheduling',
-  CronDelete: 'Cancelling schedule',
-  CronList: 'Listing schedules',
-  ScheduleWakeup: 'Scheduling wakeup',
-  SchedulerCreate: 'Scheduling',
-  SchedulerDelete: 'Cancelling schedule',
-  SchedulerList: 'Listing schedules',
-  UpdateGoal: 'Updating goal',
-  LS: 'Listing',
-  SearchTools: 'Searching tools',
-  UseTool: 'Calling tool',
-  MemorySearch: 'Searching memory',
-  MemoryGet: 'Reading memory',
-  Lsp: 'Querying language server',
-  DeployApp: 'Deploying',
-  XSearch: 'Searching X',
-}
-
-export function getToolVerb(toolName: string): string {
-  if (parseMcpToolName(toolName)) return 'Running'
-  return TOOL_VERBS[toolName] ?? 'Running'
-}
+import { durationSummary, formatToolLabel, getToolLabel, getToolVerb } from './tool-labels'
+export { formatToolLabel, getToolLabel, getToolVerb }
 
 /** Shared tool name → icon key + summary extraction for ToolBlock & PermissionPrompt. */
 
@@ -115,67 +55,6 @@ export function isAlwaysHiddenToolBlock(toolName: string): boolean {
 
 export { isHiddenToolBlock } from '@superone/chat-core/turn-process/media-tools'
 
-/** Human-readable tool title for chat UI (internal toolName stays PascalCase / id). */
-const TOOL_LABELS: Record<string, string> = {
-  Bash: 'Bash',
-  Patch: 'Patch',
-  CodeExecution: 'Execute Code',
-  Read: 'Read',
-  Edit: 'Edit',
-  Write: 'Write',
-  FileChange: 'File Change',
-  NotebookEdit: 'Notebook Edit',
-  Grep: 'Grep',
-  Glob: 'Glob',
-  WebSearch: 'Web Search',
-  WebFetch: 'Web Fetch',
-  LS: 'List Dir',
-  AgentWait: 'Wait for Agents',
-  ToolSearch: 'ToolSearch',
-  SearchTools: 'Search Tools',
-  UseTool: 'Use Tool',
-  MemorySearch: 'Memory Search',
-  MemoryGet: 'Memory Read',
-  Lsp: 'LSP',
-  DeployApp: 'Deploy App',
-  XSearch: 'X Search',
-  Skill: 'Skill',
-  Task: 'Task',
-  TaskOutput: 'Task Output',
-  TaskCreate: 'Task Create',
-  TaskUpdate: 'Task Update',
-  TaskGet: 'Task Get',
-  TaskList: 'Task List',
-  TodoList: 'Todo List',
-  TodoWrite: 'Todo Write',
-  AskUserQuestion: 'Ask User',
-  SandboxNetworkAccess: 'Network Access',
-  EnterPlanMode: 'Enter Plan Mode',
-  ExitPlanMode: 'Exit Plan Mode',
-  ReportFindings: 'Code Review',
-  KillTask: 'Kill Task',
-  ManageTask: 'Manage Task',
-  manage_task: 'Manage Task',
-  ManageSubagents: 'Manage Subagents',
-  manage_subagents: 'Manage Subagents',
-  ImageGen: 'Image Gen',
-  ImageEdit: 'Image Edit',
-  ImageToVideo: 'Image To Video',
-  ReferenceToVideo: 'Reference To Video',
-  VideoGen: 'Video Gen',
-  Monitor: 'Monitor',
-  UpdateGoal: 'Update Goal',
-  SchedulerCreate: 'Scheduler Create',
-  SchedulerDelete: 'Scheduler Delete',
-  SchedulerList: 'Scheduler List',
-  Agent: 'Agent',
-  Workflow: 'Workflow',
-  SendMessage: 'Send Message',
-  SubagentHandback: 'Hand Back',
-  EnterWorktree: 'Enter Worktree',
-  ExitWorktree: 'Exit Worktree',
-}
-
 /**
  * What a messaging tool's expanded row shows: the words that were sent, not the JSON
  * delivery receipt. Without the input (a phone's is stripped) the receipt's own sentence
@@ -191,23 +70,6 @@ export function coordinationToolBody(toolName: string, params: Record<string, un
   } catch {
     return null
   }
-}
-
-/** Split camel/PascalCase and underscores into Title Case words for unknown tools. */
-export function formatToolLabel(toolName: string): string {
-  if (!toolName) return toolName
-  if (TOOL_LABELS[toolName]) return TOOL_LABELS[toolName]
-  const mcp = parseMcpToolName(toolName)
-  if (mcp) return mcp.mcpToolName.replace(/_/g, ' ')
-  return toolName
-    .replace(/[_-]+/g, ' ')
-    .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
-    .replace(/\s+/g, ' ')
-    .trim()
-}
-
-export function getToolLabel(toolName: string): string {
-  return formatToolLabel(toolName)
 }
 
 const DEVICE_TOOL_NAMES = new Set<string>(DEVICE_AGENT_TOOL_NAMES)
@@ -266,6 +128,22 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
     case 'ManageSubagents':
     case 'manage_subagents':
       return { icon: 'bot', summary: manageSubagentsSummaryText(input) }
+    case 'DefineSubagent':
+    case 'define_subagent':
+      return { icon: 'bot', summary: defineSubagentSummaryText(input) }
+    case 'ListMcpResources':
+    case 'list_resources':
+    case 'ReadMcpResource':
+    case 'read_resource':
+      return { icon: 'mcp', summary: mcpResourceSummaryText(toolName, input) }
+    case 'Wait':
+      return { icon: 'clock', summary: durationSummary(input) }
+    case 'ManageInbox':
+    case 'manage_inbox': {
+      const action = typeof input.action === 'string' ? input.action : ''
+      const messageId = typeof input.messageId === 'string' ? input.messageId : ''
+      return { icon: 'message-circle', summary: [action, messageId].filter(Boolean).join(' · ') }
+    }
     case 'SendMessage':
       return { icon: 'send', summary: coordinationToolSummary(toolName, input, sp) ?? '' }
     case 'SubagentHandback':

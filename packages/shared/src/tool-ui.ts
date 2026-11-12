@@ -144,6 +144,40 @@ export const TOOL_ID_TO_UI_NAME: Record<string, string> = {
   managetask: 'ManageTask',
   manage_subagents: 'ManageSubagents',
   managesubagents: 'ManageSubagents',
+  schedule: 'Schedule',
+  define_subagent: 'DefineSubagent',
+  definesubagent: 'DefineSubagent',
+  list_resources: 'ListMcpResources',
+  list_mcp_resources: 'ListMcpResources',
+  listmcpresources: 'ListMcpResources',
+  listmcpresourcestool: 'ListMcpResources',
+  read_resource: 'ReadMcpResource',
+  read_mcp_resource: 'ReadMcpResource',
+  readmcpresource: 'ReadMcpResource',
+  readmcpresourcetool: 'ReadMcpResource',
+  sendmessage: 'SendMessage',
+  call_mcp_tool: 'UseTool',
+  callmcptool: 'UseTool',
+  command_status: 'TaskOutput',
+  commandstatus: 'TaskOutput',
+  taskoutput: 'TaskOutput',
+  killtask: 'KillTask',
+  send_command_input: 'ManageTask',
+  sendcommandinput: 'ManageTask',
+  notebook_edit: 'NotebookEdit',
+  notebookedit: 'NotebookEdit',
+  edit_notebook: 'NotebookEdit',
+  notebook_execution: 'NotebookEdit',
+  execute_notebook: 'NotebookEdit',
+  read_notebook: 'Read',
+  wait: 'Wait',
+  wait_5_seconds: 'Wait',
+  skill_search: 'SearchTools',
+  skillsearch: 'SearchTools',
+  open_browser_url: 'WebFetch',
+  sed: 'Edit',
+  manage_inbox: 'ManageInbox',
+  manageinbox: 'ManageInbox',
 }
 
 export function normalizeToolIdKey(id: string): string {
@@ -348,138 +382,9 @@ export function grokCollabStreamingInput(argumentsJson: string | undefined): str
   return JSON.stringify(record)
 }
 
-/**
- * Normalize a transcript / chat_history tool name + raw args into ToolBlock shape.
- * Grok uses ids like `read_file` and aliases like `target_file`; OpenCode uses
- * `path` / `filePath` and skill `id` / `name`. Live mapping and replay must agree.
- */
-export function normalizeTranscriptTool(
-  rawName: string,
-  rawInput: Record<string, unknown>,
-): { toolName: string; input: Record<string, unknown> } {
-  // Grok MCP envelope: use_tool { tool_name: "server__tool", tool_input }
-  const envelopeId = typeof rawInput.tool_name === 'string' ? rawInput.tool_name : ''
-  const isUseTool =
-    normalizeToolIdKey(rawName) === 'use_tool'
-    || rawInput.variant === 'UseTool'
-  if (isUseTool && envelopeId.includes('__')) {
-    const mcpInput = rawInput.tool_input && typeof rawInput.tool_input === 'object' && !Array.isArray(rawInput.tool_input)
-      ? rawInput.tool_input as Record<string, unknown>
-      : {}
-    return { toolName: `mcp__${envelopeId}`, input: mcpInput }
-  }
-  if (normalizeToolIdKey(rawName) === 'call_mcp_tool') {
-    const server = typeof rawInput.ServerName === 'string' ? rawInput.ServerName.trim() : typeof rawInput.server === 'string' ? rawInput.server.trim() : ''
-    const tool = typeof rawInput.ToolName === 'string' ? rawInput.ToolName.trim() : typeof rawInput.tool === 'string' ? rawInput.tool.trim() : ''
-    if (server && tool) {
-      const args = rawInput.Arguments && typeof rawInput.Arguments === 'object' && !Array.isArray(rawInput.Arguments)
-        ? rawInput.Arguments as Record<string, unknown>
-        : rawInput.arguments && typeof rawInput.arguments === 'object' && !Array.isArray(rawInput.arguments)
-          ? rawInput.arguments as Record<string, unknown>
-          : {}
-      return { toolName: claudeMcpToolRuleName(server, tool), input: { ...args } }
-    }
-  }
-  const parsedMcp = parseMcpToolName(rawName)
-  if (parsedMcp) {
-    const input = { ...rawInput }
-    if (!rawName.startsWith('mcp__')) {
-      delete input.toolSummary
-      delete input.toolAction
-    }
-    return { toolName: claudeMcpToolRuleName(parsedMcp.serverName, parsedMcp.mcpToolName), input }
-  }
-
-  const toolName = uiToolNameFromId(rawName) ?? rawName
-  const input = { ...rawInput }
-
-  if (toolName === 'Read') {
-    if (input.file_path == null && input.target_file != null) input.file_path = input.target_file
-    if (input.file_path == null && input.filePath != null) input.file_path = input.filePath
-    if (input.file_path == null && input.AbsolutePath != null) input.file_path = input.AbsolutePath
-    if (input.file_path == null && input.Path != null) input.file_path = input.Path
-    if (input.file_path == null && input.path != null) input.file_path = input.path
-    if (input.offset == null && input.StartLine != null) input.offset = input.StartLine
-  } else if (toolName === 'Edit' || toolName === 'Write' || toolName === 'Delete' || toolName === 'FileChange') {
-    if (input.file_path == null && input.target_file != null) input.file_path = input.target_file
-    if (input.file_path == null && input.filePath != null) input.file_path = input.filePath
-    if (input.file_path == null && input.AbsolutePath != null) input.file_path = input.AbsolutePath
-    if (input.file_path == null && input.TargetFile != null) input.file_path = input.TargetFile
-    if (input.file_path == null && input.Path != null) input.file_path = input.Path
-    if (input.file_path == null && input.path != null) input.file_path = input.path
-    if (toolName === 'Write' && input.content == null && input.contents != null) input.content = input.contents
-    if (toolName === 'Write' && input.content == null && input.fileText != null) input.content = input.fileText
-    if (toolName === 'Write' && input.content == null && input.Content != null) input.content = input.Content
-    if (toolName === 'Write' && input.content == null && input.CodeContent != null) input.content = input.CodeContent
-    if (toolName === 'Edit' && input.diff == null && input.diffString != null) input.diff = input.diffString
-    if (toolName === 'Edit' && input.old_string == null && input.oldString != null) input.old_string = input.oldString
-    if (toolName === 'Edit' && input.old_string == null && input.Target != null) input.old_string = input.Target
-    if (toolName === 'Edit' && input.new_string == null && input.newString != null) input.new_string = input.newString
-    if (toolName === 'Edit' && input.new_string == null && input.Replacement != null) input.new_string = input.Replacement
-    if (toolName === 'Edit' && input.replace_all == null && input.replaceAll != null) input.replace_all = input.replaceAll
-  } else if (toolName === 'Skill') {
-    if (input.skill == null && input.id != null) input.skill = input.id
-    if (input.skill == null && input.name != null) input.skill = input.name
-  } else if (toolName === 'Bash') {
-    if (input.command == null && input.cmd != null) input.command = input.cmd
-    if (input.command == null && input.CommandLine != null) input.command = input.CommandLine
-    if (input.description == null && input.toolSummary != null) input.description = input.toolSummary
-  } else if (toolName === 'LS') {
-    if (input.path == null && input.target_directory != null) input.path = input.target_directory
-    if (input.path == null && input.directory != null) input.path = input.directory
-    if (input.path == null && input.DirectoryPath != null) input.path = input.DirectoryPath
-  } else if (toolName === 'Grep') {
-    if (input.pattern == null && input.query != null) input.pattern = input.query
-    if (input.pattern == null && input.Pattern != null) input.pattern = input.Pattern
-    if (input.pattern == null && input.Query != null) input.pattern = input.Query
-    if (input.path == null && input.SearchPath != null) input.path = input.SearchPath
-  } else if (toolName === 'Glob') {
-    if (input.pattern == null && input.globPattern != null) input.pattern = input.globPattern
-    if (input.pattern == null && input.glob_pattern != null) input.pattern = input.glob_pattern
-    if (input.pattern == null && input.Pattern != null) input.pattern = input.Pattern
-    if (input.path == null && input.targetDirectory != null) input.path = input.targetDirectory
-    if (input.path == null && input.target_directory != null) input.path = input.target_directory
-    if (input.path == null && input.SearchDirectory != null) input.path = input.SearchDirectory
-  } else if (toolName === 'WebFetch') {
-    if (input.url == null && input.uri != null) input.url = input.uri
-    if (input.url == null && input.Url != null) input.url = input.Url
-  } else if (toolName === 'WebSearch' || toolName === 'SearchTools' || toolName === 'ToolSearch' || toolName === 'SemanticSearch') {
-    if (input.query == null && input.q != null) input.query = input.q
-    if (input.query == null && input.Query != null) input.query = input.Query
-  } else if (toolName === 'ImageGen' || toolName === 'ImageEdit') {
-    if (input.prompt == null && input.Prompt != null) input.prompt = input.Prompt
-    if (input.aspect_ratio == null && input.AspectRatio != null) input.aspect_ratio = input.AspectRatio
-    if (input.aspect_ratio == null && input.aspectRatio != null) input.aspect_ratio = input.aspectRatio
-  } else if (toolName === 'SendMessage') {
-    if (input.to == null && input.Recipient != null) input.to = input.Recipient
-    if (input.message == null && input.Message != null) input.message = input.Message
-  } else if (toolName === 'ManageTask') {
-    if (input.action == null && typeof input.Action === 'string') input.action = input.Action.toLowerCase()
-    else if (typeof input.action === 'string') input.action = input.action.toLowerCase()
-    if (input.taskId == null && input.TaskId != null) input.taskId = input.TaskId
-    if (input.taskId == null && input.task_id != null) input.taskId = input.task_id
-    if (input.input == null && input.Input != null) input.input = input.Input
-  } else if (toolName === 'ManageSubagents') {
-    if (input.action == null && typeof input.Action === 'string') input.action = input.Action.toLowerCase()
-    else if (typeof input.action === 'string') input.action = input.action.toLowerCase()
-    const rawIds = input.conversationIds ?? input.ConversationIds ?? input.conversation_ids
-    if (Array.isArray(rawIds)) {
-      input.conversationIds = rawIds
-        .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
-        .map((id) => id.trim())
-    } else if (typeof rawIds === 'string' && rawIds.trim().startsWith('[')) {
-      try {
-        const parsed = JSON.parse(rawIds)
-        if (Array.isArray(parsed)) {
-          input.conversationIds = parsed
-            .filter((id): id is string => typeof id === 'string' && id.trim().length > 0)
-            .map((id) => id.trim())
-        }
-      } catch {
-        void 0
-      }
-    }
-  }
-
-  return { toolName, input }
-}
+export {
+  FULL_RESULT_TOOL_NAMES,
+  normalizeCustomBuiltinInput,
+  normalizeTranscriptTool,
+  resolveCustomVariantToolName,
+} from './tool-ui-builtin'

@@ -13,7 +13,7 @@ import {
   looksLikeComputerUseResult,
 } from '@superone/shared/computer-use-result-shape'
 import { isJevRunToolName, looksLikeJevRunResult } from '@superone/shared/jev-run-result-shape'
-import { formatAgentToolOutput } from '@superone/shared/tool-ui'
+import { FULL_RESULT_TOOL_NAMES, formatAgentToolOutput } from '@superone/shared/tool-ui'
 import { normalizeAcpTool } from './tool-normalization'
 
 /**
@@ -214,7 +214,7 @@ function looksLikeCollabResult(obj: Record<string, unknown>): boolean {
 
 function shouldKeepFullToolResult(summary: string, toolName?: string): boolean {
   if (summary.length <= 4000) return true
-  if (toolName === 'Bash' || toolName === 'ManageTask' || toolName === 'ManageSubagents') return true
+  if (toolName && FULL_RESULT_TOOL_NAMES.has(toolName)) return true
   if (isCollabToolName(toolName)) return true
   if (isSessionArchiveToolName(toolName)) return true
   if (looksLikeSessionArchiveToon(summary)) return true

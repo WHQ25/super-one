@@ -270,6 +270,35 @@ export const toolCatalogExamples: ToolCatalogExample[] = [
       ]),
     ].join('\n'),
   )),
+  example('agent/schedule', 'Agent', 'Schedule', call(
+    'Schedule',
+    { durationSeconds: 90, prompt: 'Check staging rollout health', timerCondition: 'any' },
+    'Tool is running as a background task with task id: 78438cf0-9ba3-45d6-8b4e-5716b251e54a/task-14\nTask Description: Timer: 1m 30s, Prompt: Check staging rollout health',
+  )),
+  example('agent/define-subagent', 'Agent', 'DefineSubagent', call(
+    'DefineSubagent',
+    {
+      name: 'migration-verifier',
+      description: 'Verifies forward and backward SQL migrations.',
+      enableWriteTools: true,
+      enableMcpTools: false,
+    },
+    'Subagent "migration-verifier" defined successfully. It can now be invoked via invoke_subagent.',
+  )),
+  example('agent/list-mcp-resources', 'Agent', 'ListMcpResources', call(
+    'ListMcpResources',
+    { server: 'context7' },
+    JSON.stringify({
+      resources: [
+        { uri: 'mcp://context7/docs/react-19', name: 'React 19 Guide', mimeType: 'text/markdown' },
+      ],
+    }),
+  )),
+  example('agent/read-mcp-resource', 'Agent', 'ReadMcpResource', call(
+    'ReadMcpResource',
+    { server: 'context7', uri: 'mcp://context7/docs/react-19' },
+    'Resource (mcp://context7/docs/react-19):\n# React 19 Guide',
+  )),
   example('agent/send-message', 'Agent', 'SendMessage', call(
     'SendMessage',
     { to: 'step4-remote-collab', summary: 'Fix four open items before review', message: 'Good work; the A-side monitor deviation is accepted. Please fix these open items.' },

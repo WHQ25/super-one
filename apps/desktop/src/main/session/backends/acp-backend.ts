@@ -38,6 +38,10 @@ import {
   upsertAcpAgentSlashCommands,
 } from '../../acp/acp-model-cache'
 import { discoverAntigravitySlashCommands } from '../../acp/antigravity-slash-commands'
+import {
+  antigravityPermissionLaunchProfile,
+  type AntigravityPermissionLaunchProfile,
+} from '../../acp/antigravity-runtime-bridge'
 import { createAcpRuntime, type AcpRuntime, type AcpRuntimeOptions } from '../../acp/acp-runtime'
 import type { FolderTrustRequest } from '../../acp/folder-trust'
 import { describeAcpRequestFailure } from '../../acp/acp-request-error'
@@ -300,6 +304,7 @@ export class AcpBackend implements SessionBackend {
   private runtimeAgentKey: string | null = null
   /** Cwd the live ACP process was started with (session/new). */
   private runtimeCwd: string | null = null
+  private runtimePermissionProfile: AntigravityPermissionLaunchProfile | null = null
   /**
    * Provider session ids we already forced a cold restart for (wanted resume ≠ live id).
    * Prevents an infinite teardown loop when session/load keeps failing.
@@ -318,9 +323,34 @@ export class AcpBackend implements SessionBackend {
     return (opts.cwd?.trim() || opts.projectPath).trim()
   }
 
+  private desiredAntigravityPermissionProfile(
+    mode: PermissionMode | undefined = this.startOpts?.permissionMode,
+    agentId: string | undefined = this.config.agentId,
+  ): AntigravityPermissionLaunchProfile | null {
+    if (!isAntigravityAcpAgent(agentId)) return null
+    return antigravityPermissionLaunchProfile(mode)
+  }
+
+  private hasStaleAntigravityPermissionProfile(): boolean {
+    const desired = this.desiredAntigravityPermissionProfile()
+    return desired !== null && this.runtimePermissionProfile !== null && desired !== this.runtimePermissionProfile
+  }
+
+  private preserveStateBeforePermissionRestart(): void {
+    if (!this.startOpts || !this.runtime) return
+    const liveSessionId = this.runtime.sessionId?.trim()
+    const liveModel = this.selectedModelId?.trim()
+    this.startOpts = {
+      ...this.startOpts,
+      ...(liveSessionId ? { providerSessionId: liveSessionId } : {}),
+      ...(liveModel ? { model: liveModel } : {}),
+    }
+  }
+
   /** Agent id/command change OR working directory change requires a new ACP process. */
   private needsRuntimeRestart(opts: BackendStartOptions): boolean {
-    if (this.isLaunchChanged(this.pinnedConfig(opts.config))) return true
+    const nextCfg = this.pinnedConfig(opts.config)
+    if (this.isLaunchChanged(nextCfg)) return true
     if (!this.runtime && !this.ensureRuntimePromise) return false
     const nextCwd = this.effectiveCwd(opts)
     if (this.runtimeCwd && this.runtimeCwd !== nextCwd) return true
@@ -328,6 +358,15 @@ export class AcpBackend implements SessionBackend {
     // ACP fixes its roots at `session/new`, so a changed directory set only
     // takes effect across a restart — same reasoning as cwd above.
     if (this.startOpts && !sameDirSet(this.startOpts.additionalDirectories, opts.additionalDirectories)) {
+      return true
+    }
+    const nextProfile = this.desiredAntigravityPermissionProfile(opts.permissionMode, nextCfg.agentId)
+    const currProfile =
+      this.runtimePermissionProfile ??
+      (this.startOpts
+        ? this.desiredAntigravityPermissionProfile(this.startOpts.permissionMode, this.config.agentId)
+        : null)
+    if (nextProfile !== null && currProfile !== null && nextProfile !== currProfile) {
       return true
     }
     return false
@@ -624,6 +663,7 @@ export class AcpBackend implements SessionBackend {
       this.runtime
       && this.runtimeAgentKey === this.agentKey()
       && this.runtimeCwd === desiredCwd
+      && !this.hasStaleAntigravityPermissionProfile()
     ) {
       // Live runtime but cold-started without the stored provider session id.
       // Force one session/load attempt when we know the wanted resume id.
@@ -641,6 +681,9 @@ export class AcpBackend implements SessionBackend {
       }
     }
     if (this.runtime) {
+      if (this.hasStaleAntigravityPermissionProfile()) {
+        this.preserveStateBeforePermissionRestart()
+      }
       await this.teardownRuntime()
     }
     if (this.ensureRuntimePromise) {
@@ -713,6 +756,10 @@ export class AcpBackend implements SessionBackend {
       // a concurrent start() may have filled providerSessionId after prewarm queued us.
       const resumeAtSpawn = this.startOpts?.providerSessionId?.trim() || resumeSessionId
       const permissionModeAtSpawn = this.startOpts?.permissionMode
+      const permissionProfileAtSpawn = this.desiredAntigravityPermissionProfile(
+        permissionModeAtSpawn,
+        launch.agentId,
+      )
       this.pendingPermissionMode = null
       this.lastSpawnResumeId = resumeAtSpawn ?? null
       const runtime = await runtimeFactory({
@@ -777,6 +824,7 @@ export class AcpBackend implements SessionBackend {
       this.runtime = runtime
       this.runtimeAgentKey = launchKey
       this.runtimeCwd = runtime.launch.cwd || desiredCwd
+      this.runtimePermissionProfile = permissionProfileAtSpawn
       // Keep startOpts in sync with the live agent id after load success or
       // failed-load fallback so force-retry does not mint extra sessions.
       this.adoptLiveProviderSessionId(runtime, resumeAtSpawn)
@@ -1672,6 +1720,7 @@ export class AcpBackend implements SessionBackend {
     this.applyingPermissionMode = null
     this.runtimeAgentKey = null
     this.runtimeCwd = null
+    this.runtimePermissionProfile = null
     const runtime = this.runtime
     this.runtime = null
     if (runtime) {
@@ -1913,6 +1962,24 @@ export class AcpBackend implements SessionBackend {
       return
     }
     this.pendingPermissionMode = null
+    const nextProfile = this.desiredAntigravityPermissionProfile(mode)
+    if (
+      nextProfile !== null &&
+      this.runtimePermissionProfile !== null &&
+      nextProfile !== this.runtimePermissionProfile
+    ) {
+      this.preserveStateBeforePermissionRestart()
+      if (this.startOpts) this.startOpts = { ...this.startOpts, permissionMode: mode }
+      if (this.isTurnBusy() || this.liveBackgroundTaskIds.size > 0) {
+        await this.applyRuntimePermissionMode(this.runtime, mode)
+        log.info('[AcpBackend] setPermissionMode deferred antigravity restart until idle mode=%s', mode)
+        return
+      }
+      await this.teardownRuntime()
+      await this.ensureRuntime()
+      log.info('[AcpBackend] setPermissionMode restarted antigravity runtime mode=%s profile=%s', mode, nextProfile)
+      return
+    }
     await this.applyRuntimePermissionMode(this.runtime, mode)
     if (this.startOpts) this.startOpts = { ...this.startOpts, permissionMode: mode }
     log.info('[AcpBackend] setPermissionMode applied mode=%s agent=%s', mode, this.config.agentId ?? '')

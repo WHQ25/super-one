@@ -123,3 +123,17 @@ Non-obvious upstream behaviors that SuperOne depends on.
   3. `readAgentCapabilities` and `mcpTransportCapsFromAgent` enable `mcp.http = true` when Antigravity is identified via `agentCapabilities._meta.antigravity`, `agentInfo.name`, or `agentId === 'antigravity'`.
 - **SuperOne code**: `apps/desktop/src/main/acp/acp-capabilities.ts`, `apps/desktop/src/main/acp/acp-config.ts`, `apps/desktop/src/main/acp/acp-mcp.ts`
 - **Guard**: `apps/desktop/src/main/acp/acp-capabilities.test.ts`, `apps/desktop/src/main/acp/acp-mcp.test.ts`
+
+## 14. Process-level permission flags (`--sandbox`, `--dangerously-skip-permissions`) and runtime restart + `session/resume` on `auto` / `bypassPermissions` transitions (observed in 1.5.3)
+
+- **Behavior**:
+  1. In `agy` `1.5.3` (`(*ACPServer).setSessionMode` and `(*ACPServer).applySettings`), ACP `session/set_mode` only accepts `"default"` and `"plan"` (returning `-32602` for any other mode ID), and `session/new` / `session/resume` `_meta.antigravity` only consumes `systemPrompt` (`modeId` is ignored). Backend tool auto-execution (`SetToolPermissionMode` and `SetAutoExecutionPolicy`) is fixed at `agy acp` process startup from `settings.json` plus CLI flags:
+     - Default (`agy acp`): `SetToolPermissionMode("request-review")` + `SetAutoExecutionPolicy(1)`. Tools requiring approval emit `RequestedInteraction` (`session/request_permission` while `*streamFence` is open; parked indefinitely when `*streamFence` is closed during post-turn background wakeups).
+     - `agy acp --sandbox --dangerously-skip-permissions`: `SetTerminalSandboxSettings(true)` + `SetToolPermissionMode("always-proceed")` + `SetAutoExecutionPolicy(3)`. Enforces OS Seatbelt sandboxing while allowing tools (including post-turn background wakeup tools) to execute without blocking on `RequestedInteraction`.
+     - `agy acp --dangerously-skip-permissions`: `SetToolPermissionMode("always-proceed")` + `SetAutoExecutionPolicy(3)` with `SetTerminalSandboxSettings(false)`.
+  2. SuperOne maps `PermissionMode` to three launch profiles (`antigravityPermissionLaunchProfile` / `applyAntigravityPermissionLaunchArgs`): `'standard'` (`default`, `acceptEdits`, `plan`), `'auto'` (`--sandbox --dangerously-skip-permissions`), and `'bypass'` (`--dangerously-skip-permissions`). Transitions within `'standard'` stay in-process (`session/set_mode` + client-side `acceptEdits` approval), while transitions across `'standard'` <-> `'auto'` <-> `'bypass'` tear down the `agy acp` process (immediately when idle, or deferred to the next `ensureRuntime()` boundary if a turn or background task is active) and respawn with `resumeSessionId` set to the live `sessionId` (`session/resume`).
+- **SuperOne code**: `apps/desktop/src/main/acp/antigravity-runtime-bridge.ts`, `apps/desktop/src/main/acp/acp-runtime.ts`, `apps/desktop/src/main/session/backends/acp-backend.ts`
+- **Guard**: `apps/desktop/src/main/acp/antigravity-permission-launch.test.ts`
+
+
+

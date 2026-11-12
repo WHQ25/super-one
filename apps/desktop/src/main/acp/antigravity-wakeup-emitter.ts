@@ -26,11 +26,16 @@ export interface WakeupEmitContext {
   boundConversationIds: Set<string>
   trackedByToolUseId: Map<string, TrackedSubagent>
   emittedWakeupStepIndices: Set<number>
+  emittedWakeupToolUseIds: Set<string>
   emittedWakeupToolResultIds: Set<string>
+  replayedBackgroundToolIds: Set<string>
   activeWakeupMinSpawnStepIndex: number | null
   subagentWakeupPending: boolean
   allWorkCompletedAtMs: number | null
   unflushedWakeupReplay: boolean
+  stalledWakeupToolReplay: boolean
+  unlockedPostStallStream: boolean
+  streamedPreUserPostStall: boolean
   emitEvent: (event: AgentEvent) => void
 }
 
@@ -187,31 +192,49 @@ export function emitWakeupProgressSteps(
   for (const step of wakeup.steps) {
     if (ctx.emittedWakeupStepIndices.has(step.stepIndex)) {
       for (const tc of step.toolCalls) {
-        if (!tc.hasResult || tc.resultPending || ctx.emittedWakeupToolResultIds.has(tc.toolUseId)) continue
-        ctx.emittedWakeupToolResultIds.add(tc.toolUseId)
-        ctx.unflushedWakeupReplay = true
-        ctx.emitEvent({
-          type: 'content_delta',
-          messageId: targetMessageId,
-          delta: {
-            type: 'tool_use',
-            toolUseId: tc.toolUseId,
-            toolName: tc.toolName,
-            input: JSON.stringify(tc.input),
-            status: 'complete',
-            ...(tc.summary ? { toolSummary: tc.summary } : {}),
-          },
-        })
-        ctx.emitEvent({
-          type: 'content_delta',
-          messageId: targetMessageId,
-          delta: {
-            type: 'tool_result',
-            toolUseId: tc.toolUseId,
-            summary: tc.resultSummary ?? 'done',
-            isError: Boolean(tc.isError),
-          },
-        })
+        if (ctx.emittedWakeupToolResultIds.has(tc.toolUseId) || isSubagentToolName(tc.toolName)) continue
+        if (tc.hasResult && !tc.resultPending) {
+          ctx.emittedWakeupToolUseIds.add(tc.toolUseId)
+          ctx.emittedWakeupToolResultIds.add(tc.toolUseId)
+          ctx.unflushedWakeupReplay = true
+          ctx.emitEvent({
+            type: 'content_delta',
+            messageId: targetMessageId,
+            delta: {
+              type: 'tool_use',
+              toolUseId: tc.toolUseId,
+              toolName: tc.toolName,
+              input: JSON.stringify(tc.input),
+              status: 'complete',
+              ...(tc.summary ? { toolSummary: tc.summary } : {}),
+            },
+          })
+          ctx.emitEvent({
+            type: 'content_delta',
+            messageId: targetMessageId,
+            delta: {
+              type: 'tool_result',
+              toolUseId: tc.toolUseId,
+              summary: tc.resultSummary ?? 'done',
+              isError: Boolean(tc.isError),
+            },
+          })
+        } else if (tc.resultPending && !ctx.emittedWakeupToolUseIds.has(tc.toolUseId)) {
+          ctx.emittedWakeupToolUseIds.add(tc.toolUseId)
+          ctx.unflushedWakeupReplay = true
+          ctx.emitEvent({
+            type: 'content_delta',
+            messageId: targetMessageId,
+            delta: {
+              type: 'tool_use',
+              toolUseId: tc.toolUseId,
+              toolName: tc.toolName,
+              input: JSON.stringify(tc.input),
+              status: 'streaming',
+              ...(tc.summary ? { toolSummary: tc.summary } : {}),
+            },
+          })
+        }
       }
       continue
     }
@@ -236,6 +259,7 @@ export function emitWakeupProgressSteps(
 
     for (const tc of step.toolCalls) {
       if (isSubagentToolName(tc.toolName)) {
+        ctx.emittedWakeupToolUseIds.add(tc.toolUseId)
         ctx.emittedWakeupToolResultIds.add(tc.toolUseId)
         ctx.emitEvent({
           type: 'content_delta',
@@ -270,6 +294,10 @@ export function emitWakeupProgressSteps(
       }
 
       const ready = Boolean(tc.hasResult && !tc.resultPending)
+      if (!ready && !tc.resultPending) {
+        continue
+      }
+      ctx.emittedWakeupToolUseIds.add(tc.toolUseId)
       ctx.emitEvent({
         type: 'content_delta',
         messageId: targetMessageId,
@@ -331,7 +359,15 @@ export function flushRemainingWakeupToolResults(
 ): void {
   for (const step of wakeup.steps) {
     for (const tc of step.toolCalls) {
-      if (ctx.emittedWakeupToolResultIds.has(tc.toolUseId) || isSubagentToolName(tc.toolName)) continue
+      if (
+        !tc.hasResult ||
+        tc.resultPending ||
+        ctx.emittedWakeupToolResultIds.has(tc.toolUseId) ||
+        isSubagentToolName(tc.toolName)
+      ) {
+        continue
+      }
+      ctx.emittedWakeupToolUseIds.add(tc.toolUseId)
       ctx.emittedWakeupToolResultIds.add(tc.toolUseId)
       ctx.emitEvent({
         type: 'content_delta',
@@ -357,4 +393,59 @@ export function flushRemainingWakeupToolResults(
       })
     }
   }
+}
+
+export function resolveWakeupStallTimeoutMs(
+  wakeup: ParentWakeupProgress,
+  profile: 'standard' | 'auto' | 'bypass',
+  interactionStallTimeoutMs: number,
+  wakeupResponseTimeoutMs: number,
+  hasExplicitStallTimeout: boolean,
+): number {
+  if (wakeup.pendingToolRawName === 'ask_question') return interactionStallTimeoutMs
+  if (profile !== 'standard') return wakeupResponseTimeoutMs
+  if (hasExplicitStallTimeout || wakeup.pendingToolRawName !== 'run_command') {
+    return interactionStallTimeoutMs
+  }
+  return Math.max(interactionStallTimeoutMs, (wakeup.pendingToolWaitMs ?? 1_500) + 1_000)
+}
+
+export function evaluateWakeupReplayDrop(
+  ctx: WakeupEmitContext | undefined,
+  update: { sessionUpdate: string; toolCallId?: string },
+): boolean {
+  if (!ctx?.unflushedWakeupReplay) return false
+  const kind = update.sessionUpdate
+  if (
+    kind !== 'agent_thought_chunk' &&
+    kind !== 'agent_message_chunk' &&
+    kind !== 'tool_call' &&
+    kind !== 'tool_call_update' &&
+    kind !== 'usage_update'
+  ) {
+    return false
+  }
+  if (!ctx.stalledWakeupToolReplay) return true
+  if (kind === 'tool_call' || kind === 'tool_call_update') {
+    const id = typeof update.toolCallId === 'string' ? update.toolCallId : ''
+    if (id && (ctx.emittedWakeupToolResultIds.has(id) || ctx.replayedBackgroundToolIds.has(id))) {
+      return true
+    }
+    ctx.unlockedPostStallStream = true
+    return false
+  }
+  if (!ctx.unlockedPostStallStream) return true
+  ctx.streamedPreUserPostStall = true
+  return false
+}
+
+export function resetWakeupReplayState(ctx: WakeupEmitContext | undefined): boolean {
+  if (!ctx) return false
+  const streamedPostStall = ctx.streamedPreUserPostStall
+  ctx.unflushedWakeupReplay = false
+  ctx.stalledWakeupToolReplay = false
+  ctx.unlockedPostStallStream = false
+  ctx.streamedPreUserPostStall = false
+  ctx.replayedBackgroundToolIds.clear()
+  return streamedPostStall
 }

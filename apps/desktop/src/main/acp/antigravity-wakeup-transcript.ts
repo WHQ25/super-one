@@ -1,5 +1,5 @@
 import { cleanAntigravityStepContent } from '@superone/shared/antigravity-chunks'
-import { normalizeTranscriptTool } from '@superone/shared/tool-ui'
+import { isSubagentToolName, normalizeTranscriptTool } from '@superone/shared/tool-ui'
 import {
   accumulateAntigravityTurnStep,
   createAntigravityTurnTokenState,
@@ -22,6 +22,7 @@ export interface ParentWakeupToolCall {
   toolName: string
   input: Record<string, unknown>
   summary: string
+  waitMsBeforeAsync?: number
   backgroundTaskId?: string
   hasResult?: boolean
   resultPending?: boolean
@@ -42,6 +43,9 @@ export interface ParentWakeupPlannerStep {
 export interface ParentWakeupProgress {
   sawSystemMessage: boolean
   completed: boolean
+  awaitingToolExecution?: boolean
+  pendingToolRawName?: string
+  pendingToolWaitMs?: number
   steps: ParentWakeupPlannerStep[]
   turnInputTokens: number
   turnOutputTokens: number
@@ -171,12 +175,23 @@ export function extractParentWakeupProgress(
           typeof tcObj.id === 'string' && tcObj.id.trim()
             ? tcObj.id.trim()
             : `agy_wakeup_tool_${stepIndex}_${cIdx}`
+        const rawWaitMs =
+          typeof args.WaitMsBeforeAsync === 'number'
+            ? args.WaitMsBeforeAsync
+            : typeof args.wait_ms_before_async === 'number'
+              ? args.wait_ms_before_async
+              : undefined
+        const waitMsBeforeAsync =
+          typeof rawWaitMs === 'number' && Number.isFinite(rawWaitMs) && rawWaitMs > 0
+            ? Math.min(10_000, Math.round(rawWaitMs))
+            : undefined
         toolCalls.push({
           toolUseId,
           rawName,
           toolName: normalized.toolName,
           input: normalized.input,
           summary: summarizeAntigravityTranscriptToolCall(normalized.toolName, normalized.input),
+          ...(waitMsBeforeAsync !== undefined ? { waitMsBeforeAsync } : {}),
           hasResult: false,
           resultPending: false,
         })
@@ -245,9 +260,29 @@ export function extractParentWakeupProgress(
     lastPostSystemRecordType === 'PLANNER_RESPONSE' &&
     lastPostSystemPlannerDone
 
+  const pendingCall =
+    sawSystemMessage &&
+    lastWakeupStep !== null &&
+    !lastWakeupStep.failed &&
+    pendingWakeupTaskCalls.size === 0 &&
+    lastPostSystemRecordType === 'PLANNER_RESPONSE' &&
+    pendingToolResultIdx < lastWakeupStep.toolCalls.length
+      ? lastWakeupStep.toolCalls[pendingToolResultIdx]
+      : undefined
+  const awaitingToolExecution = Boolean(pendingCall && !isSubagentToolName(pendingCall.toolName))
+
   return {
     sawSystemMessage,
     completed,
+    awaitingToolExecution,
+    ...(awaitingToolExecution && pendingCall
+      ? {
+          pendingToolRawName: pendingCall.rawName,
+          ...(pendingCall.waitMsBeforeAsync !== undefined
+            ? { pendingToolWaitMs: pendingCall.waitMsBeforeAsync }
+            : {}),
+        }
+      : {}),
     steps,
     turnInputTokens: tokenState.inputTokens,
     turnOutputTokens: tokenState.outputTokens,

@@ -38,6 +38,7 @@ export interface BackgroundTaskSyncSummary {
   anyWakeupRequired: boolean
   minWakeupSpawnStepIndex: number | null
   emittedCompletionFromTranscript: boolean
+  emittedCompletedToolUseIds: string[]
   hasActiveIdleWatch: boolean
 }
 
@@ -175,8 +176,13 @@ export function syncBackgroundTasks(
   emitEvent: (event: AgentEvent) => void,
 ): BackgroundTaskSyncSummary {
   const { lastUserStepIndex, tasks: spawnedTasks } = extractSpawnedBackgroundTasksFromTranscript(parentRaw)
-  const completedMap = extractCompletedBackgroundTasksFromTranscript(parentRaw, lastUserStepIndex)
+  const completedMap = extractCompletedBackgroundTasksFromTranscript(
+    parentRaw,
+    lastUserStepIndex,
+    spawnedTasks,
+  )
   let emittedCompletionFromTranscript = false
+  const emittedCompletedToolUseIds: string[] = []
 
   for (const ref of spawnedTasks) {
     if (ref.isDaemon && !ref.cancelledInTurn && !completedMap.has(ref.taskId)) {
@@ -283,6 +289,7 @@ export function syncBackgroundTasks(
     }
     if (!entry.wireCompleted && entry.toolName === 'Bash') {
       emittedCompletionFromTranscript = true
+      emittedCompletedToolUseIds.push(entry.toolUseId)
       emitEvent({
         type: 'content_delta',
         messageId: entry.messageId,
@@ -352,6 +359,7 @@ export function syncBackgroundTasks(
     anyWakeupRequired,
     minWakeupSpawnStepIndex,
     emittedCompletionFromTranscript,
+    emittedCompletedToolUseIds,
     hasActiveIdleWatch: tracker.idleWatchStepIndex !== null,
   }
 }

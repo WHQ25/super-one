@@ -4,7 +4,7 @@ import { unwrapAntigravityToolOutputText } from './antigravity-protocol'
 const BACKGROUND_TASK_ID_RE = /Tool is running as a background task with task id:\s*([^\r\n]+)/
 const BACKGROUND_TASK_LOG_RE = /Task logs are available at:\s*([^\r\n]+)/
 export const CANCELLED_TASK_OUTPUT_RE = /Task\s+"([^"]+)"\s+cancelled\./i
-const SYSTEM_MESSAGE_SENDER_RE = /\bsender=([^\s\r\n]+)/
+const SYSTEM_MESSAGE_SENDER_RE = /\bsender=([^\s\r\n<]+)/
 const SYSTEM_MESSAGE_PRIORITY_RE = /\bpriority=MESSAGE_PRIORITY_(HIGH|LOW)\b/
 const SYSTEM_MESSAGE_TASK_HEADER_RE =
   /content=Task id "([^"]+)" (finished|was canceled|was cancelled) with result:\r?\n([\s\S]*)$/
@@ -19,6 +19,7 @@ export interface SpawnedBackgroundTaskRef {
   toolName: string
   command?: string
   description?: string
+  timerCondition?: string
   isDaemon: boolean
   cancelledInTurn: boolean
   logFile?: string
@@ -236,6 +237,17 @@ export function extractSpawnedBackgroundTasksFromTranscript(raw: string): {
           : typeof args.Prompt === 'string' && args.Prompt.trim()
             ? args.Prompt.trim().slice(0, 120)
             : command?.slice(0, 120)
+      const rawTimerCond =
+        rawName === 'schedule'
+          ? typeof args.TimerCondition === 'string'
+            ? args.TimerCondition
+            : typeof args.timer_condition === 'string'
+              ? args.timer_condition
+              : ''
+          : ''
+      const trimmedTimerCond = rawTimerCond.trim()
+      const timerCondition =
+        trimmedTimerCond && trimmedTimerCond.toLowerCase() !== 'never' ? trimmedTimerCond : undefined
       const createdAtMs = typeof rec.created_at === 'string' ? Date.parse(rec.created_at) : Number.NaN
       const entry: SpawnedBackgroundTaskRef = {
         taskId: launch.taskId,
@@ -243,6 +255,7 @@ export function extractSpawnedBackgroundTasksFromTranscript(raw: string): {
         toolName: rawName,
         ...(command ? { command } : {}),
         ...(description ? { description } : {}),
+        ...(timerCondition ? { timerCondition } : {}),
         isDaemon: isDaemonTranscriptCall(rawName, args),
         cancelledInTurn: false,
         ...(launch.logFile ? { logFile: launch.logFile } : {}),
@@ -259,9 +272,14 @@ export function extractSpawnedBackgroundTasksFromTranscript(raw: string): {
 export function extractCompletedBackgroundTasksFromTranscript(
   raw: string,
   afterStepIndex = -1,
+  spawnedTasks?: ReadonlyArray<SpawnedBackgroundTaskRef>,
 ): Map<string, CompletedBackgroundTaskResult> {
   const out = new Map<string, CompletedBackgroundTaskResult>()
   const records = parseAntigravityTranscriptRecords(raw)
+  const resolvedTasks = spawnedTasks ?? extractSpawnedBackgroundTasksFromTranscript(raw).tasks
+  const conditionalSchedules = resolvedTasks.filter(
+    (task) => task.toolName === 'schedule' && Boolean(task.timerCondition) && !task.cancelledInTurn && task.stepIndex > afterStepIndex,
+  )
   for (const { stepIndex, rec } of records) {
     if (stepIndex <= afterStepIndex) continue
     const content = typeof rec.content === 'string' ? rec.content : ''
@@ -269,6 +287,30 @@ export function extractCompletedBackgroundTasksFromTranscript(
     if (!isSystemMsg) continue
     const parsed = parseSystemMessageTaskResult(content, stepIndex)
     if (parsed) out.set(parsed.taskId, parsed)
+    if (conditionalSchedules.length === 0) continue
+    const withoutClose = content.replace(SYSTEM_MESSAGE_CLOSE_TAG_RE, '')
+    const sender = SYSTEM_MESSAGE_SENDER_RE.exec(withoutClose)?.[1]?.trim() ?? ''
+    for (const sched of conditionalSchedules) {
+      if (stepIndex <= sched.stepIndex || out.has(sched.taskId)) continue
+      if (sender && sender === sched.taskId) continue
+      const cond = sched.timerCondition!
+      const matched =
+        cond.toLowerCase() === 'any'
+          ? sender !== sched.taskId
+          : Boolean(
+              sender &&
+                (sender === cond || sender.endsWith(`/${cond}`) || cond.endsWith(`/${sender}`)),
+            )
+      if (!matched) continue
+      out.set(sched.taskId, {
+        taskId: sched.taskId,
+        systemStepIndex: stepIndex,
+        priority: 'low',
+        canceled: true,
+        isError: false,
+        outputSummary: 'Timer cancelled early by condition',
+      })
+    }
   }
   return out
 }

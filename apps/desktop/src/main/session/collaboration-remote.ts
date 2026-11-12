@@ -150,7 +150,10 @@ export async function remoteAgentProfiles(environmentId: string, force = false):
 export async function listRemoteAgentEnvironments(localProfiles: SessionAgentProfile[]): Promise<Array<{
   environmentId: string
   label: string
-  agents: Array<Pick<SessionAgentProfile, 'id' | 'name' | 'harnessId' | 'brandKey' | 'models' | 'efforts' | 'apiProviders'>>
+  agents: Array<Pick<SessionAgentProfile, 'id' | 'name' | 'harnessId' | 'brandKey' | 'models' | 'efforts' | 'apiProviders'> & {
+    /** Present only when the target served its own catalog. A local fallback must not advertise this machine's defaults. */
+    defaultConfig?: SessionAgentProfile['defaultConfig']
+  }>
 }>> {
   let environments: RemoteCollabEnvironment[]
   try {
@@ -168,9 +171,10 @@ export async function listRemoteAgentEnvironments(localProfiles: SessionAgentPro
     return {
       environmentId: env.environmentId,
       label: env.label,
-      agents: profiles.map(({ id, name, harnessId, brandKey, models, efforts, apiProviders }) => (
-        { id, name, harnessId, brandKey, models, efforts, apiProviders }
-      )),
+      agents: profiles.map(({ id, name, harnessId, brandKey, models, efforts, apiProviders, defaultConfig }) => ({
+        id, name, harnessId, brandKey, models, efforts, apiProviders,
+        ...(remote ? { defaultConfig } : {}),
+      })),
     }
   }))
 }

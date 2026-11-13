@@ -30,6 +30,22 @@ describe('ACP mode catalog', () => {
     expect(projection.modes).toEqual([])
   })
 
+  it('keeps thought_level xhigh label Extra aligned with CLI', () => {
+    const projection = acpModeCatalog({
+      modeConfigId: 'thought_level',
+      selectedModeId: 'xhigh',
+      modes: [
+        mode('low', 'Low'),
+        mode('medium', 'Medium'),
+        mode('high', 'High'),
+        mode('xhigh', 'Extra'),
+      ],
+    })
+
+    expect(projection.efforts.map((option) => option.value)).toEqual(['low', 'medium', 'high', 'xhigh'])
+    expect(projection.efforts.map((option) => option.label)).toEqual(['Low', 'Medium', 'High', 'Extra'])
+  })
+
   it('keeps real session modes out of effort, so the client does not draw a slider for them', () => {
     const projection = acpModeCatalog({
       modeConfigId: 'mode-config',

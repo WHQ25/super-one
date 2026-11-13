@@ -9,8 +9,13 @@ import type {
 import { resolveSlashModelLabel } from '@/components/chat/ModelSelectorLists'
 import { toSelectorGroups, toSelectorModels } from '../selector-models'
 
-const ANTIGRAVITY_EFFORT_ID_RE = /^(.*)-(low|medium|high|max)$/i
-const ANTIGRAVITY_EFFORT_NAME_RE = /\s*\((low|medium|high|max)\)\s*$/i
+const ANTIGRAVITY_EFFORT_ID_RE = /^(.*)-(minimal|low|medium|high|xhigh|extra[-_]?high|max)$/i
+const ANTIGRAVITY_EFFORT_NAME_RE = /\s*\((minimal|low|medium|high|xhigh|extra[\s_-]*high|max)\)\s*$/i
+
+function normalizeAntigravityEffort(raw: string): string {
+  const lower = raw.trim().toLowerCase()
+  return /^extra[\s_-]*high$/.test(lower) ? 'xhigh' : lower
+}
 
 export interface AntigravityModelEffortProjection {
   models: SelectorModelOption[]
@@ -30,7 +35,7 @@ export function splitAntigravityModelEffort(
   const match = ANTIGRAVITY_EFFORT_ID_RE.exec(modelId)
   if (match && match[1] && match[2]) {
     const baseId = match[1]
-    const effort = match[2].toLowerCase()
+    const effort = normalizeAntigravityEffort(match[2])
     const strippedName = (modelName || modelId).replace(ANTIGRAVITY_EFFORT_NAME_RE, '').trim()
     return {
       baseId,
@@ -47,7 +52,7 @@ export function splitAntigravityModelEffort(
     return {
       baseId,
       baseName: strippedName || modelId,
-      effort: nameMatch[1].toLowerCase(),
+      effort: normalizeAntigravityEffort(nameMatch[1]),
     }
   }
   const rawName = (modelName || modelId).trim()

@@ -231,6 +231,23 @@ describe('antigravity-protocol', () => {
     expect(projected.resolveModelId('gemini-4-argon')).toBe('gemini-4-argon-high')
     expect(projected.resolveModelId('gemini-3.1-pro', 'high')).toBe('gemini-pro-agent')
 
+    const hydrogenModels = [
+      { id: 'gemini-4-hydrogen-high', name: 'Gemini 4 Hydrogen (High)', description: 'gemini-4-hydrogen-high' },
+      { id: 'gemini-4-hydrogen-xhigh', name: 'Gemini 4 Hydrogen (XHigh)', description: 'gemini-4-hydrogen-xhigh' },
+      { id: 'gemini-4-hydrogen-medium', name: 'Gemini 4 Hydrogen (Medium)', description: 'gemini-4-hydrogen-medium' },
+      { id: 'gemini-4-hydrogen-low', name: 'Gemini 4 Hydrogen (Low)', description: 'gemini-4-hydrogen-low' },
+    ]
+    const hydrogenProjected = projectAntigravityModels(hydrogenModels, 'gemini-4-hydrogen-xhigh')
+    expect(hydrogenProjected.models).toEqual([
+      { id: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen', description: 'gemini-4-hydrogen' },
+    ])
+    expect(hydrogenProjected.selectedBaseModelId).toBe('gemini-4-hydrogen')
+    expect(hydrogenProjected.selectedEffort).toBe('xhigh')
+    expect(hydrogenProjected.selectedEffortLabel).toBe('Extra High')
+    expect(hydrogenProjected.effortOptions.map((o) => o.value)).toEqual(['low', 'medium', 'high', 'xhigh'])
+    expect(hydrogenProjected.effortOptions.map((o) => o.label)).toEqual(['Low', 'Medium', 'High', 'Extra High'])
+    expect(hydrogenProjected.resolveEffortModelId('xhigh')).toBe('gemini-4-hydrogen-xhigh')
+
     const v145Models = [
       { id: 'gemini-3.1-pro', name: 'Gemini 3.1 Pro', description: '' },
       { id: 'claude-sonnet-4-6', name: 'Claude Sonnet 4.6', description: '' },

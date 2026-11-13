@@ -4,6 +4,7 @@ import { beforeAll, describe, expect, it } from 'vitest'
 import { initializeChatViewI18n } from '../i18n'
 import {
   ApiRetryIndicator,
+  CompactErrorIndicator,
   RecappingIndicator,
   TurnMetaIndicator,
   TurnSummaryAboveFooter,
@@ -58,6 +59,23 @@ describe('ApiRetryIndicator', () => {
     expect(visible).toContain('API retries exhausted')
     expect(visible).not.toContain('—')
     expect(visible).not.toContain('upstream exploded')
+  })
+})
+
+describe('CompactErrorIndicator', () => {
+  const longError = "it'll retry on the next turn, or start a new session using /new. request error: error sending request for url (https://api.example.com/v1/responses)"
+
+  it('keeps the failure label from shrinking and truncates the detail', () => {
+    const html = renderToStaticMarkup(createElement(CompactErrorIndicator, {
+      error: longError,
+      onDismiss: () => {},
+    }))
+    expect(html).toContain('Compaction failed')
+    expect(html).toContain('shrink-0 whitespace-nowrap font-medium text-error')
+    expect(html).toContain('min-w-0 flex-1 truncate text-error/60')
+    expect(html).toContain('whitespace-nowrap rounded')
+    expect(html).toContain('request error: error sending request for url')
+    expect(html).toContain('title=')
   })
 })
 

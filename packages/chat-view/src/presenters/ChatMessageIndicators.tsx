@@ -182,10 +182,10 @@ export function CompactErrorIndicator({
 }) {
   const { t } = useTranslation()
   return (
-    <div className="my-0.5 flex items-center gap-1.5 rounded bg-error/10 px-2 py-1.5 text-xs">
+    <div className="my-0.5 flex w-full min-w-0 items-center gap-1.5 overflow-hidden whitespace-nowrap rounded bg-error/10 px-2 py-1.5 text-xs">
       <AlertTriangle className="size-3 shrink-0 text-error" />
-      <span className="font-medium text-error">{t('chat.compaction.failed')}</span>
-      <span className="truncate text-error/60">{error}</span>
+      <span className="shrink-0 whitespace-nowrap font-medium text-error">{t('chat.compaction.failed')}</span>
+      <span className="min-w-0 flex-1 truncate text-error/60" title={error}>{error}</span>
       {onDismiss && (
         <button onClick={onDismiss} className="ml-auto shrink-0 text-error/60 transition-colors hover:text-error">
           <X className="size-3" />

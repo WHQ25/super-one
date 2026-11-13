@@ -32,6 +32,22 @@ mockIpc('app', 'getSyncZoneUsage', async () => ({
   failedHandoffs: { files: 0, bytes: 0, lastError: null },
   needsRedelivery: { files: 0, bytes: 0 },
 }))
+mockIpc('app', 'getStorageInventory', async () => ({
+  nodeEvents: { rows: 0, retentionFloor: '0', lastCompactAt: null, lastFreedBytes: null },
+  categories: [
+    { id: 'chat-database', bytes: 5 * GB, path: '/Users/dev/Library/Application Support/SuperOne/superone.db', actions: ['reveal'] },
+    { id: 'browser-http-cache', bytes: 0, actions: ['clear-browser-http-cache'] },
+    { id: 'browser-code-cache', bytes: 0, actions: ['clear-browser-code-cache'] },
+    { id: 'browser-site-data', bytes: 0, actions: ['clear-browser-site-data'] },
+    { id: 'node-event-log', bytes: 0, actions: ['compact-node-events'] },
+    { id: 'sync-attachments', bytes: 0, actions: ['clear-sync-attachments'] },
+    { id: 'sync-media', bytes: 0, actions: ['clear-sync-media'] },
+    { id: 'app-cache', bytes: 0, actions: ['clear-app-cache'] },
+    { id: 'logs', bytes: 0, actions: ['clear-logs'] },
+  ],
+}))
+mockIpc('app', 'applyStorageAction', async (action: unknown) => ({ action, removedBytes: 0 }))
+mockIpc('app', 'revealFile', async () => undefined)
 mockIpc('app', 'checkForUpdates', async () => undefined)
 mockIpc('app', 'listPlatforms', async () => [])
 mockIpc('app', 'listCredentials', async () => [])

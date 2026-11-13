@@ -55,6 +55,21 @@ let progressListener: ProgressListener | null = null
  * (Strict Mode, double-click race, onboarding + align overlap).
  */
 const enableInflight = new Map<string, Promise<HarnessInstallationStatus>>()
+const activeInstalls = new Map<string, number>()
+
+function beginInstall(id: string): void {
+  activeInstalls.set(id, (activeInstalls.get(id) ?? 0) + 1)
+}
+
+function endInstall(id: string): void {
+  const next = (activeInstalls.get(id) ?? 0) - 1
+  if (next > 0) activeInstalls.set(id, next)
+  else activeInstalls.delete(id)
+}
+
+export function busyHarnessInstallIds(): ReadonlySet<string> {
+  return new Set(activeInstalls.keys())
+}
 
 /** Throttle download progress IPC (~200ms) — chunk-level emits flood the renderer. */
 const PROGRESS_THROTTLE_MS = 200
@@ -83,6 +98,7 @@ export function resetHarnessManagerForTests(): void {
   manager = null
   progressListener = null
   enableInflight.clear()
+  activeInstalls.clear()
 }
 
 export function listHarnessInstallations(): HarnessInstallationStatus[] {
@@ -141,7 +157,9 @@ export async function enableDesktopHarness(
     return existing
   }
 
+  beginInstall(input.harnessId)
   const run = enableDesktopHarnessOnce(input).finally(() => {
+    endInstall(input.harnessId)
     if (enableInflight.get(key) === run) {
       enableInflight.delete(key)
     }
@@ -306,10 +324,12 @@ async function ensureManagedPinPresent(
   const prevEnv = process.env[envKey]
   process.env[envKey] = runtimeVersion
 
+  beginInstall(id)
   try {
     const installer = depsWithProgress(id).installer
     await installer.install(id, { root: homeRoot }, onProgress)
   } finally {
+    endInstall(id)
     if (prevEnv === undefined) delete process.env[envKey]
     else process.env[envKey] = prevEnv
 

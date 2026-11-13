@@ -8,8 +8,8 @@ import { durableEventOf, type NodeHostSessionManager } from './desktop-session-h
  * every client that reads it: the window, phones and controller desktops.
  */
 export class SessionEventRecorder {
-  /** Live Session objects being recorded (a resume makes a new one). */
   private readonly recording = new WeakSet<Session>()
+  private readonly seen = new Set<string>()
   private readonly listeners = new Set<() => void>()
   private readonly unsubscribe: () => void
 
@@ -17,7 +17,12 @@ export class SessionEventRecorder {
     this.unsubscribe = sessions.onSession((session) => this.adopt(session))
   }
 
+  sessionIds(): ReadonlySet<string> {
+    return this.seen
+  }
+
   private adopt(session: Session): void {
+    this.seen.add(session.id)
     if (this.recording.has(session)) return
     this.recording.add(session)
     this.listeners.add(session.on((event, replay) => {

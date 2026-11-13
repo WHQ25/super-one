@@ -1,5 +1,6 @@
 import type { EnvironmentAggregateType, EnvironmentEventEnvelope, SessionStreamFrame } from '@superone/shared/environment'
 import { topicKey, topicsOfEnvelope, topicWildcardKey, type TopicRef } from '@superone/shared/environment/topics'
+import { cursorTooOldDetails } from '../session/event-log'
 
 /** What a stream reads from: the host's session log as one reader sees it. */
 export interface EventStreamSource {
@@ -40,6 +41,17 @@ export function streamFilterMatcher(filter: EventStreamFilter): (envelope: Envir
     (!filter.aggregateIds || filter.aggregateIds.has(envelope.aggregateId))
     && (!filter.aggregateTypes || filter.aggregateTypes.has(envelope.aggregateType))
     && (!inTopics || inTopics(envelope))
+}
+
+/** Sessions a retention gap must name. A filter with no session falls back to the wildcard. */
+function retentionResnapshotIds(filter: EventStreamFilter, already: readonly string[]): string[] {
+  const ids = new Set<string>(already)
+  for (const id of filter.aggregateIds ?? []) ids.add(id)
+  for (const topic of filter.topics ?? []) {
+    if (topic.kind === 'session') ids.add(topic.sessionId)
+  }
+  if (ids.size === 0) ids.add('*')
+  return [...ids]
 }
 
 /** Whether a session id is inside the stream's filter. */
@@ -196,7 +208,20 @@ export function openEventStream(input: {
   const catchUp = (): void => {
     let first = true
     while (!closed) {
-      const page = source.listEventsAfter(sequence, reader)
+      let page: EnvironmentEventEnvelope[]
+      try {
+        page = source.listEventsAfter(sequence, reader)
+      } catch (err) {
+        const gap = cursorTooOldDetails(err)
+        if (!gap) throw err
+        // The log has holes below this sequence. Name the sessions and stop; replaying would skip events.
+        const ids = retentionResnapshotIds(filter, gone)
+        if (ids.includes('*')) versions.clear()
+        else for (const id of ids) versions.delete(id)
+        sequence = gap.head
+        send([], ids)
+        return
+      }
       const pageEnd = page.at(-1)?.sequence
       // Streaming events that happened before this page's last durable event go with it.
       const ring: EnvironmentEventEnvelope[] = []

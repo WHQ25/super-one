@@ -1,3 +1,4 @@
+import { join } from 'node:path'
 import {
   AuthService,
   IdempotencyService,
@@ -15,6 +16,7 @@ import {
   type RpcExtensionDispatch,
 } from '@superone/runtime/server'
 import { openNodeDatabase, type NodeDatabase } from '@superone/runtime/db'
+import { compactEnvironmentEvents, readNodeEventStats, type EventLogCompactResult, type NodeEventStats } from '@superone/runtime/session/event-log-compact'
 import { ControlLeaseService } from '@superone/runtime/lease'
 import type { DraftControl } from '@superone/runtime/drafts'
 import { EventLog, createSqliteHostActionStore } from '@superone/runtime/session'
@@ -148,19 +150,22 @@ export type DesktopRpcContext = Omit<RpcContext, 'client' | 'streams' | 'request
  * controller desktop through the node listener, and phones — is served from
  * it; turning node access off closes the listener, not this.
  */
+export const DESKTOP_EVENT_RETENTION_MS = 24 * 60 * 60 * 1000
+
 export class DesktopDomain {
   private constructor(
     private readonly db: NodeDatabase,
+    private readonly events: EventLog,
     readonly identity: NodeIdentity,
     readonly auth: AuthService,
     readonly leases: ControlLeaseService,
-    /** Every session of this desktop, for every client. */
     readonly sessions: DesktopSessionHost,
     private readonly recorder: SessionEventRecorder,
     private readonly unbindSessions: () => void,
-    /** The node home (identity, channel root, config). */
     readonly nodeHome: string,
     private readonly context: DesktopRpcContext,
+    private readonly domainRows: DesktopDomainDeps['rows'],
+    private readonly domainSessions: NodeHostSessionManager,
     private readonly phonePorts: Pick<DesktopDomainDeps, 'terminals' | 'drafts' | 'beforeDraftOpen' | 'phoneMethods' | 'catalog' | 'config' | 'resources' | 'codex' | 'projectEdits' | 'topicNotices' | 'rpcRouter'>,
   ) {}
 
@@ -228,7 +233,7 @@ export class DesktopDomain {
         if ('sessionId' in resource && resource.environmentId === identity.environmentId) sessions.publishControlHolder(resource.sessionId, lease)
       })
       deps.bindLocalControl?.({ environmentId: identity.environmentId, leases })
-      return new DesktopDomain(db, identity, auth, leases, sessions, recorder, unbindSessions, paths.nodeHome, context, { terminals: deps.terminals, drafts: deps.drafts, beforeDraftOpen: deps.beforeDraftOpen, phoneMethods: deps.phoneMethods, catalog: deps.catalog, config: deps.config, resources: deps.resources, codex: deps.codex, projectEdits: deps.projectEdits, topicNotices: deps.topicNotices, rpcRouter: deps.rpcRouter })
+      return new DesktopDomain(db, events, identity, auth, leases, sessions, recorder, unbindSessions, paths.nodeHome, context, deps.rows, deps.sessions, { terminals: deps.terminals, drafts: deps.drafts, beforeDraftOpen: deps.beforeDraftOpen, phoneMethods: deps.phoneMethods, catalog: deps.catalog, config: deps.config, resources: deps.resources, codex: deps.codex, projectEdits: deps.projectEdits, topicNotices: deps.topicNotices, rpcRouter: deps.rpcRouter })
     } catch (err) {
       db.close()
       throw err
@@ -243,6 +248,34 @@ export class DesktopDomain {
    */
   clientContext(): DesktopRpcContext {
     return this.client ??= this.openClientContext()
+  }
+
+  eventLogStats(): NodeEventStats {
+    return readNodeEventStats(this.db)
+  }
+
+  compactEventLog(options: { vacuum?: boolean; retainWindowMs?: number; now?: number } = {}): EventLogCompactResult {
+    const known = new Set<string>(this.domainRows.list().map((row) => row.sessionId))
+    const busy = new Set<string>()
+    for (const id of new Set([...known, ...this.recorder.sessionIds()])) {
+      const live = this.domainSessions.getSession(id)
+      if (!live) continue
+      known.add(id)
+      const activity = live.activityStatus()
+      if (activity === 'streaming' || activity === 'background' || (live.getPendingInteractions?.().length ?? 0) > 0) {
+        busy.add(id)
+      }
+    }
+    const result = compactEnvironmentEvents(this.db, {
+      vacuum: options.vacuum ?? false,
+      filePath: join(this.nodeHome, 'node.db'),
+      externalSessionIds: [...known],
+      busySessionIds: [...busy],
+      retainWindowMs: options.retainWindowMs ?? DESKTOP_EVENT_RETENTION_MS,
+      ...(options.now !== undefined ? { now: options.now } : {}),
+    })
+    this.events.syncAfterCompact(known)
+    return result
   }
 
   openPhoneRoute(client: import('@superone/runtime/server').AuthenticatedClient) { return this.phonePorts.rpcRouter?.open(client) }

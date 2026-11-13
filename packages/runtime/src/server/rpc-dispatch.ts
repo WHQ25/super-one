@@ -2686,8 +2686,12 @@ function handleSessionEvents(payload: unknown, ctx: RpcContext): RpcResult {
   if (denied) return denied
   const p = asRecord(payload)
   const after = String(p.afterSequence ?? '0')
-  const events = ctx.sessions.listEventsAfter(after, ctx.client).filter(streamFilterMatcher(streamFilter(p)))
-  return { result: { events } }
+  try {
+    const events = ctx.sessions.listEventsAfter(after, ctx.client).filter(streamFilterMatcher(streamFilter(p)))
+    return { result: { events } }
+  } catch (err) {
+    return mapThrown(err)
+  }
 }
 
 

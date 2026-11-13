@@ -854,6 +854,7 @@ export type Messages = {
         apps: string
         remote: string
         usage: string
+        storage: string
         mediaGen: string
         providers: string
         harnesses: string
@@ -5079,6 +5080,58 @@ export type Messages = {
       unknown: string
     }
   }
+  storageSettings: {
+    title: string
+    description: string
+    unreadable: string
+    optimizeFailed: string
+    reveal: string
+    clear: string
+    clearUnused: string
+    compact: string
+    compacting: string
+    confirmTitle: string
+    compactResult: string
+    vacuumSkipped: string
+    eventRows: string
+    lastCompact: string
+    unused: string
+    totalLabel: string
+    optimizableSpace: string
+    occupiedSpace: string
+    optimize: string
+    optimizing: string
+    optimizeFreed: string
+    optimizeResult: string
+    optimizeVacuumSkipped: string
+    retiredAntigravity: string
+    sections: { database: string; browser: string; node: string; sync: string; cache: string; runtimes: string }
+    categories: {
+      chatDatabase: { label: string; description: string }
+      backup: { label: string; description: string }
+      recoveryLeftovers: { label: string; description: string }
+      browserHttpCache: { label: string; description: string }
+      browserCodeCache: { label: string; description: string }
+      browserSiteData: { label: string; description: string }
+      nodeEventLog: { label: string; description: string }
+      syncAttachments: { label: string; description: string }
+      syncMedia: { label: string; description: string }
+      appCache: { label: string; description: string }
+      cursorSdk: { label: string; description: string }
+      harnessRuntimes: { label: string; description: string }
+      logs: { label: string; description: string }
+    }
+    confirms: {
+      deleteBackups: string
+      deleteLeftovers: string
+      clearSiteData: string
+      clearSyncAttachments: string
+      clearSyncMedia: string
+      clearUnusedHarness: string
+      clearRetiredAntigravity: string
+      clearLogs: string
+    }
+  }
 }
 
 export const en: Messages = {
@@ -5966,6 +6019,7 @@ export const en: Messages = {
         apps: 'Mini Apps',
         remote: 'Remote Control',
         usage: 'Usage Stats',
+        storage: 'Storage',
         mediaGen: 'Image Gen',
         providers: 'AI Provider',
         harnesses: 'Harnesses',
@@ -10257,6 +10311,65 @@ export const en: Messages = {
       noCredit: 'No reset credits available',
       alreadyRedeemed: 'This reset was already redeemed',
       unknown: 'Reset failed',
+    },
+  },
+  storageSettings: {
+    title: 'Storage',
+    description: 'See what SuperOne keeps on this computer, and remove what you no longer need.',
+    unreadable: 'Storage usage could not be read.',
+    optimizeFailed: 'Optimize stopped before it finished. The sizes above are the latest reading.',
+    reveal: 'Reveal',
+    clear: 'Clear',
+    clearUnused: 'Clear Unused',
+    compact: 'Compact',
+    compacting: 'Compacting…',
+    confirmTitle: 'Delete this data?',
+    compactResult: 'Removed {{rows}} events and freed {{bytes}}.',
+    vacuumSkipped: 'Removed {{rows}} events ({{bytes}}). Not enough free disk space to shrink the file.',
+    eventRows: '{{count}} events.',
+    lastCompact: 'Last compacted {{when}}, freed {{bytes}}.',
+    unused: '{{bytes}} unused.',
+    totalLabel: 'On This Computer',
+    optimizableSpace: 'Optimizable',
+    occupiedSpace: 'Total',
+    optimize: 'Optimize',
+    optimizing: 'Optimizing…',
+    optimizeFreed: 'Freed {{bytes}}.',
+    optimizeResult: 'Freed {{bytes}}. Removed {{rows}} events and freed {{eventBytes}} from the event log.',
+    optimizeVacuumSkipped: 'Freed {{bytes}}. Removed {{rows}} events ({{eventBytes}}). Not enough free disk space to shrink the event log.',
+    sections: {
+      database: 'Database',
+      browser: 'Built-in Browser',
+      node: 'Remote Node',
+      sync: 'Session Files',
+      cache: 'Cache and Logs',
+      runtimes: 'Runtimes',
+    },
+    retiredAntigravity: 'Older managed runtime. This version uses the agy CLI, so this whole directory can be removed.',
+    categories: {
+      chatDatabase: { label: 'Chat Database', description: 'Sessions, messages, and Cursor resume state. These files are never deleted from here.' },
+      backup: { label: 'Backup', description: 'Copies of the chat database kept during schema upgrades. Safe to remove once SuperOne has started.' },
+      recoveryLeftovers: { label: 'Recovery Files', description: 'Databases set aside because they were corrupt or from a newer build.' },
+      browserHttpCache: { label: 'HTTP Cache', description: 'Cached responses from the built-in browser.' },
+      browserCodeCache: { label: 'Code Cache', description: 'Compiled scripts from the built-in browser.' },
+      browserSiteData: { label: 'Site Data', description: 'Site storage, including offline data. Clearing it signs you out of those sites.' },
+      nodeEventLog: { label: 'Event Log', description: 'History other devices use to catch up. Compacting keeps messages and drops what the checkpoint already stored.' },
+      syncAttachments: { label: 'Attachments', description: 'Attachment originals saved for local and synced sessions. Clearing them breaks those images and files in chat.' },
+      syncMedia: { label: 'Generated Media', description: 'Images and other media generated in local and synced sessions. Clearing them breaks those previews in chat.' },
+      appCache: { label: 'App Cache', description: 'The app\'s own cache and compiled scripts, not the built-in browser. The GPU cache stays while SuperOne is open.' },
+      cursorSdk: { label: 'Cursor', description: 'Resume state for Cursor sessions. Revealed here, not deleted.' },
+      harnessRuntimes: { label: 'Harness Runtimes', description: 'Installed harness copies. Only versions nothing is using can be removed.' },
+      logs: { label: 'Logs', description: 'Diagnostic logs. Clearing them leaves less to inspect later.' },
+    },
+    confirms: {
+      deleteBackups: 'This deletes every chat backup, including the restore point from the last upgrade. The database you are using stays.',
+      deleteLeftovers: 'This deletes databases that were set aside as corrupt or from a newer build.',
+      clearSiteData: 'This clears site storage in the built-in browser and signs you out of those sites.',
+      clearSyncAttachments: 'This deletes attachment originals saved for local and synced sessions. Chat messages that use them will no longer open those files.',
+      clearSyncMedia: 'This deletes generated images and media for local and synced sessions. Chat messages that use them will no longer show those files.',
+      clearUnusedHarness: 'This deletes harness copies that no installed harness is using. The current copy stays.',
+      clearRetiredAntigravity: 'This deletes the leftover Antigravity runtime from an older build. The agy CLI on this machine stays.',
+      clearLogs: 'This clears the logs. Later troubleshooting will have less to look at.',
     },
   },
 }

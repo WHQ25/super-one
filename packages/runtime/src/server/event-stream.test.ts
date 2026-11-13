@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { EnvironmentEventEnvelope, SessionStreamFrame } from '@superone/shared/environment'
-import { openNodeDatabase, type NodeDatabase } from '../db'
+import { openNodeDatabase, setMeta, type NodeDatabase } from '../db'
 import { EventLog } from '../session/event-log'
 import { openEventStream, type EventStreamCursor } from './event-stream'
 
@@ -44,6 +44,25 @@ function open(events: EventLog, cursor: EventStreamCursor, filter = {}, batchMs?
 }
 
 describe('openEventStream', () => {
+  it('resnapshots when the cursor is older than retained history', () => {
+    const db = openNodeDatabase(':memory:')
+    dbs.push(db)
+    const events = new EventLog(db, 'env')
+    durable(events, 's1', 1)
+    durable(events, 's1', 2)
+    durable(events, 's1', 3)
+    setMeta(db, 'event_retention_floor', '2')
+
+    const { frames } = open(events, { afterSequence: '0' }, {
+      topics: [{ kind: 'session', environmentId: 'env', sessionId: 's1' }],
+    })
+
+    expect(frames[0]?.events).toEqual([])
+    expect(frames[0]?.resnapshot).toEqual(['s1'])
+    expect(frames[0]?.sequence).toBe('3')
+    expect(frames[0]?.recover).toEqual([{ kind: 'session', environmentId: 'env', sessionId: 's1' }])
+  })
+
   it('catches up from the cursor in pages, then pushes new events as they commit', async () => {
     const events = log()
     for (let n = 1; n <= 3; n++) durable(events, 's1', n)

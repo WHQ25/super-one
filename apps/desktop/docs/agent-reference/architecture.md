@@ -337,7 +337,7 @@ the stored transcript.
 - `PRAGMA foreign_keys` is a **silent no-op inside a transaction**. `runDatabaseMigrations` toggles it outside; do not add a toggle inside `applyMigrations`.
 - `VACUUM` cannot run inside a transaction. A migration needing one must be split out and run after the commit.
 
-Startup flow lives in `db-open.ts` (verify → snapshot → migrate → recover) with the snapshot mechanics in `db-backup.ts`. Snapshots land in `userData/backups/superone-schema<N>-<stamp>.db`, newest one per schema version, three versions deep. Recovery never deletes: a database that is corrupt or from a newer build is renamed aside, never replaced in place.
+Startup flow lives in `db-open.ts` (verify → snapshot → migrate → recover) with the snapshot mechanics in `db-backup.ts`. Snapshots land in `userData/backups/superone-schema<N>-<stamp>.db`: automatic startup pruning keeps the newest snapshot of the highest schema version in case migration fails before boot. Once the app has started, Storage lists chat snapshots under Backup, and both row deletion and one-click optimize remove all snapshots (`delete-backups`). Recovery never deletes automatically: a database that is corrupt or from a newer build is renamed aside until removed from Storage.
 
 ### Shared Types
 

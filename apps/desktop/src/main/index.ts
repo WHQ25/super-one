@@ -4600,6 +4600,8 @@ function registerIpcHandlers(): void {
     const transfers = (await import('./environment/environment-host')).getEnvironmentHost().artifactTransfers
     return transfers?.retryGivenUp() ?? { retried: 0 }
   })
+  ipcMain.handle(AgentIpcChannels.STORAGE_INVENTORY_GET, async () => (await import('./storage-ipc')).getDesktopStorageInventory())
+  ipcMain.handle(AgentIpcChannels.STORAGE_ACTION, async (_e, action: unknown, harnessId: unknown) => (await import('./storage-ipc')).runDesktopStorageAction(action, harnessId))
 
   ipcMain.handle(AgentIpcChannels.APP_INSTALL_ID_GET, () => getInstallId())
   ipcMain.handle(

@@ -146,13 +146,16 @@ export class EventLog {
     })
   }
 
-  /** Latest sequence as decimal string, or "0" if empty. */
   headSequence(): string {
-    if (this.lastSequence === null) {
-      const row = this.db.prepare(`SELECT MAX(sequence) AS m FROM environment_events`).get() as { m: number | null }
-      this.lastSequence = String(row.m ?? 0)
+    return this.lastSequence ?? this.durableHead()
+  }
+
+  syncAfterCompact(knownSessionIds?: ReadonlySet<string>): void {
+    this.durableHead()
+    if (!knownSessionIds) return
+    for (const id of [...this.versions.keys()]) {
+      if (!knownSessionIds.has(id)) this.versions.delete(id)
     }
-    return this.lastSequence
   }
 
   /** A session's latest version, durable or streaming. */
@@ -183,9 +186,18 @@ export class EventLog {
   }
 
   listAfter(afterSequence: string, limit = 1000): EnvironmentEventEnvelope[] {
+    const after = /^\d+$/.test(afterSequence) ? afterSequence : '0'
+    const floor = retentionFloor(this.db)
+    // Equal to the floor is still readable: listAfter is exclusive, so that cursor already has the deleted row.
+    if (BigInt(after) < BigInt(floor)) {
+      throw Object.assign(new Error('event cursor is older than retained history'), {
+        code: 'cursor_too_old' as const,
+        details: { snapshotRequired: true, floor, head: this.durableHead() },
+      })
+    }
     const rows = this.db
       .prepare(`SELECT ${ROW_COLUMNS} FROM environment_events WHERE sequence > ? ORDER BY sequence ASC LIMIT ?`)
-      .all(Number(afterSequence || '0'), limit) as EventRow[]
+      .all(Number(after), limit) as EventRow[]
     return rows.map((r) => this.rowToEnvelope(r))
   }
 
@@ -205,6 +217,15 @@ export class EventLog {
       )
       .all(sid, afterVersion, limit) as EventRow[]
     return rows.map((r) => this.rowToEnvelope(r))
+  }
+
+  private durableHead(): string {
+    const row = this.db.prepare(`SELECT MAX(sequence) AS m FROM environment_events`).get() as { m: number | null }
+    const stored = String(row?.m ?? 0)
+    const floor = retentionFloor(this.db)
+    const head = BigInt(stored) >= BigInt(floor) ? stored : floor
+    this.lastSequence = head
+    return head
   }
 
   private nextVersion(sessionId: string): number {
@@ -228,4 +249,34 @@ export class EventLog {
       ...(r.aggregate_type === 'session' ? { sessionVersion: r.session_version ?? r.sequence } : {}),
     }
   }
+}
+
+export const EVENT_RETENTION_FLOOR_KEY = 'event_retention_floor'
+
+/**
+ * A cursor the log can no longer replay. `head` is where a reader resumes after it reloads.
+ * Missing meta (a test double) reads as floor 0, which never trips this.
+ */
+export function cursorTooOldDetails(err: unknown): { floor: string; head: string } | null {
+  if (!err || typeof err !== 'object') return null
+  const body = err as { code?: unknown; details?: { floor?: unknown; head?: unknown } }
+  if (body.code !== 'cursor_too_old') return null
+  const head = decimal(body.details?.head)
+  if (head === null) return null
+  return { floor: decimal(body.details?.floor) ?? '0', head }
+}
+
+function retentionFloor(db: { prepare(sql: string): { get(...params: unknown[]): unknown } }): string {
+  try {
+    const row = db.prepare('SELECT value FROM meta WHERE key = ?').get(EVENT_RETENTION_FLOOR_KEY) as { value?: unknown } | undefined
+    return decimal(row?.value) ?? '0'
+  } catch {
+    return '0'
+  }
+}
+
+function decimal(value: unknown): string | null {
+  if (typeof value === 'string' && /^\d+$/.test(value)) return value
+  if (typeof value === 'number' && Number.isSafeInteger(value) && value >= 0) return String(value)
+  return null
 }

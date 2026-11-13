@@ -168,6 +168,16 @@ describe('creating a pre-migration backup', () => {
 
     expect(listBackups(backupDir).map((b) => b.schemaVersion)).toEqual([4, 3, 2])
   })
+
+  it('keeps only the snapshot it just wrote when retention is left at the default', () => {
+    seedDb()
+    seedBackup(1, '20260101-010101')
+    seedBackup(2, '20260201-020202')
+
+    backupDatabase({ db: fakeDb(), dbPath, backupDir, schemaVersion: 3 })
+
+    expect(listBackups(backupDir).map((b) => b.schemaVersion)).toEqual([3])
+  })
 })
 
 describe('retention', () => {

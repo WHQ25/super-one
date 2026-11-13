@@ -1,3 +1,5 @@
+import { existsSync, statSync } from 'node:fs'
+import { join } from 'node:path'
 import { hostname, networkInterfaces } from 'node:os'
 import { app } from 'electron'
 import type { AppSettings, NodeHostController, NodeHostStatus } from '@superone/shared/agent-types'
@@ -5,7 +7,9 @@ import { encodeNodePairingCode } from '@superone/shared/environment/node-pairing
 import type { HostActionTerminalResult } from '@superone/shared/environment'
 import { assertSessionHarnessRuntimeReady } from '@superone/runtime/harness'
 import { getMachineInfo } from '@superone/runtime/machine'
+import { openNodeDatabase } from '@superone/runtime/db'
 import { runningChildSettleError } from '@superone/runtime/session'
+import { compactEnvironmentEvents, readNodeEventStats, type EventLogCompactResult, type NodeEventStats } from '@superone/runtime/session/event-log-compact'
 import { isPrivateNetworkAddress, networkAddressScope } from '@superone/shared/private-network-address'
 import log from '../logger'
 import { LanAdvertiser } from '../lan-advertiser'
@@ -28,10 +32,10 @@ import { listSessionAgentProfiles } from '../session/agent-profiles'
 import { createDesktopProjectsPort } from './desktop-projects-port'
 import type { NodeHostSessionManager } from './desktop-session-host'
 import { DesktopNodeHost } from './node-host-server'
-import { DesktopDomain, type DesktopDomainDeps } from './desktop-domain'
+import { DesktopDomain, DESKTOP_EVENT_RETENTION_MS, type DesktopDomainDeps } from './desktop-domain'
 import { getEnvironmentHost } from '../environment/environment-host'
 import { InProcessRpcClient } from '../environment/in-process-rpc-client'
-import { defaultDesktopNodePort } from './paths'
+import { defaultDesktopNodePort, desktopNodeHostPaths } from './paths'
 import { desktopRestorePorts } from '../session/session-restore-ports'
 import { getMcpAppResourceStore } from '../mcp-apps/resource-store'
 
@@ -209,7 +213,93 @@ export function openDesktopDomain(sessions: NodeHostSessionManager, phonePorts: 
     config: { sessionProviders: clientSessionProviderStore(), automations: createDesktopAutomationsPort() },
   })
   getEnvironmentHost().registry.getLocal().bindProtocol(new InProcessRpcClient(domain))
+  scheduleNodeEventCompact(domain)
   return domain
+}
+
+const DESKTOP_EVENT_COMPACT_MIN_BYTES = 32 * 1024 * 1024
+const DESKTOP_EVENT_COMPACT_INTERVAL_MS = 6 * 60 * 60 * 1000
+
+let compactGeneration = 0
+let compactStartupTimer: ReturnType<typeof setTimeout> | null = null
+let compactIntervalTimer: ReturnType<typeof setInterval> | null = null
+
+function clearCompactTimers(): void {
+  if (compactStartupTimer) {
+    clearTimeout(compactStartupTimer)
+    compactStartupTimer = null
+  }
+  if (compactIntervalTimer) {
+    clearInterval(compactIntervalTimer)
+    compactIntervalTimer = null
+  }
+}
+
+function fileBytes(path: string): number {
+  try {
+    return statSync(path).size
+  } catch {
+    return 0
+  }
+}
+
+function runScheduledEventCompact(target: DesktopDomain, generation: number): void {
+  if (generation !== compactGeneration || domain !== target) return
+  try {
+    const stats = target.eventLogStats()
+    if (stats.rows === 0) return
+    const dbPath = join(target.nodeHome, 'node.db')
+    const dueBySize = fileBytes(dbPath) + fileBytes(`${dbPath}-wal`) >= DESKTOP_EVENT_COMPACT_MIN_BYTES
+    const dueByAge = stats.lastCompactAt === null || Date.now() - stats.lastCompactAt >= DESKTOP_EVENT_RETENTION_MS
+    if (!dueBySize && !dueByAge) return
+    const result = target.compactEventLog({ vacuum: false })
+    log.info('[node-host] compacted event log removed=%d freed=%d floor=%s', result.removedRows, result.freedBytes, result.floor)
+  } catch (err) {
+    log.warn('[node-host] event log compact failed: %s', err instanceof Error ? err.message : String(err))
+  }
+}
+
+export function scheduleNodeEventCompact(target: DesktopDomain): void {
+  clearCompactTimers()
+  const generation = ++compactGeneration
+  compactStartupTimer = setTimeout(() => {
+    compactStartupTimer = null
+    runScheduledEventCompact(target, generation)
+  }, 10_000)
+  compactStartupTimer.unref?.()
+  compactIntervalTimer = setInterval(() => {
+    runScheduledEventCompact(target, generation)
+  }, DESKTOP_EVENT_COMPACT_INTERVAL_MS)
+  compactIntervalTimer.unref?.()
+}
+
+export function readDesktopNodeEventStats(): NodeEventStats | null {
+  if (domain) return domain.eventLogStats()
+  const dbPath = desktopNodeHostPaths(app.getPath('userData')).db
+  if (!existsSync(dbPath)) return null
+  const db = openNodeDatabase(dbPath)
+  try {
+    return readNodeEventStats(db)
+  } finally {
+    db.close()
+  }
+}
+
+export function compactDesktopNodeEventLog(vacuum: boolean): EventLogCompactResult {
+  if (domain) return domain.compactEventLog({ vacuum })
+  const dbPath = desktopNodeHostPaths(app.getPath('userData')).db
+  const externalSessionIds = listDesktopSessionRows().map((row) => row.sessionId)
+  const db = openNodeDatabase(dbPath)
+  try {
+    return compactEnvironmentEvents(db, {
+      vacuum,
+      filePath: dbPath,
+      externalSessionIds,
+      retainWindowMs: DESKTOP_EVENT_RETENTION_MS,
+    })
+  } finally {
+    db.close()
+  }
 }
 
 /**
@@ -251,6 +341,7 @@ async function stopHost(): Promise<void> {
 /** Stop serving (app quit). */
 export function stopNodeHost(): Promise<void> {
   const next = transition.then(async () => {
+    clearCompactTimers()
     await stopHost()
     domain?.close()
     domain = null

@@ -15,6 +15,7 @@ import { SESSION_DURABLE_EVENT, type EnvironmentEventEnvelope } from '@superone/
 import { createNodeSessionEventMapper, type NodeSessionEventMapper } from '@superone/shared/node-session-event-map'
 import { isNodeRestartInterruption } from '@superone/shared/session-interruption'
 import { parseGrantConfig, type CollaborationGrantRow } from '@superone/runtime/collaboration'
+import { cursorTooOldDetails } from '@superone/runtime/session/event-log'
 import log from '../logger'
 import { collaborationStore } from './collaboration-mailbox'
 import { remotePort } from './collaboration-remote'
@@ -157,7 +158,30 @@ export class RemoteChildWatcher {
     const statusSeen = new Set<string>()
     let after = [...cursors.values()].reduce((min, value) => (value < min ? value : min))
     for (;;) {
-      const page = await port.listEvents(connectionId, after.toString())
+      let page: Awaited<ReturnType<typeof port.listEvents>>
+      try {
+        page = await port.listEvents(connectionId, after.toString())
+      } catch (error) {
+        const gap = cursorTooOldDetails(error)
+        if (!gap) throw error
+        const head = BigInt(gap.head)
+        for (const child of children) {
+          const current = cursors.get(child.sessionId)!
+          const next = current < head ? head : current
+          cursors.set(child.sessionId, next)
+          const state = await port.getSession(connectionId, child.sessionId)
+          if (state?.status === 'streaming') {
+            if (!this.feed.runState(child.sessionId)) this.feed.resumeRun(child.sessionId)
+            this.feed.supersedeStop(child.sessionId)
+            settled.delete(child.sessionId)
+            this.save(children, child.sessionId, next, 'run')
+          } else {
+            if (state && this.feed.runState(child.sessionId)) settled.set(child.sessionId, state.status)
+            this.save(children, child.sessionId, next, 'cursor')
+          }
+        }
+        break
+      }
       for (const envelope of page) {
         const at = seq(envelope.sequence)
         after = at

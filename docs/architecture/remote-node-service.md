@@ -394,7 +394,8 @@ Durability rules:
   progress go to an in-memory streaming ring (`streaming-ring.ts`, 16 MiB cap)
   and are retired when their message commits (`committedStreamingMessage`);
   everything else is a durable `environment_events` row. Rows written before
-  this split, one per delta, stay.
+  this split, one per delta, stay until compaction removes the ones that sit
+  below the session's read-model checkpoint.
 - Every session event carries a per-session `session_version`, contiguous
   across both tiers within the node process `epoch`; a version identifies an
   event for resume (§9.2). Rows from before versions read as their sequence.
@@ -408,9 +409,23 @@ Durability rules:
   transcript. A disconnect loses no acknowledged semantic transition.
 - Old events may be deleted only after a snapshot at or beyond their sequence
   is durable, and a cursor older than retained history receives `cursor_too_old`
-  rather than a partial stream. `environment_events` is currently append-only
-  and never pruned, so `cursor_too_old` (defined in `packages/shared/src/environment/rpc.ts`)
-  is not emitted.
+  rather than a partial stream. Compaction
+  (`packages/runtime/src/session/event-log-compact.ts`) does that for each
+  session that has a read-model checkpoint and is not streaming or waiting on a
+  permission, question, or plan: it deletes streaming-tier rows and superseded
+  catalog or usage snapshots at or below the checkpoint, and it deletes every
+  event of a removed session that no longer has a session row. The retention
+  floor (`event_retention_floor` in meta) is the highest deleted sequence and
+  only moves forward. `EventLog.listAfter` throws `cursor_too_old`
+  (`packages/shared/src/environment/rpc.ts`) when the cursor is below that floor.
+  A cursor equal to the floor is still readable, because listing is exclusive.
+  An event stream answers with `resnapshot` and resumes at the durable head.
+  The collaboration watcher advances each child cursor to that head instead of
+  retrying the gap. The desktop node compacts on its own when `node.db` plus
+  its WAL is at least 512 MiB, and that pass does not `VACUUM`. Settings →
+  Storage runs the same compact and vacuums when free space is about 1.1× the
+  file. Payload bytes can drop before the file shrinks. `session.load` and a
+  stream `resnapshot` are how a client older than the floor reloads.
 
 The desktop's in-memory `apps/desktop/src/main/session/event-seq.ts` process
 epoch is not a durable cursor and is not used by this protocol.

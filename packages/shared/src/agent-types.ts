@@ -4781,6 +4781,9 @@ export const AgentIpcChannels = {
   SYNC_ZONE_USAGE_GET: 'app:sync-zone-usage',
   SYNC_ZONE_RECLAIM: 'app:sync-zone-reclaim',
   SYNC_ZONE_RETRY_HANDOFFS: 'app:sync-zone-retry-handoffs',
+  /** Local data sizes for Settings → Storage, and one action from that page. */
+  STORAGE_INVENTORY_GET: 'app:storage-inventory',
+  STORAGE_ACTION: 'app:storage-action',
   /** Stable per-installation id used as the analytics distinct id. */
   APP_INSTALL_ID_GET: 'app:install-id-get',
   /**

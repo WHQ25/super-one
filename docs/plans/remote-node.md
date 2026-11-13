@@ -39,8 +39,6 @@ Long-term docs affected: [remote-node-service.md](../architecture/remote-node-se
 ## Remote Agent Session
 
 - Single-transaction receipt + state + events for mutating RPC.
-- Event-log snapshots/compaction; emit `cursor_too_old` with a resnapshot
-  signal (`snapshot_required` is not defined yet).
 - `dsh` node turn runner (currently fails closed).
 - Full ACP/OpenCode protocol readiness probes (today: path exists + executable).
 - Harness CLI: `--env-file`, `--server-password-stdin`, `--clear-server-password`,

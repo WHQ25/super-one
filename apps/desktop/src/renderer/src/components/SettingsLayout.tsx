@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { ArrowLeft, BarChart3, Bot, Brain, Cpu, Globe, LayoutGrid, Loader2, MousePointer2, Paintbrush, Settings, Smartphone, SquareTerminal } from 'lucide-react'
+import { ArrowLeft, BarChart3, Bot, Brain, Cpu, Globe, HardDrive, LayoutGrid, Loader2, MousePointer2, Paintbrush, Settings, Smartphone, SquareTerminal } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore } from '@/stores/app'
 import { ProvidersPage } from './ProvidersPage'
@@ -7,6 +7,7 @@ import { RemotePage } from './RemotePage'
 import { AppsSettingsPage } from './AppsSettingsPage'
 import { AppSettingsPage } from './AppSettingsPage'
 import { AppearancePage } from './AppearancePage'
+import { StorageSettingsPage } from './settings/StorageSettingsPage'
 import { BrowserSettingsPage } from './BrowserSettingsPage'
 import { ComputerUseSettingsPage } from './ComputerUseSettingsPage'
 import { HarnessesSettingsPage } from './HarnessesSettingsPage'
@@ -24,6 +25,7 @@ const tabGroups = [
     tabs: [
       { id: 'app-settings' as const, labelKey: 'settings.layout.tabs.general', icon: Settings },
       { id: 'appearance' as const, labelKey: 'settings.layout.tabs.appearance', icon: Paintbrush },
+      { id: 'storage' as const, labelKey: 'settings.layout.tabs.storage', icon: HardDrive },
       { id: 'usage' as const, labelKey: 'settings.layout.tabs.usage', icon: BarChart3 },
     ],
   },
@@ -105,6 +107,7 @@ export function SettingsLayout() {
         {activeSettingsTab === 'providers' && <ProvidersPage />}
         {activeSettingsTab === 'app-settings' && <AppSettingsPage />}
         {activeSettingsTab === 'appearance' && <AppearancePage />}
+        {activeSettingsTab === 'storage' && <StorageSettingsPage />}
         {activeSettingsTab === 'harnesses' && <HarnessesSettingsPage />}
         {activeSettingsTab === 'agent-profiles' && <Suspense fallback={<div className="flex h-full items-center justify-center"><Loader2 className="size-5 animate-spin text-muted-foreground" /></div>}><AgentProfilesPage /></Suspense>}
         {activeSettingsTab === 'browser' && <BrowserSettingsPage />}

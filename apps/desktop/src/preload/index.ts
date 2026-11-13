@@ -1928,6 +1928,10 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.SYNC_ZONE_RECLAIM),
   retrySyncZoneHandoffs: () =>
     ipcRenderer.invoke(AgentIpcChannels.SYNC_ZONE_RETRY_HANDOFFS),
+  getStorageInventory: () =>
+    ipcRenderer.invoke(AgentIpcChannels.STORAGE_INVENTORY_GET),
+  applyStorageAction: (action: import('@superone/shared/desktop-storage').StorageApplyAction, harnessId?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.STORAGE_ACTION, action, harnessId),
   getInstallId: () => ipcRenderer.invoke(AgentIpcChannels.APP_INSTALL_ID_GET),
   openComputerUsePermissions: (
     request: boolean | 'guided' | 'accessibility' | 'screenRecording' = true,

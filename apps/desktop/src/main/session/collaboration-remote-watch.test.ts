@@ -15,6 +15,8 @@ const state = vi.hoisted(() => ({
   eventsC: [] as EnvironmentEventEnvelope[],
   /** Pushes the node makes, by session. */
   watchers: new Map<string, () => void>(),
+  /** When set, `listEvents` fails as a retention gap instead of returning a page. */
+  listError: null as null | { code: string; details?: { head?: string; floor?: string } },
   connectionListeners: new Set<() => void>(),
 }))
 
@@ -33,8 +35,10 @@ vi.mock('./collaboration-remote', () => ({
       { environmentId: 'env-c', connectionId: 'conn-c', label: 'C', connected: true, harnessIds: [] },
     ],
     getSession: async () => ({ status: state.status, pendingInteraction: null }),
-    listEvents: async (connectionId: string, after: string) =>
-      (connectionId === 'conn-c' ? state.eventsC : state.events).filter((e) => BigInt(e.sequence) > BigInt(after)).slice(0, 1000),
+    listEvents: async (connectionId: string, after: string) => {
+      if (state.listError) throw Object.assign(new Error('event cursor is older than retained history'), state.listError)
+      return (connectionId === 'conn-c' ? state.eventsC : state.events).filter((e) => BigInt(e.sequence) > BigInt(after)).slice(0, 1000)
+    },
     watchEvents: async (_connectionId: string, sessionId: string, onEvent: () => void) => {
       state.watchers.set(sessionId, onEvent)
       return () => state.watchers.delete(sessionId)
@@ -99,6 +103,7 @@ describe('RemoteChildWatcher', () => {
     state.status = 'idle'
     state.wake.mockClear()
     state.eventsC = []
+    state.listError = null
     state.watchers.clear()
     state.connectionListeners.clear()
     state.events = [statusEvent(10, 'streaming', 'other'), statusEvent(11, 'streaming')]
@@ -111,6 +116,39 @@ describe('RemoteChildWatcher', () => {
     })
     state.store.bindStartedSession(state.store.grantById(grantId)!, 'child', JSON.parse(state.store.grantById(grantId)!.config_json))
     state.store.markTaskSent(grantId)
+  })
+
+  it('advances a child cursor to the retention head instead of retrying the gap', async () => {
+    state.listError = { code: 'cursor_too_old', details: { floor: '100', head: '400' } }
+    await tick(startDesktop())
+    expect(remoteOf().eventCursor).toBe('400')
+    expect(state.wake).not.toHaveBeenCalled()
+  })
+
+  it('wakes the parent and preserves the head cursor when compaction overtakes an open run', async () => {
+    const desktop = startDesktop()
+    await tick(desktop)
+    expect(remoteOf()).toEqual(expect.objectContaining({ eventCursor: '11', run: { interrupted: false } }))
+
+    state.status = 'idle'
+    state.listError = { code: 'cursor_too_old', details: { floor: '100', head: '400' } }
+    await tick(desktop)
+
+    expect(remoteOf().eventCursor).toBe('400')
+    expect(remoteOf().run).toBeUndefined()
+    expect(state.wake).toHaveBeenCalledWith(expect.anything(), 'parent', 'child', 'idle', 'settled:400')
+  })
+
+  it('does not rewind eventCursor below retention head when resuming a settled run after restart', async () => {
+    await tick(startDesktop())
+    state.status = 'idle'
+    state.listError = { code: 'cursor_too_old', details: { floor: '100', head: '400' } }
+
+    await tick(startDesktop())
+
+    expect(remoteOf().eventCursor).toBe('400')
+    expect(remoteOf().run).toBeUndefined()
+    expect(state.wake).toHaveBeenCalledWith(expect.anything(), 'parent', 'child', 'idle', 'settled:400')
   })
 
   it('feeds a child run from its persisted cursor and records the run open there', async () => {

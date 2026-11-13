@@ -41,8 +41,11 @@ export type BackupOutcome =
   | { status: 'skipped'; reason: 'insufficient-space'; freeBytes: number; neededBytes: number }
 
 export const BACKUP_DIR_NAME = 'backups'
-/** How many distinct schema versions keep a snapshot. Each one is a full copy. */
-export const KEEP_BACKUP_VERSIONS = 3
+/**
+ * How many distinct schema versions keep a snapshot. Each one is a full copy.
+ * One is the schema the running build just migrated away from: the restore point.
+ */
+export const KEEP_BACKUP_VERSIONS = 1
 
 const FILE_PREFIX = 'superone-schema'
 const FILE_SUFFIX = '.db'

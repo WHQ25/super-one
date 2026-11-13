@@ -5120,6 +5120,7 @@ export const AgentIpcChannels = {
   ENVIRONMENT_BROWSE_PATH: 'environment:browsePath',
   /** Clone a git repository onto a host and register it as a project. */
   ENVIRONMENT_CLONE_REPOSITORY: 'environment:cloneRepository',
+  ENVIRONMENT_INSPECT_CLONE_DESTINATION: 'environment:inspectCloneDestination',
   /** Main → requesting renderer clone download percent (local host only). */
   ENVIRONMENT_CLONE_PROGRESS: 'environment:cloneProgress',
   ENVIRONMENT_CONNECT: 'environment:connect',

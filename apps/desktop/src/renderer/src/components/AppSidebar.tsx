@@ -36,6 +36,8 @@ import { FileTree } from '@/components/sidebar/FileTree'
 import { useMosaicStore } from '@/components/mosaic/mosaic-store'
 import { useSidebarSessions } from '@/components/sidebar/use-sidebar-sessions'
 import { ProjectSidebarRow } from '@/components/sidebar/ProjectSidebarRow'
+import { CloningProjectRow } from '@/components/sidebar/CloningProjectRow'
+import { useBackgroundCloneStore } from '@/stores/background-clones'
 import { PinnedSessionRow } from '@/components/sidebar/PinnedSessionRow'
 import { DraftsSection } from '@/components/sidebar/DraftsSection'
 import { useScheduledSendsSync } from '@/hooks/useScheduledSendsSync'
@@ -191,6 +193,11 @@ export const AppSidebar = memo(function AppSidebar() {
   const [connectionBusyId, setConnectionBusyId] = useState<string | null>(null)
   const [refreshingConnectionId, setRefreshingConnectionId] = useState<string | null>(null)
   const [openingSession, setOpeningSession] = useState<{ folderPath: string; sessionId: string } | null>(null)
+  const backgroundCloneTasks = useBackgroundCloneStore((s) => s.tasks)
+  const visibleCloneTasks = useMemo(
+    () => backgroundCloneTasks.filter((task) => task.backgrounded && task.connectionId === selectedHostConnectionId),
+    [backgroundCloneTasks, selectedHostConnectionId],
+  )
   const fetchRecentFolders = useAppStore((s) => s.fetchRecentFolders)
   const expandedFoldersRef = useRef(expandedFolders)
   const collapsedEnvironmentIds = useMultiHostSidebarStore((s) => s.settings.collapsedEnvironmentIds)
@@ -969,39 +976,50 @@ export const AppSidebar = memo(function AppSidebar() {
                   <span>{t('sidebar.hostDisconnected')}</span>
                   <span className="break-words px-2">{t('sidebar.hostConnectHint')}</span>
                 </div>
-              ) : sortedFolders.map((folder) => {
-                return (
-                  <ProjectSidebarRow
-                    key={folder.path}
-                    folder={folder}
-                    isExpanded={expandedFolders.has(folder.path)}
-                    sessions={folderSessions[folder.path] ?? EMPTY_SESSIONS}
-                    sessionsHasMore={folderSessionsHasMore[folder.path] ?? false}
-                    onLoadMoreSessions={loadMoreFolderSessions}
-                    childSessions={folderChildSessions[folder.path]}
-                    childSessionsHasMore={folderChildHasMore[folder.path]}
-                    onLoadChildSessions={loadChildSessions}
-                    onLoadMoreChildSessions={loadMoreChildSessions}
-                    settledSessions={settledSessions}
-                    settledHasMore={settledHasMore[folder.path] ?? false}
-                    settledCount={settledCounts[folder.path]}
-                    onLoadMoreSettled={loadMoreSettledSessions}
-                    sessionsLoading={loadingFolders[folder.path] === true}
-                    openingSessionId={openingSession?.folderPath === folder.path ? openingSession.sessionId : null}
-                    onToggleExpand={toggleExpand}
-                    onSwitchSession={handleSwitchSession}
-                    onPinSession={handlePinSession}
-                    onSettleSession={handleSettleSession}
-                    onEditProject={setEditProjectTarget}
-                    onRemoveProject={handleRemoveProject}
-                    onRenameSession={handleRequestRenameSession}
-                    onDeleteSession={handleRequestDeleteSession}
-                    onNewSession={handleNewSession}
-                    sessionPresentation={presenterFor(localHoverEnvironment, folder.name, folder.path)}
-                  />
-                )
-              })}
-              {!hostTurnedOff && sortedFolders.length === 0 && !hasDrafts && (
+              ) : (
+                <>
+                  {visibleCloneTasks.map((task) => (
+                    <CloningProjectRow
+                      key={task.cloneId}
+                      name={task.directoryName}
+                      progress={task.progress}
+                    />
+                  ))}
+                  {sortedFolders.map((folder) => {
+                    return (
+                      <ProjectSidebarRow
+                        key={folder.path}
+                        folder={folder}
+                        isExpanded={expandedFolders.has(folder.path)}
+                        sessions={folderSessions[folder.path] ?? EMPTY_SESSIONS}
+                        sessionsHasMore={folderSessionsHasMore[folder.path] ?? false}
+                        onLoadMoreSessions={loadMoreFolderSessions}
+                        childSessions={folderChildSessions[folder.path]}
+                        childSessionsHasMore={folderChildHasMore[folder.path]}
+                        onLoadChildSessions={loadChildSessions}
+                        onLoadMoreChildSessions={loadMoreChildSessions}
+                        settledSessions={settledSessions}
+                        settledHasMore={settledHasMore[folder.path] ?? false}
+                        settledCount={settledCounts[folder.path]}
+                        onLoadMoreSettled={loadMoreSettledSessions}
+                        sessionsLoading={loadingFolders[folder.path] === true}
+                        openingSessionId={openingSession?.folderPath === folder.path ? openingSession.sessionId : null}
+                        onToggleExpand={toggleExpand}
+                        onSwitchSession={handleSwitchSession}
+                        onPinSession={handlePinSession}
+                        onSettleSession={handleSettleSession}
+                        onEditProject={setEditProjectTarget}
+                        onRemoveProject={handleRemoveProject}
+                        onRenameSession={handleRequestRenameSession}
+                        onDeleteSession={handleRequestDeleteSession}
+                        onNewSession={handleNewSession}
+                        sessionPresentation={presenterFor(localHoverEnvironment, folder.name, folder.path)}
+                      />
+                    )
+                  })}
+                </>
+              )}
+              {!hostTurnedOff && sortedFolders.length === 0 && visibleCloneTasks.length === 0 && !hasDrafts && (
                 <div className="flex flex-1 items-center justify-center p-4 text-xs text-sidebar-foreground/70">
                   {t('sidebar.empty')}
                 </div>

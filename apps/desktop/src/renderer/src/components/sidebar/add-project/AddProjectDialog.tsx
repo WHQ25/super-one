@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import {
+  AlertTriangle,
   ArrowLeft,
   Folder,
   FolderPlus,
@@ -204,7 +205,12 @@ export function AddProjectDialog({
       : enterHintKey
         ? t(enterHintKey)
         : null
-  const confirmHintKey = confirmActionKey(step, Boolean(flow.willCreatePath))
+  const confirmHintKey =
+    step.kind === 'destination' && flow.destinationStatus === 'same-origin-unregistered'
+      ? 'sidebar.addProject.actions.add'
+      : step.kind === 'destination' && flow.destinationStatus === 'same-origin-registered'
+        ? null
+        : confirmActionKey(step, Boolean(flow.willCreatePath))
   const confirmLabel = confirmHintKey ? t(confirmHintKey) : ''
   const listSections = useMemo(() => {
     if (!flow.isPathStep || !flow.isLocal) return flow.listSections
@@ -231,14 +237,23 @@ export function AddProjectDialog({
   }, [flow.isPathStep, flow.isLocal, flow.listSections, flow.busy, flow.pickNativeFolder, t])
 
   return (
-    <Dialog open={open} onOpenChange={(next) => !flow.busy && onOpenChange(next)}>
+    <Dialog
+      open={open}
+      onOpenChange={(next) => {
+        if (!next && flow.canRunInBackground) {
+          flow.runInBackground()
+          return
+        }
+        if (!flow.busy) onOpenChange(next)
+      }}
+    >
       {/*
         Fixed-height shell: list and footer content change between steps, and a
         viewport-centred Radix dialog would otherwise jump under the caret.
       */}
       <DialogContent
         className="flex h-[min(32rem,85vh)] w-full flex-col gap-0 overflow-hidden p-0 sm:max-w-lg"
-        showCloseButton={!flow.busy}
+        showCloseButton={!flow.busy || flow.canRunInBackground}
       >
         {/*
           Match horizontal inset with the input row (px-4). pr-12 clears the
@@ -250,7 +265,12 @@ export function AddProjectDialog({
             <span className="flex size-4 shrink-0 items-center justify-center">
               <FolderPlus className="size-4 text-muted-foreground" aria-hidden />
             </span>
-            {t(stepTitleKey(step))}
+            {t(
+              (step.kind === 'destination' && flow.destinationStatus !== 'available') ||
+                (step.kind === 'browse' && flow.browseProjectExists)
+                ? 'sidebar.addProject.stepTitle.source'
+                : stepTitleKey(step),
+            )}
           </DialogTitle>
           {/* Host context stays for assistive tech only — the sidebar already
               shows which environment is selected. */}
@@ -382,7 +402,7 @@ export function AddProjectDialog({
                 if (e.key === 'Enter') {
                   e.preventDefault()
                   if (e.shiftKey && flow.isPathStep) {
-                    if (!flow.busy) flow.commitCurrentPath()
+                    if (!flow.busy && flow.canSubmit) flow.commitCurrentPath()
                     return
                   }
                   if (flow.canSubmit) flow.submit()
@@ -396,26 +416,54 @@ export function AddProjectDialog({
             />
           </div>
           {flow.isPathStep && (
-            <Button
-              type="button"
-              size="sm"
-              className="h-7 shrink-0 gap-1.5 px-2.5 text-xs"
-              tabIndex={-1}
-              disabled={flow.busy || !flow.canSubmit}
-              onMouseDown={(e) => e.preventDefault()}
-              onClick={() => flow.commitCurrentPath()}
-            >
-              {flow.busy ? (
+            flow.canRunInBackground ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 shrink-0 gap-1.5 px-2.5 text-xs"
+                tabIndex={-1}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={flow.runInBackground}
+              >
                 <Loader2 className="size-3.5 animate-spin" />
-              ) : (
-                <>
-                  <span className="capitalize">{confirmLabel}</span>
-                  <span className="rounded bg-primary-foreground/20 px-1 py-px text-[10px] font-medium leading-none">
-                    ⇧↵
-                  </span>
-                </>
-              )}
-            </Button>
+                <span>{t('sidebar.addProject.runInBackground')}</span>
+              </Button>
+            ) : (step.kind === 'destination' && flow.destinationStatus === 'same-origin-registered') ||
+              (step.kind === 'browse' && flow.browseProjectExists) ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                className="h-7 shrink-0 px-2.5 text-xs"
+                tabIndex={-1}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => onOpenChange(false)}
+              >
+                {t('common.cancel')}
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                size="sm"
+                className="h-7 shrink-0 gap-1.5 px-2.5 text-xs"
+                tabIndex={-1}
+                disabled={flow.busy || !flow.canSubmit}
+                onMouseDown={(e) => e.preventDefault()}
+                onClick={() => flow.commitCurrentPath()}
+              >
+                {flow.busy ? (
+                  <Loader2 className="size-3.5 animate-spin" />
+                ) : (
+                  <>
+                    <span className="capitalize">{confirmLabel}</span>
+                    <span className="rounded bg-primary-foreground/20 px-1 py-px text-[10px] font-medium leading-none">
+                      ⇧↵
+                    </span>
+                  </>
+                )}
+              </Button>
+            )
           )}
           {!flow.isPathStep && flow.busy ? (
             <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />
@@ -460,30 +508,42 @@ export function AddProjectDialog({
                 path={flow.clonePreviewPath}
                 cloning={flow.busy}
                 progress={flow.cloneProgress}
+                warning={flow.destinationWarning || undefined}
               />
             )}
-            <label className="mt-2 flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
-              <Checkbox
-                checked={flow.shallowClone}
-                disabled={flow.busy}
-                onCheckedChange={(value) => flow.setShallowClone(value === true)}
-              />
-              <span className="min-w-0 leading-snug">
-                {t('sidebar.addProject.shallowClone')}
-              </span>
-            </label>
-            {flow.canSaveAsDefault && (
-              <label className="mt-1.5 flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
-                <Checkbox
-                  checked={flow.saveAsDefault}
-                  disabled={flow.busy}
-                  onCheckedChange={(value) => flow.setSaveAsDefault(value === true)}
-                />
-                <span className="min-w-0 leading-snug">
-                  {t('sidebar.addProject.saveAsDefaultClonePath')}
-                </span>
-              </label>
+            {flow.destinationStatus === 'available' && (
+              <>
+                <label className="mt-2 flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+                  <Checkbox
+                    checked={flow.shallowClone}
+                    disabled={flow.busy}
+                    onCheckedChange={(value) => flow.setShallowClone(value === true)}
+                  />
+                  <span className="min-w-0 leading-snug">
+                    {t('sidebar.addProject.shallowClone')}
+                  </span>
+                </label>
+                {flow.canSaveAsDefault && (
+                  <label className="mt-1.5 flex cursor-pointer items-center gap-2 text-xs text-muted-foreground">
+                    <Checkbox
+                      checked={flow.saveAsDefault}
+                      disabled={flow.busy}
+                      onCheckedChange={(value) => flow.setSaveAsDefault(value === true)}
+                    />
+                    <span className="min-w-0 leading-snug">
+                      {t('sidebar.addProject.saveAsDefaultClonePath')}
+                    </span>
+                  </label>
+                )}
+              </>
             )}
+          </div>
+        )}
+
+        {step.kind === 'browse' && flow.browseProjectExists && (
+          <div className="flex shrink-0 items-center gap-1.5 border-b border-border/60 bg-amber-500/5 px-4 py-2 text-xs text-amber-600 dark:text-amber-400">
+            <AlertTriangle className="size-3.5 shrink-0" aria-hidden />
+            <span>{t('sidebar.addProject.destinationProjectExists')}</span>
           </div>
         )}
 

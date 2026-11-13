@@ -3,7 +3,13 @@ import { mkdirSync, mkdtempSync, rmSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { buildCloneArgs, cloneRepository, parseCloneProgress, planCloneTarget } from './git-clone'
+import {
+  buildCloneArgs,
+  cloneRepository,
+  inspectCloneDestination,
+  parseCloneProgress,
+  planCloneTarget,
+} from './git-clone'
 
 const dest = '/tmp/parent/repo'
 
@@ -123,5 +129,80 @@ describe('cloneRepository reuse-or-rename', () => {
       remoteUrl: 'https://github.com/acme/app',
       parentPath: parent,
     })).rejects.toMatchObject({ code: 'conflict' })
+  })
+})
+
+describe('cloneRepository reuse', () => {
+  it('reuses an existing folder with the same origin', async () => {
+    const parent = tempParent()
+    const existing = join(parent, 'app')
+    execFileSync('git', ['init', '-q', existing])
+    execFileSync('git', ['-C', existing, 'remote', 'add', 'origin', 'git@github.com:acme/app.git'])
+    const result = await cloneRepository({
+      remoteUrl: 'https://github.com/acme/app',
+      parentPath: parent,
+      ifExists: 'reuse',
+    })
+    expect(result).toEqual({ path: existing, name: 'app', reused: true })
+  })
+
+  it('rejects an existing folder with a different origin without renaming', async () => {
+    const parent = tempParent()
+    const existing = join(parent, 'app')
+    execFileSync('git', ['init', '-q', existing])
+    execFileSync('git', ['-C', existing, 'remote', 'add', 'origin', 'https://github.com/other/app.git'])
+    await expect(cloneRepository({
+      remoteUrl: 'https://github.com/acme/app',
+      parentPath: parent,
+      ifExists: 'reuse',
+    })).rejects.toMatchObject({ code: 'conflict' })
+  })
+
+  it('rejects a plain existing folder without an origin', async () => {
+    const parent = tempParent()
+    mkdirSync(join(parent, 'app'))
+    await expect(cloneRepository({
+      remoteUrl: 'https://github.com/acme/app',
+      parentPath: parent,
+      ifExists: 'reuse',
+    })).rejects.toMatchObject({ code: 'conflict' })
+  })
+})
+
+describe('inspectCloneDestination', () => {
+  it('returns available when destination does not exist', () => {
+    const parent = tempParent()
+    expect(
+      inspectCloneDestination({
+        remoteUrl: 'https://github.com/acme/app',
+        parentPath: parent,
+      }),
+    ).toBe('available')
+  })
+
+  it('returns same-origin when destination has the same remote', () => {
+    const parent = tempParent()
+    const existing = join(parent, 'app')
+    execFileSync('git', ['init', '-q', existing])
+    execFileSync('git', ['-C', existing, 'remote', 'add', 'origin', 'git@github.com:acme/app.git'])
+    expect(
+      inspectCloneDestination({
+        remoteUrl: 'https://github.com/acme/app',
+        parentPath: parent,
+      }),
+    ).toBe('same-origin')
+  })
+
+  it('returns conflict when destination has a different remote', () => {
+    const parent = tempParent()
+    const existing = join(parent, 'app')
+    execFileSync('git', ['init', '-q', existing])
+    execFileSync('git', ['-C', existing, 'remote', 'add', 'origin', 'https://github.com/other/app.git'])
+    expect(
+      inspectCloneDestination({
+        remoteUrl: 'https://github.com/acme/app',
+        parentPath: parent,
+      }),
+    ).toBe('conflict')
   })
 })

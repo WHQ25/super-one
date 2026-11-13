@@ -7,6 +7,7 @@ import { setAddProjectHookDelayForTests } from './use-add-project-dialog'
 const browsePath = vi.fn()
 const openProject = vi.fn()
 const cloneRepository = vi.fn()
+const inspectCloneDestination = vi.fn()
 const onCloneProgress = vi.fn()
 const searchGithubRepos = vi.fn()
 const queryGithubRepos = vi.fn()
@@ -111,11 +112,13 @@ describe('add-project dialog', () => {
       defaultClonePaths: patch.defaultClonePaths ?? {},
     }))
     selectFolder.mockResolvedValue(null)
+    inspectCloneDestination.mockResolvedValue('available')
     onCloneProgress.mockReturnValue(() => {})
     ;(window as unknown as Record<string, unknown>).environment = {
       browsePath,
       openProject,
       cloneRepository,
+      inspectCloneDestination,
       onCloneProgress,
     }
     ;(window as unknown as Record<string, unknown>).app = {
@@ -368,6 +371,8 @@ describe('add-project dialog', () => {
         parentPath: '/Users/dev/Projects',
         directoryName: 'super-one',
         shallow: true,
+        ifExists: 'reuse',
+        cloneId: expect.any(String),
       }),
     )
     await waitFor(() => expect(onOpened).toHaveBeenCalled())
@@ -690,6 +695,8 @@ describe('add-project dialog', () => {
         parentPath: '/Users/dev/Projects',
         directoryName: 'super-one',
         shallow: true,
+        ifExists: 'reuse',
+        cloneId: expect.any(String),
       }),
     )
     await waitFor(() => expect(onOpened).toHaveBeenCalled())
@@ -764,15 +771,17 @@ describe('add-project dialog', () => {
   })
 
   it('shows clone progress in the repository card while cloning', async () => {
-    let emit: (percent: number) => void = () => {}
+    let emit: (event: { cloneId?: string; percent: number }) => void = () => {}
     const unsubscribe = vi.fn()
-    onCloneProgress.mockImplementation((callback: (percent: number) => void) => {
-      emit = callback
-      return unsubscribe
-    })
+    onCloneProgress.mockImplementation(
+      (callback: (event: { cloneId?: string; percent: number }) => void) => {
+        emit = callback
+        return unsubscribe
+      },
+    )
     let finish: (value: unknown) => void = () => {}
     cloneRepository.mockReturnValue(new Promise((resolve) => (finish = resolve)))
-    renderDialog()
+    const { onOpenChange, onOpened } = renderDialog()
 
     fireEvent.click(screen.getByText('GitHub Repository'))
     fireEvent.change(input(), { target: { value: 'WHQ25/super-one' } })
@@ -784,15 +793,56 @@ describe('add-project dialog', () => {
 
     fireEvent.keyDown(input(), { key: 'Enter', shiftKey: true })
     await waitFor(() => expect(cloneRepository).toHaveBeenCalled())
+    const cloneId = cloneRepository.mock.calls[0]?.[1]?.cloneId as string
     expect(screen.getByText(/^Cloning into /)).toBeInTheDocument()
     expect(screen.getByRole('progressbar')).not.toHaveAttribute('aria-valuenow')
 
-    act(() => emit(42))
+    act(() => emit({ cloneId, percent: 42 }))
     expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '42')
     expect(screen.getByText('42%')).toBeInTheDocument()
 
     await act(async () => finish({ projectId: 'p', path: '/tmp/super-one', name: 'super-one' }))
     expect(unsubscribe).toHaveBeenCalled()
+  })
+
+  it('allows moving an in-flight clone to the background and tracks progress', async () => {
+    let emit: (event: { cloneId?: string; percent: number }) => void = () => {}
+    onCloneProgress.mockImplementation(
+      (callback: (event: { cloneId?: string; percent: number }) => void) => {
+        emit = callback
+        return () => {}
+      },
+    )
+    let finish: (value: unknown) => void = () => {}
+    cloneRepository.mockReturnValue(new Promise((resolve) => (finish = resolve)))
+    const { onOpenChange, onOpened } = renderDialog()
+
+    fireEvent.click(screen.getByText('GitHub Repository'))
+    fireEvent.change(input(), { target: { value: 'WHQ25/super-one' } })
+    await screen.findByRole('button', { name: /WHQ25\/super-one/ })
+    fireEvent.keyDown(input(), { key: 'Enter' })
+    await screen.findByText('Repository')
+    await waitFor(() => expect(browsePath).toHaveBeenCalled())
+
+    fireEvent.keyDown(input(), { key: 'Enter', shiftKey: true })
+    await waitFor(() => expect(cloneRepository).toHaveBeenCalled())
+    const cloneId = cloneRepository.mock.calls[0]?.[1]?.cloneId as string
+
+    const bgButton = await screen.findByRole('button', { name: 'Run in Background' })
+    expect(screen.queryByRole('button', { name: /clone/i })).not.toBeInTheDocument()
+    fireEvent.click(bgButton)
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+
+    const { useBackgroundCloneStore } = await import('@/stores/background-clones')
+    expect(useBackgroundCloneStore.getState().tasks).toHaveLength(1)
+    expect(useBackgroundCloneStore.getState().tasks[0]?.backgrounded).toBe(true)
+
+    act(() => emit({ cloneId, percent: 65 }))
+    expect(useBackgroundCloneStore.getState().tasks[0]?.progress).toBe(65)
+
+    await act(async () => finish({ projectId: 'p', path: '/tmp/super-one', name: 'super-one' }))
+    expect(useBackgroundCloneStore.getState().tasks).toHaveLength(0)
+    expect(onOpened).not.toHaveBeenCalled()
   })
 
   it('opts out of a shallow clone when the checkbox is unchecked', async () => {
@@ -817,6 +867,8 @@ describe('add-project dialog', () => {
         parentPath: '/Users/dev/Projects',
         directoryName: 'super-one',
         shallow: false,
+        ifExists: 'reuse',
+        cloneId: expect.any(String),
       }),
     )
   })
@@ -844,7 +896,7 @@ describe('add-project dialog', () => {
 
   it('surfaces a clone failure without closing the dialog', async () => {
     cloneRepository.mockRejectedValueOnce(new Error('repository not found'))
-    const { onOpenChange } = renderDialog()
+    const { onOpenChange, onOpened } = renderDialog()
 
     fireEvent.click(screen.getByText('Git URL'))
     fireEvent.change(input(), { target: { value: 'https://example.com/x/y.git' } })
@@ -873,7 +925,145 @@ describe('add-project dialog', () => {
 
     fireEvent.keyDown(input(), { key: 'Enter', shiftKey: true })
     await screen.findByText(
-      '"/Users/dev/Github/super-one" already exists. Pick another folder, or add that project instead of cloning.',
+      '"/Users/dev/Github/super-one" already exists with a different repository. Choose another directory to clone into.',
     )
+  })
+
+  it('shows a warning and replaces Clone with Cancel when a same-origin repo is already in SuperOne', async () => {
+    const { useAppStore } = await import('@/stores/app')
+    useAppStore.setState({
+      recentFolders: [{ id: 'p1', name: 'super-one', path: '/Users/dev/Projects/super-one', lastOpened: '2026-01-01T00:00:00.000Z', addedAt: '2026-01-01T00:00:00.000Z' }],
+    })
+    inspectCloneDestination.mockResolvedValue('same-origin')
+    const { onOpenChange } = renderDialog()
+
+    fireEvent.click(screen.getByText('Git URL'))
+    fireEvent.change(input(), { target: { value: 'https://example.com/x/super-one.git' } })
+    fireEvent.keyDown(input(), { key: 'Enter' })
+    await screen.findByText('Repository')
+    await screen.findByText('Project already exists.')
+
+    expect(screen.getByRole('heading', { name: 'Add Project' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /clone/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: /Shallow Clone/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: /Save as Default Clone Path/i })).not.toBeInTheDocument()
+    const cancelBtn = screen.getByRole('button', { name: 'Cancel' })
+    fireEvent.keyDown(input(), { key: 'Enter', shiftKey: true })
+    expect(cloneRepository).not.toHaveBeenCalled()
+
+    fireEvent.click(cancelBtn)
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+    useAppStore.setState({ recentFolders: [] })
+  })
+
+  it('shows a warning and replaces Clone with Add when a same-origin repo is not in SuperOne', async () => {
+    const { useAppStore } = await import('@/stores/app')
+    useAppStore.setState({ recentFolders: [] })
+    inspectCloneDestination.mockResolvedValue('same-origin')
+    const { onOpened } = renderDialog()
+
+    fireEvent.click(screen.getByText('Git URL'))
+    fireEvent.change(input(), { target: { value: 'https://example.com/x/super-one.git' } })
+    fireEvent.keyDown(input(), { key: 'Enter' })
+    await screen.findByText('Repository')
+    await screen.findByText('Repository already exists.')
+
+    expect(screen.getByRole('heading', { name: 'Add Project' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /clone/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: /Shallow Clone/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: /Save as Default Clone Path/i })).not.toBeInTheDocument()
+    const addBtn = screen.getByRole('button', { name: /add/i })
+    fireEvent.click(addBtn)
+
+    await waitFor(() =>
+      expect(openProject).toHaveBeenCalledWith('local', '/Users/dev/Projects/super-one', {
+        createIfMissing: false,
+      }),
+    )
+    expect(cloneRepository).not.toHaveBeenCalled()
+    await waitFor(() => expect(onOpened).toHaveBeenCalled())
+  })
+
+  it('shows a conflict warning and disables Clone when a different folder already exists', async () => {
+    inspectCloneDestination.mockResolvedValue('conflict')
+    renderDialog()
+
+    fireEvent.click(screen.getByText('Git URL'))
+    fireEvent.change(input(), { target: { value: 'https://example.com/x/super-one.git' } })
+    fireEvent.keyDown(input(), { key: 'Enter' })
+    await screen.findByText('Repository')
+    await screen.findByText('Clone name conflict: a different folder already exists here.')
+
+    expect(screen.getByRole('heading', { name: 'Add Project' })).toBeInTheDocument()
+    const cloneBtn = screen.getByRole('button', { name: /clone/i })
+    expect(cloneBtn).toBeDisabled()
+    expect(screen.queryByRole('checkbox', { name: /Shallow Clone/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('checkbox', { name: /Save as Default Clone Path/i })).not.toBeInTheDocument()
+    fireEvent.keyDown(input(), { key: 'Enter', shiftKey: true })
+    expect(cloneRepository).not.toHaveBeenCalled()
+  })
+
+  it('updates destination path without starting clone when picking a folder with Finder', async () => {
+    selectFolder.mockResolvedValueOnce('/Users/dev/Workspace')
+    browsePath.mockImplementation(async (_conn: string, p: string) => ({
+      path: p === '~/' ? '/Users/dev/Projects' : p,
+      entries: [],
+    }))
+    renderDialog()
+
+    fireEvent.click(screen.getByText('Git URL'))
+    fireEvent.change(input(), { target: { value: 'https://example.com/x/super-one.git' } })
+    fireEvent.keyDown(input(), { key: 'Enter' })
+    await screen.findByText('Repository')
+    await waitFor(() => expect(browsePath).toHaveBeenCalled())
+
+    fireEvent.click(screen.getByRole('button', { name: 'Browse with Finder' }))
+    await waitFor(() => expect(selectFolder).toHaveBeenCalled())
+    await waitFor(() => expect(input()).toHaveValue('/Users/dev/Workspace/'))
+    await screen.findByText('Clones into /Users/dev/Workspace/super-one')
+    expect(cloneRepository).not.toHaveBeenCalled()
+  })
+
+  it('shows a warning and replaces Add with Cancel when browsing an existing local project', async () => {
+    const { useAppStore } = await import('@/stores/app')
+    useAppStore.setState({
+      recentFolders: [{ id: 'p1', name: 'super-one', path: '/Users/dev/Projects/super-one', lastOpened: '2026-01-01T00:00:00.000Z', addedAt: '2026-01-01T00:00:00.000Z' }],
+    })
+    const { onOpenChange } = renderDialog()
+
+    fireEvent.change(input(), { target: { value: '/Users/dev/Projects/super-one' } })
+    await screen.findByText('Project already exists.')
+
+    expect(screen.getByRole('heading', { name: 'Add Project' })).toBeInTheDocument()
+    const cancelBtn = screen.getByRole('button', { name: 'Cancel' })
+    fireEvent.keyDown(input(), { key: 'Enter', shiftKey: true })
+    expect(openProject).not.toHaveBeenCalled()
+
+    fireEvent.click(cancelBtn)
+    expect(onOpenChange).toHaveBeenCalledWith(false)
+    useAppStore.setState({ recentFolders: [] })
+  })
+
+  it('shows a warning instead of adding when Local Folder picks an existing project via Finder', async () => {
+    const { useAppStore } = await import('@/stores/app')
+    useAppStore.setState({
+      recentFolders: [{ id: 'p1', name: 'super-one', path: '/Users/dev/Projects/super-one', lastOpened: '2026-01-01T00:00:00.000Z', addedAt: '2026-01-01T00:00:00.000Z' }],
+    })
+    browsePath.mockImplementation(async (_conn: string, p: string) => ({
+      path: p.replace(/\/+$/, ''),
+      entries: [],
+    }))
+    selectFolder.mockResolvedValueOnce('/Users/dev/Projects/super-one')
+    renderDialog()
+
+    fireEvent.click(screen.getByText('Local Folder'))
+    await waitFor(() => expect(selectFolder).toHaveBeenCalled())
+    await waitFor(() => expect(input()).toHaveValue('/Users/dev/Projects/super-one/'))
+    await screen.findByText('Project already exists.')
+
+    expect(screen.getByRole('heading', { name: 'Add Project' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument()
+    expect(openProject).not.toHaveBeenCalled()
+    useAppStore.setState({ recentFolders: [] })
   })
 })

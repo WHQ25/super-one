@@ -2517,17 +2517,38 @@ function registerIpcHandlers(): void {
     },
   )
   ipcMain.handle(
+    AgentIpcChannels.ENVIRONMENT_INSPECT_CLONE_DESTINATION,
+    async (
+      _e,
+      connectionId: string,
+      input: { remoteUrl: string; parentPath: string; directoryName?: string },
+    ) => {
+      const { getEnvironmentHost } = await import('./environment')
+      return getEnvironmentHost().inspectCloneDestination(connectionId, input)
+    },
+  )
+  ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_CLONE_REPOSITORY,
     async (
       e,
       connectionId: string,
-      input: { remoteUrl: string; parentPath: string; directoryName?: string; shallow?: boolean },
+      input: {
+        remoteUrl: string
+        parentPath: string
+        directoryName?: string
+        shallow?: boolean
+        ifExists?: 'reuse-or-rename' | 'reuse'
+        cloneId?: string
+      },
     ) => {
       const { getEnvironmentHost } = await import('./environment')
       // Reply to the requesting window only — the dialog lives there.
       return getEnvironmentHost().cloneRepository(connectionId, input, (percent) => {
         if (!e.sender.isDestroyed()) {
-          e.sender.send(AgentIpcChannels.ENVIRONMENT_CLONE_PROGRESS, percent)
+          e.sender.send(AgentIpcChannels.ENVIRONMENT_CLONE_PROGRESS, {
+            cloneId: input.cloneId,
+            percent,
+          })
         }
       })
     },

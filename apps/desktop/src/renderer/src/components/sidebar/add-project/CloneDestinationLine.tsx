@@ -1,14 +1,21 @@
 import { useTranslation } from 'react-i18next'
+import { AlertTriangle } from 'lucide-react'
 
 interface CloneDestinationLineProps {
   path: string
   cloning: boolean
   /** Download percent; null while git has not reported one (always for remote hosts). */
   progress: number | null
+  warning?: string
 }
 
 /** "Clones into" preview in the repository card; becomes a progress bar while cloning. */
-export function CloneDestinationLine({ path, cloning, progress }: CloneDestinationLineProps) {
+export function CloneDestinationLine({
+  path,
+  cloning,
+  progress,
+  warning,
+}: CloneDestinationLineProps) {
   const { t } = useTranslation()
   return (
     <div className="pt-1">
@@ -38,6 +45,12 @@ export function CloneDestinationLine({ path, cloning, progress }: CloneDestinati
               style={{ width: `${progress}%` }}
             />
           )}
+        </div>
+      )}
+      {!cloning && warning && (
+        <div className="mt-1.5 flex items-center gap-1.5 text-xs text-amber-600 dark:text-amber-400">
+          <AlertTriangle className="size-3.5 shrink-0" />
+          <span className="min-w-0 leading-snug">{warning}</span>
         </div>
       )}
     </div>

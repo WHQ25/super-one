@@ -15,6 +15,9 @@ export function setAddProjectHookDelayForTests(ms: number | null): void {
   testDelayMs = ms
 }
 import { useTranslation } from 'react-i18next'
+import { useAppStore } from '@/stores/app'
+import { useBackgroundCloneStore } from '@/stores/background-clones'
+import { useMultiHostSidebarStore } from '@/stores/multi-host-sidebar'
 import {
   buildGitHubCloneUrl,
   githubOwnerAvatarUrl,
@@ -34,6 +37,7 @@ import {
   isBrowseablePathQuery,
   joinBrowsePath,
   normalizeHomePrefixInput,
+  trimTrailingPathSeparators,
 } from '@superone/shared/path-browse'
 import type { AddProjectListItem, AddProjectListSection } from './AddProjectList'
 import {
@@ -107,6 +111,23 @@ interface UseAddProjectDialogInput {
  * current text mean" depends entirely on the step — that branching is the part
  * worth reading (and testing) on its own.
  */
+function isProjectPathRegistered(
+  path: string,
+  connectionId: string,
+  recentFolders: { path: string }[],
+  environments: { connectionId: string; checkouts: { hostPath: string }[] }[],
+): boolean {
+  const target = trimTrailingPathSeparators(path)
+  if (!target) return false
+  if (connectionId === 'local') {
+    return recentFolders.some((folder) => trimTrailingPathSeparators(folder.path) === target)
+  }
+  const bucket = environments.find((item) => item.connectionId === connectionId)
+  return bucket
+    ? bucket.checkouts.some((checkout) => trimTrailingPathSeparators(checkout.hostPath) === target)
+    : false
+}
+
 export function useAddProjectDialog(input: UseAddProjectDialogInput) {
   const { open, connectionId, onOpenChange, onOpened } = input
   const { t } = useTranslation()
@@ -122,9 +143,16 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
   const [browseError, setBrowseError] = useState<string | null>(null)
   const [browseLoading, setBrowseLoading] = useState(false)
   const [busy, setBusy] = useState(false)
-  /** Clone download percent; null until git reports one (and always for remote hosts). */
-  const [cloneProgress, setCloneProgress] = useState<number | null>(null)
+  const [activeCloneId, setActiveCloneId] = useState<string | null>(null)
+  const cloneProgress = useBackgroundCloneStore((s) =>
+    activeCloneId ? (s.tasks.find((task) => task.cloneId === activeCloneId)?.progress ?? null) : null,
+  )
   const [submitError, setSubmitError] = useState('')
+  const [destinationInspectStatus, setDestinationInspectStatus] = useState<
+    'available' | 'same-origin' | 'same-origin-registered' | 'same-origin-unregistered' | 'conflict'
+  >('available')
+  const recentFolders = useAppStore((s) => s.recentFolders)
+  const environments = useMultiHostSidebarStore((s) => s.environments)
   const [githubRepos, setGithubRepos] = useState<GithubRepoHit[]>([])
   const [githubQueryHits, setGithubQueryHits] = useState<GithubRepoHit[]>([])
   const [githubSearchOwner, setGithubSearchOwner] = useState('')
@@ -145,6 +173,7 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
   // after the last render without waiting for another commit.
   const defaultClonePathRef = useRef<string | null>(null)
   const requestIdRef = useRef(0)
+  const inspectRequestIdRef = useRef(0)
   const githubRequestIdRef = useRef(0)
   const githubQueryRequestIdRef = useRef(0)
   const githubCacheRef = useRef<Map<string, GithubRepoHit[]>>(new Map())
@@ -166,7 +195,9 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     setListedPath('')
     setBrowseError(null)
     setSubmitError('')
+    setDestinationInspectStatus('available')
     setBusy(false)
+    setActiveCloneId(null)
     setGithubRepos([])
     setGithubQueryHits([])
     setGithubSearchOwner('')
@@ -556,6 +587,71 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
       : null
   const clonePreviewPath =
     step.kind === 'destination' && resolved.path ? joinBrowsePath(resolved.path, step.repoName) : ''
+
+  useEffect(() => {
+    if (!open || step.kind !== 'destination' || !resolved.path) {
+      setDestinationInspectStatus('available')
+      return
+    }
+    if (busy) return
+    const inspect = window.environment.inspectCloneDestination
+    if (!inspect) {
+      setDestinationInspectStatus('available')
+      return
+    }
+    const requestId = ++inspectRequestIdRef.current
+    const timer = window.setTimeout(() => {
+      void inspect(connectionId, {
+        remoteUrl: step.remoteUrl,
+        parentPath: resolved.path,
+        directoryName: step.repoName,
+      })
+        .then((status) => {
+          if (requestId === inspectRequestIdRef.current) {
+            setDestinationInspectStatus(status)
+          }
+        })
+        .catch(() => {
+          if (requestId === inspectRequestIdRef.current) {
+            setDestinationInspectStatus('available')
+          }
+        })
+    }, testDelayMs ?? 100)
+    return () => window.clearTimeout(timer)
+  }, [open, step, resolved.path, busy, connectionId])
+
+  const isDestinationInSuperOne = useMemo(
+    () =>
+      Boolean(clonePreviewPath) &&
+      isProjectPathRegistered(clonePreviewPath, connectionId, recentFolders, environments),
+    [clonePreviewPath, connectionId, recentFolders, environments],
+  )
+
+  const browseProjectExists = useMemo(
+    () =>
+      step.kind === 'browse' &&
+      Boolean(resolved.path) &&
+      isProjectPathRegistered(resolved.path, connectionId, recentFolders, environments),
+    [step.kind, resolved.path, connectionId, recentFolders, environments],
+  )
+
+  const destinationStatus: 'available' | 'same-origin-registered' | 'same-origin-unregistered' | 'conflict' =
+    destinationInspectStatus === 'same-origin'
+      ? isDestinationInSuperOne
+        ? 'same-origin-registered'
+        : 'same-origin-unregistered'
+      : destinationInspectStatus
+
+  const destinationWarning =
+    step.kind === 'destination' && clonePreviewPath && destinationStatus !== 'available'
+      ? t(
+          destinationStatus === 'same-origin-registered'
+            ? 'sidebar.addProject.destinationProjectExists'
+            : destinationStatus === 'same-origin-unregistered'
+              ? 'sidebar.addProject.destinationSameRepoExists'
+              : 'sidebar.addProject.destinationConflict',
+        )
+      : ''
   const isDefaultClonePath = useCallback(
     (dir: string) =>
       defaultClonePath !== null && ensureBrowseDirectoryPath(defaultClonePath) === dir,
@@ -887,9 +983,12 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
         // the picker would throw away).
         if (isLocal && !text) {
           void window.app.selectFolder().then((picked) => {
-            // Cancelled — stay on the source picker instead of dropping the
-            // user into a browser they never asked for.
-            if (picked) void addProject(picked, false)
+            if (!picked) return
+            if (isProjectPathRegistered(picked, connectionId, recentFolders, environments)) {
+              goToStep({ kind: 'browse' }, ensureBrowseDirectoryPath(picked))
+              return
+            }
+            void addProject(picked, false)
           })
           return
         }
@@ -898,7 +997,7 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
       }
       goToStep({ kind: 'repo', source }, text)
     },
-    [goToStep, initialPath, isLocal, addProject],
+    [goToStep, initialPath, isLocal, addProject, connectionId, recentFolders, environments],
   )
 
   /**
@@ -912,34 +1011,39 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
       if (!parentPath) return
       setBusy(true)
       setSubmitError('')
-      setCloneProgress(null)
-      const stopProgress = window.environment.onCloneProgress(setCloneProgress)
-      try {
-        const project = await window.environment.cloneRepository(connectionId, {
-          remoteUrl: step.remoteUrl,
-          parentPath,
-          directoryName: step.repoName,
-          shallow: shallowClone,
-        })
-        // Persist a changed default clone parent after a successful clone.
-        const currentDir = ensureBrowseDirectoryPath(
-          parentPathOverride ?? (query.trim() || parentPath),
-        )
-        if (saveAsDefault && currentDir && !isDefaultClonePath(currentDir)) {
-          await window.app.saveAppSettings({
-            defaultClonePaths: { [connectionId]: currentDir },
-          })
-          defaultClonePathRef.current = currentDir
-          setDefaultClonePath(currentDir)
-        }
-        onOpened(project)
-        onOpenChange(false)
-      } catch (err) {
-        setSubmitError(formatAddProjectError(err, t))
-      } finally {
-        stopProgress()
-        setBusy(false)
-      }
+      const currentDir = ensureBrowseDirectoryPath(
+        parentPathOverride ?? (query.trim() || parentPath),
+      )
+      const destinationPath = joinBrowsePath(parentPath, step.repoName)
+      const cloneId = useBackgroundCloneStore.getState().startClone({
+        connectionId,
+        remoteUrl: step.remoteUrl,
+        parentPath,
+        directoryName: step.repoName,
+        destinationPath,
+        shallow: shallowClone,
+        onBeforeSuccess: async () => {
+          if (saveAsDefault && currentDir && !isDefaultClonePath(currentDir)) {
+            await window.app.saveAppSettings({
+              defaultClonePaths: { [connectionId]: currentDir },
+            })
+            defaultClonePathRef.current = currentDir
+            setDefaultClonePath(currentDir)
+          }
+        },
+        onForegroundSuccess: (project) => {
+          setActiveCloneId(null)
+          setBusy(false)
+          onOpened(project)
+          onOpenChange(false)
+        },
+        onForegroundError: (err) => {
+          setActiveCloneId(null)
+          setBusy(false)
+          setSubmitError(formatAddProjectError(err, t))
+        },
+      })
+      setActiveCloneId(cloneId)
     },
     [
       step,
@@ -954,6 +1058,14 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
       shallowClone,
     ],
   )
+
+  const runInBackground = useCallback(() => {
+    if (!activeCloneId) return
+    useBackgroundCloneStore.getState().moveToBackground(activeCloneId)
+    setActiveCloneId(null)
+    setBusy(false)
+    onOpenChange(false)
+  }, [activeCloneId, onOpenChange])
 
   const activateItem = useCallback(
     (index: number) => {
@@ -1007,13 +1119,26 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
   /** ⇧↵ / confirm button: add or clone the typed path, not the highlighted child. */
   const commitCurrentPath = useCallback(() => {
     if (step.kind === 'browse') {
-      if (resolved.path) void addProject(resolved.path, !resolved.exists)
+      if (resolved.path && !browseProjectExists) void addProject(resolved.path, !resolved.exists)
       return
     }
     if (step.kind === 'destination') {
+      if (destinationStatus === 'same-origin-unregistered' && clonePreviewPath) {
+        void addProject(clonePreviewPath, false)
+        return
+      }
       void cloneProject()
     }
-  }, [step.kind, resolved.path, resolved.exists, addProject, cloneProject])
+  }, [
+    step.kind,
+    resolved.path,
+    resolved.exists,
+    browseProjectExists,
+    destinationStatus,
+    clonePreviewPath,
+    addProject,
+    cloneProject,
+  ])
 
   const submit = useCallback(() => {
     switch (step.kind) {
@@ -1101,11 +1226,21 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     const picked = await window.app.selectFolder(defaultPath)
     if (!picked) return
     if (step.kind === 'browse') {
+      if (isProjectPathRegistered(picked, connectionId, recentFolders, environments)) {
+        setQuery(ensureBrowseDirectoryPath(picked))
+        setSelectedIndex(0)
+        setSubmitError('')
+        requestAnimationFrame(() => inputRef.current?.focus())
+        return
+      }
       void addProject(picked, false)
       return
     }
     if (step.kind === 'destination') {
-      void cloneProject(picked)
+      setQuery(ensureBrowseDirectoryPath(picked))
+      setSelectedIndex(0)
+      setSubmitError('')
+      requestAnimationFrame(() => inputRef.current?.focus())
     }
   }, [
     listedPath,
@@ -1113,7 +1248,9 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     resolved.path,
     step.kind,
     addProject,
-    cloneProject,
+    connectionId,
+    recentFolders,
+    environments,
   ])
 
   const moveSelection = useCallback(
@@ -1132,7 +1269,12 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
         ? step.source === 'github'
           ? itemCount > 0 || repoResolved !== null
           : repoResolved !== null
-        : resolved.path.length > 0)
+        : step.kind === 'destination'
+          ? resolved.path.length > 0 &&
+            (destinationStatus === 'available' || destinationStatus === 'same-origin-unregistered')
+          : step.kind === 'browse'
+            ? resolved.path.length > 0 && !browseProjectExists
+            : resolved.path.length > 0)
 
   return {
     step,
@@ -1167,7 +1309,12 @@ export function useAddProjectDialog(input: UseAddProjectDialogInput) {
     loadMoreGithubRepos,
     busy,
     cloneProgress,
+    canRunInBackground: Boolean(activeCloneId && busy),
+    runInBackground,
     submitError,
+    destinationStatus,
+    destinationWarning,
+    browseProjectExists,
     resolved,
     repoResolved,
     willCreatePath,

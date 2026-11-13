@@ -793,15 +793,31 @@ const environmentAPI = {
       path: string
       entries: Array<{ name: string; path: string; type: 'directory' }>
     }>,
+  inspectCloneDestination: (
+    connectionId: string,
+    input: { remoteUrl: string; parentPath: string; directoryName?: string },
+  ) =>
+    ipcRenderer.invoke(
+      AgentIpcChannels.ENVIRONMENT_INSPECT_CLONE_DESTINATION,
+      connectionId,
+      input,
+    ) as Promise<'available' | 'same-origin' | 'same-origin-registered' | 'same-origin-unregistered' | 'conflict'>,
   cloneRepository: (
     connectionId: string,
-    input: { remoteUrl: string; parentPath: string; directoryName?: string; shallow?: boolean },
+    input: {
+      remoteUrl: string
+      parentPath: string
+      directoryName?: string
+      shallow?: boolean
+      ifExists?: 'reuse-or-rename' | 'reuse'
+      cloneId?: string
+    },
   ) =>
     ipcRenderer.invoke(
       AgentIpcChannels.ENVIRONMENT_CLONE_REPOSITORY,
       connectionId,
       input,
-    ) as Promise<{ projectId: string; path: string; name: string; lastActiveAt?: number }>,
+    ) as Promise<{ projectId: string; path: string; name: string; lastActiveAt?: number; reused?: boolean }>,
   connect: (connectionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_CONNECT, connectionId),
   disconnect: (connectionId: string) =>
@@ -920,8 +936,14 @@ const environmentAPI = {
     ipcRenderer.on(AgentIpcChannels.ENVIRONMENT_PROJECTS_CHANGED_EVENT, handler)
     return () => ipcRenderer.removeListener(AgentIpcChannels.ENVIRONMENT_PROJECTS_CHANGED_EVENT, handler)
   },
-  onCloneProgress: (callback: (percent: number) => void) => {
-    const handler = (_e: unknown, percent: number): void => callback(percent)
+  onCloneProgress: (callback: (event: { cloneId?: string; percent: number }) => void) => {
+    const handler = (_e: unknown, payload: number | { cloneId?: string; percent: number }): void => {
+      if (typeof payload === 'number') {
+        callback({ percent: payload })
+      } else {
+        callback(payload)
+      }
+    }
     ipcRenderer.on(AgentIpcChannels.ENVIRONMENT_CLONE_PROGRESS, handler)
     return () => ipcRenderer.removeListener(AgentIpcChannels.ENVIRONMENT_CLONE_PROGRESS, handler)
   },

@@ -45,7 +45,7 @@ export interface CloneRepositoryInput {
    * of this origin, otherwise clone beside it as `<name>-2`, `<name>-3`, ….
    * Omitted: a folder that already exists is a conflict.
    */
-  ifExists?: 'reuse-or-rename'
+  ifExists?: 'reuse-or-rename' | 'reuse'
 }
 
 /** `git clone` argv after the binary name. Exported so tests can lock the flag order. */
@@ -56,6 +56,15 @@ export function buildCloneArgs(input: CloneRepositoryInput, destinationPath: str
   // `--` stops git from reading a hostile URL as an option.
   args.push('--', input.remoteUrl.trim(), destinationPath)
   return args
+}
+
+export type CloneDestinationStatus = 'available' | 'same-origin' | 'conflict'
+
+export function inspectCloneDestination(input: CloneRepositoryInput): CloneDestinationStatus {
+  const destination = resolveCloneDestination(input)
+  if (!existsSync(destination.path)) return 'available'
+  const wanted = normalizeGitRemoteUrl(input.remoteUrl)
+  return reuseCheckout(destination.path, destination.name, wanted) ? 'same-origin' : 'conflict'
 }
 
 export interface CloneRepositoryResult {
@@ -90,7 +99,7 @@ function sameDirectory(left: string, right: string): boolean {
  * Origin of a checkout at exactly `abs`. `git config` walks to an enclosing
  * repository, so a plain folder inside one must not count as that checkout.
  */
-function originUrl(abs: string): string | null {
+export function originUrl(abs: string): string | null {
   const top = gitText(abs, ['rev-parse', '--show-toplevel'])
   if (!top || !sameDirectory(abs, top)) return null
   return gitText(abs, ['config', '--get', 'remote.origin.url'])
@@ -112,12 +121,15 @@ export function planCloneTarget(input: CloneRepositoryInput): {
   directoryName?: string
 } {
   const destination = resolveCloneDestination(input)
-  if (input.ifExists !== 'reuse-or-rename' || !existsSync(destination.path)) {
+  if ((input.ifExists !== 'reuse-or-rename' && input.ifExists !== 'reuse') || !existsSync(destination.path)) {
     return { directoryName: input.directoryName }
   }
   const wanted = normalizeGitRemoteUrl(input.remoteUrl)
   const direct = reuseCheckout(destination.path, destination.name, wanted)
   if (direct) return { reuse: direct }
+  if (input.ifExists === 'reuse') {
+    return { directoryName: input.directoryName }
+  }
   const parent = dirname(destination.path)
   for (let n = 2; ; n++) {
     const directoryName = `${destination.name}-${n}`

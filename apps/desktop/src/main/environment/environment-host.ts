@@ -2739,9 +2739,55 @@ export class EnvironmentHost {
    * The parent directory is created when missing ("Create & Clone").
    * `onProgress` fires for local clones only; the node RPC has no progress push.
    */
+  async inspectCloneDestination(
+    connectionId: string,
+    input: { remoteUrl: string; parentPath: string; directoryName?: string },
+  ): Promise<'available' | 'same-origin-registered' | 'same-origin-unregistered' | 'conflict'> {
+    if (connectionId !== 'local') {
+      return 'available'
+    }
+    const { inspectCloneDestination, originUrl, resolveCloneDestination } = await import('@superone/shared/git-clone')
+    const { normalizeGitRemoteUrl, repoIdentityRemote } = await import('@superone/shared/git-remote-url')
+    const { realpathSync } = await import('node:fs')
+    try {
+      const expandedParent = this.expandLocalPath(input.parentPath)
+      const destPath = resolveCloneDestination({
+        ...input,
+        parentPath: expandedParent,
+      }).path
+      const wantedRemote = normalizeGitRemoteUrl(input.remoteUrl)
+      const projects = await this.listProjects(connectionId)
+      const registered = projects.some((project) => {
+        if (project.path === destPath) return true
+        try {
+          if (realpathSync(project.path) === realpathSync(destPath)) return true
+        } catch {
+        }
+        if (!wantedRemote) return false
+        const identityRemote = normalizeGitRemoteUrl(repoIdentityRemote(project.repoIdentity))
+        if (identityRemote && identityRemote === wantedRemote) return true
+        const diskOrigin = normalizeGitRemoteUrl(originUrl(project.path))
+        return diskOrigin !== null && diskOrigin === wantedRemote
+      })
+      if (registered) {
+        return 'same-origin-registered'
+      }
+      const status = inspectCloneDestination({
+        ...input,
+        parentPath: expandedParent,
+      })
+      if (status === 'conflict') {
+        return 'conflict'
+      }
+      return status === 'same-origin' ? 'same-origin-unregistered' : 'available'
+    } catch {
+      return 'available'
+    }
+  }
+
   async cloneRepository(
     connectionId: string,
-    input: { remoteUrl: string; parentPath: string; directoryName?: string; shallow?: boolean; ifExists?: 'reuse-or-rename' },
+    input: { remoteUrl: string; parentPath: string; directoryName?: string; shallow?: boolean; ifExists?: 'reuse-or-rename' | 'reuse' },
     onProgress?: (percent: number) => void,
   ): Promise<ClonedProject> {
     if (connectionId !== 'local') {

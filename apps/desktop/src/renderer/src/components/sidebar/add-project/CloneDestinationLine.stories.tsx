@@ -37,6 +37,12 @@ export const Receiving: Story = {
 
 export const AlmostDone: Story = { args: { cloning: true, progress: 97 } }
 
+export const WithWarning: Story = {
+  args: {
+    warning: 'Project already exists.',
+  },
+}
+
 export const LongPathNarrow: Story = {
   args: {
     cloning: true,

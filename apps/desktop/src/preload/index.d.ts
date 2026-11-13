@@ -1312,6 +1312,10 @@ export interface EnvironmentAPI extends MediaComposerAPI {
     absolutePath: string,
   ): Promise<{ path: string; entries: Array<{ name: string; path: string; type: 'directory' }> }>
   /** Clone a repository onto a host and register the clone as a project. */
+  inspectCloneDestination(
+    connectionId: string,
+    input: { remoteUrl: string; parentPath: string; directoryName?: string },
+  ): Promise<'available' | 'same-origin' | 'same-origin-registered' | 'same-origin-unregistered' | 'conflict'>
   cloneRepository(
     connectionId: string,
     input: {
@@ -1319,9 +1323,10 @@ export interface EnvironmentAPI extends MediaComposerAPI {
       parentPath: string
       directoryName?: string
       shallow?: boolean
-      ifExists?: 'reuse-or-rename'
+      ifExists?: 'reuse-or-rename' | 'reuse'
+      cloneId?: string
     },
-  ): Promise<{ projectId: string; path: string; name: string; lastActiveAt?: number }>
+  ): Promise<{ projectId: string; path: string; name: string; lastActiveAt?: number; reused?: boolean }>
   connect(connectionId: string): Promise<unknown>
   disconnect(connectionId: string): Promise<void>
   forget(connectionId: string): Promise<void>
@@ -1389,7 +1394,7 @@ export interface EnvironmentAPI extends MediaComposerAPI {
   onProjectsChanged(callback: (connectionId: string) => void): () => void
   onInstallProgress(callback: (progress: EnvironmentInstallProgress) => void): () => void
   /** Download percent of the in-flight local `cloneRepository` from this window. */
-  onCloneProgress(callback: (percent: number) => void): () => void
+  onCloneProgress(callback: (event: { cloneId?: string; percent: number }) => void): () => void
 }
 
 /** Selectable Host from local ~/.ssh/config (see main environment/ssh-config). */

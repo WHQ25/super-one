@@ -482,6 +482,9 @@ export type Messages = {
       clonesInto: string
       cloningInto: string
       cloning: string
+      runInBackground: string
+      cloneCompleted: string
+      cloneFailed: string
       /** Fixed-height hint when submit will mkdir the typed path (or parent). */
       willCreateDirectory: string
       /** Section header for the create-missing-path candidate group. */
@@ -495,6 +498,9 @@ export type Messages = {
       pathRequired: string
       /** Clone failed because `<parent>/<repo>` is already on disk. */
       destinationExists: string
+      destinationProjectExists: string
+      destinationSameRepoExists: string
+      destinationConflict: string
       browse: string
       /** Prefix for the native folder-picker control: "Browse with" + OS icon. */
       browseWith: string
@@ -5588,6 +5594,9 @@ export const en: Messages = {
       clonesInto: 'Clones into {{path}}',
       cloningInto: 'Cloning into {{path}}',
       cloning: 'Cloning...',
+      runInBackground: 'Run in Background',
+      cloneCompleted: 'Cloned {{name}}',
+      cloneFailed: 'Failed to clone {{name}}: {{error}}',
       willCreateDirectory: 'Will create {{path}}',
       createSection: 'Create',
       createDirectory: 'Create Directory',
@@ -5595,7 +5604,10 @@ export const en: Messages = {
       shallowClone: 'Shallow Clone (--depth=1)',
       pathRequired: 'Enter a project path.',
       destinationExists:
-        '"{{path}}" already exists. Pick another folder, or add that project instead of cloning.',
+        '"{{path}}" already exists with a different repository. Choose another directory to clone into.',
+      destinationProjectExists: 'Project already exists.',
+      destinationSameRepoExists: 'Repository already exists.',
+      destinationConflict: 'Clone name conflict: a different folder already exists here.',
       browse: 'Browse',
       browseWith: 'Browse with',
       browseWithFinder: 'Browse with Finder',

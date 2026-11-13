@@ -539,7 +539,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     directoryName?: string
     shallow?: boolean
     /** Reuse an unregistered checkout of the same origin (`reused`), else clone under a free name. */
-    ifExists?: 'reuse-or-rename'
+    ifExists?: 'reuse-or-rename' | 'reuse'
   }): Promise<ClonedProject> {
     return this.client.rpc('git.clone', input)
   }

@@ -1728,7 +1728,7 @@ async function handleGitClone(payload: unknown, ctx: RpcContext): Promise<RpcRes
       parentPath: expandHostPath(parentPath),
       directoryName: typeof p.directoryName === 'string' ? p.directoryName : undefined,
       shallow: p.shallow === true,
-      ...(p.ifExists === 'reuse-or-rename' ? { ifExists: 'reuse-or-rename' as const } : {}),
+      ...(p.ifExists === 'reuse-or-rename' || p.ifExists === 'reuse' ? { ifExists: p.ifExists } : {}),
     }
     const cloned = await cloneRepository(input)
     const opened = ctx.projects.open(cloned.path, cloned.name)

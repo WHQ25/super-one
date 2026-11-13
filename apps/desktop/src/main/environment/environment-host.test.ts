@@ -265,4 +265,35 @@ describe('EnvironmentHost local clone', () => {
       spy.mockRestore()
     }
   })
+
+  it('inspectCloneDestination detects a same-origin registered project at a different path without repoIdentity', async () => {
+    const ud = mkdtempSync(join(tmpdir(), 'eh-inspect-ud-'))
+    const existingRepo = mkdtempSync(join(tmpdir(), 'eh-inspect-repo-'))
+    const cloneParent = mkdtempSync(join(tmpdir(), 'eh-inspect-parent-'))
+    electron.setUserData(ud)
+    dirs.push(ud, existingRepo, cloneParent)
+
+    const { execFileSync } = await import('node:child_process')
+    execFileSync('git', ['init', '-q', existingRepo])
+    execFileSync('git', ['-C', existingRepo, 'remote', 'add', 'origin', 'git@github.com:acme/app.git'])
+
+    const host = new EnvironmentHost(ud)
+    vi.spyOn(host, 'listProjects').mockResolvedValue([
+      {
+        projectId: 'p1',
+        name: 'app',
+        path: existingRepo,
+      },
+    ])
+    try {
+      const status = await host.inspectCloneDestination('local', {
+        remoteUrl: 'https://github.com/acme/app.git',
+        parentPath: cloneParent,
+        directoryName: 'app',
+      })
+      expect(status).toBe('same-origin-registered')
+    } finally {
+      host.dispose()
+    }
+  })
 })

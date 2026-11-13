@@ -17,6 +17,8 @@ import type { EnvironmentBucket, HostCheckout, SidebarGroupBy, SidebarSort } fro
 import { AutomationDialog } from '@/components/AutomationDialog'
 import { ProjectHistoryList } from '@/components/sidebar/ProjectHistoryList'
 import { ProjectSidebarRow } from '@/components/sidebar/ProjectSidebarRow'
+import { CloningProjectRow } from '@/components/sidebar/CloningProjectRow'
+import { useBackgroundCloneStore } from '@/stores/background-clones'
 import { SidebarCollapse, SidebarHeightMorph } from '@/components/sidebar/SidebarCollapse'
 import { SidebarSectionLabel } from '@/components/sidebar/SidebarSectionLabel'
 import { foldProjectSettled, useSidebarSectionCollapsed } from '@/components/sidebar/sidebar-section-collapse'
@@ -138,6 +140,7 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
     environments, groupBy, sort, expandedProjectKeys, collapsedEnvironmentIds,
   } = props
   const collapsedIds = new Set(collapsedEnvironmentIds)
+  const backgroundCloneTasks = useBackgroundCloneStore((s) => s.tasks).filter((task) => task.backgrounded)
 
   const environmentHeights = groupBy === 'environment' && !props.flat && props.sectionSizes
     ? multiHostProjectListMaxHeights(
@@ -189,24 +192,30 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
     const sections = environmentSections(environments, sort)
     return (
       <div className="flex w-0 min-w-full flex-col px-2 pb-1.5 [&>*]:min-w-0">
-        {sections.map(({ bucket, checkouts }) => (
+        {sections.map(({ bucket, checkouts }) => {
+          const cloningTasks = backgroundCloneTasks.filter((task) => task.connectionId === bucket.connectionId)
+          return (
           <div key={bucket.environmentId} data-environment-id={bucket.environmentId}>
-            {bucket.projectsStatus === 'loading' && checkouts.length === 0 && (
+            {bucket.projectsStatus === 'loading' && checkouts.length === 0 && cloningTasks.length === 0 && (
               <div className="px-2.5 py-2 text-xs text-sidebar-foreground/70">{t('common.loading')}</div>
             )}
-            {bucket.projectsStatus === 'error' && checkouts.length === 0 && (
+            {bucket.projectsStatus === 'error' && checkouts.length === 0 && cloningTasks.length === 0 && (
               <ProjectLoadError
                 bucket={bucket}
                 className="px-2.5 py-2 text-left text-xs text-sidebar-foreground/70"
                 onRetry={props.onRefreshEnvironment}
               />
             )}
-            {checkouts.length === 0 && bucket.projectsStatus !== 'loading' && bucket.projectsStatus !== 'error' && (
+            {checkouts.length === 0 && cloningTasks.length === 0 && bucket.projectsStatus !== 'loading' && bucket.projectsStatus !== 'error' && (
               <div className="px-2.5 py-2 text-xs text-sidebar-foreground/70">{t('sidebar.environmentSection.empty')}</div>
             )}
+            {cloningTasks.map((task) => (
+              <CloningProjectRow key={task.cloneId} name={task.directoryName} progress={task.progress} />
+            ))}
             {checkouts.map((checkout) => checkoutRow(checkout, bucket))}
           </div>
-        ))}
+          )
+        })}
         {sections.length === 0 && (
           <div className="px-2.5 py-2 text-xs text-sidebar-foreground/70">{t('sidebar.environmentSection.empty')}</div>
         )}
@@ -221,6 +230,7 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
         {sections.map(({ bucket, checkouts }) => {
           const collapsed = collapsedEnvironmentIds.includes(bucket.environmentId)
           const projectMax = environmentHeights?.projects.get(bucket.environmentId)
+          const cloningTasks = backgroundCloneTasks.filter((task) => task.connectionId === bucket.connectionId)
           return (
             <div key={bucket.environmentId} data-environment-id={bucket.environmentId}>
               <EnvironmentHeader
@@ -241,19 +251,22 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
               <div className="pl-1">
                 <SidebarCollapse open={!collapsed} unmountClosed>
                   <EnvironmentProjectScroll maxHeight={projectMax?.kind === 'px' ? projectMax.maxHeight : undefined}>
-                    {bucket.projectsStatus === 'loading' && checkouts.length === 0 && (
+                    {bucket.projectsStatus === 'loading' && checkouts.length === 0 && cloningTasks.length === 0 && (
                       <div className="px-2.5 py-2 text-xs text-sidebar-foreground/70">{t('common.loading')}</div>
                     )}
-                    {bucket.projectsStatus === 'error' && checkouts.length === 0 && (
+                    {bucket.projectsStatus === 'error' && checkouts.length === 0 && cloningTasks.length === 0 && (
                       <ProjectLoadError
                         bucket={bucket}
                         className="px-2.5 py-2 text-left text-xs text-sidebar-foreground/70"
                         onRetry={props.onRefreshEnvironment}
                       />
                     )}
-                    {bucket.projectsStatus === 'ready' && checkouts.length === 0 && (
+                    {bucket.projectsStatus === 'ready' && checkouts.length === 0 && cloningTasks.length === 0 && (
                       <div className="px-2.5 py-2 text-xs text-sidebar-foreground/70">{t('sidebar.environmentSection.empty')}</div>
                     )}
+                    {cloningTasks.map((task) => (
+                      <CloningProjectRow key={task.cloneId} name={task.directoryName} progress={task.progress} />
+                    ))}
                     {checkouts.map((checkout) => checkoutRow(checkout, bucket))}
                   </EnvironmentProjectScroll>
                 </SidebarCollapse>
@@ -280,6 +293,9 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
           showLabel
           onRetry={props.onRefreshEnvironment}
         />
+      ))}
+      {backgroundCloneTasks.map((task) => (
+        <CloningProjectRow key={task.cloneId} name={task.directoryName} progress={task.progress} />
       ))}
       {groups.map((group) => {
         if (group.checkouts.length === 1) {

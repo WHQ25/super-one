@@ -49,6 +49,11 @@ Root: `bun run pack:cli` / `bun run publish:cli`. Version defaults to monorepo r
 (lockstep with desktop). Dist-tag from version (`-alpha*` → `alpha`). Requires `NPM_TOKEN` or
 npm Trusted Publishing for real publish.
 
+**Real remote host from a dev desktop:** add the SSH host in Settings → Remote Control from
+`bun run dev`. The dev desktop packs this checkout (`pack:npm --variant dev`), installs it into
+the host's dev channel (`~/.superone/dev`, port 7792, `superone-dev.service`) and never touches
+stable or alpha data. After changing CLI/runtime code, use **Redeploy Dev Build** on the node row.
+
 
 ## Reloading code
 

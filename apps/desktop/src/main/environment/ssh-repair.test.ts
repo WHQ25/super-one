@@ -1,4 +1,14 @@
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+
+// Unpackaged tests would otherwise be the dev desktop.
+const variant = vi.hoisted(() => ({ id: 'alpha' as 'stable' | 'alpha' | 'dev' }))
+vi.mock('../variant', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../variant')>()),
+  variantId: () => variant.id,
+}))
+afterEach(() => {
+  variant.id = 'alpha'
+})
 import type { EndpointProfile } from '@superone/shared/environment'
 import {
   repairPairingOverSsh,
@@ -319,5 +329,36 @@ describe('repair pairing over SSH', () => {
     )
 
     expect(phases).toEqual(['starting', 'pairing'])
+  })
+})
+
+describe('repair pairing from a dev desktop', () => {
+  const legacyAlpha: EndpointProfile = {
+    ...SSH_ENDPOINT,
+    // Paired before the dev channel existed; no remoteExec stored, so the probe
+    // would pick the dev binary and start it on the alpha store.
+    ssh: { ...SSH_ENDPOINT.ssh, remotePort: 7790, remoteNodeHome: '/home/u/.superone/alpha/node' },
+  }
+
+  it('refuses a node on the alpha channel before starting anything', async () => {
+    variant.id = 'dev'
+    const d = deps({ probeHost: vi.fn().mockResolvedValue({ ...PROBE, superonePath: '/home/u/.superone/dev/npm/bin/superone' }) })
+
+    await expect(repairPairingOverSsh({ connectionId: 'conn-1', endpointProfiles: [legacyAlpha] }, d))
+      .rejects.toMatchObject({ code: 'failed_precondition', message: expect.stringMatching(/alpha channel/) })
+    expect(d.ensureTunnel).not.toHaveBeenCalled()
+    expect(d.sshCapture).not.toHaveBeenCalled()
+  })
+
+  it('repairs a dev-channel node', async () => {
+    variant.id = 'dev'
+    const d = deps({ probeHost: vi.fn().mockResolvedValue({ ...PROBE, superonePath: '/home/u/.superone/dev/npm/bin/superone' }) })
+    const devProfile: EndpointProfile = { ...SSH_ENDPOINT, ssh: { ...SSH_ENDPOINT.ssh, remotePort: 7792 } }
+
+    await repairPairingOverSsh({ connectionId: 'conn-1', endpointProfiles: [devProfile] }, d)
+
+    const call = (d.sshCapture as ReturnType<typeof vi.fn>).mock.calls[0]![0]
+    expect(call.command).toContain('/home/u/.superone/dev/node')
+    expect(call.command).toContain('7792')
   })
 })

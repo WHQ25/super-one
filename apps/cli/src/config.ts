@@ -1,4 +1,4 @@
-import { defaultNodeRemotePort } from '@superone/shared/environment/client-view'
+import { defaultNodeRemotePort, nodeChannelForVariant } from '@superone/shared/environment/client-view'
 import { resolveSuperoneHome } from '@superone/runtime/fs/superone-home'
 import { join } from 'node:path'
 
@@ -7,7 +7,7 @@ export const DEFAULT_NODE_HOME = join(resolveSuperoneHome(), 'node')
 
 /** Default loopback bind for SSH-forward deployments. */
 export const DEFAULT_BIND_HOST = '127.0.0.1'
-export const DEFAULT_BIND_PORT = defaultNodeRemotePort(process.env.SUPERONE_VARIANT === 'alpha' ? 'alpha' : 'stable')
+export const DEFAULT_BIND_PORT = defaultNodeRemotePort(nodeChannelForVariant(process.env.SUPERONE_VARIANT))
 
 export interface NodeRuntimeConfig {
   nodeHome: string

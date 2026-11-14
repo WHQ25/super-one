@@ -3,6 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import {
   ArrowUpCircle,
+  CloudUpload,
   FlaskConical,
   Loader2,
   Monitor,
@@ -16,6 +17,7 @@ import {
   Unplug,
 } from 'lucide-react'
 import {
+  canRedeployDevNode,
   canRepairOverSsh as canRepairOverSshShared,
   type EnvironmentInstallProgress,
   type EnvironmentListItem,
@@ -36,6 +38,7 @@ import { invalidateEnvironmentList, loadEnvironmentItems, notifyEnvironmentListC
 import { startEnvironmentLabelSync } from '@/lib/multi-host/sync-environment-labels'
 import { nodeUpgradeVersions } from '@/lib/node-upgrade'
 import { AddEnvironmentDialog } from './AddEnvironmentDialog'
+import { useAppStore } from '@/stores/app'
 import { DeviceRow, computerKind } from '../DeviceRow'
 import { SettingsSection, settingsRowClassName } from '../SettingsSection'
 
@@ -113,6 +116,7 @@ const CHANNEL_META: Record<
  */
 export function EnvironmentsPage() {
   const { t } = useTranslation()
+  const devBuild = useAppStore(s => s.appVariant) === 'dev'
   const [items, setItems] = useState<EnvironmentListItem[]>([])
   const [loading, setLoading] = useState(true)
   const [busyId, setBusyId] = useState<string | null>(null)
@@ -237,7 +241,10 @@ export function EnvironmentsPage() {
   function handleUpgrade(item: EnvironmentListItem): void {
     void run(item.connectionId, async () => {
       const result = await window.environment.upgradeNode(item.connectionId)
-      toast.success(t('settings.environments.upgradeNodeSuccess', { version: result.version }))
+      toast.success(t(
+        devBuild ? 'settings.environments.redeployDevNodeSuccess' : 'settings.environments.upgradeNodeSuccess',
+        { version: result.version },
+      ))
       for (const w of result.warnings) toast.warning(w)
     })
   }
@@ -815,6 +822,8 @@ function EnvironmentDeviceRow({
         : busyProgress.phase
       : null
   const controlsDisabled = busy || actionsLocked
+  // A dev desktop redeploys its own build whatever the versions say.
+  const devRedeploy = useAppStore(s => s.appVariant) === 'dev' && canRedeployDevNode(item)
 
   return (
     <DeviceRow
@@ -870,7 +879,16 @@ function EnvironmentDeviceRow({
                   </IconButton>
                 </>
               )}
-              {item.nodeUpgrade?.canUpgradeOverSsh ? (
+              {devRedeploy ? (
+                <IconButton
+                  size="md"
+                  tooltip={t('settings.environments.redeployDevNode')}
+                  disabled={controlsDisabled}
+                  onClick={onUpgrade}
+                >
+                  <CloudUpload />
+                </IconButton>
+              ) : item.nodeUpgrade?.canUpgradeOverSsh ? (
                 <IconButton
                   size="md"
                   tooltip={busy ? t('settings.environments.upgradingNode') : t('settings.environments.upgradeNode')}

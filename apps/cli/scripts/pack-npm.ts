@@ -13,6 +13,7 @@
  *   bun run pack:npm -- --version 0.49.5-alpha.1
  *   bun run pack:npm -- --publish --tag alpha
  *   bun run pack:npm -- --dry-run   # npm pack only
+ *   bun run pack:npm -- --variant dev --out dist/npm-dev --dry-run   # dev desktop deploys
  */
 
 import { createHash } from 'node:crypto'
@@ -34,6 +35,8 @@ import {
   cliNodeEngineRange,
   cliNodeEsbuildTarget,
 } from '@superone/shared/environment'
+import type { NodeChannel } from '@superone/shared/environment/client-view'
+import { channelFromVersion } from '@superone/shared/update-channels'
 
 const CLI_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..')
 const REPO_ROOT = resolve(CLI_ROOT, '../..')
@@ -188,8 +191,15 @@ export interface PackNpmResult {
 export async function packNpm(options: {
   version?: string
   outDir?: string
+  /**
+   * Channel baked into the bundle; it picks the node's data root, port and
+   * service name. Defaults to the version's prerelease tag. `dev` packages are
+   * deployed by a dev desktop, marked private and never published.
+   */
+  variant?: NodeChannel
 }): Promise<PackNpmResult> {
   const version = options.version?.trim() || readRootVersion()
+  const variant = options.variant ?? channelFromVersion(version)
   const outDir = resolve(options.outDir || OUT_DIR)
 
   rmSync(outDir, { recursive: true, force: true })
@@ -221,7 +231,9 @@ export async function packNpm(options: {
     },
     banner: {
       js: [
-        `process.env.SUPERONE_VARIANT = ${JSON.stringify(/-alpha(?:[.-]|$)/.test(version) ? 'alpha' : 'stable')};`,
+        `process.env.SUPERONE_VARIANT = ${JSON.stringify(variant)};`,
+        // A dev version carries no prerelease tag; follow the dev desktop's alpha harness manifests.
+        ...(variant === 'dev' ? ['process.env.SUPERONE_HARNESS_CHANNEL ??= "alpha";'] : []),
         "import { createRequire as __superoneCreateRequire } from 'node:module';",
         "import { fileURLToPath as __superoneFileURLToPath } from 'node:url';",
         "import { dirname as __superoneDirname } from 'node:path';",
@@ -240,7 +252,7 @@ export async function packNpm(options: {
 
   writeFileSync(
     join(outDir, 'package.json'),
-    JSON.stringify(buildPublishPackageJson(version), null, 2) + '\n',
+    JSON.stringify({ ...buildPublishPackageJson(version), ...(variant === 'dev' ? { private: true } : {}) }, null, 2) + '\n',
   )
 
   writeFileSync(
@@ -250,6 +262,7 @@ export async function packNpm(options: {
         name: PUBLIC_CLI_PACKAGE,
         version,
         kind: 'npm',
+        variant,
         minNode: MIN_CLI_NODE_VERSION,
         minNodeMajor: Number(MIN_CLI_NODE_VERSION.split('.')[0]),
         builtAt: new Date().toISOString(),
@@ -281,14 +294,26 @@ function argValue(args: string[], name: string): string | undefined {
   return i >= 0 && i + 1 < args.length ? args[i + 1] : undefined
 }
 
+function variantArg(value: string | undefined): NodeChannel | undefined {
+  if (value === undefined) return undefined
+  if (value !== 'stable' && value !== 'alpha' && value !== 'dev') {
+    throw new Error(`unsupported variant ${value}; expected stable, alpha or dev`)
+  }
+  return value
+}
+
 async function main(): Promise<void> {
   const args = process.argv.slice(2)
   const version = argValue(args, '--version')
   const tagArg = argValue(args, '--tag')
   const doPublish = args.includes('--publish')
   const dryRun = args.includes('--dry-run')
+  const variant = variantArg(argValue(args, '--variant'))
+  // Published channels follow the version's dist-tag; an override could ship the wrong channel.
+  if (variant && doPublish) throw new Error('--variant is for local packages and cannot be combined with --publish')
+  const out = argValue(args, '--out')
 
-  const result = await packNpm({ version })
+  const result = await packNpm({ version, variant, outDir: out && resolve(CLI_ROOT, out) })
   const tag = tagArg || distTagForVersion(result.version)
   assertSafePublishVersion(result.version, tag)
 

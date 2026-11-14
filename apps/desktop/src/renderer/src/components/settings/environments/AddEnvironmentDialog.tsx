@@ -1,4 +1,4 @@
-import { defaultNodeRemotePort } from '@superone/shared/environment/client-view'
+import { defaultNodeRemotePort, nodeChannelForVariant } from '@superone/shared/environment/client-view'
 import { loadEnvironmentItems } from '@/lib/environment-list'
 import { useAppStore } from '@/stores/app'
 import { useEffect, useState } from 'react'
@@ -36,7 +36,7 @@ interface AddEnvironmentDialogProps {
 
 /**
  * Add a remote node over SSH only.
- * - Known Hosts: pick a Host from ~/.ssh/config (compact cards) + optional local dist upload.
+ * - Known Hosts: pick a Host from ~/.ssh/config (compact cards).
  * - Add New Host: free-form SSH (destination, ports, identity, remote exec, …).
  *
  * Pairing is performed inside the SSH bootstrap (pair-create on the remote, then
@@ -46,7 +46,7 @@ interface AddEnvironmentDialogProps {
 export function AddEnvironmentDialog({ open, onOpenChange, onAdded }: AddEnvironmentDialogProps) {
   const { t } = useTranslation()
   const appVariant = useAppStore(s => s.appVariant)
-  const defaultRemotePort = String(defaultNodeRemotePort(appVariant === 'stable' ? 'stable' : 'alpha'))
+  const defaultRemotePort = String(defaultNodeRemotePort(nodeChannelForVariant(appVariant)))
   const [mode, setMode] = useState<'ssh' | 'manual'>('ssh')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -70,16 +70,13 @@ export function AddEnvironmentDialog({ open, onOpenChange, onAdded }: AddEnviron
   /** Selected Host alias from ~/.ssh/config (Known Hosts tab). */
   const [selectedAlias, setSelectedAlias] = useState<string | null>(null)
 
-  /** Product default is npm registry; upload is for local dist / debug. */
-  const [useLocalUpload, setUseLocalUpload] = useState(false)
-
   // Add New Host — basic SSH
   const [destination, setDestination] = useState('')
   const [sshPort, setSshPort] = useState('')
   const [identityFile, setIdentityFile] = useState('')
   const [sshLabel, setSshLabel] = useState('')
 
-  // Advanced (optional node install path + port; local dist for dev)
+  // Advanced (optional node install path + port)
   const [remoteExec, setRemoteExec] = useState('')
   const [remotePort, setRemotePort] = useState(defaultRemotePort)
 
@@ -122,7 +119,6 @@ export function AddEnvironmentDialog({ open, onOpenChange, onAdded }: AddEnviron
     setProgress(null)
     setShowAdvanced(false)
     setSelectedAlias(null)
-    setUseLocalUpload(false)
     setDestination('')
     setRemoteExec('')
     setRemotePort(defaultRemotePort)
@@ -147,7 +143,6 @@ export function AddEnvironmentDialog({ open, onOpenChange, onAdded }: AddEnviron
         const result = await window.environment.addOverSsh({
           // Host alias — system OpenSSH resolves User / Port / IdentityFile.
           destination: selectedAlias,
-          installSource: useLocalUpload ? 'upload' : 'registry',
           label: selectedAlias,
         })
         onAdded(result.warnings)
@@ -155,7 +150,6 @@ export function AddEnvironmentDialog({ open, onOpenChange, onAdded }: AddEnviron
         const result = await window.environment.addOverSsh({
           destination: destination.trim(),
           remoteExec: remoteExec.trim() || undefined,
-          installSource: useLocalUpload ? 'upload' : 'registry',
           remotePort: Number(remotePort) || undefined,
           sshPort: sshPort ? Number(sshPort) : undefined,
           identityFile: identityFile.trim() || undefined,
@@ -260,17 +254,6 @@ export function AddEnvironmentDialog({ open, onOpenChange, onAdded }: AddEnviron
                 })}
               </ul>
             )}
-
-            {import.meta.env.DEV && (
-              <label className="flex items-center gap-2 text-xs text-foreground">
-                <input
-                  type="checkbox"
-                  checked={useLocalUpload}
-                  onChange={(e) => setUseLocalUpload(e.target.checked)}
-                />
-                {t('settings.environments.add.useLocalUpload')}
-              </label>
-            )}
           </div>
         ) : (
           <div className="space-y-3">
@@ -331,16 +314,6 @@ export function AddEnvironmentDialog({ open, onOpenChange, onAdded }: AddEnviron
                   onChange={setRemotePort}
                   placeholder={defaultRemotePort}
                 />
-                {import.meta.env.DEV && (
-                  <label className="flex items-center gap-2 text-xs text-foreground">
-                    <input
-                      type="checkbox"
-                      checked={useLocalUpload}
-                      onChange={(e) => setUseLocalUpload(e.target.checked)}
-                    />
-                    {t('settings.environments.add.useLocalUpload')}
-                  </label>
-                )}
               </div>
             )}
           </div>

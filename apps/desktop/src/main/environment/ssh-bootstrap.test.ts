@@ -1,4 +1,10 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
+
+// Unpackaged tests would otherwise be the dev desktop; pin a published channel.
+vi.mock('../variant', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../variant')>()),
+  variantId: () => 'alpha',
+}))
 import { createServer } from 'node:http'
 import {
   buildRemoteInstallCommands,

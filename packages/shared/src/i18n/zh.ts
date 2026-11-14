@@ -1212,7 +1212,9 @@ export const zh: Messages = {
       olderProtocolVersion: '（旧协议）',
       upgradeNode: '升级节点',
       upgradingNode: '正在升级节点…',
+      redeployDevNode: '重新部署开发版',
       upgradeNodeSuccess: '节点已升级到 {{version}}',
+      redeployDevNodeSuccess: '开发版节点已重新部署（{{version}}）',
       accessOff: '对方设备已关闭本机的访问，重新开启后会自动连接。',
       accessPaused: '对方已暂停控制权限',
       offline: '离线',
@@ -1255,9 +1257,6 @@ export const zh: Messages = {
         autoInstallHint:
           '若远程尚未安装 superone，桌面端会通过 SSH 从 npm 安装固定版本的 @super-one/cli。需要密钥或 ssh-agent 认证。',
         uploadInstallHint: '开发模式：通过 SSH 上传本机 dist 安装包，而不是走 npm。',
-        useLocalUpload: '从本地安装',
-        useLocalUploadHint:
-          '需要已为远程 OS/架构构建 apps/cli/dist（或打包后的 resources/superone-dist）。',
         advanced: '高级选项',
         autoDetected: '自动探测 / 安装',
         remoteExec: '远程可执行文件',
@@ -1270,6 +1269,7 @@ export const zh: Messages = {
         label: '名称',
         progress: {
           probing: '正在探测远程主机…',
+          build: '正在从源码构建开发版 CLI…',
           npm: '正在安装 @super-one/cli…',
           upload: '正在上传安装包…',
           verify: '正在校验安装包…',

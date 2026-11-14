@@ -3,6 +3,8 @@ import { useTranslation } from 'react-i18next'
 import { AnimatePresence, motion } from 'motion/react'
 import { ArrowDown, PenLine, Play, ShipWheel, Trash2 } from 'lucide-react'
 import { ModPlacedRows, partitionPlacedRows, useModUiState } from '@superone/chat-view/mod-ui'
+import type { ModPlacedRow } from '@superone/shared/mod-ui'
+import { COMPOSER_CONTENT_MAX_HEIGHT } from '../composer-slot/composer-registry'
 import type { ChatMessage as ChatMessageModel, ModelOption } from '@superone/shared/agent-types'
 import type { TranscriptRow } from '@superone/shared/transcript-segments'
 import { SystemNoticeRow } from '@superone/chat-view/presenters/SystemNoticeRow'
@@ -123,6 +125,15 @@ export interface ChatTranscriptBodyProps {
   compactError: string | null
   dismissCompactError: () => void
   isRecapping: boolean
+}
+
+function InlineModPlaced({ rows }: { rows: readonly ModPlacedRow[] }) {
+  if (rows.length === 0) return null
+  return (
+    <div className="overflow-y-auto overflow-x-hidden" style={{ maxHeight: COMPOSER_CONTENT_MAX_HEIGHT }}>
+      <ModPlacedRows rows={rows} />
+    </div>
+  )
 }
 
 export function ChatTranscriptBody({
@@ -271,7 +282,7 @@ export function ChatTranscriptBody({
                           firstSlice={row.first}
                           anchors={row.anchors}
                         />
-                        {placedAfterRow && placedAfterRow.length > 0 && <ModPlacedRows rows={placedAfterRow} />}
+                        {placedAfterRow && <InlineModPlaced rows={placedAfterRow} />}
                       </div>
                     )
                   }).map((content, index) => ({
@@ -312,7 +323,7 @@ export function ChatTranscriptBody({
                 {isCompacting && <CompactingIndicator startedAt={compactingStartedAt} />}
                 {!isCompacting && compactError && <CompactErrorIndicator error={compactError} onDismiss={dismissCompactError} />}
                 {isRecapping && <RecappingIndicator />}
-                {anchoredPlacedTail.length > 0 && <ModPlacedRows rows={anchoredPlacedTail} />}
+                <InlineModPlaced rows={anchoredPlacedTail} />
                 <RemoteTranscriptChrome edge="bottom" />
               </SelectionContextMenuZone>
             </RemoteTranscriptEdges>

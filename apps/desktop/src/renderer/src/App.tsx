@@ -537,7 +537,9 @@ function App(): React.JSX.Element {
     preferredProvider: s.preferredProvider,
   })].modUi)
   const [mainBackdropScheme, setMainBackdropScheme] = useState<'light' | 'dark' | undefined>(undefined)
-  const showMainBackdrop = (compactMiniShell || mosaicMode !== 'mosaic') && drawsMainMods
+  const [mainBackdropTint, setMainBackdropTint] = useState<string | undefined>(undefined)
+  const showMainBackdrop = drawsMainMods
+  const hasModTint = showMainBackdrop && Boolean(mainBackdropTint)
   const hasVoiceTimeline = useCodexRealtimeViewStore((state) => (
     sessionId ? state.sessions[sessionId]?.hasTimeline === true : false
   ))
@@ -607,10 +609,14 @@ function App(): React.JSX.Element {
   // Main view: sidebar + content
   return (
     <>
-    <div className={cn(
-      'flex h-screen flex-col overflow-hidden text-foreground',
-      compactMiniShell ? (liquidGlass ? 'bg-transparent' : 'bg-card') : 'bg-sidebar',
-    )} style={enterAnimation}>
+    <div
+      data-has-mod-tint={hasModTint ? 'true' : undefined}
+      className={cn(
+        'flex h-screen flex-col overflow-hidden text-foreground',
+        compactMiniShell ? (liquidGlass ? 'bg-transparent' : 'bg-card') : 'bg-sidebar',
+      )}
+      style={hasModTint ? { ...enterAnimation, '--mod-backdrop-tint': mainBackdropTint } as React.CSSProperties : enterAnimation}
+    >
       {!compactMiniShell && <WindowsTitleBar showLayoutControls />}
       <div className="group/coding flex min-h-0 flex-1 overflow-hidden">
       <GitAutoRefresh />
@@ -679,6 +685,7 @@ function App(): React.JSX.Element {
             sessionId={sessionId}
             enabled={drawsMainMods}
             onColorSchemeChange={setMainBackdropScheme}
+            onTintChange={setMainBackdropTint}
           />
         )}
         {/* Main header — drag region (hidden in mosaic; each tile carries its own) */}

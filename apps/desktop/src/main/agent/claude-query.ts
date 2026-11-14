@@ -620,6 +620,10 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
         }
 
         const raw = typeof msgContent === 'string' ? msgContent : ''
+        if (!isReplay && raw) {
+          const cmdMatch = raw.match(/<command-name>\/?([^<\s]+)<\/command-name>/)
+          if (cmdMatch?.[1]) pendingSlashCommand = cmdMatch[1]
+        }
         if (!isReplay && raw.includes('<local-command-stdout>')) {
           const text = raw
             .replace(/<local-command-stdout>\n?/g, '')

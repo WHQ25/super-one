@@ -39,6 +39,7 @@ interface ActivityPanelProps {
   getMaxWidth: () => number
   /** Overrides the idle transition — the mini-window fold runs the panels on its own clock. */
   transitionMs?: number
+  className?: string
 }
 
 function ActivityPrefixActions({ group, panels }: IDockviewHeaderActionsProps) {
@@ -85,7 +86,7 @@ function ActivityNewTabAction({ group }: IDockviewHeaderActionsProps) {
   )
 }
 
-export function ActivityPanel({ getMaxWidth, transitionMs }: ActivityPanelProps) {
+export function ActivityPanel({ getMaxWidth, transitionMs, className }: ActivityPanelProps) {
   const { side, panelWidth, setPanelWidthByUser, maximized } = useActivityPanelStore()
   const fillsWindow = useActivityPanelStore(selectPanelFillsWindow)
   const visible = useActivityPanelOnScreen()
@@ -277,7 +278,7 @@ export function ActivityPanel({ getMaxWidth, transitionMs }: ActivityPanelProps)
       <div
         ref={outerRef}
         data-activity-outer=""
-        className={cn('relative shrink-0 overflow-hidden transition-[width]')}
+        className={cn('relative shrink-0 overflow-hidden transition-[width]', className)}
         style={{
           width: visible ? (fillsWindow ? '100%' : panelWidth) : 0,
           order: side === 'left' ? 0 : 2,

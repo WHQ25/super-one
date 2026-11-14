@@ -1,13 +1,10 @@
-import { useLayoutEffect, useRef, useState, type RefObject } from 'react'
+import { useLayoutEffect, useRef, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Maximize, X } from 'lucide-react'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import { SessionPane } from '@/components/chat/SessionPane'
-import { ModTileBackdrop, ModTileBackdropProvider } from '@/components/chat/mod/ModSurfaces'
-import { HARNESS_CAPABILITIES } from '@superone/shared/harness-capabilities'
-import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
-import { useChatStore } from '@/stores/chat'
+import { ModTileBackdropProvider } from '@/components/chat/mod/ModSurfaces'
 import { LayoutToggle } from '@/components/coding/LayoutToggle'
 import { SessionTitleAnimated } from '@/components/sidebar/AnimatedSessionTitle'
 import { HeaderSessionMenu } from '@/components/chat/HeaderSessionMenu'
@@ -38,18 +35,13 @@ function MosaicTile({ tile, ctx }: { tile: MosaicLeaf; ctx: RenderCtx }) {
   const { t } = useTranslation()
   const focused = useMosaicStore((s) => s.focusedTileId === tile.id)
   const dragging = useMosaicStore((s) => s.draggingSession)
-  const sessionProvider = useChatStore((s) => s.projectSessions[tile.projectPath]?._sessions[tile.sessionId]?.sessionProvider)
-  const preferredProvider = useChatStore((s) => s.projectSessions[tile.projectPath]?._sessions[tile.sessionId]?.preferredProvider)
-  const drawsMods = HARNESS_CAPABILITIES[resolveProvider({ sessionProvider, preferredProvider })].modUi
-  const [backdropScheme, setBackdropScheme] = useState<'light' | 'dark' | undefined>(undefined)
   const isTopLeft = tile.id === ctx.topLeftId
   return (
     <div
       data-tile-id={tile.id}
       onMouseDownCapture={() => { if (!focused) useMosaicStore.getState().setFocus(tile.id) }}
-      className={cn('relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden', drawsMods && backdropScheme === 'dark' && 'dark')}
+      className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
     >
-      <ModTileBackdrop projectPath={tile.projectPath} sessionId={tile.sessionId} enabled={drawsMods} onColorSchemeChange={setBackdropScheme} />
       <div className="relative z-10 flex h-[34px] shrink-0 items-center pl-[18px] pr-2" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
         {ctx.reserveTrafficLights && isTopLeft && <div className="w-[60px] shrink-0" />}
         {isTopLeft && !ctx.showSidebar && <LayoutToggle />}

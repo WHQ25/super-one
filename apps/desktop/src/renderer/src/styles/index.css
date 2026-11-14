@@ -792,3 +792,35 @@ html.liquid-glass :is([data-main-area], [data-tile-id], [data-mod-theme-layer]).
 html.liquid-glass :is([data-main-area], [data-tile-id]).dark :is(.brand-scope, [data-mod-theme-layer]) {
   --border: oklch(1 0 0 / 0.15);
 }
+html:not(.dark):not(.liquid-glass) [data-has-mod-tint="true"] {
+  --sidebar: color-mix(in srgb, var(--mod-backdrop-tint) 24%, #1e2024);
+}
+html.liquid-glass:not(.dark) [data-has-mod-tint="true"] {
+  --sidebar: color-mix(in srgb, var(--mod-backdrop-tint) 28%, oklch(0.22 0.01 240 / 0.78));
+}
+html.dark:not(.liquid-glass) [data-has-mod-tint="true"] {
+  --sidebar: color-mix(in srgb, var(--mod-backdrop-tint) 82%, #0d0e11);
+}
+html.dark.liquid-glass [data-has-mod-tint="true"] {
+  --sidebar: color-mix(in srgb, var(--mod-backdrop-tint) 58%, transparent);
+}
+html:not(.dark) [data-has-mod-tint="true"] [data-activity-outer] {
+  --card: color-mix(in srgb, var(--mod-backdrop-tint) 30%, #ffffff);
+  --background: var(--card);
+  background-color: var(--card);
+}
+html.dark:not(.liquid-glass) [data-has-mod-tint="true"] [data-activity-outer] {
+  --card: color-mix(in srgb, var(--mod-backdrop-tint) 72%, #161618);
+  --background: var(--card);
+  background-color: var(--card);
+}
+html.dark.liquid-glass [data-has-mod-tint="true"] [data-activity-outer] {
+  --card: color-mix(in srgb, var(--mod-backdrop-tint) 62%, oklch(0.16 0 0 / 0.72));
+  --background: var(--card);
+  background-color: var(--card);
+}
+html.dark.liquid-glass [data-has-mod-tint="true"] [data-activity-outer] .dockview-theme-superone,
+[data-has-mod-tint="true"] [data-activity-outer] .dockview-theme-superone {
+  --dv-group-view-background-color: var(--card);
+  --dv-tabs-and-actions-container-background-color: var(--card);
+}

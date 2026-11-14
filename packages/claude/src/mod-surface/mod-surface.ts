@@ -65,6 +65,7 @@ export class ModSurface {
   private readonly clientAnswers = new Map<string, Set<ModHostRequestKind>>()
   private readonly pendingHost = new Map<string, PendingHostRequest>()
   private initCommandNames: Set<string> | null = null
+  private readonly knownModCommands = new Set<string>()
   private placedInTurn = false
   private readonly requestTimeoutMs: number
   private readonly hostReplyTimeoutMs: number
@@ -102,9 +103,18 @@ export class ModSurface {
   }
 
   isModSlashCommand(command: string | undefined, sysSlashCommands?: ReadonlySet<string>): boolean {
-    if (this.placedInTurn) return true
-    if (!command || !this.initCommandNames?.has(command)) return false
-    return sysSlashCommands ? !sysSlashCommands.has(command) : false
+    if (this.placedInTurn) {
+      if (command) this.knownModCommands.add(command)
+      return true
+    }
+    if (!command) return false
+    if (this.knownModCommands.has(command)) return true
+    if (!this.initCommandNames?.has(command)) return false
+    if (sysSlashCommands && !sysSlashCommands.has(command)) {
+      this.knownModCommands.add(command)
+      return true
+    }
+    return false
   }
 
   /** Re-reads the user preference (after it changed) and re-announces availability. */

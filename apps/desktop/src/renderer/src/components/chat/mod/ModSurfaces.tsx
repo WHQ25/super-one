@@ -3,7 +3,7 @@ import { X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
-import { ModBackdropLayer, ModPlacedRows, ModSurfaceFrame, modPaneBackground, parseModBackdropProps, pressModHotkey, useModThemeStyle, useModUi, useModUiState, windowViewport, type ModBackdropSnapshot } from '@superone/chat-view/mod-ui'
+import { ModBackdropLayer, ModPlacedRows, ModSurfaceFrame, modPaneBackground, parseModBackdropProps, pressModHotkey, safeModCssColor, useModThemeStyle, useModUi, useModUiState, windowViewport, type ModBackdropSnapshot } from '@superone/chat-view/mod-ui'
 import { useIsDark } from '@/hooks/use-is-dark'
 import { MOD_ABOVE_PROMPT_INSTANCE, type ModPane } from '@superone/shared/mod-ui'
 import { useActivityPanelStore } from '@/stores/activity-panel'
@@ -159,39 +159,72 @@ export function ModTileBackdropProvider({ children }: { children: ReactNode }) {
   return <ModTileBackdropContext.Provider value={true}>{children}</ModTileBackdropContext.Provider>
 }
 
+function extractBackdropTint(active: ModBackdropSnapshot | null | undefined): string | undefined {
+  if (!active) return undefined
+  const parsed = parseModBackdropProps(active.result.props)
+  if (parsed?.glass && parsed.glass.tint) return parsed.glass.tint
+  const tree = active.result.tree
+  const props = tree && 'props' in tree && tree.props && typeof tree.props === 'object' ? tree.props : undefined
+  const style = props && 'style' in props ? (props.style as unknown as Record<string, unknown> | undefined) : undefined
+  if (style && typeof style === 'object') {
+    return safeModCssColor(style.backgroundColor) ?? safeModCssColor(style.background)
+  }
+  return undefined
+}
+
 export function ModTileBackdrop({
   projectPath,
   sessionId,
   enabled,
   onColorSchemeChange,
+  onActiveChange,
+  onTintChange,
 }: {
   projectPath?: string | null
   sessionId?: string | null
   enabled: boolean
   onColorSchemeChange?: (scheme: 'light' | 'dark' | undefined) => void
+  onActiveChange?: (active: boolean) => void
+  onTintChange?: (tint: string | undefined) => void
 }) {
   const liquidGlass = useAppStore((s) => s.liquidGlass)
+  const isDark = useIsDark()
+  const appScheme = isDark ? 'dark' : 'light'
   const cached = enabled ? readCachedProjectTheme(projectPath) : {}
+  const [liveSnapshot, setLiveSnapshot] = useState<ModBackdropSnapshot | null | undefined>(undefined)
+  const currentSnapshot = liveSnapshot === undefined ? cached.backdrop : liveSnapshot
+  const currentScheme = currentSnapshot ? parseModBackdropProps(currentSnapshot.result.props)?.colorScheme : undefined
+  const matchesScheme = Boolean(enabled && currentSnapshot && (!currentScheme || currentScheme === appScheme))
+
   useEffect(() => {
-    if (!enabled) {
+    if (!matchesScheme) {
       onColorSchemeChange?.(undefined)
+      onActiveChange?.(false)
+      onTintChange?.(undefined)
       return
     }
-    const initial = cached.backdrop ? parseModBackdropProps(cached.backdrop.result.props)?.colorScheme : undefined
-    onColorSchemeChange?.(initial)
-  }, [enabled, projectPath, onColorSchemeChange])
+    onColorSchemeChange?.(currentScheme)
+    onActiveChange?.(true)
+    onTintChange?.(extractBackdropTint(currentSnapshot))
+  }, [matchesScheme, currentScheme, currentSnapshot, onColorSchemeChange, onActiveChange, onTintChange])
 
   const onBackdropChange = useCallback(
     (active: ModBackdropSnapshot | null) => {
       writeCachedProjectBackdrop(projectPath, active)
-      onColorSchemeChange?.(active ? parseModBackdropProps(active.result.props)?.colorScheme : undefined)
+      setLiveSnapshot(active)
     },
-    [projectPath, onColorSchemeChange],
+    [projectPath],
   )
   if (!enabled) return null
   return (
     <DesktopModUi projectPath={projectPath ?? null} sessionId={sessionId ?? null} enabled={enabled}>
-      <ModBackdropLayer viewport={windowViewport(true)} glassEnabled={liquidGlass} fallback={cached.backdrop} onBackdropChange={onBackdropChange} />
+      <ModBackdropLayer
+        className={!matchesScheme ? 'hidden' : undefined}
+        viewport={windowViewport(true)}
+        glassEnabled={liquidGlass}
+        fallback={cached.backdrop}
+        onBackdropChange={onBackdropChange}
+      />
     </DesktopModUi>
   )
 }
@@ -226,11 +259,13 @@ export function ModChatThemeLayer({
   const effectiveScheme = enabled
     ? (liveScheme ?? (cached.backdrop ? parseModBackdropProps(cached.backdrop.result.props)?.colorScheme : undefined))
     : undefined
-  const themeStyle = useModThemeStyle(effectiveScheme ?? (isDark ? 'dark' : 'light'), {
+  const appScheme = isDark ? 'dark' : 'light'
+  const matchesScheme = !effectiveScheme || effectiveScheme === appScheme
+  const themeStyle = useModThemeStyle(effectiveScheme ?? appScheme, {
     fallback: enabled ? cached.themeProps : null,
     onThemeChange: enabled ? onThemeChange : undefined,
   })
-  if (!enabled) {
+  if (!enabled || !matchesScheme) {
     return (
       <div className="relative flex min-h-0 w-full min-w-0 flex-1 flex-col">
         {children}

@@ -265,4 +265,24 @@ describe('ModSurface theme and backdrop', () => {
     expect(sent.at(-1)).toMatchObject({ subtype: 'ui_prompt_autocomplete', client_id: CLIENT, surface: 'desktop', input: '/custom-theme ', cursor: 14 })
     expect(ac).toEqual({ items: [{ label: 'halftone-dusk' }] })
   })
+
+  it('remembers mod slash commands across turns even when ui_placed is not re-emitted', async () => {
+    const { surface } = await ready(replayQuery({
+      initializationResult: async () => ({
+        capabilities: ['ui_surface_v1'],
+        commands: [{ name: 'custom-theme', description: 'Pick a theme' }],
+      }),
+    }).query)
+    const sysCommands = new Set(['custom-theme', 'compact'])
+
+    surface.handleSystem({
+      subtype: 'ui_placed',
+      rows: [{ id: 'theme-card', plugin: 'theme-examples', request_id: 'req-1' }],
+    })
+    expect(surface.isModSlashCommand('custom-theme', sysCommands)).toBe(true)
+
+    surface.resetTurnModActivity()
+    expect(surface.isModSlashCommand('custom-theme', sysCommands)).toBe(true)
+    expect(surface.isModSlashCommand('compact', sysCommands)).toBe(false)
+  })
 })

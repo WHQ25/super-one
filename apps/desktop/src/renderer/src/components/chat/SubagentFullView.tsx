@@ -8,14 +8,9 @@ import type { ContentBlock, ChatMessage } from '@superone/shared/agent-types'
 import { useActiveSession } from '@/stores/chat'
 import { useSubagentNavigation, type SubagentViewState } from './subagent-navigation-context'
 import { getSubagentColorClasses, type SubagentColorClasses } from './subagent-colors'
-import { ToolBlock } from './ToolBlock'
 import { renderJsonlEntry } from './subagent-activity'
 import { NestedToolContext } from './nested-tool-context'
 import {
-  parseTaskInput,
-  parseSubagentIdFromText,
-  looksLikeBackgroundSubagentAck,
-  resolveTaskProgressEntry,
   buildToolResultMap,
   buildToolErrorMaps,
   collectSubagentSubtree,
@@ -23,7 +18,9 @@ import {
   type ToolErrorMaps,
   type JsonlEntry,
 } from './subagent-utils'
-import { SubagentBlock } from './SubagentBlock'
+import { DeferredDetailStatus } from '@superone/chat-view/use-deferred-tool-detail'
+import { SubagentBlock, renderChildBlock } from './SubagentBlock'
+import { useSubagentCard } from './use-subagent-card'
 import { ReasoningBlock } from './ReasoningBlock'
 import { useSubagentJsonl } from './use-subagent-jsonl'
 import {
@@ -36,7 +33,6 @@ import {
 } from './chat-shared'
 
 const ZERO_TOKENS = { input: 0, output: 0 }
-const EMPTY_BLOCKS: ContentBlock[] = []
 
 interface SubagentSegment {
   taskBlock: ContentBlock & { type: 'tool_use' }
@@ -69,31 +65,51 @@ export function SubagentFullView({ view }: { view: SubagentViewState }) {
   const { t } = useTranslation()
   const nav = useSubagentNavigation()
   const messages = useActiveSession((s) => s.messages)
-  const tokens = useActiveSession((s) => s.subagentTokens[view.toolUseId] ?? ZERO_TOKENS)
   const colorIdx = useActiveSession((s) => s.subagentColors[view.toolUseId])
+  const segment = useMemo(() => findSubagentSegment(messages, view.toolUseId), [messages, view.toolUseId])
+
+  if (!segment) {
+    return (
+      <ViewShell colors={getSubagentColorClasses(colorIdx)} title={t('chat.subagent.notFound', 'Subagent not found')} onClose={nav.close}>
+        <div className="px-3 py-3 text-xs text-muted-foreground">
+          {t('chat.subagent.notFound', 'Subagent not found')}
+        </div>
+      </ViewShell>
+    )
+  }
+  return <SubagentFullViewBody key={view.toolUseId} segment={segment} />
+}
+
+function SubagentFullViewBody({ segment: shell }: { segment: SubagentSegment }) {
+  const { t } = useTranslation()
+  const nav = useSubagentNavigation()
+  const isStreaming = useActiveSession((s) => s.status === 'streaming')
+  const {
+    taskBlock,
+    childBlocks,
+    deferred,
+    rawResultText,
+    progress,
+    taskInput,
+    isAsync,
+    isRunning,
+    isFailed,
+    isStopped,
+    outputFile,
+  } = useSubagentCard({ taskBlock: shell.taskBlock, childBlocks: shell.childBlocks, resultBlock: shell.resultBlock, open: true, isStreaming })
+  const toolUseId = taskBlock.toolUseId
+  const tokens = useActiveSession((s) => s.subagentTokens[toolUseId] ?? ZERO_TOKENS)
+  const colorIdx = useActiveSession((s) => s.subagentColors[toolUseId])
   const colors = useMemo(() => getSubagentColorClasses(colorIdx), [colorIdx])
 
-  const segment = useMemo(() => findSubagentSegment(messages, view.toolUseId), [messages, view.toolUseId])
-  const taskInput = useMemo(() => (segment ? parseTaskInput(segment.taskBlock.input) : null), [segment])
-  const childBlocks = segment?.childBlocks ?? EMPTY_BLOCKS
   const toolResultMap = useMemo(() => buildToolResultMap(childBlocks), [childBlocks])
   const toolErrorMaps = useMemo(() => buildToolErrorMaps(childBlocks), [childBlocks])
-  const childItems = useMemo(() => groupSubagentChildren(childBlocks, view.toolUseId), [childBlocks, view.toolUseId])
+  const childItems = useMemo(() => groupSubagentChildren(childBlocks, toolUseId), [childBlocks, toolUseId])
   const syncToolCount = useMemo(
     () => childItems.reduce((n, item) => (item.kind === 'subagent' || item.block.type === 'tool_use' ? n + 1 : n), 0),
     [childItems],
   )
 
-  const rawResultText = segment?.resultBlock?.summary
-  const taskIdHint = useMemo(
-    () => parseSubagentIdFromText(rawResultText) ?? parseSubagentIdFromText(segment?.taskBlock.taskResultText),
-    [rawResultText, segment?.taskBlock.taskResultText],
-  )
-  const progress = useActiveSession((s) =>
-    resolveTaskProgressEntry(s.taskProgress, view.toolUseId, taskIdHint),
-  )
-  const looksLikeBgAck = looksLikeBackgroundSubagentAck(rawResultText)
-  const isAsync = (taskInput?.runInBackground ?? false) || looksLikeBgAck
   // Tool activity arrives either as inline childBlocks (ordinary nested calls) or
   // via the task_progress/JSONL channel when the agent ran in its own session
   // (background agents AND workflow-spawned parallel agents, which are NOT
@@ -101,56 +117,32 @@ export function SubagentFullView({ view }: { view: SubagentViewState }) {
   // inline children, surface the progress channel — else a nested non-async agent
   // shows an empty body with its tools hidden in the full view.
   const usesProgressActivity = childItems.length === 0
-  const asyncOutputPath = useMemo(() => rawResultText?.match(/output_file:\s*(\S+)/)?.[1], [rawResultText])
-  const outputFile = asyncOutputPath
-    ?? progress?.outputFile
-    ?? segment?.taskBlock.taskOutputFile
-    ?? segment?.resultBlock?.outputPath
-  const isRunning = progress
-    ? !progress.completed
-    : (isAsync ? !segment?.taskBlock.taskResultText : !segment?.resultBlock)
-
   const isGrokChatHistory = !!outputFile && (outputFile.endsWith('chat_history.jsonl') || outputFile.endsWith('transcript.jsonl'))
   const { entries: jsonlEntries, resultText: jsonlResultText } = useSubagentJsonl({
-    toolUseId: view.toolUseId,
-    taskResultText: segment?.taskBlock.taskResultText,
+    toolUseId,
+    taskResultText: taskBlock.taskResultText,
     outputFile,
     enabled: usesProgressActivity && !!outputFile,
     isRunning,
     skipAuthoritativeRead: isGrokChatHistory,
   })
 
-  if (!segment || !taskInput) {
-    return (
-      <ViewShell colors={colors} title={t('chat.subagent.notFound', 'Subagent not found')} onClose={nav.close}>
-        <div className="px-3 py-3 text-xs text-muted-foreground">
-          {t('chat.subagent.notFound', 'Subagent not found')}
-        </div>
-      </ViewShell>
-    )
-  }
-
   // task_progress is live store state and is lost on history reload; the same
   // history/usage is persisted onto the Agent block (taskToolHistory/taskUsage).
   // Prefer live, fall back to persisted so a reloaded session still renders activity.
-  const activityHistory = (progress?.toolHistory?.length ? progress.toolHistory : segment.taskBlock.taskToolHistory) ?? []
+  const activityHistory = (progress?.toolHistory?.length ? progress.toolHistory : taskBlock.taskToolHistory) ?? []
   const asyncEntries: JsonlEntry[] = jsonlEntries.length > 0
     ? jsonlEntries
     : activityHistory.map((tool) => ({ type: 'tool' as const, toolName: tool.toolName, description: tool.description }))
   const toolCount = usesProgressActivity
-    ? (progress?.toolUses ?? segment.taskBlock.taskUsage?.toolUses ?? asyncEntries.reduce((n, e) => (e.type === 'tool' ? n + 1 : n), 0))
+    ? (progress?.toolUses ?? taskBlock.taskUsage?.toolUses ?? asyncEntries.reduce((n, e) => (e.type === 'tool' ? n + 1 : n), 0))
     : syncToolCount
   const hasTokens = tokens.input > 0 || tokens.output > 0
-  const asyncTokens = progress?.totalTokens ?? segment.taskBlock.taskUsage?.totalTokens ?? 0
-  const taskStatus = isAsync
-    ? progress?.status
-    : (segment.resultBlock?.isError ? 'failed' as const : undefined)
-  const isFailed = !isRunning && taskStatus === 'failed'
-  const isStopped = !isRunning && !!taskStatus && taskStatus !== 'completed' && !isFailed
+  const asyncTokens = progress?.totalTokens ?? taskBlock.taskUsage?.totalTokens ?? 0
   const headerTitle = taskInput.description || taskInput.name || taskInput.subagentType || t('chat.subagent.title', 'Subagent')
   const outputText = isAsync
-    ? (jsonlResultText ?? segment.taskBlock.taskResultText)
-    : segment.resultBlock?.summary
+    ? (jsonlResultText ?? taskBlock.taskResultText)
+    : rawResultText
 
   return (
     <div className="flex h-full min-w-0 flex-col">
@@ -226,12 +218,13 @@ export function SubagentFullView({ view }: { view: SubagentViewState }) {
             </div>
           )}
 
+          <DeferredDetailStatus status={deferred.status} onRetry={deferred.retry} className="px-1 py-2 text-xs text-muted-foreground" />
           {usesProgressActivity ? (
             // Full view: tools are expandable for detail inspection.
             <NestedToolContext.Provider value={{ defaultAutoExpand: false, allowExpand: true }}>
               <div className="space-y-2">
                 {asyncEntries.map((entry, i) => renderJsonlEntry(entry, i, isRunning))}
-                {asyncEntries.length === 0 && (
+                {asyncEntries.length === 0 && !deferred.status && (
                   <div className="px-1 py-2 text-xs text-muted-foreground">
                     {isRunning ? t('chat.subagent.running') : t('chat.subagent.noActivity', 'No activity recorded')}
                   </div>
@@ -248,7 +241,7 @@ export function SubagentFullView({ view }: { view: SubagentViewState }) {
                       taskBlock={item.segment.taskBlock}
                       childBlocks={item.segment.childBlocks}
                       resultBlock={item.segment.resultBlock}
-                      isStreaming={isRunning}
+                      isStreaming={isStreaming}
                     />
                   ) : (
                     // Same sealing rule as the main turn: only the trailing block can still be live.
@@ -345,34 +338,7 @@ function renderFullViewBlock(
           showContent={block.thinking.trim().length > 0}
         />
       )
-    case 'tool_use':
-      return (
-        <ToolBlock
-          key={index}
-          toolName={block.toolName}
-          toolUseId={block.toolUseId}
-          input={block.input}
-          filePath={block.toolFilePath}
-          toolLineDelta={block.toolLineDelta}
-          toolDiff={block.toolDiff}
-          toolDiffTokens={block.toolDiffTokens}
-          status={!isStreaming && block.status === 'streaming' ? undefined : block.status}
-          elapsedSeconds={block.elapsedSeconds}
-          result={toolResultMap.get(block.toolUseId)}
-          isError={errorMaps.errorIds.has(block.toolUseId)}
-          isTimedOut={errorMaps.timedOutIds.has(block.toolUseId)}
-          bashEditDiff={errorMaps.bashEditDiffs.get(block.toolUseId)}
-        />
-      )
-    case 'tool_result':
-      if (toolResultMap.has(block.toolUseId)) return null
-      if (!block.summary) return null
-      return (
-        <div key={index} className="my-0.5 overflow-x-auto rounded bg-muted/50 px-2 py-1.5 font-mono text-xs leading-relaxed text-muted-foreground whitespace-pre-wrap">
-          {block.summary}
-        </div>
-      )
     default:
-      return null
+      return renderChildBlock(block, index, isStreaming, toolResultMap, errorMaps)
   }
 }

@@ -10,6 +10,14 @@ const hoisted = vi.hoisted(() => ({
     subagentColors: {} as Record<string, number>,
     taskProgress: {} as Record<string, unknown>,
   },
+  remoteDetails: {} as Record<string, unknown>,
+}))
+
+vi.mock('@superone/chat-view/use-deferred-tool-detail', () => ({
+  useDeferredToolDetail: (remoteDetail: string | undefined, expanded: boolean) => ({
+    detail: remoteDetail && expanded ? hoisted.remoteDetails[remoteDetail] ?? {} : {},
+  }),
+  DeferredDetailStatus: () => null,
 }))
 
 vi.mock('@/stores/chat', () => ({
@@ -39,10 +47,11 @@ vi.mock('./chat-shared', () => ({
 }))
 
 vi.mock('./ToolBlock', () => ({
-  ToolBlock: (props: { toolName: string; isError?: boolean; isTimedOut?: boolean }) => (
+  ToolBlock: (props: { toolName: string; remoteDetail?: string; isError?: boolean; isTimedOut?: boolean }) => (
     <div
       data-testid="tool-block"
       data-tool={props.toolName}
+      data-remote-detail={props.remoteDetail}
       data-error={String(!!props.isError)}
       data-timeout={String(!!props.isTimedOut)}
     />
@@ -57,6 +66,7 @@ function taskInput(extra: Record<string, unknown>): string {
 
 beforeEach(() => {
   hoisted.sessionState = { messages: [], subagentTokens: {}, subagentColors: {}, taskProgress: {} }
+  hoisted.remoteDetails = {}
 })
 
 describe('SubagentFullView', () => {
@@ -191,5 +201,50 @@ describe('SubagentFullView', () => {
 
     expect(screen.getByText('WebSearch')).toBeInTheDocument()
     expect(screen.queryByText('SearchTools')).not.toBeInTheDocument()
+  })
+
+  it('loads a summarized remote card\'s children from its detail', () => {
+    // A remote node sends the card as a shell; prompt and children sit behind remoteDetail.
+    hoisted.sessionState.messages = [{
+      role: 'assistant',
+      content: [
+        { type: 'tool_use', toolUseId: 'task-1', toolName: 'Agent', input: '{}', remoteDetail: 'detail-task-1' },
+        { type: 'tool_result', toolUseId: 'task-1', summary: '' },
+      ],
+    }]
+    hoisted.remoteDetails = {
+      'detail-task-1': {
+        input: taskInput({ subagent_type: 'reviewer', description: 'Review code' }),
+        result: 'review done',
+        childBlocks: [
+          { type: 'tool_use', toolUseId: 'child-1', toolName: 'Read', input: '{}', parentToolUseId: 'task-1', status: 'complete', remoteDetail: 'detail-child-1' },
+          { type: 'tool_use', toolUseId: 'child-2', toolName: 'Grep', input: '{}', parentToolUseId: 'task-1', status: 'complete', remoteDetail: 'detail-child-2' },
+        ],
+      },
+    }
+
+    render(<SubagentFullView view={{ toolUseId: 'task-1' }} />)
+
+    const tools = screen.getAllByTestId('tool-block')
+    expect(tools.map((el) => el.getAttribute('data-tool'))).toEqual(['Read', 'Grep'])
+    expect(tools[0].getAttribute('data-remote-detail')).toBe('detail-child-1')
+    expect(screen.getByText('do the work')).toBeInTheDocument()
+    expect(screen.getByText('review done')).toBeInTheDocument()
+  })
+
+  it('treats a background agent with a terminal task status as finished without its result text', () => {
+    // A remote task_notification arrives without resultText; only taskStatus lands on the block.
+    hoisted.sessionState.messages = [{
+      role: 'assistant',
+      content: [
+        { type: 'tool_use', toolUseId: 'task-1', toolName: 'Agent', input: taskInput({ description: 'Background job', run_in_background: true }), taskStatus: 'completed' },
+        { type: 'tool_result', toolUseId: 'task-1', summary: 'started in background' },
+      ],
+    }]
+
+    const { container } = render(<SubagentFullView view={{ toolUseId: 'task-1' }} />)
+
+    expect(container.querySelector('.animate-spin')).toBeNull()
+    expect(screen.getByText('No activity recorded')).toBeInTheDocument()
   })
 })

@@ -684,23 +684,38 @@ export function updateMarketplace(marketplaceName: string): Promise<void> {
   })
 }
 
+/**
+ * Install through the Claude Code CLI.
+ *
+ * Project scope follows the working directory. Current Claude Code rejects
+ * `--project-path`. `--yes` answers the confirmation a command-source plugin
+ * requires when stdin is not a terminal; Settings has no terminal to show it.
+ * A marketplace git clone often outlasts a 30s timeout.
+ */
 export function installPlugin(
   pluginKey: string,
   scope: ResourceScope,
   cwd: string,
 ): Promise<void> {
+  if (scope === 'project' && !cwd.trim()) {
+    return Promise.reject(new Error('No project is open'))
+  }
   return new Promise((resolvePromise, reject) => {
-    const args = ['plugin', 'install', pluginKey, '--scope', scope]
-    if (scope === 'project') {
-      args.push('--project-path', cwd)
-    }
-    execFile('claude', args, { timeout: 30000 }, (error) => {
-      if (error) {
-        reject(new Error(`Failed to install plugin: ${error.message}`))
-      } else {
-        resolvePromise()
-      }
-    })
+    const args = ['plugin', 'install', pluginKey, '--scope', scope, '--yes']
+    execFile(
+      'claude',
+      args,
+      { timeout: 120_000, cwd: scope === 'project' ? cwd : undefined },
+      (error, _stdout, stderr) => {
+        if (error) {
+          // stdout is the progress line ("Installing plugin…"). The reason is on stderr.
+          const detail = stderr?.trim() ?? ''
+          reject(new Error(detail || `Failed to install plugin: ${error.message}`))
+        } else {
+          resolvePromise()
+        }
+      },
+    )
   })
 }
 

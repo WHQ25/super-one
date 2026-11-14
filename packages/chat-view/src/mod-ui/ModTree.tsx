@@ -374,14 +374,18 @@ function MarkdownNode({ node }: { node: Extract<ModElement, { type: 'Markdown' }
 }
 
 function SvgNode({ props }: { props: Extract<ModElement, { type: 'Svg' }>['props'] }) {
-  const url = useMemo(() => svgDataUrl(props.source), [props.source])
-  const size: CSSProperties = {
-    width: typeof props.width === 'number' ? `${props.width}ch` : undefined,
-    height: typeof props.height === 'number' ? `calc(${props.height} * var(--mod-row, 1.5em))` : undefined,
-    maxWidth: '100%',
-  }
+  const env = useEnv()
+  const url = useMemo(() => svgDataUrl(props.source, { backdrop: env.component === 'Backdrop' }), [props.source, env.component])
+  const isBackdropFill = env.component === 'Backdrop' && props.width === undefined && props.height === undefined
+  const size: CSSProperties = isBackdropFill
+    ? { width: '100%', height: '100%' }
+    : {
+        width: typeof props.width === 'number' ? `${props.width}ch` : undefined,
+        height: typeof props.height === 'number' ? `calc(${props.height} * var(--mod-row, 1.5em))` : undefined,
+        maxWidth: '100%',
+      }
   if (!url) return <span style={textStyle({ dimColor: true })}>{props.alt}</span>
-  return <img src={url} alt={props.alt} style={size} className="object-contain" draggable={false} />
+  return <img src={url} alt={props.alt} style={size} className={isBackdropFill ? 'h-full w-full object-cover' : 'object-contain'} draggable={false} />
 }
 
 function ClientNode({ node }: { node: Extract<ModElement, { type: 'Client' }> }) {

@@ -37,7 +37,8 @@ import { pendingTurnMessage, sessionFooterTarget, ZERO_TURN_TOKENS } from './pre
 import { CHAT_WINDOW, initialChatWindow, loadPreviousChatWindow, loadNextChatWindow, normalizeChatWindow, type ChatWindowRange } from './chat-window'
 import { exitMcpAppFullscreen, forgetMcpAppArrivals, noteMcpAppArrivals } from './mcp-app-document'
 import { installHostBridge, postHost, requestNativeAsync } from './bridge'
-import { MobileModPanes, MobileModUiProvider, useMobileModClient } from './mod-ui/MobileModUi'
+import { MobileModBackdrop, MobileModPanes, MobileModUiProvider, useMobileModClient } from './mod-ui/MobileModUi'
+import { ModPlacedRows, partitionPlacedRows, useModUiState } from './mod-ui'
 import { BottomDock } from './BottomDock'
 import { PortableQueuedMessages } from './PortableQueuedMessages'
 import { SessionProviderState } from './SessionProviderState'
@@ -777,8 +778,11 @@ export function ChatView() {
     <TurnDetailStateProvider scope={state.transcriptEpoch}>
     <DetailScopeProvider scope={detailScope}>
     <MobileModUiProvider client={mods.client} scheme={state.scheme}>
+    <MobileModBackdrop scheme={state.scheme}>
+    {(modThemeStyle) => (
     <main
       className="chat-view-shell"
+      style={modThemeStyle}
       data-mounted-turns={visible.length}
       data-has-outline={outline.length > 1}
       data-window-start={state.range.start}
@@ -861,6 +865,7 @@ export function ChatView() {
       {state.session.compactError && <CompactErrorIndicator error={state.session.compactError} />}
       {state.session.isRecapping && <RecappingIndicator />}
       {!moreAfter && <PortableScheduledResumeCard state={scheduledSend} locale={state.locale} />}
+      <MobilePlacedTranscriptRows visibleIds={visible.map((r) => r.source.id)} />
       <BottomDock>
         <MobileModPanes />
         {state.session.slashCommandOutput && <PortableCommandOutput output={state.session.slashCommandOutput} />}
@@ -869,10 +874,30 @@ export function ChatView() {
           : asyncQuestion && !state.pendingPermission && <PortableQuestion key={asyncQuestion.request.requestId} request={asyncQuestion.request} asyncQuestion={asyncQuestion} scheme={state.scheme} />}
       </BottomDock>
     </main>
+    )}
+    </MobileModBackdrop>
     </MobileModUiProvider>
     </DetailScopeProvider>
     </TurnDetailStateProvider>
   )
+}
+
+function MobilePlacedTranscriptRows({ visibleIds }: { visibleIds: readonly string[] }) {
+  const { placed } = useModUiState()
+  const { start, after, tail } = useMemo(
+    () => partitionPlacedRows(placed, new Set(visibleIds)),
+    [placed, visibleIds],
+  )
+  const ordered = useMemo(() => {
+    const out = [...start]
+    for (const id of visibleIds) {
+      const list = after.get(id)
+      if (list) out.push(...list)
+    }
+    out.push(...tail)
+    return out
+  }, [start, after, tail, visibleIds])
+  return <ModPlacedRows rows={ordered} />
 }
 
 export class ChatViewErrorBoundary extends Component<{ children: ReactNode }, { error: Error | null }> {

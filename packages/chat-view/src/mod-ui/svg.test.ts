@@ -33,4 +33,14 @@ describe('sanitizeSvg', () => {
     expect(sanitizeSvg('<html><body/></html>')).toBeNull()
     expect(svgDataUrl('not markup')).toBeNull()
   })
+  it('keeps <style>, safe style attrs, and many <use> elements for backdrop svgs', () => {
+    const out = sanitizeSvg(
+      `<svg xmlns="http://www.w3.org/2000/svg"><style>.leaf{fill:#4b5f45}</style><path id="p" d="M0 0"/><g style="animation-delay:-2s">${'<use href="#p" class="leaf"/>'.repeat(40)}</g><style>@import url(https://evil);</style></svg>`,
+      { backdrop: true },
+    )!
+    expect(out).toContain('<style>.leaf{fill:#4b5f45}</style>')
+    expect(out).toContain('style="animation-delay:-2s"')
+    expect(out.match(/<use/g)).toHaveLength(40)
+    expect(out).not.toContain('evil')
+  })
 })

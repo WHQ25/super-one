@@ -8,7 +8,8 @@ import { NativeWebLink, PlainCode, PortableMarkdown } from '../PortableMarkdown'
 import { ModUiClient } from './client'
 import { measureCell } from './cells'
 import type { ModUiPorts } from './ModTree'
-import { ModSurfaceFrame, ModUiProvider, useModUi, useModUiState } from './react'
+import { ModBackdropLayer, ModSurfaceFrame, ModUiProvider, useModThemeStyle, useModUi, useModUiState } from './react'
+import { modPaneBackground } from './theme'
 
 /** The relay adds its own wait on top of the CLI's 15 s. */
 const MOD_UI_TIMEOUT_MS = 25_000
@@ -30,6 +31,8 @@ async function answerOnPhone(request: ModHostRequest): Promise<ModHostReply> {
       return { kind: 'promptFill', filled: await requestNativeAsync('setDraft', { text: request.text }).then(() => true, () => false) }
     case 'promptRead':
       return { kind: 'promptRead', text: '', cursor: 0 }
+    case 'promptPaint':
+      return { kind: 'promptPaint', painted: false }
     case 'promptSuggest':
       return { kind: 'promptSuggest', shown: false }
   }
@@ -40,6 +43,7 @@ export function createMobileModClient(clientId: string): ModUiClient {
     surface: 'mobile',
     clientId,
     answers: ['copy', 'promptFill'],
+    draws: ['Backdrop', 'Input', 'Select'],
     transport: async <O extends ModUiOp>(op: O, request: ModUiRequest<O>) => {
       const result = await requestNativeAsync('modUi', { op, request }, MOD_UI_TIMEOUT_MS) as { response?: ModUiResult<O> }
       return result.response as ModUiResult<O>
@@ -84,6 +88,7 @@ export function MobileModPanes() {
   const { available, roster } = useModUiState()
   const shown = roster.panes.find((p) => p.id === roster.shownId) ?? roster.panes.at(-1)
   const props = useMemo(() => ({ title: shown?.title ?? '', placement: 'sheet', view: {} }), [shown?.title])
+  const paneBg = modPaneBackground(shown?.backgroundColor)
   if (!ctx || !available || !shown) return null
   const act = <O extends ModUiOp>(op: O, request: ModUiRequest<O>) => void ctx.client.act(op, request)
   return (
@@ -118,7 +123,19 @@ export function MobileModPanes() {
         props={props}
         viewport={phoneViewport()}
         className="min-h-0 flex-1 px-3 py-2"
+        style={paneBg ? { backgroundColor: paneBg } : undefined}
       />
     </section>
+  )
+}
+
+export function MobileModBackdrop({ scheme, children }: { scheme: 'light' | 'dark'; children: (style: React.CSSProperties) => ReactNode }) {
+  const themeStyle = useModThemeStyle(scheme)
+  const viewport = useMemo(() => phoneViewport(), [])
+  return (
+    <>
+      {children(themeStyle)}
+      <ModBackdropLayer viewport={viewport} className="fixed inset-0 z-0" />
+    </>
   )
 }

@@ -118,4 +118,21 @@ describe('ModUiClient', () => {
     await tick()
     expect(client.snapshot('Pane', 'p').status).toBe('off')
   })
+
+  it('a narrowed invalidate re-asks an unhooked component on that surface', async () => {
+    let hooked = false
+    const { client, renders } = setup(() =>
+      hooked ? { tree: { type: 'Text', children: ['bg'] }, props: {}, hooked: true } : UNHOOKED,
+    )
+    await client.attach()
+    client.observe('Backdrop', 'backdrop', {}, {}, () => {})
+    await tick()
+    expect(renders()).toHaveLength(1)
+    expect(client.snapshot('Backdrop', 'backdrop').status).toBe('off')
+    hooked = true
+    client.handleEvent({ type: 'mod_invalidate', instances: [{ surface: 'desktop', component: 'Backdrop', instanceId: 'backdrop' }] } as never)
+    await tick()
+    expect(renders()).toHaveLength(2)
+    expect(client.snapshot('Backdrop', 'backdrop').status).toBe('ready')
+  })
 })

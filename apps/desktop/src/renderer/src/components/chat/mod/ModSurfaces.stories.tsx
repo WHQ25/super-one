@@ -9,7 +9,7 @@ import { useActivityPanelStore } from '@/stores/activity-panel'
 import { UserTextPresenter } from '@superone/chat-view/presenters/UserText'
 import { DesktopUserBubblePorts } from '../user-bubble-ports'
 import { DurationFooter } from '../ChatMessageFooter'
-import { ModAbovePrompt, ModPaneBody } from './ModSurfaces'
+import { ModAbovePrompt, ModChatThemeLayer, ModPaneBody } from './ModSurfaces'
 import { ModSessionMode } from './ModStatusSites'
 
 /**
@@ -495,4 +495,46 @@ export const FooterSpinnerOriginal: Story = { render: () => <SpinnerFooter answe
 /** A mod rewrote the spinner word: the footer shows it before the duration. */
 export const FooterSpinnerRewritten: Story = {
   render: () => <SpinnerFooter answer={drawn({ type: 'engine', ref: 1 }, { ...spinnerProps('Working', null, 'responding'), word: 'Brewing' })} />,
+}
+
+/** A mod sets session theme colors and a frosted-glass SVG backdrop behind the conversation. */
+export const ThemeAndBackdrop: Story = {
+  render: () => (
+    <Session
+      answers={{
+        Theme: {
+          tree: { type: 'engine', ref: 0 },
+          props: {
+            plugin: 'tokyo-night-theme',
+            colors: {
+              background: '#1a1b26',
+              foreground: '#c0caf5',
+              primary: '#7aa2f7',
+              border: '#3b4261',
+            },
+          },
+          hooked: true,
+        },
+        Backdrop: drawn(
+          {
+            type: 'Svg',
+            props: {
+              alt: 'Tokyo Night gradient backdrop',
+              source: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 240"><defs><radialGradient id="g" cx="30%" cy="25%" r="70%"><stop offset="0%" stop-color="#7aa2f7" stop-opacity="0.45"/><stop offset="60%" stop-color="#bb9af7" stop-opacity="0.2"/><stop offset="100%" stop-color="#1a1b26"/></radialGradient></defs><rect width="400" height="240" fill="url(#g)"/></svg>',
+            },
+          },
+          { id: 'tokyo-night', plugin: 'tokyo-night-theme', glass: { blur: 8, opacity: 0.35, tint: '#1a1b26' } },
+        ),
+      }}
+    >
+      <div className="flex h-60 w-[480px] max-w-full overflow-hidden rounded-xl border border-border">
+        <ModChatThemeLayer>
+          <div className="p-4 text-sm text-foreground">
+            <div className="font-medium text-primary">Session themed by mod</div>
+            <p className="mt-1 text-xs opacity-80">Backdrop and frosted glass sit behind the conversation.</p>
+          </div>
+        </ModChatThemeLayer>
+      </div>
+    </Session>
+  ),
 }

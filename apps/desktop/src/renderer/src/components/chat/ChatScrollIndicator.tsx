@@ -193,12 +193,14 @@ function ChatScrollIndicatorImpl({ entries, viewportRef, getMessageTop, onJump }
         {entries.map(renderTick)}
       </div>
       <div
+        data-mod-edge-fade=""
         className={cn(
           'pointer-events-none absolute inset-x-0 top-0 h-5 bg-linear-to-b from-card to-transparent transition-opacity duration-150',
           overflow.above ? 'opacity-100' : 'opacity-0',
         )}
       />
       <div
+        data-mod-edge-fade=""
         className={cn(
           'pointer-events-none absolute inset-x-0 bottom-0 h-5 bg-linear-to-t from-card to-transparent transition-opacity duration-150',
           overflow.below ? 'opacity-100' : 'opacity-0',

@@ -12,37 +12,43 @@ const ELEMENTS = new Set([
 
 const ATTRIBUTE = /^(?:[a-z][a-z0-9-]*|viewBox|preserveAspectRatio|gradientUnits|gradientTransform|patternUnits|patternTransform|clipPathUnits|maskUnits|markerWidth|markerHeight|refX|refY|stdDeviation|textLength|lengthAdjust|startOffset|xmlns(?::xlink)?|xlink:href)$/
 
-/** A local fragment reference is the only link an SVG keeps. */
 const isLocalRef = (value: string) => /^#[\w.-]+$/.test(value.trim())
-/**
- * `url(#id)` paint references only; no external resources. A backslash is a
- * CSS escape (`\75 rl(`) that would hide a function from these checks.
- */
 const isSafeValue = (value: string) => !value.includes('\\') && !/url\(\s*(?!['"]?#)/i.test(value) && !/javascript:|data:|expression\(/i.test(value)
-/** Nested `<use>` multiplies: a few levels of a few copies each is millions of shapes. */
+const isSafeStyleText = (value: string) => isSafeValue(value) && !/@import/i.test(value)
 const MAX_USES = 16
+const MAX_BACKDROP_USES = 512
 
-export function sanitizeSvg(source: string): string | null {
+export interface SanitizeSvgOptions {
+  backdrop?: boolean
+}
+
+export function sanitizeSvg(source: string, options?: SanitizeSvgOptions): string | null {
   if (typeof DOMParser === 'undefined') return null
   const doc = new DOMParser().parseFromString(source, 'image/svg+xml')
   const root = doc.documentElement
   if (!root || root.nodeName.toLowerCase() !== 'svg' || doc.getElementsByTagName('parsererror').length > 0) return null
+  const allowBackdrop = options?.backdrop === true
+  const maxUses = allowBackdrop ? MAX_BACKDROP_USES : MAX_USES
   let uses = 0
   const walk = (el: Element) => {
     for (const child of [...el.children]) {
       const name = child.localName.toLowerCase()
-      if (!ELEMENTS.has(name) || (name === 'use' && ++uses > MAX_USES)) {
+      const allowed = ELEMENTS.has(name) || (allowBackdrop && name === 'style')
+      if (!allowed || (name === 'use' && ++uses > maxUses)) {
         child.remove()
+        continue
+      }
+      if (name === 'style') {
+        if (!isSafeStyleText(child.textContent ?? '')) child.remove()
         continue
       }
       walk(child)
     }
     for (const attr of [...el.attributes]) {
       const name = attr.name
-      // Presentation attributes draw the same; `style` is a CSS parser these checks cannot follow.
       const keep =
         ATTRIBUTE.test(name) &&
-        name !== 'style' &&
+        (name !== 'style' || allowBackdrop) &&
         !name.toLowerCase().startsWith('on') &&
         (name === 'href' || name === 'xlink:href' ? isLocalRef(attr.value) : isSafeValue(attr.value))
       if (!keep) el.removeAttribute(name)
@@ -53,7 +59,7 @@ export function sanitizeSvg(source: string): string | null {
   return new XMLSerializer().serializeToString(root)
 }
 
-export function svgDataUrl(source: string): string | null {
-  const clean = sanitizeSvg(source)
+export function svgDataUrl(source: string, options?: SanitizeSvgOptions): string | null {
+  const clean = sanitizeSvg(source, options)
   return clean ? `data:image/svg+xml;charset=utf-8,${encodeURIComponent(clean)}` : null
 }

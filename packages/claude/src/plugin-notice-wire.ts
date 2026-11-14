@@ -14,6 +14,32 @@ export function mapPluginUiMessage(sys: Record<string, unknown>): PluginNoticeEv
   if (subtype === 'ui_status') {
     return { type: 'plugin_notice', kind: 'status', plugin, text: typeof text === 'string' && text ? text : null }
   }
+  if (subtype === 'ui_notify') {
+    const source = typeof sys.source === 'string' ? sys.source : plugin
+    const title = typeof sys.title === 'string' && sys.title ? sys.title : plugin
+    if (typeof text !== 'string' || !text) return null
+    return {
+      type: 'plugin_notice',
+      kind: 'notify',
+      plugin,
+      source,
+      title,
+      text,
+      ...(typeof sys.key === 'string' && sys.key ? { key: sys.key } : {}),
+      ...(typeof sys.delay_ms === 'number' ? { delayMs: sys.delay_ms } : {}),
+      ...(typeof sys.fire_at === 'number' ? { fireAt: sys.fire_at } : {}),
+    }
+  }
+  if (subtype === 'ui_notify_cancel') {
+    const source = typeof sys.source === 'string' ? sys.source : plugin
+    return {
+      type: 'plugin_notice',
+      kind: 'notify_cancel',
+      plugin,
+      source,
+      ...(typeof sys.key === 'string' && sys.key ? { key: sys.key } : {}),
+    }
+  }
   if ((subtype !== 'ui_log' && subtype !== 'ui_toast') || typeof text !== 'string' || !text) return null
   const timeoutMs = subtype === 'ui_toast' && typeof sys.timeout_ms === 'number' ? sys.timeout_ms : undefined
   return {

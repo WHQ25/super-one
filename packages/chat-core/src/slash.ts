@@ -252,7 +252,7 @@ export function reduceSlash(
       if (TURN_PRESERVING_COMMANDS.has(cmd)) {
         return { _pendingSlashCommand: '' }
       }
-      if (REPORT_OUTPUT_COMMANDS.has(cmd) && event.content.trim()) {
+      if ((event.inline || REPORT_OUTPUT_COMMANDS.has(cmd)) && event.content.trim()) {
         const reportMsg: ChatMessage = {
           id: ports.id('slash-report-'),
           role: 'assistant',

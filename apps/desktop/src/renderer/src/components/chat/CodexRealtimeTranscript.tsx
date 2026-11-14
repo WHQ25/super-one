@@ -188,7 +188,7 @@ export function CodexRealtimeTranscript({
           <ArrowDown className="size-3.5" />
         </button>
       )}
-      {!liquidGlass && <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-6 bg-linear-to-t from-card to-transparent" />}
+      {!liquidGlass && <div data-mod-edge-fade="" className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-6 bg-linear-to-t from-card to-transparent" />}
     </div>
   )
 }

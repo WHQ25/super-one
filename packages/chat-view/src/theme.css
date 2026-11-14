@@ -57,6 +57,8 @@ a {
 }
 
 .chat-view-shell {
+  position: relative;
+  z-index: 1;
   box-sizing: border-box;
   min-height: 100vh;
   /* Only the assistant half of a turn carries a bottom margin, so a user bubble

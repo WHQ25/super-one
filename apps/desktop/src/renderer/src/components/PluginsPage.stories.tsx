@@ -5,6 +5,7 @@
  */
 import type { ReactElement } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { Toaster } from 'sonner'
 import { expect, userEvent, within } from 'storybook/test'
 import i18n from 'i18next'
 import type {
@@ -222,6 +223,7 @@ interface Seed {
   plugins?: PluginInfo[] | 'pending' | 'error'
   marketplace?: MarketplacePlugin[] | 'pending' | 'error'
   addMarketplaceError?: string
+  installError?: string
   /** `claude plugin validate` answer for a mod; null: the CLI could not report. */
   review?: PluginModReview | null | 'pending'
   config?: PluginUserConfig | null
@@ -233,7 +235,7 @@ const resolveSeed = <T,>(value: T[] | 'pending' | 'error' | undefined) => async 
   return value ?? []
 }
 
-function seed({ plugins, marketplace, addMarketplaceError, review = null, config = null }: Seed) {
+function seed({ plugins, marketplace, addMarketplaceError, installError, review = null, config = null }: Seed) {
   return (Story: () => ReactElement) => {
     const pluginList = Array.isArray(plugins) ? plugins : []
     mockIpc('app', 'listPlugins', resolveSeed(plugins))
@@ -249,7 +251,9 @@ function seed({ plugins, marketplace, addMarketplaceError, review = null, config
       return plugin && { ...plugin, sourcePath: `/tmp/${plugin.name}`, files: PLUGIN_FILES }
     })
     mockIpc('app', 'readMarketplacePluginFile', async () => FILE_CONTENT)
-    mockIpc('app', 'installPlugin', async () => undefined)
+    mockIpc('app', 'installPlugin', async () => {
+      if (installError) throw new Error(installError)
+    })
     mockIpc('app', 'updatePlugins', async () => undefined)
     mockIpc('app', 'updateMarketplace', async () => undefined)
     mockIpc('app', 'removeMarketplace', async () => undefined)
@@ -387,6 +391,33 @@ export const MarketplaceDetail: Story = {
     const screen = body(canvasElement)
     await userEvent.click(await screen.findByText(OFFICIAL.marketplace))
     await expect(await screen.findByPlaceholderText(i18n.t('resources.plugins.searchPlaceholder'))).toBeInTheDocument()
+  },
+}
+
+export const InstallFailed: Story = {
+  decorators: [
+    (Story) => (
+      <>
+        {seed({
+          plugins: INSTALLED,
+          marketplace: MARKETPLACE,
+          installError: 'unknown option \'--project-path\'',
+        })(Story)}
+        <Toaster position="bottom-center" />
+      </>
+    ),
+  ],
+  play: async ({ canvasElement }) => {
+    const screen = body(canvasElement)
+    await userEvent.click(await screen.findByText(OFFICIAL.marketplace))
+    const title = await screen.findByText('frontend-design')
+    const header = title.closest('[role="button"]')
+    if (!(header instanceof HTMLElement)) throw new Error('missing plugin row')
+    const row = within(header)
+    await userEvent.click(row.getByRole('button', { name: 'Install' }))
+    await userEvent.click(row.getByRole('button', { name: 'user' }))
+    await expect(await screen.findByText('Could not install frontend-design: unknown option \'--project-path\'')).toBeInTheDocument()
+    await expect(row.getByRole('button', { name: 'Install' })).toBeEnabled()
   },
 }
 

@@ -1,14 +1,18 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
-import { ModSurfaceFrame, pressModHotkey, useModUi, useModUiState, windowViewport } from '@superone/chat-view/mod-ui'
+import { ModBackdropLayer, ModPlacedRows, ModSurfaceFrame, modPaneBackground, parseModBackdropProps, pressModHotkey, useModThemeStyle, useModUi, useModUiState, windowViewport, type ModBackdropSnapshot } from '@superone/chat-view/mod-ui'
+import { useIsDark } from '@/hooks/use-is-dark'
 import { MOD_ABOVE_PROMPT_INSTANCE, type ModPane } from '@superone/shared/mod-ui'
 import { useActivityPanelStore } from '@/stores/activity-panel'
+import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
 import { cn } from '@superone/ui/lib/utils'
 import { closeModPaneTab, isModPaneTabOpen, listModPaneTabs, openModPaneTab } from '@/components/activity/activity-panel-api'
+import { DesktopModUi } from '@/lib/mod-ui/DesktopModUi'
+import { readCachedProjectTheme, writeCachedProjectBackdrop, writeCachedProjectThemeProps } from './mod-theme-cache'
 
 /** Rows a band may take before it scrolls (the terminal's own cap is similar). */
 const BAND_MAX_ROWS = 8
@@ -119,6 +123,11 @@ export function ModPaneBody({ paneId, placement, className, style, focusOnMount 
   const returnKeyboard = useReturnKeyboard()
   const pane = roster.panes.find((p) => p.id === paneId)
   const props = useMemo(() => ({ title: pane?.title ?? paneId, placement, view: {} }), [pane?.title, paneId, placement])
+  const paneBg = modPaneBackground(pane?.backgroundColor)
+  const mergedStyle = useMemo(
+    () => (paneBg ? { backgroundColor: paneBg, ...style } : style),
+    [paneBg, style],
+  )
   if (!ctx || !pane) {
     return <div className="p-4 text-xs text-muted-foreground">{t('chat.mods.paneClosed')}</div>
   }
@@ -139,8 +148,108 @@ export function ModPaneBody({ paneId, placement, className, style, focusOnMount 
       onEscape={onEscape}
       focusOnMount={focusOnMount}
       className={className}
-      style={style}
+      style={mergedStyle}
     />
+  )
+}
+
+const ModTileBackdropContext = createContext(false)
+
+export function ModTileBackdropProvider({ children }: { children: ReactNode }) {
+  return <ModTileBackdropContext.Provider value={true}>{children}</ModTileBackdropContext.Provider>
+}
+
+export function ModTileBackdrop({
+  projectPath,
+  sessionId,
+  enabled,
+  onColorSchemeChange,
+}: {
+  projectPath?: string | null
+  sessionId?: string | null
+  enabled: boolean
+  onColorSchemeChange?: (scheme: 'light' | 'dark' | undefined) => void
+}) {
+  const liquidGlass = useAppStore((s) => s.liquidGlass)
+  const cached = enabled ? readCachedProjectTheme(projectPath) : {}
+  useEffect(() => {
+    if (!enabled) {
+      onColorSchemeChange?.(undefined)
+      return
+    }
+    const initial = cached.backdrop ? parseModBackdropProps(cached.backdrop.result.props)?.colorScheme : undefined
+    onColorSchemeChange?.(initial)
+  }, [enabled, projectPath, onColorSchemeChange])
+
+  const onBackdropChange = useCallback(
+    (active: ModBackdropSnapshot | null) => {
+      writeCachedProjectBackdrop(projectPath, active)
+      onColorSchemeChange?.(active ? parseModBackdropProps(active.result.props)?.colorScheme : undefined)
+    },
+    [projectPath, onColorSchemeChange],
+  )
+  if (!enabled) return null
+  return (
+    <DesktopModUi projectPath={projectPath ?? null} sessionId={sessionId ?? null} enabled={enabled}>
+      <ModBackdropLayer viewport={windowViewport(true)} glassEnabled={liquidGlass} fallback={cached.backdrop} onBackdropChange={onBackdropChange} />
+    </DesktopModUi>
+  )
+}
+
+export function ModChatThemeLayer({
+  projectPath,
+  enabled = true,
+  children,
+}: {
+  projectPath?: string | null
+  enabled?: boolean
+  children: ReactNode
+}) {
+  const isDark = useIsDark()
+  const liquidGlass = useAppStore((s) => s.liquidGlass)
+  const hasTileBackdrop = useContext(ModTileBackdropContext)
+  const cached = enabled ? readCachedProjectTheme(projectPath) : {}
+  const [liveScheme, setLiveScheme] = useState<'light' | 'dark' | undefined>(() =>
+    cached.backdrop ? parseModBackdropProps(cached.backdrop.result.props)?.colorScheme : undefined,
+  )
+  const onThemeChange = useCallback(
+    (props: Record<string, unknown> | null) => writeCachedProjectThemeProps(projectPath, props),
+    [projectPath],
+  )
+  const onBackdropChange = useCallback(
+    (active: ModBackdropSnapshot | null) => {
+      writeCachedProjectBackdrop(projectPath, active)
+      setLiveScheme(active ? parseModBackdropProps(active.result.props)?.colorScheme : undefined)
+    },
+    [projectPath],
+  )
+  const effectiveScheme = enabled
+    ? (liveScheme ?? (cached.backdrop ? parseModBackdropProps(cached.backdrop.result.props)?.colorScheme : undefined))
+    : undefined
+  const themeStyle = useModThemeStyle(effectiveScheme ?? (isDark ? 'dark' : 'light'), {
+    fallback: enabled ? cached.themeProps : null,
+    onThemeChange: enabled ? onThemeChange : undefined,
+  })
+  if (!enabled) {
+    return (
+      <div className="relative flex min-h-0 w-full min-w-0 flex-1 flex-col">
+        {children}
+      </div>
+    )
+  }
+  return (
+    <div
+      data-mod-theme-layer=""
+      className={cn('relative flex min-h-0 w-full min-w-0 flex-1 flex-col', !hasTileBackdrop && effectiveScheme === 'dark' && 'dark')}
+      style={themeStyle}
+    >
+      {!hasTileBackdrop && (
+        <ModBackdropLayer viewport={windowViewport(true)} glassEnabled={liquidGlass} fallback={cached.backdrop} onBackdropChange={onBackdropChange} />
+      )}
+      <div className="relative z-10 flex min-h-0 w-full min-w-0 flex-1 flex-col">
+        {children}
+      </div>
+    </div>
   )
 }
 
@@ -266,4 +375,32 @@ export function ModPaneDockSync({ projectPath, sessionId }: { projectPath: strin
   }, [ctx, roster.focusRequestedId, draft, idle, sessionId])
 
   return null
+}
+
+export function ModPlacedComposer({ onDismiss }: { onDismiss?: () => void }) {
+  const { available, placed } = useModUiState()
+  const composerPlaced = useMemo(() => placed.filter((r) => !r.afterUuid), [placed])
+
+  useEffect(() => {
+    if (!available || composerPlaced.length === 0 || !onDismiss) return
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return
+      e.preventDefault()
+      onDismiss()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [available, composerPlaced.length, onDismiss])
+
+  if (!available || composerPlaced.length === 0) return null
+
+  return (
+    <div
+      data-mod-placed-composer=""
+      data-composer-popup=""
+      className="flex min-h-0 min-w-0 flex-1 flex-col overflow-y-auto overflow-x-hidden"
+    >
+      <ModPlacedRows rows={composerPlaced} />
+    </div>
+  )
 }

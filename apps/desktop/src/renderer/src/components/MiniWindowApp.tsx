@@ -139,7 +139,7 @@ export function MiniWindowApp({ projectPath, sessionId, initialTitle, canRestore
     <div className="flex h-screen flex-col bg-card text-foreground">
       <MiniWindowHeader initialTitle={initialTitle} canRestore={canRestore} />
       <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-        <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-linear-to-b from-card to-transparent" />
+        <div data-mod-edge-fade="" className="pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-linear-to-b from-card to-transparent" />
         {matchesTarget ? (
           <SessionPane scope={{ projectPath, sessionId }} />
         ) : (

@@ -17,7 +17,7 @@ import type { SchemaForm } from './schema-form'
 import type { MediaVideoCapabilities } from './media-composer'
 import type { SuperOneComposerOutcome } from './composer-api'
 import type { InputRequestMeta, InputRequestOutput, InputRequestSpec, InputRequestSubmission } from './input-request'
-import type { ModHostRequest, ModInstanceRef, ModPaneRoster, ModScrollComponent, ModUiOp, ModUiRequest } from './mod-ui'
+import type { ModHostRequest, ModInstanceRef, ModPaneRoster, ModPlacedRow, ModScrollComponent, ModUiOp, ModUiRequest } from './mod-ui'
 import type { CodexRequestedTurnProvenance, CodexSubagentActivity, CodexSubagentConfiguration, CodexSubagentMetadata, CodexTurnProvenance } from './codex-metadata'
 
 // --- Image attachments ---
@@ -2228,7 +2228,7 @@ export type AgentEventBase =
    * `command` is the slash command the output belongs to, when the wire names
    * it (Claude's synthetic stdout message carries `local_command_run`).
    */
-  | { type: 'slash_command_output'; messageId: string; content: string; command?: string }
+  | { type: 'slash_command_output'; messageId: string; content: string; command?: string; inline?: boolean }
   /**
    * Undeclared SDK wire message: a local slash command's only progress signal.
    * `refused` (SDK 0.3.238) is a terminal state like completed/cancelled — a
@@ -2292,6 +2292,8 @@ export type AgentEventBase =
    * `text` is plain text: render it as a text node, never as markup.
    */
   | { type: 'plugin_notice'; kind: 'log' | 'toast' | 'status'; plugin: string; text: string | null; level?: 'error'; timeoutMs?: number }
+  | { type: 'plugin_notice'; kind: 'notify'; plugin: string; source: string; title: string; text: string; key?: string; delayMs?: number; fireAt?: number }
+  | { type: 'plugin_notice'; kind: 'notify_cancel'; plugin: string; source: string; key?: string }
   /**
    * Claude Code mods drawn by SuperOne (`@superone/shared/mod-ui`). Transient
    * view state: never reduced into the transcript. A node delivers them
@@ -2301,6 +2303,8 @@ export type AgentEventBase =
   | { type: 'mod_ui_state'; available: boolean }
   /** The pane roster the CLI holds; replaces the previous one. */
   | { type: 'mod_panes'; roster: ModPaneRoster }
+  /** Placed rows in the main conversation (`$.ui.place`); replaces the previous list. */
+  | { type: 'mod_placed'; rows: ModPlacedRow[] }
   /** Drawn trees may be stale: `instances` narrows it to those, absent means all. */
   | { type: 'mod_invalidate'; instances?: ModInstanceRef[] }
   /** A plugin moved a site's scroll window for `clientId`. */

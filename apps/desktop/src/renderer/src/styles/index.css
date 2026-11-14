@@ -776,3 +776,19 @@ html:not(.dark) [data-sidebar-inner] .is-scrolling::-webkit-scrollbar-thumb:hove
 [data-chat-input-editor] .mention-chip-wrapper.chip-in-selection {
   padding-block: calc((1lh - var(--chip-text-height, 1lh)) / 2);
 }
+[data-mod-theme-layer]:has(> [data-mod-backdrop="true"]) [data-composer-stage],
+[data-tile-id]:has(> [data-mod-backdrop="true"]) [data-composer-stage],
+[data-main-area]:has(> [data-mod-backdrop="true"]) [data-composer-stage] {
+  background-color: transparent;
+}
+[data-mod-theme-layer]:has(> [data-mod-backdrop="true"]) [data-mod-edge-fade],
+[data-tile-id]:has(> [data-mod-backdrop="true"]) [data-mod-edge-fade],
+[data-main-area]:has(> [data-mod-backdrop="true"]) [data-mod-edge-fade],
+div:has(> [data-mod-edge-fade]):has([data-layout-single]:not(.hidden) [data-mod-backdrop="true"]) > [data-mod-edge-fade],
+div:has(> [data-mod-edge-fade]):has([data-mod-backdrop="true"]) > [data-mod-edge-fade] {
+  display: none;
+}
+html.liquid-glass :is([data-main-area], [data-tile-id], [data-mod-theme-layer]).dark,
+html.liquid-glass :is([data-main-area], [data-tile-id]).dark :is(.brand-scope, [data-mod-theme-layer]) {
+  --border: oklch(1 0 0 / 0.15);
+}

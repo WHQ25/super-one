@@ -64,6 +64,8 @@ export class ModSurface {
   private disposed = false
   private readonly clientAnswers = new Map<string, Set<ModHostRequestKind>>()
   private readonly pendingHost = new Map<string, PendingHostRequest>()
+  private initCommandNames: Set<string> | null = null
+  private placedInTurn = false
   private readonly requestTimeoutMs: number
   private readonly hostReplyTimeoutMs: number
 
@@ -76,14 +78,16 @@ export class ModSurface {
       copy: (req) => this.relayHostRequest('copy', req),
       promptRead: (req) => this.relayHostRequest('promptRead', req),
       promptFill: (req) => this.relayHostRequest('promptFill', req),
+      promptPaint: (req) => this.relayHostRequest('promptPaint', req),
       promptSuggest: (req) => this.relayHostRequest('promptSuggest', req),
     })
     void query.initializationResult?.().then(
       (init) => {
         this.setAvailable(Array.isArray(init?.capabilities) && init.capabilities.includes(UI_SURFACE_CAPABILITY))
-        // A command a mod registers while the CLI starts is only in this answer: no
-        // `commands_changed` follows it. Terminal-bound tags come from the harness catalog.
-        if (!this.disposed && Array.isArray(init?.commands)) this.opts.emit({ type: 'session_commands', commands: sdkSlashCommands(init.commands, undefined) })
+        if (!this.disposed && Array.isArray(init?.commands)) {
+          this.initCommandNames = new Set(init.commands.map((c) => c.name))
+          this.opts.emit({ type: 'session_commands', commands: sdkSlashCommands(init.commands, undefined) })
+        }
       },
       () => this.setAvailable(false),
     )
@@ -91,6 +95,16 @@ export class ModSurface {
 
   get isAvailable(): boolean {
     return this.available
+  }
+
+  resetTurnModActivity(): void {
+    this.placedInTurn = false
+  }
+
+  isModSlashCommand(command: string | undefined, sysSlashCommands?: ReadonlySet<string>): boolean {
+    if (this.placedInTurn) return true
+    if (!command || !this.initCommandNames?.has(command)) return false
+    return sysSlashCommands ? !sysSlashCommands.has(command) : false
   }
 
   /** Re-reads the user preference (after it changed) and re-announces availability. */
@@ -131,6 +145,7 @@ export class ModSurface {
   handleSystem(sys: Record<string, unknown>): boolean {
     const event = mapModSystemMessage(sys)
     if (!event) return false
+    if (event.type === 'mod_placed' && event.rows.length > 0) this.placedInTurn = true
     if (this.available) this.opts.emit(event)
     return true
   }

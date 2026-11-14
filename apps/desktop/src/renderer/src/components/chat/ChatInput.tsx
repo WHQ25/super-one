@@ -44,7 +44,7 @@ import { ModPromptDecoration, applyModPromptEdit, caretTextOffset, setModPromptD
 import { registerModComposer } from '@/lib/mod-ui/composer-bridge'
 import { ModSessionMode } from './mod/ModStatusSites'
 import { relaysPromptEdits, sendPromptEdit } from '@/lib/mod-ui/registry'
-import { ModCommandOutputSite, PromptEditRelay, clientKeyEvent, promptHintProps, promptHintText, useModSite, type ClientKeyEvent } from '@superone/chat-view/mod-ui'
+import { ModCommandOutputSite, PromptEditRelay, clientKeyEvent, promptHintProps, promptHintText, useModSite, useModUi, type ClientKeyEvent } from '@superone/chat-view/mod-ui'
 import { MOD_PROMPT_HINT_INSTANCE } from '@superone/shared/mod-ui'
 import { PromptSuggestionChips } from './PromptSuggestionChips'
 import { PluginStatusLines } from './PluginNotice'
@@ -177,6 +177,8 @@ export function ChatInput({
       removeDir: s.removeDir,
     })))
     const { sendMessage, setShowReviewPanel } = storeActions
+    const modUi = useModUi()
+    const [modArgMatches, setModArgMatches] = useState<ReturnType<typeof computeMatchingSlashCommands>>([])
     const sessionScope = useSessionScope()
     const mcpRoute = useMcpAppFileRoute(sessionScope)
     const { text, draftJson, status, interruptPending, attachments, browserAnnotations, mentions, permissionMode, openCodeAgentId, hasPendingInteraction, queuedMessages, miniAppContexts, userSelections, replyComments, projectExtraDirs, additionalDirs, additionalDirsDirty } =
@@ -642,10 +644,78 @@ export function ChatInput({
       [t, supportsAdditionalDirs, canOpenSideChat, goalCapability, activeProviderForResources, slashCommands, codexSlashCommands, acpSlashCommands, openCodeSlashCommands, cursorSlashCommands, deepseekSlashCommands],
     )
 
-    const matchingCommands = useMemo(
+    const commandMatches = useMemo(
       () => computeMatchingSlashCommands(text, activeSlashCommands, activeProviderForResources),
       [activeProviderForResources, text, activeSlashCommands],
     )
+
+    useEffect(() => {
+      const client = modUi?.client
+      const match = /^\/([^\s\n]+)\s+([^\n]*)$/.exec(text)
+      if (!client?.isAvailable || !match || slashDismissed || commandMatches.length > 0) {
+        setModArgMatches([])
+        return
+      }
+      const cmdName = match[1]
+      let cancelled = false
+      const timer = setTimeout(() => {
+        void client.act('promptAutocomplete', {
+          text,
+          cursor: text.length,
+          surface: 'desktop',
+          clientId: client.clientId,
+        }).then((res) => {
+          if (cancelled || !res || typeof res !== 'object') return
+          const rawList = Array.isArray(res.items)
+            ? res.items
+            : Array.isArray(res.suggestions)
+              ? res.suggestions
+              : Array.isArray(res.completions)
+                ? res.completions
+                : []
+          const mapped = rawList.flatMap((entry) => {
+            if (typeof entry === 'string') {
+              const trimmed = entry.trim()
+              if (!trimmed) return []
+              const name = trimmed.startsWith('/') ? trimmed.slice(1) : `${cmdName} ${trimmed}`
+              return [{ name, description: '', argumentHint: '', isSkill: false, matchIndices: [] as number[], score: 0, matched: true }]
+            }
+            if (!entry || typeof entry !== 'object') return []
+            const rec = entry as Record<string, unknown>
+            const insert = typeof rec.insertText === 'string'
+              ? rec.insertText
+              : typeof rec.text === 'string'
+                ? rec.text
+                : typeof rec.value === 'string'
+                  ? rec.value
+                  : typeof rec.label === 'string'
+                    ? rec.label
+                    : ''
+            const trimmed = insert.trim()
+            if (!trimmed) return []
+            const name = trimmed.startsWith('/')
+              ? trimmed.slice(1)
+              : trimmed.startsWith(`${cmdName} `)
+                ? trimmed
+                : `${cmdName} ${trimmed}`
+            const description = typeof rec.description === 'string' ? rec.description : ''
+            const argumentHint = typeof rec.argumentHint === 'string'
+              ? rec.argumentHint
+              : typeof rec.label === 'string' && rec.label !== trimmed
+                ? rec.label
+                : ''
+            return [{ name, description, argumentHint, isSkill: false, matchIndices: [] as number[], score: 0, matched: true }]
+          })
+          setModArgMatches(mapped)
+        })
+      }, 60)
+      return () => {
+        cancelled = true
+        clearTimeout(timer)
+      }
+    }, [modUi?.client, text, slashDismissed, commandMatches.length])
+
+    const matchingCommands = commandMatches.length > 0 ? commandMatches : modArgMatches
     matchingCommandsRef.current = matchingCommands
     slashDismissedRef.current = slashDismissed
 
@@ -881,6 +951,12 @@ export function ChatInput({
           }
           setSlashIndex(-1)
           setShowReviewPanel(true)
+          return
+        }
+        if (name.includes(' ')) {
+          replaceFirstLineWith(`/${name}`)
+          setSlashIndex(-1)
+          setSlashDismissed(true)
           return
         }
         replaceFirstLineWith(`/${name} `)
@@ -2198,7 +2274,10 @@ export function ChatInput({
             <div className="flex items-center justify-between px-3 py-1.5">
               <span className="text-xs font-medium text-muted-foreground">/{commandPopup.command}</span>
               <button
-                onMouseDown={(e) => { e.preventDefault(); dismissCommandPopup() }}
+                onMouseDown={(e) => {
+                  e.preventDefault()
+                  dismissCommandPopup()
+                }}
                 className="rounded p-0.5 text-muted-foreground transition-colors hover:text-foreground"
               >
                 <X className="size-3" />

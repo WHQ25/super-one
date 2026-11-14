@@ -486,7 +486,7 @@ export const ChatPanel = memo(function ChatPanel({ anchorBoundaryRef }: { anchor
           initial={{ opacity: isOpen ? 1 : 0 }}
           transition={{ duration: 0.12 }}
         >
-          <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-linear-to-b from-card to-transparent" />
+          <div data-mod-edge-fade="" className="pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-linear-to-b from-card to-transparent" />
           <ChatContent scrollViewportRef={scrollViewportRef} showScrollButton={showScrollButton} scrollToBottom={scrollToBottom} stopAutoScroll={stopAutoScroll} />
         </motion.div>
       </motion.div>

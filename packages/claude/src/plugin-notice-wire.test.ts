@@ -9,6 +9,10 @@ describe('mapPluginUiMessage', () => {
       .toEqual({ type: 'plugin_notice', kind: 'toast', plugin: 'probe', text: 'hi', timeoutMs: 4000 })
     expect(mapPluginUiMessage({ type: 'system', subtype: 'ui_status', plugin: 'probe', text: 'busy' }))
       .toEqual({ type: 'plugin_notice', kind: 'status', plugin: 'probe', text: 'busy' })
+    expect(mapPluginUiMessage({ type: 'system', subtype: 'ui_notify', plugin: 'probe', source: 'probe', title: 'Done', text: 'All good', key: 'k1' }))
+      .toEqual({ type: 'plugin_notice', kind: 'notify', plugin: 'probe', source: 'probe', title: 'Done', text: 'All good', key: 'k1' })
+    expect(mapPluginUiMessage({ type: 'system', subtype: 'ui_notify_cancel', plugin: 'probe', source: 'probe', key: 'k1' }))
+      .toEqual({ type: 'plugin_notice', kind: 'notify_cancel', plugin: 'probe', source: 'probe', key: 'k1' })
   })
 
   it('reads a null status as clearing the line', () => {

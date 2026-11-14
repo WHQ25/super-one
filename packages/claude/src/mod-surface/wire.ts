@@ -6,6 +6,7 @@ import type {
   ModInstanceRef,
   ModPane,
   ModPaneRoster,
+  ModPlacedRow,
   ModUiOp,
 } from '@superone/shared/mod-ui'
 
@@ -36,6 +37,7 @@ export const OP_SUBTYPE: Record<Exclude<ModUiOp, 'hostReply'>, string> = {
   clientPress: 'ui_client_press',
   message: 'ui_message',
   promptEdit: 'ui_prompt_edit',
+  promptAutocomplete: 'ui_prompt_autocomplete',
 }
 
 /** The `ui_attach.answers` entry for each CLI → host request a client answers. */
@@ -43,6 +45,7 @@ export const HOST_REQUEST_SUBTYPE: Record<ModHostRequestKind, string> = {
   copy: 'ui_copy',
   promptRead: 'ui_prompt_read',
   promptFill: 'ui_prompt_fill',
+  promptPaint: 'ui_prompt_paint',
   promptSuggest: 'ui_prompt_suggest',
 }
 
@@ -67,6 +70,7 @@ const LOCAL_KEY: Record<string, string> = {
   client_modules: 'clientModules',
   close_on_escape: 'closeOnEscape',
   hold_toasts: 'holdToasts',
+  background_color: 'backgroundColor',
 }
 
 function renameKeys(obj: Record<string, unknown>, names: Record<string, string>): Record<string, unknown> {
@@ -126,6 +130,18 @@ export function mapModSystemMessage(sys: Record<string, unknown>): AgentEvent | 
     }
     case 'ui_panes':
       return { type: 'mod_panes', roster: toRoster(sys) }
+    case 'ui_placed': {
+      const rawRows = Array.isArray(sys.rows) ? sys.rows : []
+      const rows: ModPlacedRow[] = rawRows
+        .filter((r): r is Record<string, unknown> => !!r && typeof r === 'object' && typeof (r as { plugin?: unknown }).plugin === 'string' && typeof (r as { id?: unknown }).id === 'string' && typeof (r as { request_id?: unknown }).request_id === 'string')
+        .map((r) => ({
+          plugin: String(r.plugin),
+          id: String(r.id),
+          requestId: String(r.request_id),
+          ...(typeof r.after_uuid === 'string' ? { afterUuid: r.after_uuid } : {}),
+        }))
+      return { type: 'mod_placed', rows }
+    }
     case 'ui_scroll':
       if (typeof sys.client_id !== 'string' || typeof sys.instance_id !== 'string' || typeof sys.offset !== 'number') return null
       return {
@@ -167,6 +183,13 @@ export function toHostRequest(kind: ModHostRequestKind, req: Record<string, unkn
         ...(Array.isArray(req.decorations) ? { decorations: req.decorations as Extract<ModHostRequest, { kind: 'promptFill' }>['decorations'] } : {}),
       }
     }
+    case 'promptPaint':
+      return {
+        kind,
+        layer: String(req.layer ?? ''),
+        ...(typeof req.text === 'string' ? { text: req.text } : {}),
+        ...(Array.isArray(req.decorations) ? { decorations: req.decorations as Extract<ModHostRequest, { kind: 'promptPaint' }>['decorations'] } : {}),
+      }
     case 'promptSuggest':
       return { kind, text: String(req.text ?? '') }
   }
@@ -181,6 +204,8 @@ export function toWireHostReply(kind: ModHostRequestKind, reply: ModHostReply | 
       return reply?.kind === 'promptRead' ? { text: reply.text, cursor: reply.cursor } : { text: '', cursor: 0 }
     case 'promptFill':
       return { filled: reply?.kind === 'promptFill' && reply.filled }
+    case 'promptPaint':
+      return { painted: reply?.kind === 'promptPaint' && reply.painted }
     case 'promptSuggest':
       return { shown: reply?.kind === 'promptSuggest' && reply.shown }
   }

@@ -4,7 +4,9 @@ import { SquareTerminal, LayoutGrid, PanelLeft, PanelRight, PanelLeftDashed, Pan
 import { useTranslation } from 'react-i18next'
 import { LayoutToggle } from '@/components/coding/LayoutToggle'
 import { ChatPanel } from '@/components/chat/ChatPanel'
+import { ModTileBackdrop, ModTileBackdropProvider } from '@/components/chat/mod/ModSurfaces'
 import { CodingWorkspace } from '@/components/coding/CodingWorkspace'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness-capabilities'
 import { ActivityPanel } from '@/components/activity/ActivityPanel'
 import { useActivityPanelOnScreen } from '@/hooks/useActivityPanelOnScreen'
 import { SideChatConfirmDialog } from '@/components/chat/SideChatConfirmDialog'
@@ -530,6 +532,12 @@ function App(): React.JSX.Element {
     sessionProvider: s.sessionProvider,
     preferredProvider: s.preferredProvider,
   }) === 'codex')
+  const drawsMainMods = useActiveSession((s) => HARNESS_CAPABILITIES[resolveProvider({
+    sessionProvider: s.sessionProvider,
+    preferredProvider: s.preferredProvider,
+  })].modUi)
+  const [mainBackdropScheme, setMainBackdropScheme] = useState<'light' | 'dark' | undefined>(undefined)
+  const showMainBackdrop = (compactMiniShell || mosaicMode !== 'mosaic') && drawsMainMods
   const hasVoiceTimeline = useCodexRealtimeViewStore((state) => (
     sessionId ? state.sessions[sessionId]?.hasTimeline === true : false
   ))
@@ -640,14 +648,14 @@ function App(): React.JSX.Element {
               showSidebar ? 'rounded-l-xl' : 'rounded-none',
             )
           : cn(
-              'rounded-xl border border-border/50',
+              'rounded-xl',
               cardTopMargin,
               'mb-[5px] mr-[5px]',
               !showSidebar && 'ml-[5px]',
               mosaicMode !== 'mosaic' && 'transition-shadow duration-200',
               mosaicMode !== 'mosaic' && (sidebarResizing
-                ? 'border-border shadow-[0_10px_30px_rgba(0,0,0,0.16)]'
-                : 'shadow-[0_2px_12px_rgba(0,0,0,0.06)] group-has-[[data-resize-handle]:hover]/coding:border-border group-has-[[data-resize-handle]:hover]/coding:shadow-[0_10px_30px_rgba(0,0,0,0.16)]'),
+                ? 'shadow-[0_10px_30px_rgba(0,0,0,0.16)]'
+                : 'shadow-[0_2px_12px_rgba(0,0,0,0.06)] group-has-[[data-resize-handle]:hover]/coding:shadow-[0_10px_30px_rgba(0,0,0,0.16)]'),
             ),
       )}>
         <ActivityPanel
@@ -663,13 +671,22 @@ function App(): React.JSX.Element {
           'relative z-10 flex-1 flex-col overflow-hidden',
           activityFillsWindow && !inMiniWindow ? 'hidden' : 'flex',
           activityOnScreen && (activitySide === 'left' ? 'border-l border-border' : 'border-r border-border'),
+          showMainBackdrop && mainBackdropScheme === 'dark' && 'dark',
         )} style={{ order: 1, minWidth: inMiniWindow ? 0 : MIN_MAIN }}>
+        {showMainBackdrop && (
+          <ModTileBackdrop
+            projectPath={currentFolder}
+            sessionId={sessionId}
+            enabled={drawsMainMods}
+            onColorSchemeChange={setMainBackdropScheme}
+          />
+        )}
         {/* Main header — drag region (hidden in mosaic; each tile carries its own) */}
         {compactMiniShell
-          ? <MiniWindowHeader canRestore transparentBackground={liquidGlass} />
+          ? <div className="relative z-10"><MiniWindowHeader canRestore transparentBackground={liquidGlass || showMainBackdrop} /></div>
           : mosaicMode !== 'mosaic' && (
         <div
-          className={cn('flex h-[34px] shrink-0 items-center transition-[padding-left] duration-300 ease-in-out', !isMac || (isFullscreen && !hasLeftPanel) ? 'pl-2' : 'pl-[18px]')}
+          className={cn('relative z-10 flex h-[34px] shrink-0 items-center transition-[padding-left] duration-300 ease-in-out', !isMac || (isFullscreen && !hasLeftPanel) ? 'pl-2' : 'pl-[18px]')}
           style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         >
           {isMac && <div className={cn('shrink-0 transition-[width] duration-300 ease-in-out', isFullscreen || hasLeftPanel ? 'w-0' : 'w-[60px]')} />}
@@ -748,9 +765,15 @@ function App(): React.JSX.Element {
         )}
 
         {/* Content */}
-        <div className="relative flex min-h-0 flex-1 flex-col overflow-hidden">
-          {!liquidGlass && (compactMiniShell || mosaicMode !== 'mosaic') && <div className="pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-linear-to-b from-card to-transparent" />}
-          <CodingWorkspace mosaicMode={mosaicMode} compact={compactMiniShell} />
+        <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
+          {!liquidGlass && (compactMiniShell || mosaicMode !== 'mosaic') && <div data-mod-edge-fade="" className="pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-linear-to-b from-card to-transparent" />}
+          {showMainBackdrop ? (
+            <ModTileBackdropProvider>
+              <CodingWorkspace mosaicMode={mosaicMode} compact={compactMiniShell} />
+            </ModTileBackdropProvider>
+          ) : (
+            <CodingWorkspace mosaicMode={mosaicMode} compact={compactMiniShell} />
+          )}
         </div>
         {draggingSession && mosaicMode === 'mosaic' && <MosaicDropPreview />}
       </div>

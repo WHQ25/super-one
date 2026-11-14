@@ -7,6 +7,7 @@ import { InputRequestComposer } from '../InputRequestComposer'
 import type { PermissionRequest } from '@superone/shared/agent-types'
 import { RealtimeCallComposer } from '../RealtimeCallComposer'
 import { SessionContinuationComposer } from '../SessionContinuationComposer'
+import { ModPlacedComposer } from '../mod/ModSurfaces'
 import type { SessionContinuationOffer } from '../session-continuation-offer'
 import { McpAppConsentComposer } from '@/components/mcp-apps/McpAppConsent'
 import { useHasMcpAppConsent } from '@/components/mcp-apps/consent-store'
@@ -97,6 +98,7 @@ export interface ComposerRenderOptions {
   appInput?: PermissionRequest | null
   openedComposer?: ComposerHandle | null
   continuation?: SessionContinuationOffer | null
+  onDismissModPlaced?: () => void
 }
 
 type ComposerFactory = (sessionId: string, options: ComposerRenderOptions) => ReactNode
@@ -105,6 +107,7 @@ const composerRegistry: Record<BuiltinComposerId, ComposerFactory> = {
   decision: (_sessionId, options) => <DecisionComposer item={options.decision} />,
   'app-consent': (sessionId, options) => <McpAppConsentComposer sessionId={sessionId} pending={options.appConsent} />,
   'app-input': (_sessionId, options) => <InputRequestComposer request={options.appInput} />,
+  'mod-placed': (_sessionId, options) => <ModPlacedComposer onDismiss={options.onDismissModPlaced} />,
   voice: (_sessionId, options) => (
     <RealtimeCallComposer microphoneShortcutEnabled={options.microphoneShortcutEnabled} />
   ),

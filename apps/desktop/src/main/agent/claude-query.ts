@@ -375,6 +375,17 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
   let hasRejectedRateLimit = false
   let pendingSlashOutput = ''
   let pendingSlashCommand: string | undefined
+  let sysInitSlashCommands: Set<string> | undefined
+  const emitSlashCommandOutput = (content: string, command?: string) => {
+    const inline = opts.modSurface?.isModSlashCommand(command, sysInitSlashCommands) ?? false
+    emit({
+      type: 'slash_command_output',
+      messageId: getCurrentMessageId(),
+      content,
+      ...(command ? { command } : {}),
+      ...(inline ? { inline: true } : {}),
+    })
+  }
   // Per-step dedup: track processed step IDs (SDK message IDs) and latest step tokens
   const processedStepIds = new Set<string>()
   let messageInputTokens = 0
@@ -615,7 +626,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
             .replace(/<\/local-command-stdout>\n?/g, '')
             .trim()
           if (text) {
-            emit({ type: 'slash_command_output', messageId, content: text })
+            emitSlashCommandOutput(text, pendingSlashCommand)
           }
         }
 
@@ -647,6 +658,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
             if (sys.session_id) onSessionId?.(sys.session_id)
             log.info('[session_init] outputStyle=%s availableOutputStyles=%j', sys.output_style, sys.available_output_styles)
             terminalSlashCommands = readTerminalSlashCommands(sys.terminal_slash_commands)
+            sysInitSlashCommands = new Set(Array.isArray(sys.slash_commands) ? sys.slash_commands : [])
             emit({
               type: 'session_init',
               session: {
@@ -841,7 +853,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
           } else if (sys.subtype === 'local_command_output') {
             const text = typeof sys.content === 'string' ? sys.content : ''
             if (text) {
-              emit({ type: 'slash_command_output', messageId, content: text })
+              emitSlashCommandOutput(text, pendingSlashCommand)
             }
           }
           break
@@ -1236,12 +1248,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
             activeBackgroundTasks.clear()
           } else if (!isClaudeResultError(result, hasRejectedRateLimit)) {
             if (pendingSlashOutput) {
-              emit({
-                type: 'slash_command_output',
-                messageId,
-                content: pendingSlashOutput,
-                ...(pendingSlashCommand ? { command: pendingSlashCommand } : {}),
-              })
+              emitSlashCommandOutput(pendingSlashOutput, pendingSlashCommand)
             }
             emit({ type: 'message_complete', messageId, metadata })
           } else {
@@ -1290,6 +1297,7 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
           lastRateLimitResetsAt = undefined
           pendingSlashOutput = ''
           pendingSlashCommand = undefined
+          opts.modSurface?.resetTurnModActivity()
 
           resultSeen = true
           turnActive = false

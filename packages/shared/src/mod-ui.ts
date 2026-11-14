@@ -33,13 +33,16 @@ export const MOD_RENDER_COMPONENTS = [
   'PromptHint',
   'AbovePrompt',
   'Pane',
+  'Placed',
+  'Backdrop',
+  'Theme',
 ] as const
 export type ModRenderComponent = (typeof MOD_RENDER_COMPONENTS)[number]
 
 /** Sites each remote surface draws (the CLI raises the rest on the terminal only). */
 export const MOD_SITES_BY_SURFACE: Record<ModSurface, readonly ModRenderComponent[]> = {
-  desktop: ['AskUserQuestion', 'UserMessage', 'AssistantMessage', 'ToolUse', 'ToolResult', 'ToolGroup', 'CommandOutput', 'Spinner', 'SessionMode', 'PromptHint', 'AbovePrompt', 'Pane'],
-  mobile: ['AskUserQuestion', 'UserMessage', 'AssistantMessage', 'ToolUse', 'ToolResult', 'ToolGroup', 'CommandOutput', 'Pane'],
+  desktop: ['AskUserQuestion', 'UserMessage', 'AssistantMessage', 'ToolUse', 'ToolResult', 'ToolGroup', 'CommandOutput', 'Spinner', 'SessionMode', 'PromptHint', 'AbovePrompt', 'Pane', 'Placed', 'Backdrop', 'Theme'],
+  mobile: ['AskUserQuestion', 'UserMessage', 'AssistantMessage', 'ToolUse', 'ToolResult', 'ToolGroup', 'CommandOutput', 'Pane', 'Placed', 'Backdrop', 'Theme'],
   vscode: ['AskUserQuestion', 'UserMessage', 'AssistantMessage', 'ToolUse', 'ToolResult', 'ToolGroup', 'CommandOutput', 'Pane'],
 }
 
@@ -49,6 +52,13 @@ export const MOD_ABOVE_PROMPT_INSTANCE = 'above-prompt'
 export const MOD_SESSION_MODE_INSTANCE = 'session-mode'
 /** Instance id the terminal uses for the hint line; remote surfaces reuse it. */
 export const MOD_PROMPT_HINT_INSTANCE = 'prompt-hint'
+/** Instance id the CLI uses for the session backdrop. */
+export const MOD_BACKDROP_INSTANCE = 'backdrop'
+/** Instance id the CLI uses for the session theme colors. */
+export const MOD_THEME_INSTANCE = 'theme'
+
+/** Optional features a client declares in `ui_attach.draws`. */
+export type ModDrawFeature = 'Backdrop' | 'Input' | 'Select'
 
 /** The size a surface draws into, in character cells of its code font. */
 export interface ModViewport {
@@ -182,6 +192,7 @@ export interface ModPane {
   plugin: string
   closeOnEscape?: true
   holdToasts?: true
+  backgroundColor?: string
   rows?: number
   columns?: number
 }
@@ -194,6 +205,13 @@ export interface ModPaneRoster {
 }
 
 export const EMPTY_MOD_PANE_ROSTER: ModPaneRoster = { panes: [], shownId: null, focusedId: null, focusRequestedId: null }
+
+export interface ModPlacedRow {
+  plugin: string
+  id: string
+  requestId: string
+  afterUuid?: string
+}
 
 export interface ModInstanceRef {
   surface: ModSurface | 'terminal'
@@ -221,12 +239,14 @@ export type ModHostRequest =
   | { kind: 'copy'; plugin: string; text: string }
   | { kind: 'promptRead' }
   | { kind: 'promptFill'; text: string; mode: 'replace' | 'append' | 'insert'; decorations?: ModDecoration[] }
+  | { kind: 'promptPaint'; layer: string; text?: string; decorations?: ModDecoration[] }
   | { kind: 'promptSuggest'; text: string }
 
 export type ModHostReply =
   | { kind: 'copy'; copied: boolean }
   | { kind: 'promptRead'; text: string; cursor: number }
   | { kind: 'promptFill'; filled: boolean }
+  | { kind: 'promptPaint'; painted: boolean }
   | { kind: 'promptSuggest'; shown: boolean }
 
 export type ModHostRequestKind = ModHostRequest['kind']
@@ -256,7 +276,7 @@ export interface ModClientLocation {
  */
 export interface ModUiOps {
   attach: {
-    request: { surface: ModSurface; clientId: string; viewport?: ModViewport; answers?: ModHostRequestKind[] }
+    request: { surface: ModSurface; clientId: string; viewport?: ModViewport; answers?: ModHostRequestKind[]; draws?: ModDrawFeature[] }
     result: { surfaces: string[] }
   }
   detach: { request: { clientId: string }; result: { detached: boolean } }
@@ -294,6 +314,10 @@ export interface ModUiOps {
   promptEdit: {
     request: { text: string; cursor: number; key?: { key: string; ctrl?: true; shift?: true; meta?: true }; by?: 'person' | 'app'; surface: ModSurface; clientId: string }
     result: { text: string; cursor: number; decorations?: ModDecoration[]; superseded?: true }
+  }
+  promptAutocomplete: {
+    request: { text: string; cursor: number; surface: ModSurface; clientId: string }
+    result: Record<string, unknown>
   }
   /** Answers a `mod_host_request` the CLI sent to this client; only that client's answer is taken. */
   hostReply: { request: { requestId: string; clientId: string; reply: ModHostReply }; result: { accepted: boolean } }

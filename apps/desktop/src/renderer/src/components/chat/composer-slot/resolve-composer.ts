@@ -1,4 +1,4 @@
-export const COMPOSER_IDS = ['decision', 'app-consent', 'app-input', 'voice', 'continuation', 'text'] as const
+export const COMPOSER_IDS = ['decision', 'app-consent', 'app-input', 'mod-placed', 'voice', 'continuation', 'text'] as const
 
 export type BuiltinComposerId = (typeof COMPOSER_IDS)[number]
 export type ComposerId = BuiltinComposerId | (string & {})
@@ -8,6 +8,7 @@ export interface ComposerInputs {
   decisionAvailable?: boolean
   appConsent: boolean
   appInput?: boolean
+  modPlaced?: boolean
   voiceEngaged: boolean
   openedComposerId?: string | null
   /** A long session whose cache expired is offered a handoff to a new session. */
@@ -20,6 +21,7 @@ export function resolveComposer({
   decisionAvailable = true,
   appConsent,
   appInput,
+  modPlaced,
   voiceEngaged,
   openedComposerId,
   continuationOffered,
@@ -28,6 +30,7 @@ export function resolveComposer({
   if (appConsent) return 'app-consent'
   if (decisionAvailable && appInput) return 'app-input'
   if (decisionAvailable && openedComposerId) return openedComposerId
+  if (decisionAvailable && modPlaced) return 'mod-placed'
   if (voiceEngaged) return 'voice'
   if (decisionAvailable && continuationOffered) return 'continuation'
   return 'text'

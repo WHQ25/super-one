@@ -2,12 +2,14 @@ import type { AgentEvent } from '@superone/shared/agent-types'
 import {
   EMPTY_MOD_PANE_ROSTER,
   type ModClientModuleBundle,
+  type ModDrawFeature,
   type ModHostReply,
   type ModHostRequest,
   type ModHostRequestKind,
   type ModKeyedRow,
   type ModOnScreen,
   type ModPaneRoster,
+  type ModPlacedRow,
   type ModRenderComponent,
   type ModRenderResult,
   type ModScrollComponent,
@@ -49,6 +51,8 @@ export interface ModUiClientOptions {
   clientId: string
   /** CLI → client requests this client answers (clipboard, composer). */
   answers?: ModHostRequestKind[]
+  /** Extra mod features this client draws (`Backdrop`, `Input`, `Select`). */
+  draws?: ModDrawFeature[]
   hostHandler?: (request: ModHostRequest) => Promise<ModHostReply>
   /** The client's whole drawing area in cells, sent with attach. */
   viewport?: () => ModViewport | undefined
@@ -73,6 +77,7 @@ type SiteSignal = { type: 'scroll'; offset: number; followEnd?: boolean } | { ty
 export interface ModUiClientState {
   available: boolean
   roster: ModPaneRoster
+  placed: ModPlacedRow[]
 }
 
 const OFF: ModSiteSnapshot = { status: 'off', result: null, props: {} }
@@ -94,7 +99,8 @@ export class ModUiClient {
   private available = false
   private attached = false
   private roster: ModPaneRoster = EMPTY_MOD_PANE_ROSTER
-  private state: ModUiClientState = { available: false, roster: EMPTY_MOD_PANE_ROSTER }
+  private placed: ModPlacedRow[] = []
+  private state: ModUiClientState = { available: false, roster: EMPTY_MOD_PANE_ROSTER, placed: [] }
   private readonly unhooked = new Set<ModRenderComponent>()
   /** Components known hooked since the last un-narrowed invalidation. */
   private readonly hooked = new Set<ModRenderComponent>()
@@ -146,6 +152,10 @@ export class ModUiClient {
         this.roster = event.roster
         this.notifyState()
         return
+      case 'mod_placed':
+        this.placed = event.rows
+        this.notifyState()
+        return
       case 'mod_invalidate':
         this.invalidate(event.instances?.filter((i) => i.surface === this.surface).map((i) => entryKey(i.component, i.instanceId)))
         return
@@ -170,6 +180,7 @@ export class ModUiClient {
         clientId: this.clientId,
         viewport: this.opts.viewport?.(),
         ...(this.opts.answers?.length ? { answers: this.opts.answers } : {}),
+        ...(this.opts.draws?.length ? { draws: this.opts.draws } : {}),
       })
       this.attached = true
       this.roster = await this.opts.transport('panes', { clientId: this.clientId })
@@ -188,6 +199,7 @@ export class ModUiClient {
     this.available = false
     this.attached = false
     this.roster = EMPTY_MOD_PANE_ROSTER
+    this.placed = []
     this.forgetHooks()
     for (const entry of this.entries.values()) this.setSnapshot(entry, OFF)
     this.notifyState()
@@ -295,7 +307,10 @@ export class ModUiClient {
   private invalidate(keys?: string[]): void {
     if (!keys) this.forgetHooks()
     const targets = keys ? keys.map((k) => this.entries.get(k)).filter((e): e is Entry => !!e) : [...this.entries.values()]
-    for (const entry of targets) entry.stale = true
+    for (const entry of targets) {
+      this.unhooked.delete(entry.component)
+      entry.stale = true
+    }
     if (targets.length > 0) this.scheduleFlush()
   }
 
@@ -384,7 +399,7 @@ export class ModUiClient {
   }
 
   private notifyState(): void {
-    this.state = { available: this.isAvailable, roster: this.roster }
+    this.state = { available: this.isAvailable, roster: this.roster, placed: this.placed }
     for (const listener of this.stateListeners) listener()
   }
 }

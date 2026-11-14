@@ -1194,10 +1194,13 @@ function PluginInstallCard({
     setInstalling(true)
     try {
       await onInstall(plugin.key, scope)
+    } catch (err) {
+      toast.error(t('resources.plugins.installFailed', {
+        name: getPluginTitle(plugin),
+        error: err instanceof Error ? err.message : String(err),
+      }))
+    } finally {
       setInstalling(false)
-    } catch (e) {
-      setInstalling(false)
-      throw e
     }
   }
 

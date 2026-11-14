@@ -182,3 +182,87 @@ describe('ModSurface host requests', () => {
     expect(await surface.call(op, { requestId: 'nope', clientId: CLIENT, reply: { kind: 'copy', copied: true } })).toEqual({ accepted: false })
   })
 })
+
+describe('ModSurface theme and backdrop', () => {
+  it('forwards draws on ui_attach, maps pane background_color, and maps theme/backdrop invalidations', async () => {
+    const sent: Record<string, unknown>[] = []
+    const { surface } = await ready({
+      initializationResult: async () => ({ capabilities: ['ui_surface_v1'] }),
+      request: async (inner) => {
+        sent.push(inner)
+        if (inner.subtype === 'ui_attach') return { subtype: 'success', request_id: 'r', response: { surfaces: ['desktop'] } }
+        if (inner.subtype === 'ui_panes') {
+          return {
+            subtype: 'success',
+            request_id: 'r',
+            response: {
+              panes: [{ id: 'p', title: 'T', plugin: 'theme-mod', background_color: '#1a1b26' }],
+              shown_id: 'p',
+              focused_id: null,
+              focus_requested_id: null,
+            },
+          }
+        }
+        return { subtype: 'success', request_id: 'r', response: {} }
+      },
+      setUiHost: () => {},
+    })
+
+    await surface.call('attach', { surface: 'desktop', clientId: CLIENT, draws: ['Backdrop'] })
+    expect(sent.at(-1)).toMatchObject({ subtype: 'ui_attach', surface: 'desktop', client_id: CLIENT, draws: ['Backdrop'] })
+
+    const roster = await surface.call('panes', { clientId: CLIENT })
+    expect(roster.panes[0]?.backgroundColor).toBe('#1a1b26')
+
+    expect(mapModSystemMessage({
+      subtype: 'ui_invalidate',
+      instances: [
+        { surface: 'desktop', component: 'Backdrop', instance_id: 'backdrop' },
+        { surface: 'desktop', component: 'Theme', instance_id: 'theme' },
+      ],
+    })).toEqual({
+      type: 'mod_invalidate',
+      instances: [
+        { surface: 'desktop', component: 'Backdrop', instanceId: 'backdrop' },
+        { surface: 'desktop', component: 'Theme', instanceId: 'theme' },
+      ],
+    })
+  })
+
+  it('maps ui_placed, relays promptPaint, and forwards promptAutocomplete', async () => {
+    const sent: Record<string, unknown>[] = []
+    let registeredHost: Record<string, (req: Record<string, unknown>) => Promise<Record<string, unknown>>> = {}
+    const { surface, events } = await ready({
+      initializationResult: async () => ({ capabilities: ['ui_surface_v1'] }),
+      request: async (inner) => {
+        sent.push(inner)
+        if (inner.subtype === 'ui_attach') return { subtype: 'success', request_id: 'r', response: { surfaces: ['desktop'] } }
+        if (inner.subtype === 'ui_prompt_autocomplete') {
+          return { subtype: 'success', request_id: 'r', response: { items: [{ label: 'halftone-dusk' }] } }
+        }
+        return { subtype: 'success', request_id: 'r', response: {} }
+      },
+      setUiHost: (h) => { registeredHost = h as unknown as typeof registeredHost },
+    })
+
+    expect(mapModSystemMessage({
+      subtype: 'ui_placed',
+      rows: [{ id: 'theme-card', plugin: 'theme-examples', request_id: 'req-1', after_uuid: 'u1' }],
+    })).toEqual({
+      type: 'mod_placed',
+      rows: [{ id: 'theme-card', plugin: 'theme-examples', requestId: 'req-1', afterUuid: 'u1' }],
+    })
+
+    await surface.call('attach', { surface: 'desktop', clientId: CLIENT, answers: ['promptPaint'] })
+    const paintPromise = registeredHost.promptPaint({ surface: 'desktop', client_id: CLIENT, layer: 'syntax', decorations: [{ start: 0, end: 5, color: '#fff' }] })
+    await vi.waitFor(() => expect(events.at(-1)?.type).toBe('mod_host_request'))
+    const req = events.at(-1) as Extract<AgentEvent, { type: 'mod_host_request' }>
+    expect(req.request).toEqual({ kind: 'promptPaint', layer: 'syntax', decorations: [{ start: 0, end: 5, color: '#fff' }] })
+    await surface.call('hostReply', { requestId: req.requestId, clientId: CLIENT, reply: { kind: 'promptPaint', painted: true } })
+    expect(await paintPromise).toEqual({ painted: true })
+
+    const ac = await surface.call('promptAutocomplete', { clientId: CLIENT, surface: 'desktop', input: '/custom-theme ', cursor: 14 })
+    expect(sent.at(-1)).toMatchObject({ subtype: 'ui_prompt_autocomplete', client_id: CLIENT, surface: 'desktop', input: '/custom-theme ', cursor: 14 })
+    expect(ac).toEqual({ items: [{ label: 'halftone-dusk' }] })
+  })
+})

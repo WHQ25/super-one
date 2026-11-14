@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { AnimatePresence, motion } from 'motion/react'
 import { ArrowDown, PenLine, Play, ShipWheel, Trash2 } from 'lucide-react'
+import { ModPlacedRows, partitionPlacedRows, useModUiState } from '@superone/chat-view/mod-ui'
 import type { ChatMessage as ChatMessageModel, ModelOption } from '@superone/shared/agent-types'
 import type { TranscriptRow } from '@superone/shared/transcript-segments'
 import { SystemNoticeRow } from '@superone/chat-view/presenters/SystemNoticeRow'
@@ -166,6 +167,18 @@ export function ChatTranscriptBody({
   isRecapping,
 }: ChatTranscriptBodyProps) {
   const { t } = useTranslation()
+  const { available: modUiAvailable, placed } = useModUiState()
+  const { after: anchoredPlacedAfter, tail: anchoredPlacedTail } = useMemo(() => {
+    if (!modUiAvailable) return { after: new Map(), tail: [] }
+    const anchored = placed.filter((r) => Boolean(r.afterUuid))
+    if (anchored.length === 0) return { after: new Map(), tail: [] }
+    const ids = new Set<string>()
+    for (const row of rows) {
+      ids.add(row.source.id)
+      ids.add(row.id)
+    }
+    return partitionPlacedRows(anchored, ids)
+  }, [modUiAvailable, placed, rows])
 
   return (
     <TurnDetailStateProvider scope={displayedSessionId ?? 'default'}>
@@ -238,6 +251,9 @@ export function ChatTranscriptBody({
                       )
                     }
                     const separatorAt = row.id === msg.id ? dateSeparatorAt.get(msg.id) : undefined
+                    const placedAfterRow = row.final
+                      ? (anchoredPlacedAfter.get(row.source.id) ?? anchoredPlacedAfter.get(msg.id))
+                      : undefined
                     return (
                       <div key={msg.id} data-message-id={row.id} className="chat-message-wrapper">
                         {separatorAt !== undefined && <MessageDateSeparator at={separatorAt} />}
@@ -255,6 +271,7 @@ export function ChatTranscriptBody({
                           firstSlice={row.first}
                           anchors={row.anchors}
                         />
+                        {placedAfterRow && placedAfterRow.length > 0 && <ModPlacedRows rows={placedAfterRow} />}
                       </div>
                     )
                   }).map((content, index) => ({
@@ -295,6 +312,7 @@ export function ChatTranscriptBody({
                 {isCompacting && <CompactingIndicator startedAt={compactingStartedAt} />}
                 {!isCompacting && compactError && <CompactErrorIndicator error={compactError} onDismiss={dismissCompactError} />}
                 {isRecapping && <RecappingIndicator />}
+                {anchoredPlacedTail.length > 0 && <ModPlacedRows rows={anchoredPlacedTail} />}
                 <RemoteTranscriptChrome edge="bottom" />
               </SelectionContextMenuZone>
             </RemoteTranscriptEdges>
@@ -303,7 +321,7 @@ export function ChatTranscriptBody({
         {displayMessages.length > 0 && (
           <ChatScrollIndicator entries={outline} viewportRef={scrollViewportRef} getMessageTop={messageTop} onJump={jumpToMessage} />
         )}
-        {!liquidGlass && <div className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-6 bg-linear-to-t from-card to-transparent" />}
+        {!liquidGlass && <div data-mod-edge-fade="" className="pointer-events-none absolute inset-x-0 bottom-0 z-10 h-6 bg-linear-to-t from-card to-transparent" />}
         <AnimatePresence>
           {showScrollButton && scrollToBottom && displayMessages.length > 0 && (
             <motion.button

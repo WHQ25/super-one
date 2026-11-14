@@ -37,6 +37,8 @@ export async function replyToHostRequest(ctx: HostRequestContext | null, request
       ctx.suggest(request.text)
       return { kind: 'promptSuggest', shown: true }
     }
+    case 'promptPaint':
+      return { kind: 'promptPaint', painted: false }
     case 'copy':
       return { kind: 'copy', copied: await ctx?.copy(request.text).catch(() => false) ?? false }
   }

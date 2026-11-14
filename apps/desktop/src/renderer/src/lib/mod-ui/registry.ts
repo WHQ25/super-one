@@ -96,6 +96,7 @@ export function getModUiClient(projectPath: string, sessionId: string): ModUiCli
     surface: 'desktop',
     clientId: CLIENT_ID,
     answers: ['copy', 'promptRead', 'promptFill', 'promptSuggest'],
+    draws: ['Backdrop'],
     transport: (op, request) => window.environment.modUi(connectionId, sessionId, op, request),
     viewport: () => windowViewport(true),
     hostHandler: (request) => answerHostRequest(projectPath, sessionId, request),

@@ -693,12 +693,20 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
     // Like the CLI's notification bar, a plugin's toast belongs to the session on
     // screen; one raised by a background session would read as this one's.
     if (
-      event.type === 'plugin_notice' && event.kind === 'toast' && event.text
+      event.type === 'plugin_notice'
       && projectPath === get().activeProject
       && eventSessionId === get().projectSessions[projectPath]?._activeSessionId
     ) {
-      const { text, plugin, timeoutMs } = event
-      showOrHoldModToast(eventSessionId, () => toast(text, { description: plugin, ...(timeoutMs ? { duration: timeoutMs } : {}) }))
+      if (event.kind === 'toast' && event.text) {
+        const { text, plugin, timeoutMs } = event
+        showOrHoldModToast(eventSessionId, () => toast(text, { description: plugin, ...(timeoutMs ? { duration: timeoutMs } : {}) }))
+      } else if (event.kind === 'notify') {
+        const { title, text, source, key } = event
+        const id = key ? `mod-notify:${source}:${key}` : undefined
+        showOrHoldModToast(eventSessionId, () => toast(title, { ...(id ? { id } : {}), ...(text ? { description: text } : {}) }))
+      } else if (event.kind === 'notify_cancel') {
+        toast.dismiss(`mod-notify:${event.source}:${event.key}`)
+      }
     }
   },
 

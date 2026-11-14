@@ -4650,6 +4650,7 @@ export const zh: Messages = {
       modsActive: '已启用 {{count}} 个 mod',
       toggleEnabled: '启用 {{name}}',
       toggleFailed: '无法更新 {{name}}：{{error}}',
+      installFailed: '无法安装 {{name}}：{{error}}',
       mods: {
         title: 'Mod 钩子',
         hooks: '钩子',

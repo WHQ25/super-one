@@ -1,9 +1,10 @@
 import { Component, createContext, useCallback, useContext, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type KeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
-import { EMPTY_MOD_PANE_ROSTER, type ModKeyedRow, type ModRenderComponent, type ModScrollComponent } from '@superone/shared/mod-ui'
+import { EMPTY_MOD_PANE_ROSTER, MOD_BACKDROP_INSTANCE, MOD_THEME_INSTANCE, type ModKeyedRow, type ModPlacedRow, type ModRenderComponent, type ModRenderResult, type ModScrollComponent } from '@superone/shared/mod-ui'
 import type { ModSiteLayout, ModSiteSnapshot, ModUiClient, ModUiClientState } from './client'
 import { MOD_PALETTE_STYLE, measureCell } from './cells'
 import { ModTree, countEngineRefs, firstEngineRef, pressModHotkey, type ModTreeEnv, type ModUiPorts } from './ModTree'
+import { modBackdropGlassStyle, parseModBackdropProps, parseModThemeStyle } from './theme'
 import { isDrawableModTree } from './validate'
 
 interface ModUiContextValue {
@@ -35,7 +36,7 @@ export function useModMessageId(): string | null {
   return useContext(ModMessageContext)
 }
 
-const OFF_STATE: ModUiClientState = { available: false, roster: EMPTY_MOD_PANE_ROSTER }
+const OFF_STATE: ModUiClientState = { available: false, roster: EMPTY_MOD_PANE_ROSTER, placed: [] }
 const noopSubscribe = () => () => {}
 
 /** Whether the session draws mods, and its pane roster. */
@@ -364,4 +365,184 @@ export function ModSurfaceFrame({ component, instanceId, props, plugin, onEscape
       </div>
     </div>
   )
+}
+
+const EMPTY_PROPS: Record<string, unknown> = {}
+const EMPTY_PORTS: ModUiPorts = {}
+
+export interface ModBackdropSnapshot {
+  result: ModRenderResult
+  props: Record<string, unknown>
+}
+
+export interface ModThemeStyleOptions {
+  fallback?: Record<string, unknown> | null
+  onThemeChange?: (props: Record<string, unknown> | null) => void
+}
+
+/** Session-scoped CSS variable overrides from the active Claude mod theme. */
+export function useModThemeStyle(scheme: 'light' | 'dark', options?: ModThemeStyleOptions): CSSProperties {
+  const ctx = useModUi()
+  const snapshot = useModSite('Theme', MOD_THEME_INSTANCE, EMPTY_PROPS)
+  const liveReady = !!ctx?.client.isAvailable && snapshot.status === 'ready' && !!snapshot.result
+  const liveOff = !!ctx?.client.isAvailable && snapshot.status === 'off'
+  const liveProps = liveReady && snapshot.result ? snapshot.result.props : null
+  const onThemeChange = options?.onThemeChange
+
+  useEffect(() => {
+    if (!onThemeChange) return
+    if (liveReady) onThemeChange(liveProps)
+    else if (liveOff) onThemeChange(null)
+  }, [liveReady, liveOff, liveProps, onThemeChange])
+
+  const effectiveProps = liveProps ?? (!ctx?.client.isAvailable && options?.fallback ? options.fallback : EMPTY_PROPS)
+  return useMemo(() => parseModThemeStyle(effectiveProps, scheme), [effectiveProps, scheme])
+}
+
+/**
+ * Full-surface backdrop drawn behind the conversation when a mod sets one,
+ * with an optional frosted-glass layer above it to keep text legible.
+ */
+export function ModBackdropLayer({
+  viewport,
+  className,
+  glassEnabled = true,
+  fallback,
+  onBackdropChange,
+}: {
+  viewport?: ModSiteLayout['viewport']
+  className?: string
+  glassEnabled?: boolean
+  fallback?: ModBackdropSnapshot | null
+  onBackdropChange?: (active: ModBackdropSnapshot | null) => void
+}) {
+  const ctx = useModUi()
+  const layerRef = useRef<HTMLDivElement>(null)
+  const [box, setBox] = useState({ columns: 80, bodyRows: 24 })
+  const cell = typeof document === 'undefined' ? { width: 7.2, height: 18 } : measureCell()
+
+  useLayoutEffect(() => {
+    const el = layerRef.current
+    if (!el || typeof ResizeObserver === 'undefined') return
+    const measure = () => {
+      setBox({
+        columns: Math.max(1, Math.floor(el.clientWidth / cell.width)),
+        bodyRows: Math.max(1, Math.floor(el.clientHeight / cell.height)),
+      })
+    }
+    measure()
+    const ro = new ResizeObserver(measure)
+    ro.observe(el)
+    return () => ro.disconnect()
+  }, [cell.width, cell.height])
+
+  const siteProps = useMemo(
+    () => ({ bodyColumns: box.columns, scroll: { offset: 0, bodyRows: box.bodyRows } }),
+    [box.columns, box.bodyRows],
+  )
+  const layout = useMemo(() => ({ viewport }), [viewport])
+  const snapshot = useModSite('Backdrop', MOD_BACKDROP_INSTANCE, siteProps, layout)
+  const liveAvailable = !!ctx?.client.isAvailable
+  const liveTree = snapshot.status === 'ready' ? snapshot.result?.tree : undefined
+  const liveActive = liveAvailable && !!snapshot.result && !!liveTree && liveTree.type !== 'engine' && isDrawableModTree(liveTree)
+  const liveOff = liveAvailable && (snapshot.status === 'off' || (snapshot.status === 'ready' && !liveActive))
+
+  useEffect(() => {
+    if (!onBackdropChange) return
+    if (liveActive && snapshot.result) onBackdropChange({ result: snapshot.result, props: snapshot.props })
+    else if (liveOff) onBackdropChange(null)
+  }, [liveActive, liveOff, snapshot.result, snapshot.props, onBackdropChange])
+
+  const effective = liveActive && snapshot.result
+    ? { result: snapshot.result, props: snapshot.props }
+    : !liveAvailable && fallback
+      ? fallback
+      : null
+  const active = !!effective && effective.result.tree.type !== 'engine' && isDrawableModTree(effective.result.tree)
+  const backdropProps = useMemo(
+    () => (active && effective ? parseModBackdropProps(effective.result.props) : null),
+    [active, effective],
+  )
+  const glassStyle = useMemo(
+    () => (backdropProps ? modBackdropGlassStyle(backdropProps.glass) : undefined),
+    [backdropProps],
+  )
+
+  if (!ctx && !fallback) return null
+  return (
+    <div
+      ref={layerRef}
+      data-mod-site="Backdrop"
+      data-mod-backdrop={active ? 'true' : undefined}
+      data-mod-color-scheme={backdropProps?.colorScheme}
+      aria-hidden="true"
+      className={`pointer-events-none select-none overflow-hidden ${className ?? 'absolute inset-0 z-0'}`}
+      style={{ ...MOD_PALETTE_STYLE, ['--mod-row' as string]: `${cell.height}px` }}
+    >
+      {active && effective ? (
+        <>
+          <div className="h-full w-full">
+            <TreeBoundary tree={effective.result.tree} fallback={null}>
+              <ModTree
+                tree={effective.result.tree}
+                env={{
+                  client: ctx?.client as ModUiClient,
+                  component: 'Backdrop',
+                  instanceId: MOD_BACKDROP_INSTANCE,
+                  ports: ctx?.ports ?? EMPTY_PORTS,
+                  rewrittenProps: effective.result.props,
+                  requestProps: effective.props,
+                  firstRef: firstEngineRef(effective.result.tree),
+                  clientModules: effective.result.clientModules,
+                }}
+              />
+            </TreeBoundary>
+          </div>
+          {glassEnabled && glassStyle ? <div className="absolute inset-0" style={glassStyle} /> : null}
+        </>
+      ) : null}
+    </div>
+  )
+}
+
+function ModPlacedRowSite({ row }: { row: ModPlacedRow }) {
+  const props = useMemo(() => ({ plugin: row.plugin, id: row.id }), [row.plugin, row.id])
+  return (
+    <div data-mod-placed-id={row.id} data-mod-plugin={row.plugin} className="my-2">
+      <ModSite component="Placed" instanceId={row.requestId} props={props} />
+    </div>
+  )
+}
+
+/** Renders placed mod cards (`$.ui.place`), returning null when empty. */
+export function ModPlacedRows({ rows }: { rows: readonly ModPlacedRow[] }) {
+  if (rows.length === 0) return null
+  return (
+    <>
+      {rows.map((row) => (
+        <ModPlacedRowSite key={row.requestId} row={row} />
+      ))}
+    </>
+  )
+}
+
+export function partitionPlacedRows(
+  placed: readonly ModPlacedRow[],
+  messageIds: ReadonlySet<string>,
+): { start: ModPlacedRow[]; after: Map<string, ModPlacedRow[]>; tail: ModPlacedRow[] } {
+  const start: ModPlacedRow[] = []
+  const after = new Map<string, ModPlacedRow[]>()
+  const tail: ModPlacedRow[] = []
+  for (const row of placed) {
+    if (!row.afterUuid) {
+      start.push(row)
+    } else if (messageIds.has(row.afterUuid)) {
+      const list = after.get(row.afterUuid)
+      if (list) list.push(row)
+      else after.set(row.afterUuid, [row])
+    } else {
+      tail.push(row)
+    }
+  }
+  return { start, after, tail }
 }

@@ -2,7 +2,8 @@ import { publishComposerOverhang as publishOverhang } from '@/hooks/useChatScrol
 import { useEnvironmentServes } from '@/hooks/use-environment-serves'
 import { pendingTurnMessage, sessionFooterTarget } from '@superone/chat-view/presenters/turn-footer-model'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
-import { useRef, useEffect, useMemo, useCallback } from 'react'
+import { useRef, useEffect, useMemo, useCallback, useState } from 'react'
+import { useModUiState } from '@superone/chat-view/mod-ui'
 import { useChatStore, useActiveSession, useSessionScope } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
@@ -26,7 +27,7 @@ import { useTurnOutline } from '@superone/chat-view/use-turn-outline'
 import { transcriptView } from '@superone/shared/transcript-segments'
 import { ChatRootContext } from './is-focus-in-chat'
 import { DesktopModUi } from '@/lib/mod-ui/DesktopModUi'
-import { ModPaneDockSync } from './mod/ModSurfaces'
+import { ModChatThemeLayer, ModPaneDockSync } from './mod/ModSurfaces'
 import { dateSeparators } from '@superone/chat-view/presenters/message-time'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { useCanSteerQueue } from './queued-steer'
@@ -233,6 +234,88 @@ function ChatTranscript({
   )
 }
 
+function ChatComposerSlot({
+  containerRef,
+  displayedSessionId,
+  projectPath,
+  needsDecision,
+  decision,
+  decisionAvailable,
+  appConsent,
+  consentHead,
+  appInput,
+  openedComposer,
+  continuation,
+  showRealtimeComposer,
+  publishComposerOverhang,
+}: {
+  containerRef: React.RefObject<HTMLDivElement | null>
+  displayedSessionId: string | null | undefined
+  projectPath: string | null | undefined
+  needsDecision: boolean
+  decision: ReturnType<typeof buildDecisionQueue>[number] | null
+  decisionAvailable: boolean
+  appConsent: boolean
+  consentHead: Parameters<typeof renderComposer>[2]['appConsent']
+  appInput: Parameters<typeof renderComposer>[2]['appInput']
+  openedComposer: Parameters<typeof renderComposer>[2]['openedComposer']
+  continuation: Parameters<typeof renderComposer>[2]['continuation']
+  showRealtimeComposer: boolean
+  publishComposerOverhang: (px: number) => void
+}) {
+  const { available: modUiAvailable, placed } = useModUiState()
+  const [dismissedPlacedSig, setDismissedPlacedSig] = useState<string | null>(null)
+  const composerPlaced = useMemo(() => placed.filter((r) => !r.afterUuid), [placed])
+  const placedSignature = modUiAvailable ? composerPlaced.map((r) => `${r.plugin}:${r.id}:${r.requestId}`).join('|') : ''
+  const modPlaced = modUiAvailable && composerPlaced.length > 0 && placedSignature !== dismissedPlacedSig
+  const composerKind = resolveComposer({
+    needsDecision,
+    decisionAvailable,
+    appConsent,
+    appInput: !!appInput,
+    modPlaced,
+    voiceEngaged: showRealtimeComposer,
+    openedComposerId: openedComposer?.id,
+    continuationOffered: !!continuation,
+  })
+  const composerKey = composerKind === 'decision' && decision
+    ? `${decision.kind}:${decision.request.requestId}`
+    : composerKind === 'app-consent' && consentHead ? `app-consent:${consentHead.id}`
+    : composerKind === 'app-input' && appInput ? `app-input:${appInput.requestId}`
+    : composerKind === 'mod-placed' ? `mod-placed:${placedSignature}`
+    : openedComposer?.id === composerKind ? openedComposer.key
+    : composerKind === 'continuation' && continuation ? `continuation:${continuation.sessionId}:${continuation.expiresAt}`
+    : composerKind
+  const composerFocus = useRestoreChatInputFocus(
+    (needsDecision || !!appInput || !!openedComposer || modPlaced) && decisionAvailable,
+    containerRef,
+    projectPath && displayedSessionId ? { projectPath, sessionId: displayedSessionId } : undefined,
+  )
+  return (
+    <ComposerSwitch
+      key={`composer:${displayedSessionId ?? projectPath ?? 'draft'}`}
+      className="mx-auto w-full min-w-0 max-w-3xl"
+      kind={composerKind}
+      transitionKey={composerKey}
+      align={{ kind: 'voice', to: 'text' }}
+      onOverhangChange={publishComposerOverhang}
+      maxHeight={composerKind === 'text' || composerKind === 'voice' ? undefined : COMPOSER_CONTENT_MAX_HEIGHT}
+      render={(kind) => renderComposer(kind, displayedSessionId ?? '', {
+        showTodoPopup: true,
+        autoFocusOnMount: composerFocus.autoFocusOnMount,
+        onBaseComposerMounted: composerFocus.onBaseComposerMounted,
+        microphoneShortcutEnabled: showRealtimeComposer && !appConsent,
+        decision,
+        appConsent: consentHead,
+        appInput,
+        openedComposer,
+        continuation,
+        onDismissModPlaced: () => setDismissedPlacedSig(placedSignature),
+      })}
+    />
+  )
+}
+
 export function ChatContent({ scrollViewportRef, showScrollButton = false, scrollToBottom, stopAutoScroll, foreground = true }: ChatContentProps) {
   const scope = useSessionScope()
   const activeProject = useChatStore((s) => s.activeProject)
@@ -329,14 +412,6 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   }))
   const containerRef = useRef<HTMLDivElement>(null)
   const continuation = useSessionContinuationOffer(containerRef)
-  const composerKind = resolveComposer({ needsDecision, decisionAvailable, appConsent, appInput: !!appInput, voiceEngaged: showRealtimeComposer, openedComposerId: openedComposer?.id, continuationOffered: !!continuation })
-  const composerKey = composerKind === 'decision' && decision
-    ? `${decision.kind}:${decision.request.requestId}`
-    : composerKind === 'app-consent' && consentHead ? `app-consent:${consentHead.id}`
-    : composerKind === 'app-input' && appInput ? `app-input:${appInput.requestId}`
-    : openedComposer?.id === composerKind ? openedComposer.key
-    : composerKind === 'continuation' && continuation ? `continuation:${continuation.sessionId}:${continuation.expiresAt}`
-    : composerKind
   // The local snapshot needs no backing thread, so every Codex session on screen
   // restores it; only the provider reconcile waits for the thread id, because
   // reaching Codex would otherwise start a backend just to read history.
@@ -386,8 +461,6 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   const publishComposerOverhang = useCallback((px: number) => {
     publishOverhang(containerRef.current, px)
   }, [])
-  const composerFocus = useRestoreChatInputFocus((needsDecision || !!appInput || !!openedComposer) && decisionAvailable, containerRef,
-    projectPath && displayedSessionId ? { projectPath, sessionId: displayedSessionId } : undefined)
   const densityStyle = useChatDensityScale(containerRef)
   const activeOverlay = renderActiveChatOverlay({
     workflowView,
@@ -420,6 +493,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
       <DetailScopeProvider scope={detailScope}>
       <DesktopModUi projectPath={projectPath} sessionId={displayedSessionId ?? null} enabled={drawsMods}>
       {foreground && drawsMods && projectPath && displayedSessionId ? <ModPaneDockSync projectPath={projectPath} sessionId={displayedSessionId} /> : null}
+      <ModChatThemeLayer projectPath={projectPath} enabled={drawsMods}>
       {activeOverlay ?? (
         <>
           {/* The fade belongs to arriving at a different session. Switching between
@@ -457,28 +531,24 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
               />
             )}
           </div>
-          <ComposerSwitch
-            key={`composer:${displayedSessionId ?? projectPath ?? 'draft'}`}
-            className="mx-auto w-full min-w-0 max-w-3xl"
-            kind={composerKind}
-            transitionKey={composerKey}
-            align={{ kind: 'voice', to: 'text' }}
-            onOverhangChange={publishComposerOverhang}
-            maxHeight={composerKind === 'text' || composerKind === 'voice' ? undefined : COMPOSER_CONTENT_MAX_HEIGHT}
-            render={(kind) => renderComposer(kind, displayedSessionId ?? '', {
-              showTodoPopup: true,
-              autoFocusOnMount: composerFocus.autoFocusOnMount,
-              onBaseComposerMounted: composerFocus.onBaseComposerMounted,
-              microphoneShortcutEnabled: showRealtimeComposer && !appConsent,
-              decision,
-              appConsent: consentHead,
-              appInput,
-              openedComposer,
-              continuation,
-            })}
+          <ChatComposerSlot
+            containerRef={containerRef}
+            displayedSessionId={displayedSessionId}
+            projectPath={projectPath}
+            needsDecision={needsDecision}
+            decision={decision}
+            decisionAvailable={decisionAvailable}
+            appConsent={appConsent}
+            consentHead={consentHead}
+            appInput={appInput}
+            openedComposer={openedComposer}
+            continuation={continuation}
+            showRealtimeComposer={showRealtimeComposer}
+            publishComposerOverhang={publishComposerOverhang}
           />
         </>
       )}
+      </ModChatThemeLayer>
       </DesktopModUi>
       </DetailScopeProvider>
       </ChatRootContext.Provider>

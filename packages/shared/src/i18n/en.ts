@@ -4580,6 +4580,7 @@ export type Messages = {
       modsActive: string
       toggleEnabled: string
       toggleFailed: string
+      installFailed: string
       mods: {
         title: string
         hooks: string
@@ -9808,6 +9809,7 @@ export const en: Messages = {
       modsActive: '{{count}} mod(s) active',
       toggleEnabled: 'Enable {{name}}',
       toggleFailed: 'Could not update {{name}}: {{error}}',
+      installFailed: 'Could not install {{name}}: {{error}}',
       mods: {
         title: 'Mod Hooks',
         hooks: 'Hooks',

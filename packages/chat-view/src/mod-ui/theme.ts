@@ -114,6 +114,21 @@ export function parseModThemeStyle(props: Record<string, unknown>, scheme: 'ligh
   return style as CSSProperties
 }
 
+/** Where a mod theme is allowed to show. Narrower scopes block wider ones. */
+export type ModThemeScope = 'session' | 'folder' | 'project' | 'harness'
+
+/**
+ * Scope from a theme or backdrop payload. Absent means the host must keep the
+ * update on the session that received it. `global` is the harness-wide scope.
+ */
+export function parseModThemeScope(props: Record<string, unknown> | null | undefined): ModThemeScope | undefined {
+  if (!isPlainRecord(props)) return undefined
+  const raw = props.scope ?? props.applyScope ?? props.themeScope
+  if (raw === 'session' || raw === 'folder' || raw === 'project' || raw === 'harness') return raw
+  if (raw === 'global') return 'harness'
+  return undefined
+}
+
 export function parseModBackdropProps(props: Record<string, unknown>): ModBackdropProps | null {
   if (!isPlainRecord(props)) return null
   const id = typeof props.id === 'string' ? props.id : undefined

@@ -4,7 +4,6 @@ import { Maximize, X } from 'lucide-react'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import { SessionPane } from '@/components/chat/SessionPane'
-import { ModTileBackdropProvider } from '@/components/chat/mod/ModSurfaces'
 import { LayoutToggle } from '@/components/coding/LayoutToggle'
 import { SessionTitleAnimated } from '@/components/sidebar/AnimatedSessionTitle'
 import { HeaderSessionMenu } from '@/components/chat/HeaderSessionMenu'
@@ -60,9 +59,7 @@ function MosaicTile({ tile, ctx }: { tile: MosaicLeaf; ctx: RenderCtx }) {
         </div>
       </div>
       <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
-        <ModTileBackdropProvider>
-          <SessionPane scope={{ projectPath: tile.projectPath, sessionId: tile.sessionId }} foreground={ctx.foreground} />
-        </ModTileBackdropProvider>
+        <SessionPane scope={{ projectPath: tile.projectPath, sessionId: tile.sessionId }} foreground={ctx.foreground} />
         <div className={cn('pointer-events-none absolute inset-0 z-10 bg-card transition-opacity duration-150', focused ? 'opacity-0' : 'opacity-25')} />
       </div>
       {dragging && (

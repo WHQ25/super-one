@@ -4,9 +4,7 @@ import { SquareTerminal, LayoutGrid, PanelLeft, PanelRight, PanelLeftDashed, Pan
 import { useTranslation } from 'react-i18next'
 import { LayoutToggle } from '@/components/coding/LayoutToggle'
 import { ChatPanel } from '@/components/chat/ChatPanel'
-import { ModTileBackdrop, ModTileBackdropProvider } from '@/components/chat/mod/ModSurfaces'
 import { CodingWorkspace } from '@/components/coding/CodingWorkspace'
-import { HARNESS_CAPABILITIES } from '@superone/shared/harness-capabilities'
 import { ActivityPanel } from '@/components/activity/ActivityPanel'
 import { useActivityPanelOnScreen } from '@/hooks/useActivityPanelOnScreen'
 import { SideChatConfirmDialog } from '@/components/chat/SideChatConfirmDialog'
@@ -532,14 +530,6 @@ function App(): React.JSX.Element {
     sessionProvider: s.sessionProvider,
     preferredProvider: s.preferredProvider,
   }) === 'codex')
-  const drawsMainMods = useActiveSession((s) => HARNESS_CAPABILITIES[resolveProvider({
-    sessionProvider: s.sessionProvider,
-    preferredProvider: s.preferredProvider,
-  })].modUi)
-  const [mainBackdropScheme, setMainBackdropScheme] = useState<'light' | 'dark' | undefined>(undefined)
-  const [mainBackdropTint, setMainBackdropTint] = useState<string | undefined>(undefined)
-  const showMainBackdrop = drawsMainMods
-  const hasModTint = showMainBackdrop && Boolean(mainBackdropTint)
   const hasVoiceTimeline = useCodexRealtimeViewStore((state) => (
     sessionId ? state.sessions[sessionId]?.hasTimeline === true : false
   ))
@@ -610,12 +600,11 @@ function App(): React.JSX.Element {
   return (
     <>
     <div
-      data-has-mod-tint={hasModTint ? 'true' : undefined}
       className={cn(
         'flex h-screen flex-col overflow-hidden text-foreground',
         compactMiniShell ? (liquidGlass ? 'bg-transparent' : 'bg-card') : 'bg-sidebar',
       )}
-      style={hasModTint ? { ...enterAnimation, '--mod-backdrop-tint': mainBackdropTint } as React.CSSProperties : enterAnimation}
+      style={enterAnimation}
     >
       {!compactMiniShell && <WindowsTitleBar showLayoutControls />}
       <div className="group/coding flex min-h-0 flex-1 overflow-hidden">
@@ -677,20 +666,10 @@ function App(): React.JSX.Element {
           'relative z-10 flex-1 flex-col overflow-hidden',
           activityFillsWindow && !inMiniWindow ? 'hidden' : 'flex',
           activityOnScreen && (activitySide === 'left' ? 'border-l border-border' : 'border-r border-border'),
-          showMainBackdrop && mainBackdropScheme === 'dark' && 'dark',
         )} style={{ order: 1, minWidth: inMiniWindow ? 0 : MIN_MAIN }}>
-        {showMainBackdrop && (
-          <ModTileBackdrop
-            projectPath={currentFolder}
-            sessionId={sessionId}
-            enabled={drawsMainMods}
-            onColorSchemeChange={setMainBackdropScheme}
-            onTintChange={setMainBackdropTint}
-          />
-        )}
         {/* Main header — drag region (hidden in mosaic; each tile carries its own) */}
         {compactMiniShell
-          ? <div className="relative z-10"><MiniWindowHeader canRestore transparentBackground={liquidGlass || showMainBackdrop} /></div>
+          ? <div className="relative z-10"><MiniWindowHeader canRestore transparentBackground={liquidGlass} /></div>
           : mosaicMode !== 'mosaic' && (
         <div
           className={cn('relative z-10 flex h-[34px] shrink-0 items-center transition-[padding-left] duration-300 ease-in-out', !isMac || (isFullscreen && !hasLeftPanel) ? 'pl-2' : 'pl-[18px]')}
@@ -774,13 +753,7 @@ function App(): React.JSX.Element {
         {/* Content */}
         <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
           {!liquidGlass && (compactMiniShell || mosaicMode !== 'mosaic') && <div data-mod-edge-fade="" className="pointer-events-none absolute inset-x-0 top-0 z-10 h-6 bg-linear-to-b from-card to-transparent" />}
-          {showMainBackdrop ? (
-            <ModTileBackdropProvider>
-              <CodingWorkspace mosaicMode={mosaicMode} compact={compactMiniShell} />
-            </ModTileBackdropProvider>
-          ) : (
-            <CodingWorkspace mosaicMode={mosaicMode} compact={compactMiniShell} />
-          )}
+          <CodingWorkspace mosaicMode={mosaicMode} compact={compactMiniShell} />
         </div>
         {draggingSession && mosaicMode === 'mosaic' && <MosaicDropPreview />}
       </div>

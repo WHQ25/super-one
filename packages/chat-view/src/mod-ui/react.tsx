@@ -395,7 +395,9 @@ export function useModThemeStyle(scheme: 'light' | 'dark', options?: ModThemeSty
     else if (liveOff) onThemeChange(null)
   }, [liveReady, liveOff, liveProps, onThemeChange])
 
-  const effectiveProps = liveProps ?? (!ctx?.client.isAvailable && options?.fallback ? options.fallback : EMPTY_PROPS)
+  // Fallback covers a theme inherited from a wider scope while this session's
+  // own Theme hook is off. A live theme still wins.
+  const effectiveProps = liveProps ?? options?.fallback ?? EMPTY_PROPS
   return useMemo(() => parseModThemeStyle(effectiveProps, scheme), [effectiveProps, scheme])
 }
 
@@ -453,9 +455,11 @@ export function ModBackdropLayer({
     else if (liveOff) onBackdropChange(null)
   }, [liveActive, liveOff, snapshot.result, snapshot.props, onBackdropChange])
 
+  // A live backdrop wins. Fallback is the theme inherited from a wider scope,
+  // or the last one cached before this session's client connects.
   const effective = liveActive && snapshot.result
     ? { result: snapshot.result, props: snapshot.props }
-    : !liveAvailable && fallback
+    : fallback
       ? fallback
       : null
   const active = !!effective && effective.result.tree.type !== 'engine' && isDrawableModTree(effective.result.tree)

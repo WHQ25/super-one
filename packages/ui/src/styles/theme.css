@@ -1,4 +1,7 @@
-@custom-variant dark (&:is(.dark *));
+/* A `.light` subtree inside `.dark` (and a `.dark` subtree in a light document)
+   opts that pane out of the ancestor scheme. One level of nesting is enough
+   for a mod theme pane. */
+@custom-variant dark (&:is(.dark, .dark *):not(:is(.light, .light *)));
 
 /*
  * `.brand-scope` shares the light-mode, hue-derived token declarations with
@@ -10,9 +13,12 @@
  * mosaic so each pane renders its own session's harness hue. Dark mode is
  * hue-agnostic (neutral chroma), so the pane wrapper omits `.brand-scope` in
  * dark mode and inherits the neutral `.dark` palette instead.
+ * `.light` re-declares this block so a mod theme pane can be light inside a
+ * dark document. Dark rules below skip that subtree.
  */
 :root,
-.brand-scope {
+.brand-scope,
+.light {
   --radius: 0.625rem;
   /* Default brand hue — both harnesses */
   --brand-hue: 240;
@@ -91,8 +97,8 @@
  * inherited from `html.dark`. Desktop never nests the two (panes drop
  * `.brand-scope` in dark), so this is a no-op there.
  */
-.dark,
-.dark .brand-scope {
+.dark:not(.light),
+.dark .brand-scope:not(:is(.light, .light *)) {
   --background: oklch(0.145 0 0);
   --foreground: oklch(0.985 0 0);
   --card: oklch(0.205 0 0);
@@ -140,8 +146,8 @@
 
 /* Second selector: glass opted into per surface (website mock windows) rather
    than on <html>. */
-.liquid-glass.dark,
-.dark .brand-scope.liquid-glass {
+.liquid-glass.dark:not(.light),
+.dark .brand-scope.liquid-glass:not(:is(.light, .light *)) {
   --card: oklch(0.205 0 0 / 0.72);
   --sidebar: transparent;
   --sidebar-hover: oklch(1 0 0 / 0.08);
@@ -568,7 +574,7 @@ html:not(.dark) [data-sidebar-inner] .sidebar-selected .session-icon-ground {
   color: #ba7517;
 }
 
-.dark .harness-session-corner-clock {
+.dark .harness-session-corner-clock:not(:is(.light, .light *)) {
   color: #fac775;
 }
 

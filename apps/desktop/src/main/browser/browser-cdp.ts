@@ -1,6 +1,7 @@
 import { webContents, type WebContents } from 'electron'
 import { readAppSettings } from '../app-settings-service'
 import { resolveBrowserWebContentsId } from './browser-automation-bridge'
+import { cdpTransportFor, setCdpTargetForget } from './cdp-transport'
 import log from '../logger'
 
 export function isCdpEnabled(): boolean {
@@ -57,6 +58,8 @@ function targetWebContents(webContentsId: number): WebContents {
 }
 
 export async function cdpSend<T = unknown>(webContentsId: number, method: string, params?: object): Promise<T> {
+  const transport = cdpTransportFor(webContentsId)
+  if (transport) return transport.send(method, params) as Promise<T>
   const wc = targetWebContents(webContentsId)
   ensureAttached(wc)
   return wc.debugger.sendCommand(method, params) as Promise<T>
@@ -76,6 +79,11 @@ interface DomainState {
   args?: object
 }
 const domainRefs = new Map<number, Map<string, DomainState>>()
+
+setCdpTargetForget((webContentsId) => {
+  domainRefs.delete(webContentsId)
+  attached.delete(webContentsId)
+})
 
 export async function acquireDomain(webContentsId: number, domain: string, enableArgs?: object): Promise<void> {
   let perTarget = domainRefs.get(webContentsId)
@@ -155,7 +163,8 @@ export interface DragOptions {
 const STEP_MS = 16
 
 export async function cdpDrag(webContentsId: number, fromX: number, fromY: number, toX: number, toY: number, opts: DragOptions = {}): Promise<void> {
-  const wc = ensureAttachedById(webContentsId)
+  const transport = cdpTransportFor(webContentsId)
+  const wc = transport ? null : ensureAttachedById(webContentsId)
   const n = Math.max(1, Math.min(opts.steps ?? 10, 50))
   const hold = Math.max(0, Math.min(opts.holdMs ?? 0, 10_000))
   const humanize = opts.humanize === true
@@ -171,7 +180,10 @@ export async function cdpDrag(webContentsId: number, fromX: number, fromY: numbe
   const onMessage = (_event: unknown, method: string, params: unknown): void => {
     if (method === 'Input.dragIntercepted') dragData = (params as { data: DragInterceptData }).data
   }
-  wc.debugger.on('message', onMessage)
+  const stopListening = transport
+    ? transport.subscribe((method, params) => onMessage(undefined, method, params))
+    : null
+  if (wc) wc.debugger.on('message', onMessage)
   try {
     await cdpSend(webContentsId, 'Input.setInterceptDrags', { enabled: true }).catch(() => {})
     await cdpSend(webContentsId, 'Input.dispatchMouseEvent', { type: 'mouseMoved', x: fromX, y: fromY })
@@ -197,7 +209,8 @@ export async function cdpDrag(webContentsId: number, fromX: number, fromY: numbe
       await cdpSend(webContentsId, 'Input.dispatchMouseEvent', { type: 'mouseReleased', x: toX, y: toY, button: 'left', buttons: 0, clickCount: 1 })
     }
   } finally {
-    wc.debugger.off('message', onMessage)
+    if (stopListening) stopListening()
+    else wc?.debugger.off('message', onMessage)
     await cdpSend(webContentsId, 'Input.setInterceptDrags', { enabled: false }).catch(() => {})
   }
 }

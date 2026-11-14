@@ -1,5 +1,6 @@
 import { BrowserWindow } from 'electron'
 import { ensureAttachedById, cdpSend, acquireDomain, releaseDomain } from './browser-cdp'
+import { cdpTransportFor } from './cdp-transport'
 import { aggregateSelfTime, subtractBaseline, type CpuProfile, type FrameCost } from './browser-cdp-perf-profile'
 import { createSettleDetector } from './browser-cdp-perf-settle'
 import { createInFlightLedger, isStreamingResponse, type InFlightLedger } from './browser-cdp-perf-inflight'
@@ -54,10 +55,9 @@ export interface PerfMeasureResult {
 type InFlightTracker = InFlightLedger & { dispose(): void }
 
 function trackInFlight(webContentsId: number): InFlightTracker {
-  const wc = ensureAttachedById(webContentsId)
   const ledger = createInFlightLedger()
 
-  const onMessage = (_e: unknown, method: string, params: unknown): void => {
+  const onMessage = (method: string, params: unknown): void => {
     if (method === 'Network.requestWillBeSent') {
       const p = params as { requestId: string; request: { url: string }; type?: string }
       ledger.started(p.requestId, Date.now(), p.request.url, p.type)
@@ -74,9 +74,14 @@ function trackInFlight(webContentsId: number): InFlightTracker {
       ledger.settled((params as { requestId: string }).requestId)
     }
   }
-  wc.debugger.on('message', onMessage)
-
-  return { ...ledger, dispose: () => wc.debugger.off('message', onMessage) }
+  const transport = cdpTransportFor(webContentsId)
+  if (transport) {
+    return { ...ledger, dispose: transport.subscribe(onMessage) }
+  }
+  const wc = ensureAttachedById(webContentsId)
+  const wrapped = (_event: unknown, method: string, params: unknown) => onMessage(method, params)
+  wc.debugger.on('message', wrapped)
+  return { ...ledger, dispose: () => wc.debugger.off('message', wrapped) }
 }
 
 function sleep(ms: number): Promise<void> {

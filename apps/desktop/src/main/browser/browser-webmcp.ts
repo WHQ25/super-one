@@ -93,7 +93,7 @@ function sanitizeAnnotations(value: unknown): WebMcpToolAnnotations | undefined 
   return Object.keys(out).length > 0 ? out : undefined
 }
 
-function sanitizeTool(value: unknown): WebMcpTool | null {
+export function sanitizeWebMcpTool(value: unknown): WebMcpTool | null {
   if (!value || typeof value !== 'object') return null
   const input = value as Record<string, unknown>
   if (typeof input.name !== 'string') return null
@@ -174,7 +174,7 @@ export function initBrowserWebmcp(): void {
     const rawTools = Array.isArray(input?.tools) ? input.tools : []
     const tools: WebMcpTool[] = []
     for (const rawTool of rawTools.slice(0, MAX_TOOLS)) {
-      const tool = sanitizeTool(rawTool)
+      const tool = sanitizeWebMcpTool(rawTool)
       if (tool) tools.push(tool)
     }
     attachLifecycleListeners(wc)

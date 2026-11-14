@@ -1,5 +1,6 @@
 import { randomUUID } from 'crypto'
 import { ensureAttachedById, cdpSend, isCdpMockEnabled, acquireDomain, releaseDomain } from './browser-cdp'
+import { cdpTransportFor } from './cdp-transport'
 import log from '../logger'
 
 // On-demand, scoped network recording. Nothing is captured unless an agent
@@ -254,6 +255,16 @@ function captureBody(rec: Recording, entry: RecordedRequest): void {
 
 function ensureListening(webContentsId: number): void {
   if (listening.has(webContentsId)) return
+  const transport = cdpTransportFor(webContentsId)
+  if (transport) {
+    transport.subscribe((method, params) => handleMessage(webContentsId, method, params))
+    transport.onDetach(() => {
+      listening.delete(webContentsId)
+      handleDetach(webContentsId)
+    })
+    listening.add(webContentsId)
+    return
+  }
   const wc = ensureAttachedById(webContentsId)
   wc.debugger.on('message', (_e, method, params) => handleMessage(webContentsId, method, params))
   wc.debugger.on('detach', () => handleDetach(webContentsId))

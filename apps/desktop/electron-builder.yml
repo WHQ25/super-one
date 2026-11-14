@@ -78,8 +78,23 @@ files:
 extraResources:
   - from: build/icon.png
     to: icon.png
+  - from: build/icon.png
+    to: icons/stable.png
+  - from: build/icon-alpha.png
+    to: icons/alpha.png
+  - from: build/icon-dev.png
+    to: icons/dev.png
+  - from: ../chrome-extension
+    to: chrome-extension
+    filter:
+      - "**/*"
+      - "!package.json"
   # User-approved closed-lid mode installs the narrow macOS root watchdog from
   # these signed package resources. Windows and Linux ignore the two tiny files.
+  - from: resources/chrome-native-host
+    to: chrome-native-host
+    filter:
+      - "host.mjs"
   - from: resources/lid-keep-awake
     to: lid-keep-awake
     filter:

@@ -35,6 +35,31 @@ browser_memory_read   list topics or read one topic of personal website experien
 browser_memory_write  save, update, deprecate or restore one topic
 ```
 
+## User's Chrome
+
+When the SuperOne Chrome extension is connected, the same tools can drive Chrome.
+`browser_tabs` `action=open` with `host:"chrome"` opens a tab in a SuperOne tab
+group and returns `tab: "chrome:<id>"`. Tabs the user shares from the extension
+popup are listed the same way. Pass that id as `tab` on the other browser tools.
+Omit `tab` only when it is the only view this session can drive.
+
+A shared tab is available to every session on this computer. A tab the agent
+opened belongs to the session that opened it. Chrome shows a debugging banner
+while a tab is attached. The banner names the extension for that SuperOne
+variant, including its app version. That tab's DevTools cannot be open at the
+same time.
+
+`browser_download` uses Chrome's cookies when Chrome is the only browser this
+session is driving. A file the Chrome page itself starts downloading is listed
+by `browser_network` `action=downloads`. When that download finishes it is
+granted for reading, and a remote session's file is sealed into the session
+directory. `browser_tools_list` and `browser_tools_call` see WebMCP
+tools on a Chrome tab through Chrome's WebMCP debugger domain, falling back to
+the top document's `document.modelContext`. Enable
+`chrome://flags/#enable-webmcp-testing` and relaunch Chrome, or open a site in
+the WebMCP origin trial. A Chrome that does not expose WebMCP is reported as
+unavailable.
+
 ## Personal website experience
 
 Read memory before the first task operation on a hostname (sign-in, forms,

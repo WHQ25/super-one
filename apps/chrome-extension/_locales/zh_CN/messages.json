@@ -1,0 +1,11 @@
+{
+  "extName": { "message": "SuperOne 浏览器" },
+  "extDescription": { "message": "让 SuperOne 操控你共享的标签页，以及 SuperOne 自己打开的标签页。" },
+  "actionTitle": { "message": "把此标签页共享给 SuperOne" },
+  "share": { "message": "共享此标签页" },
+  "unshare": { "message": "停止共享" },
+  "connected": { "message": "已连接 SuperOne" },
+  "disconnected": { "message": "SuperOne 没有在运行" },
+  "hint": { "message": "共享的标签页和 SuperOne 打开的标签页可以被 browser 工具操控。附加调试时，Chrome 会显示调试提示条。" },
+  "agentOnly": { "message": "这个标签页是 SuperOne 打开的。请让 agent 关闭它，或直接关掉标签页。" }
+}

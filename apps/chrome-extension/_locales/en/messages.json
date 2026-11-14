@@ -1,0 +1,11 @@
+{
+  "extName": { "message": "SuperOne Browser" },
+  "extDescription": { "message": "Lets SuperOne drive tabs you share, and tabs SuperOne opens." },
+  "actionTitle": { "message": "Share this tab with SuperOne" },
+  "share": { "message": "Share this tab" },
+  "unshare": { "message": "Stop sharing" },
+  "connected": { "message": "Connected to SuperOne" },
+  "disconnected": { "message": "SuperOne is not running" },
+  "hint": { "message": "Shared tabs and tabs SuperOne opens can be driven with browser tools. Chrome shows a debugging banner while a tab is attached." },
+  "agentOnly": { "message": "This tab was opened by SuperOne. Close it from the agent, or close the tab yourself." }
+}

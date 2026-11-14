@@ -4,6 +4,7 @@ import { AgentIpcChannels } from '@superone/shared/agent-types'
 import log from '../logger'
 import { currentHostActionConnection } from '../mcp/artifact-registry'
 import { rememberTabDriver } from './browser-tab-drivers'
+import { chromeBridgeIsConnected, chromeWebContentsId, ownerDrivesChromeOnly, tryChromeBrowserCall } from './chrome-browser'
 import { holdHostPainting, withHostPainting } from './host-paint-lease'
 import { remoteSessionKey } from '@superone/shared/remote-resource-key'
 
@@ -131,12 +132,39 @@ async function startRecording(win: BrowserWindow, call: () => Promise<unknown>):
   }
 }
 
+function ownerFor(sessionId: string): { owner: string; connectionId: string | null } {
+  const connectionId = currentHostActionConnection()
+  return { owner: connectionId ? remoteSessionKey(connectionId, sessionId) : sessionId, connectionId }
+}
+
+function dispatchOwned(sessionId: string, op: BrowserAutomationOp, input: unknown, signal?: AbortSignal): Promise<unknown> {
+  const win = getMainWindow?.()
+  if (!win || win.isDestroyed()) return Promise.reject(new Error('No renderer window available for browser automation'))
+  const { owner, connectionId } = ownerFor(sessionId)
+  const routedInput = connectionId ? { ...(input as object), __layoutOwnerKey: owner } : input
+  return dispatchBrowserAutomation(win, sessionId, op, routedInput, signal)
+}
+
 export function browserAutomationCall(sessionId: string, op: BrowserAutomationOp, input: unknown, signal?: AbortSignal): Promise<unknown> {
+  if (chromeBridgeIsConnected()) return browserAutomationCallWithChrome(sessionId, op, input, signal)
+  return dispatchLocal(sessionId, op, input, signal)
+}
+
+async function browserAutomationCallWithChrome(sessionId: string, op: BrowserAutomationOp, input: unknown, signal?: AbortSignal): Promise<unknown> {
+  const { owner } = ownerFor(sessionId)
+  const chrome = await tryChromeBrowserCall(owner, op, input, signal, (innerOp, innerInput, innerSignal) => (
+    dispatchOwned(sessionId, innerOp as BrowserAutomationOp, innerInput, innerSignal)
+  ))
+  if (chrome.routed) return chrome.result
+  return dispatchLocal(sessionId, op, input, signal)
+}
+
+function dispatchLocal(sessionId: string, op: BrowserAutomationOp, input: unknown, signal?: AbortSignal): Promise<unknown> {
   const win = getMainWindow?.()
   if (!win || win.isDestroyed()) {
     return Promise.reject(new Error('No renderer window available for browser automation'))
   }
-  const call = () => dispatchBrowserAutomation(win, sessionId, op, input, signal)
+  const call = () => dispatchOwned(sessionId, op, input, signal)
   // Ops that read the guest's pixels, which only exist while the app window composites.
   switch (op) {
     case 'screenshot':
@@ -202,7 +230,22 @@ function recordDriver(webContentsId: number, sessionId: string): void {
   rememberTabDriver(webContentsId, sessionId, currentHostActionConnection())
 }
 
+/** Chrome is the cookie jar when this session has Chrome tabs and no built-in browser tab. */
+export async function sessionDrivesChromeOnly(sessionId: string): Promise<boolean> {
+  if (!chromeBridgeIsConnected()) return false
+  const { owner } = ownerFor(sessionId)
+  return ownerDrivesChromeOnly(owner, (op, input, signal) => dispatchOwned(sessionId, op as BrowserAutomationOp, input, signal))
+}
+
 export async function resolveBrowserWebContentsId(sessionId: string, tab?: string): Promise<number> {
+  const { owner } = ownerFor(sessionId)
+  const chromeId = await chromeWebContentsId(owner, tab, (op, input, signal) => (
+    dispatchOwned(sessionId, op as BrowserAutomationOp, input, signal)
+  ))
+  if (chromeId != null) {
+    recordDriver(chromeId, sessionId)
+    return chromeId
+  }
   const result = await browserAutomationCall(sessionId, 'resolveWebContentsId', { tab }) as {
     webContentsId?: number
   }

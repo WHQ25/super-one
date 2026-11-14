@@ -8,7 +8,7 @@ export const HOST_ACTION_BROWSER_PERF_DESCRIPTORS: HostActionSuperoneToolDescrip
       "type": "object",
       "properties": {
         "tab": {
-          "description": "Browser view id, or a development mini-app view id: miniapp:<appId> for its panel, or one returned by miniapp_dev_preview or browser_tabs. Omit to target the focused browser view (errors if multiple are open).",
+          "description": "Browser view id, a development mini-app view id (miniapp:<appId>, or one returned by miniapp_dev_preview or browser_tabs), or a Chrome tab id chrome:<tabId> from browser_tabs. Omit when only one view is open.",
           "type": "string"
         },
         "description": {

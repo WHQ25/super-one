@@ -58,6 +58,7 @@ import { authorizeMiniAppTools } from './miniapp/miniapp-authorization'
 import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getInstallMeta, getPreapproved, getPreapprovedByPath, setPreapproved, setPreapprovedByPath } from './miniapp/miniapp-packager'
 import { previewMcpbBundle, installMcpbBundle, uninstallMcpbBundle, listInstalledMcpb, revealMcpbBundle } from './mcpb/mcpb-installer'
 import { initBrowserAutomation, resolveBrowserAutomation, rejectBrowserAutomation } from './browser/browser-automation-bridge'
+import { startChromeBridge } from './browser/chrome-bridge-server'
 import { detachAllCdp } from './browser/browser-cdp'
 import { registerBrowserPopupRedirect } from './browser-popup-redirect'
 import { fetchBrowserBytes, registerBrowserDownloadCapture } from './browser/browser-downloads'
@@ -5494,6 +5495,7 @@ function registerIpcHandlers(): void {
 
   initSuperoneMcpServer(() => mainWindow)
   initBrowserAutomation(() => mainWindow)
+  startChromeBridge()
   setSessionHostProvider(() => sessionManager)
   setSessionCollaborationCallbacks({
     sessionsChanged: () => {

@@ -32,6 +32,8 @@ import {
 import { registerCompactBrowserTools } from './browser-mcp-compact'
 import { isJevFastLoopEnabled } from '../jev/run-tool-common'
 import { getWebMcpTools, invokeWebMcpTool, isWebMcpEnabled } from '../browser/browser-webmcp'
+import { callChromeWebMcpTool, readChromeWebMcp } from '../browser/chrome-webmcp'
+import { isChromeTargetId } from '../browser/cdp-transport'
 import { awaitWebmcpTrustConfirm } from './browser-webmcp-confirm'
 import {
   checkWebMcpOriginTrust,
@@ -419,6 +421,30 @@ async function ensureWebMcpOriginTrusted(
   return { ok: true }
 }
 
+function chromeWebMcpUnavailableReply(reason: 'unsupported' | 'insecure'): ToolReply {
+  const hint = reason === 'insecure'
+    ? 'WebMCP is only available on HTTPS or localhost. This Chrome tab is not a secure context.'
+    : 'This Chrome does not expose WebMCP. Enable chrome://flags/#enable-webmcp-testing and relaunch Chrome, or open a site enrolled in the WebMCP origin trial.'
+  return textReply({ count: 0, status: 'unavailable', hint })
+}
+
+type WebMcpPageView =
+  | { kind: 'tools'; origin: string; tools: WebMcpPageEntry['tools'] }
+  | { kind: 'empty' }
+  | { kind: 'unavailable'; reason: 'unsupported' | 'insecure' }
+
+async function webMcpPage(webContentsId: number): Promise<WebMcpPageView> {
+  if (!isChromeTargetId(webContentsId)) {
+    const entry = getWebMcpTools(webContentsId)
+    if (!entry || entry.tools.length === 0) return { kind: 'empty' }
+    return { kind: 'tools', origin: entry.origin, tools: entry.tools }
+  }
+  const snap = await readChromeWebMcp(webContentsId)
+  if (!snap.available) return { kind: 'unavailable', reason: snap.reason }
+  if (snap.tools.length === 0) return { kind: 'empty' }
+  return { kind: 'tools', origin: snap.origin, tools: snap.tools }
+}
+
 async function executeWebMcpCall(
   sessionId: string,
   args: { tab?: string; description?: string; name?: string; input: Record<string, unknown> },
@@ -429,7 +455,9 @@ async function executeWebMcpCall(
 
   try {
     const webContentsId = await resolveBrowserWebContentsId(sessionId, args.tab)
-    const entry = getWebMcpTools(webContentsId)
+    const page = await webMcpPage(webContentsId)
+    if (page.kind === 'unavailable') return chromeWebMcpUnavailableReply(page.reason)
+    const entry = page.kind === 'tools' ? page : null
     const requested = typeof args.name === 'string' ? args.name.trim() : ''
     const tool = requested ? entry?.tools.find(({ name }) => name === requested) : undefined
     if (!entry || !tool) {
@@ -471,7 +499,9 @@ async function executeWebMcpCall(
       }
     }
 
-    const { outputJson } = await invokeWebMcpTool(webContentsId, requested, args.input)
+    const { outputJson } = isChromeTargetId(webContentsId)
+      ? await callChromeWebMcpTool(webContentsId, requested, args.input)
+      : await invokeWebMcpTool(webContentsId, requested, args.input)
     return webmcpUntrustedOutputReply(entry.origin, outputJson, tool.annotations)
   } catch (err) {
     return errorReply(err)
@@ -491,7 +521,8 @@ async function browserSnapshotWithWebMcpHint(
       sessionId,
       typeof args.tab === 'string' ? args.tab : undefined,
     )
-    const count = getWebMcpTools(webContentsId)?.tools.length ?? 0
+    const page = await webMcpPage(webContentsId)
+    const count = page.kind === 'tools' ? page.tools.length : 0
     if (count === 0) return reply
     const textIndex = reply.content.findIndex((block) => block.type === 'text')
     if (textIndex < 0) return reply
@@ -690,16 +721,17 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
         }
         try {
           const webContentsId = await resolveBrowserWebContentsId(sessionId, args.tab)
-          const entry = getWebMcpTools(webContentsId)
-          if (!entry || entry.tools.length === 0) {
+          const page = await webMcpPage(webContentsId)
+          if (page.kind === 'unavailable') return chromeWebMcpUnavailableReply(page.reason)
+          if (page.kind !== 'tools') {
             return textReply({ count: 0, hint: 'This page has not registered any WebMCP tools.' })
           }
           // Asked here as well as in the call path: refusing keeps the page's tool names and
           // descriptions out of the model's context entirely, which is the injection surface the
           // spec ranks first — ahead of tool output.
-          const trusted = await ensureWebMcpOriginTrusted(sessionId, entry)
+          const trusted = await ensureWebMcpOriginTrusted(sessionId, page)
           if (!trusted.ok) return trusted.reply
-          return webmcpToolListReply(entry)
+          return webmcpToolListReply(page)
         } catch (err) {
           return errorReply(err)
         }
@@ -1122,6 +1154,7 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
         url: z.string().optional().describe("Initial URL. A schemeless host like 'example.com' gets https; loopback gets http. Defaults to a blank tab."),
         tab: z.string().optional().describe('Existing browser tab id to reuse/focus instead of creating a new one.'),
         readiness: z.enum(['load', 'none']).default('load').describe("'load' waits for loading to stop (default); 'none' returns as soon as the tab exists."),
+        host: z.enum(['embedded', 'chrome']).optional().describe("chrome opens the tab in the user's Chrome. Default embedded."),
       },
     },
     async (args) => {
@@ -1403,7 +1436,7 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
     'browser_download',
     {
       description:
-        "Fetch a file by URL and save it to disk through the browser session (cookies/auth apply, no CORS; data: URLs ok). Completes synchronously if finished within `timeoutMs`; otherwise continues in the background and returns status 'background' with a taskId — you will receive a task notification when it finishes. For downloads the page starts itself (export buttons, attachment links), click first then use browser_list_downloads. Without `dir` the file lands in the user's configured download directory — or, for a session running on a remote node, in that session's directory ($SUPERONE_SESSION_DIR), which is where you can read it. Pass `dir` when it belongs somewhere specific, such as the project the user is working in.",
+        "Fetch a file by URL and save it to disk through the browser session (cookies/auth apply, no CORS; data: URLs ok). When Chrome is the only browser this session is driving, the download uses Chrome's cookies. Completes synchronously if finished within `timeoutMs`; otherwise continues in the background and returns status 'background' with a taskId — you will receive a task notification when it finishes. For downloads the page starts itself (export buttons, attachment links), click first then use browser_list_downloads. Without `dir` the file lands in the user's configured download directory — or, for a session running on a remote node, in that session's directory ($SUPERONE_SESSION_DIR), which is where you can read it. Pass `dir` when it belongs somewhere specific, such as the project the user is working in.",
       inputSchema: {
         ...descriptionField,
         url: z.string().min(1).describe('Absolute URL (or data: URL) of the file to download.'),

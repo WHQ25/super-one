@@ -1,3 +1,6 @@
+import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs'
+import { tmpdir } from 'os'
+import { join } from 'path'
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 
 type WillDownloadHandler = (event: unknown, item: FakeItem, webContents: { id: number }) => void
@@ -5,12 +8,16 @@ type WillDownloadHandler = (event: unknown, item: FakeItem, webContents: { id: n
 const sessionOn = vi.fn<(event: string, handler: WillDownloadHandler) => void>()
 
 vi.mock('electron', () => ({
+  app: { getPath: () => '/tmp/superone-test-userData' },
   session: { fromPartition: () => ({ on: sessionOn, fetch: vi.fn() }) },
 }))
 
 vi.mock('../logger', () => ({ default: { warn: vi.fn(), info: vi.fn(), error: vi.fn() } }))
 
 vi.mock('./browser-automation-bridge', () => ({ browserAutomationCall: vi.fn() }))
+
+const chromeDownload = vi.hoisted(() => ({ downloadThroughUserChrome: vi.fn(async () => null as null | { path: string; filename: string; bytes: number; mimeType: string; state: 'completed' }) }))
+vi.mock('./chrome-url-download', () => chromeDownload)
 
 const store = vi.hoisted(() => ({
   reserveDownloadPath: vi.fn((name: string, _dir?: string | null, sessionId?: string | null, origin?: { connectionId: string | null }) =>
@@ -37,6 +44,7 @@ import { browserAutomationCall } from './browser-automation-bridge'
 
 let listDownloads: typeof import('./browser-downloads').listDownloads
 let waitForDownloads: typeof import('./browser-downloads').waitForDownloads
+let downloadUrl: typeof import('./browser-downloads').downloadUrl
 // Re-imported with the module under test: `resetModules` gives each test a
 // fresh driver map, and the one the capture reads must be the one we fill.
 let rememberTabDriver: typeof import('./browser-tab-drivers').rememberTabDriver
@@ -93,6 +101,7 @@ describe('page-triggered download capture', () => {
     const mod = await import('./browser-downloads')
     listDownloads = mod.listDownloads
     waitForDownloads = mod.waitForDownloads
+    downloadUrl = mod.downloadUrl
     rememberTabDriver = (await import('./browser-tab-drivers')).rememberTabDriver
     mod.registerBrowserDownloadCapture()
   })
@@ -216,6 +225,45 @@ describe('page-triggered download capture', () => {
     const visible = await listDownloads('sess-1')
 
     expect(visible.map((d) => d.filename)).toEqual(['second.txt', 'first.txt'])
+  })
+
+  it('copies a Chrome download into the reserved path and grants that copy', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'chrome-dl-'))
+    const source = join(dir, 'from-chrome.txt')
+    writeFileSync(source, 'hello')
+    store.reserveDownloadPath.mockImplementationOnce((name: string) => join(dir, name))
+    chromeDownload.downloadThroughUserChrome.mockResolvedValueOnce({
+      path: source,
+      filename: 'a.txt',
+      bytes: 5,
+      mimeType: 'text/plain',
+      state: 'completed',
+    })
+    try {
+      const result = await downloadUrl('https://x.test/a.txt', { sessionId: 'sess-1', filename: 'a.txt' })
+      expect(result).toMatchObject({ path: join(dir, 'a.txt'), filename: 'a.txt', bytes: 5, mimeType: 'text/plain' })
+      expect(readFileSync(result.path, 'utf8')).toBe('hello')
+      expect(store.registerDownload).toHaveBeenCalledWith('sess-1', join(dir, 'a.txt'), true)
+      expect(chromeDownload.downloadThroughUserChrome).toHaveBeenCalledWith({
+        sessionId: 'sess-1',
+        url: 'https://x.test/a.txt',
+        filename: 'a.txt',
+      })
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('abandons the reservation when the Chrome file cannot be copied', async () => {
+    chromeDownload.downloadThroughUserChrome.mockResolvedValueOnce({
+      path: '/no/such/chrome-download.txt',
+      filename: 'a.txt',
+      bytes: 0,
+      mimeType: 'text/plain',
+      state: 'completed',
+    })
+    await expect(downloadUrl('https://x.test/a.txt', { sessionId: 'sess-1', filename: 'a.txt' })).rejects.toThrow()
+    expect(record.abandonZoneFile).toHaveBeenCalledWith('sess-1', '/tmp/dl/a.txt')
   })
 
   it('lists multiple concurrent page captures without exclusive claiming', async () => {

@@ -1,0 +1,6 @@
+{
+  "name": "@superone/chrome-extension",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Chrome extension that lets SuperOne drive tabs the user shares and tabs SuperOne opens."
+}

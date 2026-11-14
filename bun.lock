@@ -15,6 +15,10 @@
         "react-dom": "^19.2.4",
       },
     },
+    "apps/chrome-extension": {
+      "name": "@superone/chrome-extension",
+      "version": "0.1.0",
+    },
     "apps/cli": {
       "name": "@superone/cli",
       "version": "0.0.0",
@@ -2844,6 +2848,8 @@
     "@superone/chat-core": ["@superone/chat-core@workspace:packages/chat-core"],
 
     "@superone/chat-view": ["@superone/chat-view@workspace:packages/chat-view"],
+
+    "@superone/chrome-extension": ["@superone/chrome-extension@workspace:apps/chrome-extension"],
 
     "@superone/claude": ["@superone/claude@workspace:packages/claude"],
 

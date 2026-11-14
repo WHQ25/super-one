@@ -27,6 +27,11 @@ const webMcpMocks = vi.hoisted(() => ({
   invokeWebMcpTool: vi.fn(),
 }))
 
+const chromeWebMcpMocks = vi.hoisted(() => ({
+  readChromeWebMcp: vi.fn(),
+  callChromeWebMcpTool: vi.fn(),
+}))
+
 const settingsMocks = vi.hoisted(() => ({
   readAppSettings: vi.fn(),
   saveAppSettings: vi.fn(),
@@ -39,6 +44,8 @@ vi.mock('../browser/browser-webmcp', () => ({
   getWebMcpTools: webMcpMocks.getWebMcpTools,
   invokeWebMcpTool: webMcpMocks.invokeWebMcpTool,
 }))
+
+vi.mock('../browser/chrome-webmcp', () => chromeWebMcpMocks)
 
 vi.mock('../browser/browser-cdp', () => ({
   isCdpEnabled: () => gates.cdp,
@@ -190,6 +197,8 @@ describe('browser tool registration under experimental gates', () => {
     vi.clearAllMocks()
     webMcpMocks.getWebMcpTools.mockReset()
     webMcpMocks.invokeWebMcpTool.mockReset()
+    chromeWebMcpMocks.readChromeWebMcp.mockReset()
+    chromeWebMcpMocks.callChromeWebMcpTool.mockReset()
     settingsMocks.readAppSettings.mockReturnValue({ webmcpTrustedOrigins: [] })
     settingsMocks.saveAppSettings.mockImplementation((patch) => patch)
     clearWebMcpTrustForTests()
@@ -286,6 +295,43 @@ describe('browser tool registration under experimental gates', () => {
     expect(resolveBrowserWebContentsId).toHaveBeenCalledWith('sess-1', 'tab-1')
     const descriptor = getBrowserToolDescriptors().find(({ name }) => name === 'browser_tools_list')
     expect(descriptor?.description).toContain('browser_tools_call')
+  })
+
+  it('names the Chrome flag when that browser does not expose WebMCP', async () => {
+    gates.webmcp = true
+    vi.mocked(resolveBrowserWebContentsId).mockResolvedValueOnce(1_000_000_004)
+    chromeWebMcpMocks.readChromeWebMcp.mockResolvedValueOnce({ available: false, reason: 'unsupported' })
+    const reply = await buildTools().get('browser_tools_list')!({ tab: 'chrome:4' })
+    expect(JSON.parse(resultText(reply))).toMatchObject({
+      count: 0,
+      status: 'unavailable',
+      hint: expect.stringContaining('chrome://flags/#enable-webmcp-testing'),
+    })
+  })
+
+  it('names the secure-context rule for an http Chrome tab', async () => {
+    gates.webmcp = true
+    vi.mocked(resolveBrowserWebContentsId).mockResolvedValueOnce(1_000_000_004)
+    chromeWebMcpMocks.readChromeWebMcp.mockResolvedValueOnce({ available: false, reason: 'insecure' })
+    const reply = await buildTools().get('browser_tools_list')!({ tab: 'chrome:4' })
+    expect(JSON.parse(resultText(reply)).hint).toContain('HTTPS or localhost')
+    expect(JSON.parse(resultText(reply)).hint).not.toContain('enable-webmcp-testing')
+  })
+
+  it('calls a Chrome tab tool through the Chrome WebMCP channel', async () => {
+    gates.webmcp = true
+    vi.mocked(resolveBrowserWebContentsId).mockResolvedValueOnce(1_000_000_004)
+    chromeWebMcpMocks.readChromeWebMcp.mockResolvedValueOnce({
+      available: true,
+      origin: 'https://example.com',
+      tools: [{ name: 'search', description: 'Search', inputSchema: '{"type":"object"}' }],
+    })
+    chromeWebMcpMocks.callChromeWebMcpTool.mockResolvedValueOnce({ outputJson: '{"ok":true}' })
+    autoTrust('session')
+    const reply = await buildTools().get('browser_tools_call')!({ name: 'search', input: {} })
+    expect(chromeWebMcpMocks.callChromeWebMcpTool).toHaveBeenCalledWith(1_000_000_004, 'search', {})
+    expect(webMcpMocks.invokeWebMcpTool).not.toHaveBeenCalled()
+    expect(resultText(reply)).toContain('"ok": true')
   })
 
   it('prepends a WebMCP preference hint to successful snapshots with page tools', async () => {

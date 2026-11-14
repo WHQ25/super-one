@@ -1,6 +1,6 @@
 import { session } from 'electron'
-import { createWriteStream } from 'fs'
-import { writeFile } from 'fs/promises'
+import { copyFileSync, createWriteStream, unlinkSync } from 'fs'
+import { stat, writeFile } from 'fs/promises'
 import { Readable } from 'stream'
 import { pipeline } from 'stream/promises'
 import log from '../logger'
@@ -9,6 +9,8 @@ import { browserAutomationCall } from './browser-automation-bridge'
 import { abandonZoneFile, sealZoneFile } from '../environment/zone-delivery'
 import { filenameFor, registerDownload, reserveDownloadPath, wakeDownloadDelivery } from '../agent/browser-download-store'
 import { tabDriver, type TabDriver } from './browser-tab-drivers'
+import { chromePageDownloads } from './chrome-download-feed'
+import { downloadThroughUserChrome } from './chrome-url-download'
 
 const BROWSER_PARTITION = 'persist:browser'
 const MAX_CAPTURED = 20
@@ -126,6 +128,25 @@ export async function downloadUrl(url: string, opts: DownloadUrlOptions = {}): P
     mediaFileGrants().add(path)
     registerDownload(sessionId, path, true)
     return { path, filename, bytes: buf.byteLength, mimeType }
+  }
+
+  const viaChrome = await downloadThroughUserChrome({ sessionId, url, filename: filenameOverride })
+  if (viaChrome) {
+    const mimeType = viaChrome.mimeType || 'application/octet-stream'
+    const filename = filenameFor(filenameOverride || viaChrome.filename, url, mimeType)
+    const path = reserveDownloadPath(filename, dir, sessionId)
+    try {
+      copyFileSync(viaChrome.path, path)
+    } catch (err) {
+      if (sessionId) abandonZoneFile(sessionId, path)
+      try { unlinkSync(path) } catch { /* the empty reservation may already be gone */ }
+      throw err
+    }
+    const { size } = await stat(path)
+    onProgress?.({ bytes: size, totalBytes: size, filename, mimeType })
+    mediaFileGrants().add(path)
+    registerDownload(sessionId, path, true)
+    return { path, filename, bytes: size, mimeType }
   }
 
   const resp = await session.fromPartition(BROWSER_PARTITION).fetch(url)
@@ -279,7 +300,10 @@ async function ownedWebContentsIds(sessionId: string): Promise<Set<number>> {
 // change hands, while we wait.
 export async function downloadsOwnedBy(sessionId: string): Promise<DownloadRecord[]> {
   const owned = await ownedWebContentsIds(sessionId)
-  return captured.filter((d) => owned.has(d.webContentsId)).map(toRecord)
+  const chrome = chromePageDownloads()
+    .filter((download) => owned.has(download.webContentsId))
+    .map(({ webContentsId: _webContentsId, guid: _guid, ...record }) => record)
+  return [...captured.filter((d) => owned.has(d.webContentsId)).map(toRecord), ...chrome]
 }
 
 function sleepNotify(ms: number): Promise<void> {

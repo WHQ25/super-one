@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import type { ComponentProps } from 'react'
 import { act, fireEvent, screen, waitFor, within, render } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { EnvironmentBucket } from '@/lib/multi-host/types'
 import { applySidebarFocus, focusEnvironment, focusProject, focusSession, useSidebarFocusStore } from './sidebar-focus'
@@ -126,6 +127,36 @@ describe('project focus across origins', () => {
   beforeEach(() => {
     localStorage.clear()
     window.app.listAutomations = vi.fn(async () => [])
+  })
+
+  it('steps up from the list icon, and leaves focus when that is the top', async () => {
+    const user = userEvent.setup()
+    renderProject()
+    const back = screen.getByRole('button', { name: 'Back to This computer' })
+    expect(back).toHaveAttribute('data-testid', 'file-tree-parent-back')
+    expect(back.querySelector('.lucide-list')).toHaveClass('size-4', 'group-hover/levels:hidden', 'group-focus-within/levels:hidden')
+    expect(back.querySelector('.lucide-circle-chevron-left')).toHaveClass('hidden', 'size-4', 'group-hover/levels:block', 'group-focus-within/levels:block')
+    expect(screen.queryByRole('button', { name: 'Focus Levels' })).not.toBeInTheDocument()
+    expect(document.querySelector('[data-focus-level="environment"] [data-focus-level-back]')).toBeTruthy()
+    expect(document.querySelector('[data-focus-level="root"] [data-focus-level-back]')).toBeNull()
+    await user.hover(back)
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
+
+    fireEvent.click(back)
+    expect(useSidebarFocusStore.getState().target).toEqual({ kind: 'environment', environmentId: focusLocal.environmentId })
+
+    fireEvent.click(screen.getByTestId('file-tree-parent-back'))
+    expect(useSidebarFocusStore.getState().target).toBeNull()
+  })
+
+  it('leaves focus from a project that has no parent environment', () => {
+    renderProject()
+    act(() => focusProject(focusLocal.pathKey, null))
+    const back = screen.getByTestId('file-tree-parent-back')
+    expect(back).toHaveAccessibleName('Exit Focus')
+    fireEvent.click(back)
+    expect(useSidebarFocusStore.getState().target).toBeNull()
   })
 
   it('starts sessions in each environment’s project without changing focus or folding the group', () => {
@@ -390,6 +421,9 @@ describe('parent session focus', () => {
     act(() => focusSession(focusLocal.pathKey, 'parent', focusLocal.environmentId))
     const title = container.querySelector('[data-sidebar-focus-title]')!
     expect(title.querySelector('.lucide-message-square')).toBeTruthy()
+    expect(screen.getByRole('button', { name: 'Focus Levels' })).toBeTruthy()
+    expect(screen.queryByTestId('file-tree-parent-back')).toBeNull()
+    expect(document.querySelector('[data-focus-level-back]')).toBeNull()
     fireEvent.click(title)
     expect(props.onSwitchSession).toHaveBeenCalledWith(focusLocal.pathKey, 'parent', { revealProject: false })
   })

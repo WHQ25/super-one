@@ -227,9 +227,8 @@ export function FileTree() {
   const levelItems = useMemo((): FocusSwitchItem[] => {
     if (!focusPath || !fileRoot) return []
     const ancestors = ancestorFolders(focusPath)
-    // The parent is the project root. The back icon opens it, so the level menu would repeat that one step.
-    if (ancestors.length <= 1) return []
-    // Nearest parent first, project root last.
+    // Nearest parent first, project root last. The root stays in the menu so one
+    // folder deep uses the same hover menu as a deeper folder.
     return [...ancestors].reverse().map((path) => ({
       id: path || 'project',
       label: path ? basename(path) : folderName,

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, type ReactNode, type RefObject } from 'react'
-import { CalendarClock, Check, ChevronDown, CircleChevronLeft, Folder, FolderOpen, FolderX, List, Loader2, LogOut, MessageSquare, Monitor, Pin, Plus, Search, SquarePen, Undo2 } from 'lucide-react'
+import { ArrowLeft, CalendarClock, Check, ChevronDown, CircleChevronLeft, Folder, FolderOpen, FolderX, List, Loader2, LogOut, MessageSquare, Monitor, Pin, Plus, Search, SquarePen, Undo2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { RecentFolder, SessionHistoryEntry } from '@superone/shared/agent-types'
 import {
@@ -25,6 +25,7 @@ import { ProjectFocusList } from './ProjectFocusList'
 import { ProjectSidebarRow, type ProjectFocusActions } from './ProjectSidebarRow'
 import {
   applySidebarFocus,
+  focusBack,
   focusEnvironment,
   focusProject,
   focusSession,
@@ -145,9 +146,9 @@ export function SidebarFocusBar({
   actions?: ReactNode
   /** Heading on the sibling menu. Project focus uses the chat project picker title. */
   menuLabel?: string
-  /** One step up. File-tree focus uses this; session focus does not. */
+  /** One step up, or out of focus when there is no parent. Session focus keeps the level menu only. */
   onBack?: () => void
-  /** Hover label naming the folder `onBack` opens. */
+  /** Accessible name for `onBack`. Also the tooltip when the level menu is empty. */
   backLabel?: string
   /** Project focus reuses the chat picker, including its add-project row. */
   onAddProject?: () => void
@@ -210,8 +211,8 @@ export function SidebarFocusBar({
           <IconButton
             size="sm"
             variant="nested"
-            tooltip={onBack ? backLabel : undefined}
-            aria-label={onBack ? undefined : t('sidebar.focusLevels')}
+            aria-label={onBack ? backLabel : t('sidebar.focusLevels')}
+            tooltip={onBack && orderedLevels.length === 0 ? backLabel : undefined}
             data-sidebar-focus-levels-trigger
             data-testid={onBack ? 'file-tree-parent-back' : undefined}
             onClick={onBack}
@@ -229,7 +230,7 @@ export function SidebarFocusBar({
               {/* brand-scope re-resolves popover tokens. Inside the sidebar the
                   remapped accent would paint item hover as a dark slab on this light menu. */}
               <div className="brand-scope min-w-40 rounded-md border bg-popover p-1 text-popover-foreground shadow-md">
-                {orderedLevels.map((level) => (
+                {orderedLevels.map((level, index) => (
                   <button
                     key={level.id}
                     type="button"
@@ -239,6 +240,13 @@ export function SidebarFocusBar({
                   >
                     {level.icon}
                     <span className="min-w-0 flex-1 truncate">{level.label}</span>
+                    {onBack && index === 0 && (
+                      <ArrowLeft
+                        aria-hidden
+                        data-focus-level-back
+                        className="size-3.5 shrink-0 opacity-70"
+                      />
+                    )}
                   </button>
                 ))}
               </div>
@@ -555,6 +563,9 @@ export function SidebarFocusView(props: SidebarFocusViewProps) {
       }),
       onSelect: () => applySidebarFocus(crumb.target),
     }))
+  // The crumb above the focused object. Environment focus steps out; project focus
+  // steps to that environment, or out when the project has none.
+  const parentCrumb = target.kind === 'session' ? undefined : crumbs[crumbs.length - 2]
   const siblings = focusSiblingItems({
     target,
     environments,
@@ -670,6 +681,12 @@ export function SidebarFocusView(props: SidebarFocusViewProps) {
         onOpenCurrent={target.kind === 'session' ? () => props.onSwitchSession(target.folderPath, target.sessionId, { revealProject: false }) : undefined}
         siblings={siblings}
         levels={levels}
+        onBack={parentCrumb ? focusBack : undefined}
+        backLabel={parentCrumb
+          ? parentCrumb.id === 'root'
+            ? parentCrumb.label
+            : t('sidebar.parentFolder', { name: parentCrumb.label })
+          : undefined}
         menuLabel={target.kind === 'project'
           ? t('chat.suggestions.selectProject')
           : target.kind === 'environment'

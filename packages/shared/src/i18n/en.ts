@@ -452,7 +452,7 @@ export type Messages = {
     focusSwitchSession: string
     /** Title of the sibling menu when a file-tree folder is focused. */
     focusSwitchFolder: string
-    /** Hover label for the file-tree control that returns to the parent folder. */
+    /** Accessible name for the control that returns to a named parent. Tooltip only when no level menu is open. */
     parentFolder: string
     /** Hover label for the file-tree control that creates a file or a folder. */
     newEntry: string

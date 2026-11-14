@@ -70,6 +70,29 @@
   animation: breathe 1.8s ease-in-out infinite;
 }
 
+/* The first sidebar focus level row, the one the back click actually opens.
+   The arrow steps left, overshoots right, and settles. It rests between
+   cycles. Deeper rows stay still. */
+@keyframes focus-back-nudge {
+  0%, 64%, 100% { transform: translateX(0); }
+  12% { transform: translateX(-4px); }
+  26% { transform: translateX(2px); }
+  38% { transform: translateX(-1.5px); }
+  50% { transform: translateX(0.5px); }
+}
+
+.group\/levels:hover [data-focus-level-back],
+.group\/levels:focus-within [data-focus-level-back] {
+  animation: focus-back-nudge 1.25s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .group\/levels:hover [data-focus-level-back],
+  .group\/levels:focus-within [data-focus-level-back] {
+    animation: none;
+  }
+}
+
 /* Loading-toast activity mark. The bars sit on a box whose top-left is the
    slot center, matching Sonner's loader, and fade in place. */
 .environment-upgrading {

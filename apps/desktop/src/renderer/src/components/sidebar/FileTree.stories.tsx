@@ -1,4 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import { expect, userEvent, within } from 'storybook/test'
 import { useEffect, useRef, type RefObject } from 'react'
 import type { FileEntryKind, FileTreeEntry, GitFileStatus, GitStatusFile } from '@superone/shared/agent-types'
 import { FileTree } from './FileTree'
@@ -454,6 +455,16 @@ export const FocusedFolder: Story = {
 export const FocusedProjectChild: Story = {
   name: 'Focus · parent is the project root',
   args: { items: FOCUS_TREE, focusPath: 'src' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const back = await canvas.findByRole('button', { name: 'Back to super-one' })
+    const root = canvas.getByRole('button', { name: 'super-one', hidden: true })
+    await expect(root.querySelector('[data-focus-level-back]')).toHaveClass('lucide-arrow-left')
+    await userEvent.hover(back)
+    await expect(root).toBeVisible()
+    await new Promise((resolve) => setTimeout(resolve, 450))
+    await expect(within(canvasElement.ownerDocument.body).queryByRole('tooltip')).toBeNull()
+  },
 }
 
 export const FocusedFolderNarrow: Story = {

@@ -45,7 +45,13 @@ const callbacks = {
   onNewSession: () => {},
 }
 
-function barModel(target: SidebarFocus): { title: string; levels: FocusSwitchItem[]; siblings: FocusSwitchItem[] } {
+function barModel(target: SidebarFocus): {
+  title: string
+  levels: FocusSwitchItem[]
+  siblings: FocusSwitchItem[]
+  onBack?: () => void
+  backLabel?: string
+} {
   const environmentLabel = target.environmentId === 'env-billing' ? 'Billing' : ENVIRONMENT
   const projectLabel = target.kind !== 'environment' && target.folderPath === '/storybook/billing' ? 'Billing' : PROJECT
   const crumbs = sidebarFocusCrumbs(target, {
@@ -76,7 +82,14 @@ function barModel(target: SidebarFocus): { title: string; levels: FocusSwitchIte
           { id: 'parent', label: 'Opening workflow', current: target.sessionId === 'parent', onSelect: () => {} },
           { id: 'notes', label: 'Release notes', current: target.sessionId === 'notes', onSelect: () => {} },
         ]
-  return { title: crumbs.find((crumb) => crumb.current)?.label ?? '', levels, siblings }
+  const parent = target.kind === 'session' ? undefined : crumbs[crumbs.length - 2]
+  return {
+    title: crumbs.find((crumb) => crumb.current)?.label ?? '',
+    levels,
+    siblings,
+    onBack: parent ? () => applySidebarFocus(parent.target) : undefined,
+    backLabel: parent ? (parent.id === 'root' ? parent.label : `Back to ${parent.label}`) : undefined,
+  }
 }
 
 function projectActions() {
@@ -95,13 +108,17 @@ function FocusChrome() {
     applySidebarFocus({ kind: 'project', folderPath: '/storybook/focus', environmentId: 'env-build' })
     return () => applySidebarFocus(null)
   }, [])
-  const model = target ? barModel(target) : { title: '', levels: [], siblings: [] }
+  const model = target
+    ? barModel(target)
+    : { title: '', levels: [], siblings: [], onBack: undefined, backLabel: undefined }
   return (
     <div data-sidebar-focus data-sidebar-inner className="flex h-[480px] w-[288px] flex-col bg-sidebar text-sidebar-foreground">
       <SidebarFocusBar
         title={model.title}
         siblings={model.siblings}
         levels={model.levels}
+        onBack={model.onBack}
+        backLabel={model.backLabel}
         menuLabel={target?.kind === 'environment' ? 'Select Environment' : target?.kind === 'session' ? 'Select Session' : 'Select Project'}
         onAddProject={target?.kind === 'project' ? () => {} : undefined}
         actions={target?.kind === 'project' ? projectActions() : undefined}
@@ -175,10 +192,18 @@ export const Levels: Story = {
     const actions = canvasElement.querySelector('[data-sidebar-focus-actions]')
     await expect(actions?.className ?? '').not.toContain('opacity-0')
     await expect(canvas.getByRole('button', { name: 'Search sessions…' })).toBeVisible()
-    const levels = canvas.getByRole('button', { name: 'Focus Levels' })
-    levels.focus()
-    await userEvent.hover(levels)
-    await userEvent.click(canvas.getByRole('button', { name: ENVIRONMENT }))
+    const back = canvas.getByRole('button', { name: 'Back to Build machine' })
+    await expect(back.querySelector('.lucide-list')).toHaveClass('group-hover/levels:hidden')
+    await expect(back.querySelector('.lucide-circle-chevron-left')).toHaveClass('hidden', 'group-hover/levels:block')
+    back.focus()
+    await userEvent.hover(back)
+    const parent = canvas.getByRole('button', { name: ENVIRONMENT })
+    await expect(parent).toBeVisible()
+    await expect(parent.querySelector('[data-focus-level-back]')).toBeTruthy()
+    await expect(canvas.getByRole('button', { name: 'Exit Focus' }).querySelector('[data-focus-level-back]')).toBeNull()
+    await new Promise((resolve) => setTimeout(resolve, 450))
+    await expect(within(canvasElement.ownerDocument.body).queryByRole('tooltip')).toBeNull()
+    await userEvent.click(back)
     await expect(canvasElement.querySelector('[data-sidebar-focus-title]')).toHaveTextContent(ENVIRONMENT)
     await userEvent.click(canvas.getByRole('button', { name: ENVIRONMENT }))
     await userEvent.click(screen.getByRole('menuitem', { name: 'Billing' }))

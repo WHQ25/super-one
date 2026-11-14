@@ -36,6 +36,7 @@ describe('SidebarFocusBar', () => {
     expect(title?.className).not.toContain('hover:bg-sidebar-hover')
     expect(title?.className).toContain('hover:text-foreground')
     expect(screen.getByRole('button', { name: 'Build machine', hidden: true }).querySelector('[data-testid="level-icon"]')).toBeTruthy()
+    expect(document.querySelector('[data-focus-level-back]')).toBeNull()
     expect(document.querySelector('[data-sidebar-focus-title] [data-testid="open-folder"]')).toBeTruthy()
     await user.click(screen.getByRole('button', { name: 'Exit Focus', hidden: true }))
     expect(onExit).toHaveBeenCalledTimes(1)
@@ -68,8 +69,9 @@ describe('SidebarFocusBar', () => {
   })
 })
 
-it('turns the level control into back while the hover menu stays', () => {
+it('turns the level control into back while the hover menu stays', async () => {
   const onBack = vi.fn()
+  const user = userEvent.setup()
   render(<SidebarFocusBar
     title="desktop"
     siblings={[{ id: 'desktop', label: 'desktop', current: true, icon: <Folder className="size-4" />, onSelect: vi.fn() }]}
@@ -82,6 +84,13 @@ it('turns the level control into back while the hover menu stays', () => {
   expect(back.querySelector('.lucide-list')).toHaveClass('size-4')
   expect(back.querySelector('.lucide-circle-chevron-left')).toHaveClass('hidden', 'size-4')
   expect(document.querySelector('[data-sidebar-focus-title] svg')).toHaveClass('size-4')
+  const backRow = screen.getByRole('button', { name: 'src', hidden: true })
+  const mark = backRow.querySelector('[data-focus-level-back]')
+  expect(mark).toBe(backRow.lastElementChild)
+  expect(mark).toHaveClass('lucide-arrow-left')
+  await user.hover(back)
+  await new Promise((resolve) => setTimeout(resolve, 400))
+  expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
   fireEvent.click(back)
   expect(onBack).toHaveBeenCalledOnce()
 })

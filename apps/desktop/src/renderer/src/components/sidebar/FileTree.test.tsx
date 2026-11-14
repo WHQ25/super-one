@@ -228,7 +228,14 @@ describe('FileTree folder focus and changed files', () => {
     const rootBack = screen.getByRole('button', { name: 'Back to proj' })
     expect(rootBack.querySelector('.lucide-list')).toBeTruthy()
     expect(rootBack.querySelector('.lucide-circle-chevron-left')).toHaveClass('hidden')
-    expect(document.querySelector('[data-sidebar-focus-levels]')).toBeNull()
+    const rootMenu = document.querySelector('[data-sidebar-focus-levels]')
+    const rootButtons = [...(rootMenu?.querySelectorAll('button') ?? [])]
+    expect(rootButtons.map((button) => button.textContent)).toEqual(['proj'])
+    expect(rootButtons[0]?.querySelector('[data-focus-level-back]')).toHaveClass('lucide-arrow-left')
+    const user = userEvent.setup()
+    await user.hover(rootBack)
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: 'Focus Levels' })).not.toBeInTheDocument()
 
     fireEvent.doubleClick(screen.getByText('lib'))
@@ -252,6 +259,12 @@ describe('FileTree folder focus and changed files', () => {
     const menu = document.querySelector('[data-sidebar-focus-levels]')
     const buttons = [...(menu?.querySelectorAll('button') ?? [])]
     expect(buttons.map((button) => button.textContent)).toEqual(['src', 'proj'])
+    expect(buttons[0]?.querySelector('[data-focus-level-back]')).toBeTruthy()
+    expect(buttons[1]?.querySelector('[data-focus-level-back]')).toBeNull()
+    const user = userEvent.setup()
+    await user.hover(screen.getByRole('button', { name: 'Back to src' }))
+    await new Promise((resolve) => setTimeout(resolve, 400))
+    expect(screen.queryByRole('tooltip')).not.toBeInTheDocument()
     expect(buttons.at(-1)?.querySelector('.lucide-folder-open')).toBeNull()
     expect(buttons.at(-1)?.querySelector('.lucide-folder')).toBeTruthy()
   })

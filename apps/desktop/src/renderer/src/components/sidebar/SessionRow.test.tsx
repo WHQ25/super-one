@@ -13,6 +13,7 @@ import { SessionHoverBody, SessionHoverCard, SessionHoverCardTrigger } from './m
 import { PinnedSessionRow } from './PinnedSessionRow'
 import { SessionRow } from './SessionRow'
 import { useSidebarFocusStore } from './sidebar-focus'
+import { clearSessionSettlePending, setSessionSettlePending } from '@/lib/session-settle-pending'
 import { useSessionMenuItems } from './useSessionMenuItems'
 
 const FOLDER = '/proj'
@@ -62,6 +63,7 @@ function menuIds(session: SessionHistoryEntry): string[] {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  clearSessionSettlePending()
   useScheduledSendsStore.setState({ bySession: {} })
   useChatStore.setState({ projectSessions: {}, activeProject: null })
   useRealtimeCallStore.setState({ sessionId: null, state: 'idle' })
@@ -157,6 +159,66 @@ describe('SessionRow opening icon', () => {
     expect(idleRow?.querySelector('.lucide-circle-check')).not.toBeNull()
     const idleGlyph = idleRow?.querySelector('.lucide-message-square')
     expect(idleGlyph?.parentElement?.className ?? '').toContain('group-hover/session:opacity-0')
+  })
+})
+
+describe('SessionRow settle in flight', () => {
+  it('replaces the settle check with a spinner that stays visible', () => {
+    setSessionSettlePending(FOLDER, 'idle', true)
+    render(<SessionRow session={entry('idle', 'Idle session')} folderPath={FOLDER} animateTitle={false} {...noop} />)
+
+    const spinner = screen.getByRole('button', { name: 'Settling…' })
+    expect(spinner.querySelector('.lucide-loader-circle')).not.toBeNull()
+    expect(spinner.className).toContain('opacity-100')
+    expect(spinner.className).not.toContain('group-hover/session:opacity-100')
+    const row = spinner.closest('.group\\/session')
+    expect(row?.querySelector('.lucide-circle-check')).toBeNull()
+    const glyph = row?.querySelector('.lucide-message-square')
+    expect(glyph?.parentElement?.className ?? '').toContain('opacity-0')
+    expect(glyph?.parentElement?.className ?? '').not.toContain('group-hover/session:opacity-0')
+    fireEvent.click(spinner)
+    expect(noop.onSettleSession).not.toHaveBeenCalled()
+    expect(noop.onSwitchSession).not.toHaveBeenCalled()
+  })
+
+  it('replaces unsettle with a spinner that stays visible', () => {
+    setSessionSettlePending(FOLDER, 'set', true)
+    render(
+      <SessionRow
+        session={{ ...entry('set', 'Settled session'), isSettled: true }}
+        folderPath={FOLDER}
+        animateTitle={false}
+        {...noop}
+      />,
+    )
+
+    const spinner = screen.getByRole('button', { name: 'Unsettling…' })
+    expect(spinner.querySelector('.lucide-loader-circle')).not.toBeNull()
+    expect(spinner.className).toContain('opacity-100')
+    expect(spinner.className.split(/\s+/)).not.toContain('w-0')
+    expect(spinner.closest('.group\\/session')?.querySelector('.lucide-undo-2')).toBeNull()
+    fireEvent.click(spinner)
+    expect(noop.onSettleSession).not.toHaveBeenCalled()
+    expect(noop.onSwitchSession).not.toHaveBeenCalled()
+  })
+
+  it('replaces a pinned row glyph with the settle spinner', () => {
+    setSessionSettlePending(FOLDER, 'pin', true)
+    render(
+      <PinnedSessionRow
+        session={{ ...entry('pin', 'Pinned title'), provider: 'claude', folderPath: FOLDER, folderName: 'super-one' }}
+        isActive={false}
+        status="idle"
+        isUnseen={false}
+        {...noop}
+      />,
+    )
+
+    const spinner = screen.getByLabelText('Settling…')
+    expect(spinner).toHaveClass('animate-spin')
+    const row = screen.getByText('Pinned title').closest('.group\\/pin')
+    expect(row?.querySelector('.session-icon-ground')).toBeNull()
+    expect(row?.querySelector('.lucide-message-square')).toBeNull()
   })
 })
 

@@ -3,6 +3,7 @@ import { act, renderHook, waitFor } from '@testing-library/react'
 import { expect, it, vi } from 'vitest'
 import { appState, chatState, mockEnvironment, notifyChat, sessionFixtures } from '../AppSidebar.test-setup'
 import { ACTIVE_SESSION_PAGE_SIZE } from '@/lib/session-list-ops'
+import { clearSessionSettlePending, isSessionSettlePending } from '@/lib/session-settle-pending'
 import { useSidebarSessions } from './use-sidebar-sessions'
 
 const FOLDER = '/project-a'
@@ -178,6 +179,28 @@ it('keeps the settled page when expanding again returns the same rows', async ()
   await waitFor(() => expect(mockEnvironment.listSettledSessions.mock.calls.length).toBeGreaterThan(calls))
   await act(async () => { await Promise.resolve() })
   expect(result.current.settledSessions).toBe(first)
+})
+
+it('shows settle as pending until the list refresh returns, and ignores a second click', async () => {
+  sessionFixtures.byFolder[FOLDER] = [
+    { sessionId: 'slow', title: 'Remote session', lastActiveAt: '2026-03-02T00:00:00.000Z', messageCount: 1 },
+  ]
+  clearSessionSettlePending()
+  const gate = deferred<void>()
+  mockEnvironment.setSessionUiFlags.mockImplementationOnce(async () => { await gate.promise })
+  const { result } = setup()
+  await act(async () => { await result.current.loadFolderSessions(FOLDER, 'expand') })
+
+  let flight!: Promise<void>
+  act(() => { flight = result.current.handleSettleSession('slow', true, FOLDER) })
+  expect(isSessionSettlePending(FOLDER, 'slow')).toBe(true)
+
+  await act(async () => { await result.current.handleSettleSession('slow', true, FOLDER) })
+  expect(mockEnvironment.setSessionUiFlags).toHaveBeenCalledTimes(1)
+
+  gate.resolve()
+  await act(async () => { await flight })
+  expect(isSessionSettlePending(FOLDER, 'slow')).toBe(false)
 })
 
 it('clears the in-flight request after a failed load so a later refresh can recover', async () => {

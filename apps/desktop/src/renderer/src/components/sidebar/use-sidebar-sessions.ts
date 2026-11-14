@@ -10,6 +10,7 @@ import { projectSessionKey } from '@superone/shared/remote-resource-key'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { closeSessionBoundTabs } from '@/lib/session-bound-tabs'
 import { isRunningChildSettleError, removeSession, setSessionFlags, setSessionRead } from '@/lib/session-client'
+import { withSessionSettlePending } from '@/lib/session-settle-pending'
 import { ACTIVE_SESSION_PAGE_SIZE, isListedSession } from '@/lib/session-list-ops'
 import { noteListedUnread, setUnseenCompleted } from '@/stores/chat-store/helpers/unseen-completed'
 import { traceSidebar } from './sidebar-trace'
@@ -521,7 +522,7 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
   }, [replaceSettled])
 
   const refreshFolderSessions = useCallback((folderPath: string) => {
-    loadFolderSessions(folderPath, 'refresh')
+    return loadFolderSessions(folderPath, 'refresh')
   }, [loadFolderSessions])
 
   const settledSessions = useMemo(
@@ -621,24 +622,28 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
   }, [refreshPinned, refreshFolderSessions])
 
   const handleSettleSession = useCallback(async (sessionId: string, settled: boolean, folderPath: string) => {
-    try {
-      await setSessionFlags(folderPath, sessionId, { isSettled: settled })
-      if (settled) {
-        closeSessionBoundTabs(projectSessionKey(folderPath, sessionId))
-        useChatStore.setState((state) => setUnseenCompleted(state, folderPath, sessionId, false))
-        try {
-          await setSessionRead(folderPath, sessionId, true)
-        } catch (err) {
-          console.warn('[sidebar] setSessionRead failed:', err)
+    // The spinner stays up through the list refresh. Clearing it when the flag
+    // RPC returns would flash the check back while a remote list is still stale.
+    await withSessionSettlePending(folderPath, sessionId, async () => {
+      try {
+        await setSessionFlags(folderPath, sessionId, { isSettled: settled })
+        if (settled) {
+          closeSessionBoundTabs(projectSessionKey(folderPath, sessionId))
+          useChatStore.setState((state) => setUnseenCompleted(state, folderPath, sessionId, false))
+          try {
+            await setSessionRead(folderPath, sessionId, true)
+          } catch (err) {
+            console.warn('[sidebar] setSessionRead failed:', err)
+          }
         }
+      } catch (err) {
+        console.warn('[sidebar] settle failed:', err)
+        toast.error(isRunningChildSettleError(err) ? t('sidebar.contextMenu.settleBlocked') : (err instanceof Error ? err.message : String(err)))
       }
-    } catch (err) {
-      console.warn('[sidebar] settle failed:', err)
-      toast.error(isRunningChildSettleError(err) ? t('sidebar.contextMenu.settleBlocked') : (err instanceof Error ? err.message : String(err)))
-    }
-    refreshFolderSessions(folderPath)
-    refreshPinned()
-    refreshSettled()
+      await refreshFolderSessions(folderPath)
+      refreshPinned()
+      refreshSettled()
+    })
   }, [refreshFolderSessions, refreshPinned, refreshSettled, t])
 
   const executeDeleteSession = useCallback(async (target: { sessionId: string; folderPath: string }) => {

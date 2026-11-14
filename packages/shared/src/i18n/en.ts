@@ -695,6 +695,10 @@ export type Messages = {
       unhide: string
       settle: string
       unsettle: string
+      /** Running-action label while settle is waiting on the host. */
+      settling: string
+      /** Running-action label while unsettle is waiting on the host. */
+      unsettling: string
       /** Shown when settle is refused because a spawn child still has an open turn. */
       settleBlocked: string
       markAsRead: string
@@ -5891,6 +5895,8 @@ export const en: Messages = {
       unhide: 'Unhide Session',
       settle: 'Settle',
       unsettle: 'Unsettle',
+      settling: 'Settling…',
+      unsettling: 'Unsettling…',
       settleBlocked: 'Cannot settle while a child session is still running',
       markAsRead: 'Mark as Read',
       markAsUnread: 'Mark as Unread',

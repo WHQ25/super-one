@@ -26,6 +26,7 @@ import { projectSessionKey } from '@superone/shared/remote-resource-key'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { closeSessionBoundTabs } from '@/lib/session-bound-tabs'
 import { isRunningChildSettleError } from '@/lib/session-client'
+import { withSessionSettlePending } from '@/lib/session-settle-pending'
 import { buildChatFormItems, buildSessionMenuItems, canSettleSession } from '@/lib/session-menu-items'
 import { useSpawnChildTurnOpen } from '@/lib/spawn-child-turn'
 import { setUnseenCompleted } from '@/stores/chat-store/helpers/unseen-completed'
@@ -185,30 +186,32 @@ export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string
             await setSessionFlags(folderPath, entry.sessionId, { isPinned: !entry.isPinned })
             await afterMutate()
           },
-          onSettle: async () => {
-            const next = !settled
-            localChoice.current = next
-            setFetchedSettled(next)
-            try {
-              const { setSessionFlags, setSessionRead } = await import('@/lib/session-client')
-              await setSessionFlags(folderPath, entry.sessionId, { isSettled: next })
-              if (next) {
-                closeSessionBoundTabs(projectSessionKey(folderPath, entry.sessionId))
-                useChatStore.setState((state) => setUnseenCompleted(state, folderPath, entry.sessionId, false))
-                try {
-                  await setSessionRead(folderPath, entry.sessionId, true)
-                } catch (err) {
-                  console.warn('[header] setSessionRead failed:', err)
+          onSettle: () => {
+            void withSessionSettlePending(folderPath, entry.sessionId, async () => {
+              const next = !settled
+              localChoice.current = next
+              setFetchedSettled(next)
+              try {
+                const { setSessionFlags, setSessionRead } = await import('@/lib/session-client')
+                await setSessionFlags(folderPath, entry.sessionId, { isSettled: next })
+                if (next) {
+                  closeSessionBoundTabs(projectSessionKey(folderPath, entry.sessionId))
+                  useChatStore.setState((state) => setUnseenCompleted(state, folderPath, entry.sessionId, false))
+                  try {
+                    await setSessionRead(folderPath, entry.sessionId, true)
+                  } catch (err) {
+                    console.warn('[header] setSessionRead failed:', err)
+                  }
                 }
+                await afterMutate()
+              } catch (err) {
+                localChoice.current = settled
+                setFetchedSettled(settled)
+                console.warn('[header] settle failed:', err)
+                toast.error(isRunningChildSettleError(err) ? t('sidebar.contextMenu.settleBlocked') : (err instanceof Error ? err.message : String(err)))
+                await afterMutate()
               }
-              await afterMutate()
-            } catch (err) {
-              localChoice.current = settled
-              setFetchedSettled(settled)
-              console.warn('[header] settle failed:', err)
-              toast.error(isRunningChildSettleError(err) ? t('sidebar.contextMenu.settleBlocked') : (err instanceof Error ? err.message : String(err)))
-              await afterMutate()
-            }
+            })
           },
           onFork: handleFork,
           // Only offered where a side chat can actually dock beside the session:

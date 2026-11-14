@@ -6,6 +6,7 @@ import { useAppStore } from '@/stores/app'
 import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
 import { useRealtimeCallStore } from '@/stores/realtime-call'
 import { useScheduledSendsStore } from '@/stores/scheduled-sends'
+import { setSessionSettlePending } from '@/lib/session-settle-pending'
 import { SessionRow } from './SessionRow'
 
 const FOLDER = '/storybook/super-one'
@@ -143,6 +144,56 @@ export const ScheduledClocksAlignAtRest: Story = {
       ]}
     />
   ),
+}
+
+function SettlingPreview({ settled = false }: { settled?: boolean }) {
+  const sessionId = settled ? 'unsettling' : 'settling'
+  useLayoutEffect(() => {
+    setSessionSettlePending(FOLDER, sessionId, true)
+    return () => setSessionSettlePending(FOLDER, sessionId, false)
+  }, [sessionId])
+  return (
+    <div className="w-[280px] bg-sidebar p-1.5 text-sidebar-foreground" data-sidebar-inner>
+      <SessionRow
+        session={entry(sessionId, settled ? 'Restoring a settled session' : 'Settling a remote session', settled ? { isSettled: true } : undefined)}
+        folderPath={FOLDER}
+        {...noop}
+      />
+    </div>
+  )
+}
+
+export const Settling: Story = {
+  name: 'Settle shows a spinner',
+  render: () => <SettlingPreview />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const spinner = await canvas.findByRole('button', { name: 'Settling…' })
+    await expect(spinner.querySelector('.lucide-loader-circle')).not.toBeNull()
+    await expect(spinner.className).toContain('opacity-100')
+    await expect(spinner.className).not.toContain('group-hover/session:opacity-100')
+    await expect(canvasElement.querySelector('.lucide-circle-check')).toBeNull()
+    await expect(canvas.getByText('Settling a remote session')).toBeInTheDocument()
+  },
+}
+
+export const SettlingDark: Story = {
+  name: 'Settle spinner in dark',
+  globals: { theme: 'dark' },
+  render: () => <SettlingPreview />,
+}
+
+export const Unsettling: Story = {
+  name: 'Unsettle shows a spinner',
+  render: () => <SettlingPreview settled />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const spinner = await canvas.findByRole('button', { name: 'Unsettling…' })
+    await expect(spinner.querySelector('.lucide-loader-circle')).not.toBeNull()
+    await expect(spinner.className).toContain('opacity-100')
+    await expect(spinner.className.split(/\s+/)).not.toContain('w-0')
+    await expect(canvasElement.querySelector('.lucide-undo-2')).toBeNull()
+  },
 }
 
 export const Opening: Story = {

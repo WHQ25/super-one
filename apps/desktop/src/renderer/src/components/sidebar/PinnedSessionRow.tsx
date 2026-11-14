@@ -7,6 +7,7 @@ import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
 import { cn } from '@superone/ui/lib/utils'
 import { useChatStore } from '@/stores/chat'
 import { useStallLevel, getStallColor } from '@/lib/stall-utils'
+import { useSessionSettlePending } from '@/lib/session-settle-pending'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import { useSessionDragOut } from './useSessionDragOut'
 import { SessionTitleAnimated } from './AnimatedSessionTitle'
@@ -19,6 +20,35 @@ const PINNED_ICON_SIZE = 20
 
 const PINNED_ROW_HOVER_ACTION =
   'box-content w-0 shrink-0 overflow-hidden rounded p-0 text-sidebar-foreground/70 opacity-0 hover:text-sidebar-foreground group-hover/pin:w-3 group-hover/pin:p-0.5 group-hover/pin:opacity-100'
+
+function PinnedLeadingGlyph({
+  settling,
+  opening,
+  settlingLabel,
+  loadingLabel,
+  HarnessIcon,
+  harnessStatus,
+  isActive,
+}: {
+  settling: boolean
+  opening: boolean
+  settlingLabel: string
+  loadingLabel: string
+  HarnessIcon: ReturnType<typeof resolveSessionIcon>
+  harnessStatus: SessionIconProps['status']
+  isActive: boolean
+}) {
+  if (settling) {
+    return <Loader2 aria-label={settlingLabel} className="size-3.5 animate-spin text-sidebar-foreground/70" />
+  }
+  if (opening) {
+    return <Loader2 aria-label={loadingLabel} className="size-3.5 animate-spin text-sidebar-foreground/70" />
+  }
+  if (HarnessIcon) {
+    return <HarnessIcon status={harnessStatus} active={isActive} size={PINNED_ICON_SIZE} renderLevel="compact" />
+  }
+  return <MessageSquare className="size-3.5 text-sidebar-foreground/70" />
+}
 
 interface PinnedSessionRowProps extends SessionMenuCallbacks {
   session: PinnedSessionEntry
@@ -55,6 +85,7 @@ export const PinnedSessionRow = memo(function PinnedSessionRow({
   const inSlashCommand = useChatStore(
     (s) => !!s.projectSessions[session.folderPath]?._sessions?.[session.sessionId]?.runningSlashCommand,
   )
+  const settling = useSessionSettlePending(session.folderPath, session.sessionId)
   const stallLevel = useStallLevel(isRunning && !inSlashCommand, readLastEventAt)
   const titleClassName = cn(
     'min-w-0 flex-1 text-sm',
@@ -97,11 +128,15 @@ export const PinnedSessionRow = memo(function PinnedSessionRow({
       )}
     >
       <span className="flex size-5 shrink-0 items-center justify-center">
-        {opening
-          ? <Loader2 aria-label={t('common.loading')} className="size-3.5 animate-spin text-sidebar-foreground/70" />
-          : HarnessIcon
-            ? <HarnessIcon status={harnessStatus} active={isActive} size={PINNED_ICON_SIZE} renderLevel="compact" />
-            : <MessageSquare className="size-3.5 text-sidebar-foreground/70" />}
+        <PinnedLeadingGlyph
+          settling={settling}
+          opening={opening}
+          settlingLabel={t('sidebar.contextMenu.settling')}
+          loadingLabel={t('common.loading')}
+          HarnessIcon={HarnessIcon}
+          harnessStatus={harnessStatus}
+          isActive={isActive}
+        />
       </span>
       <SessionTitleAnimated projectPath={session.folderPath} sessionId={session.sessionId} fallback={session.title} className={titleClassName} />
       {!hover && (

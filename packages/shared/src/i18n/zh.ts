@@ -708,6 +708,8 @@ export const zh: Messages = {
       unhide: '取消隐藏会话',
       settle: '结束关注',
       unsettle: '恢复关注',
+      settling: '正在结束关注…',
+      unsettling: '正在恢复关注…',
       settleBlocked: '有子会话仍在运行，无法结束关注',
       markAsRead: '标为已读',
       markAsUnread: '标为未读',

@@ -1,5 +1,7 @@
+import { useLayoutEffect } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { expect, userEvent, within } from 'storybook/test'
+import { setSessionSettlePending } from '@/lib/session-settle-pending'
 import type { PinnedSessionEntry } from '@superone/shared/agent-types'
 import type { SessionHoverModel } from '@/lib/multi-host/session-hover'
 import { PinnedSessionRow } from './PinnedSessionRow'
@@ -65,6 +67,35 @@ export const Online: Story = {
     await expect(icon?.getBoundingClientRect().width ?? 0).toBeGreaterThan(14)
     await userEvent.hover(canvas.getByText('Review the sidebar'))
     await expect(await within(document.body).findByText('review')).toBeInTheDocument()
+  },
+}
+
+function SettlingPreview() {
+  useLayoutEffect(() => {
+    setSessionSettlePending(session.folderPath, session.sessionId, true)
+    return () => setSessionSettlePending(session.folderPath, session.sessionId, false)
+  }, [])
+  return (
+    <div className="w-72 bg-sidebar p-2 text-sidebar-foreground">
+      <PinnedSessionRow
+        session={session}
+        isActive={false}
+        status="idle"
+        isUnseen={false}
+        hover={hover}
+        {...callbacks}
+      />
+    </div>
+  )
+}
+
+export const Settling: Story = {
+  name: 'Settle shows a spinner',
+  render: () => <SettlingPreview />,
+  play: async ({ canvasElement }) => {
+    const spinner = await within(canvasElement).findByLabelText('Settling…')
+    await expect(spinner).toHaveClass('animate-spin')
+    await expect(canvasElement.querySelector('.session-icon-ground')).toBeNull()
   },
 }
 

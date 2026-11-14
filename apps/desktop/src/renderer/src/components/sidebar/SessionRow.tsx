@@ -21,6 +21,7 @@ import { useSessionDragOut } from './useSessionDragOut'
 import { SessionTitleAnimated } from './AnimatedSessionTitle'
 import { useSessionTitle } from '@/hooks/useSessionTitle'
 import { canSettleSession } from '@/lib/session-menu-items'
+import { useSessionSettlePending } from '@/lib/session-settle-pending'
 import { useSpawnChildTurnOpen } from '@/lib/spawn-child-turn'
 import { focusSession } from './sidebar-focus'
 import { useSessionMenuItems, type SessionMenuCallbacks } from './useSessionMenuItems'
@@ -182,6 +183,7 @@ function PlainSessionTitle({ projectPath, sessionId, fallback, className }: { pr
 
 function SessionRowTrailing({
   settled,
+  settling,
   pinned,
   hasChildren,
   childrenCollapsed,
@@ -191,6 +193,7 @@ function SessionRowTrailing({
   onUnsettle,
 }: {
   settled: boolean
+  settling: boolean
   pinned: boolean
   hasChildren: boolean
   childrenCollapsed: boolean
@@ -234,12 +237,14 @@ function SessionRowTrailing({
         <button
           onClick={(e) => {
             e.stopPropagation()
+            if (settling) return
             onUnsettle()
           }}
-          aria-label={t('sidebar.contextMenu.unsettle')}
-          className={SESSION_ROW_HOVER_ACTION}
+          aria-label={settling ? t('sidebar.contextMenu.unsettling') : t('sidebar.contextMenu.unsettle')}
+          aria-busy={settling || undefined}
+          className={cn(SESSION_ROW_HOVER_ACTION, settling && 'w-3 p-0.5 opacity-100')}
         >
-          <Undo2 className="size-3" />
+          {settling ? <Loader2 className="size-3 animate-spin" aria-hidden /> : <Undo2 className="size-3" />}
         </button>
       ) : (
         <button
@@ -324,6 +329,7 @@ export const SessionRow = memo(function SessionRow({
   // longer carry this signal, so the title is the sidebar indicator.
   const stallLevel = useSessionStallLevel(folderPath, session.sessionId, isRunning)
   const childTurnOpen = useSpawnChildTurnOpen(folderPath, session.sessionId)
+  const settling = useSessionSettlePending(folderPath, session.sessionId)
   const view = sessionRowViewModel({
     hasRealProject,
     folderPath,
@@ -403,7 +409,9 @@ export const SessionRow = memo(function SessionRow({
       stallLevel={stallLevel}
       menuItems={menuItems}
       onDrill={onDrill}
+      settling={settling}
       settleLabel={t('sidebar.contextMenu.settle')}
+      settlingLabel={t('sidebar.contextMenu.settling')}
       loadingLabel={t('common.loading')}
       offlineLabel={t('sidebar.sessionOffline')}
     />
@@ -437,7 +445,9 @@ function SessionRowFrame({
   stallLevel,
   menuItems,
   onDrill,
+  settling,
   settleLabel,
+  settlingLabel,
   loadingLabel,
   offlineLabel,
 }: {
@@ -467,7 +477,9 @@ function SessionRowFrame({
   stallLevel: StallLevel
   menuItems: ReturnType<typeof useSessionMenuItems>
   onDrill?: () => void
+  settling: boolean
   settleLabel: string
+  settlingLabel: string
   loadingLabel: string
   offlineLabel: string
 }) {
@@ -492,15 +504,24 @@ function SessionRowFrame({
                 <button
                   onClick={(e) => {
                     e.stopPropagation()
+                    if (settling) return
                     onSettleSession(session.sessionId, true, folderPath)
                   }}
-                  aria-label={settleLabel}
-                  className="absolute inset-0 flex items-center justify-center rounded text-sidebar-foreground/70 opacity-0 hover:text-sidebar-foreground group-hover/session:opacity-100"
+                  aria-label={settling ? settlingLabel : settleLabel}
+                  aria-busy={settling || undefined}
+                  className={cn(
+                    'absolute inset-0 flex items-center justify-center rounded text-sidebar-foreground/70 hover:text-sidebar-foreground',
+                    // Hover reveals the check. Once settle starts, the spinner
+                    // stays put after the pointer leaves and after a menu settle.
+                    settling ? 'opacity-100' : 'opacity-0 group-hover/session:opacity-100',
+                  )}
                 >
-                  <CircleCheck className="size-3" />
+                  {settling
+                    ? <Loader2 className="size-3 animate-spin" aria-hidden />
+                    : <CircleCheck className="size-3" />}
                 </button>
               )}
-              <span className={cn('pointer-events-none', view.showLeadingSettle && 'group-hover/session:opacity-0')}>
+              <span className={cn('pointer-events-none', view.showLeadingSettle && (settling ? 'opacity-0' : 'group-hover/session:opacity-0'))}>
                 {sessionLeadingGlyph({
                   opening,
                   loadingLabel,
@@ -525,6 +546,7 @@ function SessionRowFrame({
             )}
             <SessionRowTrailing
               settled={view.settled}
+              settling={settling}
               pinned={session.isPinned === true}
               hasChildren={hasChildren}
               childrenCollapsed={childrenCollapsed}

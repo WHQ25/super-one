@@ -1,10 +1,13 @@
 /** @vitest-environment jsdom */
 import { fireEvent, render, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import i18n from 'i18next'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { RecentFolder } from '@superone/shared/agent-types'
 import { setExternalLinkHandler } from '@/lib/external-link'
 import { projectHoverFolders } from '@/lib/multi-host/project-hover'
 import { ProjectHoverBody, ProjectHoverCard, resetProjectHoverSessionTotals } from './multi-host/ProjectHoverCard'
+import { useTerminalStore } from '@/stores/terminal'
 import { SessionHoverCardTrigger } from './multi-host/SessionHoverCard'
 import { ProjectSidebarRow } from './ProjectSidebarRow'
 
@@ -205,6 +208,87 @@ describe('project hover card', () => {
       expect(listSessions).not.toHaveBeenCalled()
     } finally {
       window.environment.listSessions = previous
+    }
+  })
+
+  it('shows running sessions by harness on one line', () => {
+    render(
+      <ProjectHoverBody
+        name="app"
+        repoIdentity={null}
+        folders={[]}
+        sessionCount={4}
+        sessionPaths={[]}
+        runningCounts={[
+          { provider: 'claude', count: 2 },
+          { provider: 'codex', count: 1 },
+        ]}
+      />,
+    )
+    const row = document.querySelector('[data-slot="project-running"]')
+    expect([...row!.querySelectorAll('.tabular-nums')].map((node) => node.textContent)).toEqual(['2', '1'])
+    expect(row?.querySelector('.claude-session-wrap')).not.toBeNull()
+    expect(row?.querySelector('.codex-session-cursor-run')).not.toBeNull()
+    expect(row?.querySelectorAll(':scope > span')).toHaveLength(2)
+    const title = screen.getByText('app')
+    expect(title.compareDocumentPosition(row!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByText('4 Sessions').compareDocumentPosition(row!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(document.querySelector('[data-project-hover]')?.lastElementChild).toBe(row)
+  })
+
+  it('counts shared terminal tabs on the project and leaves out other projects', async () => {
+    useTerminalStore.setState({
+      byProject: {
+        '/src/app': { tabs: [{ terminalId: 'a' }, { terminalId: 'b' }] as never, activeId: 'a' },
+        '/src/other': { tabs: [{ terminalId: 'c' }] as never, activeId: 'c' },
+      },
+    })
+    try {
+      render(
+        <ProjectHoverBody
+          name="app"
+          repoIdentity={null}
+          folders={[]}
+          sessionCount={1}
+          sessionPaths={['/src/app']}
+        />,
+      )
+      const row = document.querySelector('[data-project-terminals]')
+      expect(row?.textContent).toBe('2')
+      expect(row?.parentElement?.lastElementChild).toBe(row)
+      await userEvent.hover(row!.querySelector('[data-tab-kind="terminal"]')!)
+      expect(await screen.findByRole('tooltip')).toHaveTextContent(i18n.t('sidebar.projectHover.terminalsHint'))
+    } finally {
+      useTerminalStore.setState({ byProject: {} })
+    }
+  })
+
+  it('counts listed project terminals that are not on the strip yet', async () => {
+    useTerminalStore.setState({ byProject: {} })
+    const previous = window.terminal
+    window.terminal = {
+      list: vi.fn(async () => [
+        { terminalId: 'shell', cwd: '/src/app', projectPath: '/src/app', status: 'running' },
+        { terminalId: 'agent', cwd: '/src/app', projectPath: '/src/app', status: 'running', agentSessionId: 's1' },
+        { terminalId: 'docked', cwd: '/src/app', projectPath: '/src/app', status: 'running', openedInActivity: true },
+        { terminalId: 'done', cwd: '/src/app', projectPath: '/src/app', status: 'exited' },
+      ]),
+    } as never
+    try {
+      render(
+        <ProjectHoverBody
+          name="app"
+          repoIdentity={null}
+          folders={[]}
+          sessionCount={1}
+          sessionPaths={['/src/app', '/src/other']}
+        />,
+      )
+      expect(await screen.findByText('1')).toBeTruthy()
+      expect(document.querySelector('[data-project-terminals]')?.textContent).toBe('1')
+    } finally {
+      window.terminal = previous
+      useTerminalStore.setState({ byProject: {} })
     }
   })
 })

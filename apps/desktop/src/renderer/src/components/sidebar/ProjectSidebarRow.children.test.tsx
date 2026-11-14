@@ -65,7 +65,8 @@ describe('project child lists', () => {
     expect(screen.getByText('Open child').closest('[data-child-session-list]')).toHaveClass('min-w-0')
   })
 
-  it.each([false, true])('reveals a remote running child without loading its transcript or opening the child list (project expanded: %s)', async (isExpanded) => {
+  it('reveals a remote running child without loading its transcript or opening the child list', async () => {
+    const isExpanded = true
     const path = 'remote:conn-b:/work/app'
     const onLoadChildSessions = vi.fn()
     render(
@@ -107,6 +108,42 @@ describe('project child lists', () => {
       type: 'session_activity', activity: { ...activity, status: 'idle', completedMessageId: 'done', seenCompletedMessageId: 'done' },
     }))
     expect(screen.queryByText('Remote running child')).toBeNull()
+  })
+
+  it('hides a remote running child while the project is collapsed, and keeps one that needs input', async () => {
+    const path = 'remote:conn-b:/work/app'
+    const { rerender } = render(
+      <ProjectSidebarRow
+        {...callbacks}
+        folder={{ ...folder, path }}
+        isExpanded={false}
+        sessions={[session('parent', 'Remote parent', { childCount: 30 })]}
+      />,
+    )
+    const running: SessionActivity = {
+      sessionId: 'remote-child', projectPath: path, status: 'streaming', provider: 'codex',
+      title: 'Remote running child', parentSessionId: 'parent',
+      pendingCount: 0, pendingReason: { en: null, zh: null },
+    }
+    act(() => useChatStore.getState().handleAgentEvent({ type: 'session_activity', activity: running }))
+    expect(screen.queryByText('Remote running child')).toBeNull()
+
+    act(() => useChatStore.getState().handleAgentEvent({
+      type: 'session_activity',
+      activity: { ...running, status: 'idle', pendingCount: 1, title: 'Approve the command' },
+    }))
+    expect(await screen.findByText('Approve the command')).toBeInTheDocument()
+    expect(screen.getByText('Remote parent')).toBeInTheDocument()
+
+    rerender(
+      <ProjectSidebarRow
+        {...callbacks}
+        folder={{ ...folder, path }}
+        isExpanded
+        sessions={[session('parent', 'Remote parent', { childCount: 30 })]}
+      />,
+    )
+    expect(screen.getByText('Approve the command')).toBeInTheDocument()
   })
 
   it('reveals a listed remote child whose activity placeholder has no messages', async () => {

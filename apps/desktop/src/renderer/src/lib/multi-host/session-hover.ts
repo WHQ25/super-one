@@ -4,6 +4,8 @@ import { hostPathsEqual, parseRemoteProjectKey } from '@superone/shared/remote-r
 import type { EnvironmentBucket, EnvironmentConnection, EnvironmentKind } from './types'
 
 export interface SessionHoverModel {
+  /** Layout key input. Counts and settle use `projectSessionKey(projectPath, sessionId)`. */
+  sessionId: string
   title: string
   /** Null when the caller has no project to name. */
   projectName: string | null
@@ -76,6 +78,7 @@ export function buildSessionHover(input: {
   const onWorktree = Boolean(session.worktreePath) || session.isWorktree === true
   const branch = onWorktree ? session.gitBranch?.trim() || null : null
   return {
+    sessionId: session.sessionId,
     title: session.title,
     projectName: input.projectName ?? null,
     environmentLabel: input.bucket.label,

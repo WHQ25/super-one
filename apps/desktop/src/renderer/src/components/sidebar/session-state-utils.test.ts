@@ -1,7 +1,9 @@
 import type { AskUserQuestionRequest, ChatMessage, PermissionRequest, PlanApprovalRequest } from '@superone/shared/agent-types'
 import {
   getPendingReason,
+  inputProjectPathKey,
   isLiveSession,
+  sessionNeedsUserInput,
   getSessionTitle,
   resolveSessionTitle,
   withLiveSessionBrand,
@@ -265,6 +267,26 @@ describe('getPendingReason', () => {
     }]
     expect(getPendingReason(perms, null, null, tEn)).toBe('Allow session rename?')
     expect(getPendingReason(perms, null, null, tZh)).toBe('允许 session rename？')
+  })
+})
+
+describe('sessionNeedsUserInput', () => {
+  it('is true only for a prompt, including a remote summary before hydration', () => {
+    expect(sessionNeedsUserInput(undefined)).toBe(false)
+    expect(sessionNeedsUserInput({ status: 'streaming' })).toBe(false)
+    expect(sessionNeedsUserInput({ pendingQuestion: { requestId: 'q' } as AskUserQuestionRequest })).toBe(true)
+    expect(sessionNeedsUserInput({ activityPendingCount: 1 })).toBe(true)
+    expect(sessionNeedsUserInput({ activityPendingCount: 1, _historyHydrated: true })).toBe(false)
+    expect(sessionNeedsUserInput({ pendingPermissions: [], _sideChatParentId: 'parent', activityPendingCount: 2 })).toBe(false)
+  })
+})
+
+describe('inputProjectPathKey', () => {
+  it('names each project that has a session waiting on the user', () => {
+    expect(inputProjectPathKey({
+      '/b': { _sessions: { run: { status: 'streaming' } } },
+      '/a': { _sessions: { ask: { pendingPlanApproval: { requestId: 'p' } as PlanApprovalRequest } } },
+    })).toBe('/a')
   })
 })
 

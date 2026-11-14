@@ -6,7 +6,9 @@ import { useShallow } from 'zustand/react/shallow'
 import type { PinnedSessionEntry, RecentFolder, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
+import { projectSessionKey } from '@superone/shared/remote-resource-key'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
+import { closeSessionBoundTabs } from '@/lib/session-bound-tabs'
 import { isRunningChildSettleError, removeSession, setSessionFlags, setSessionRead } from '@/lib/session-client'
 import { ACTIVE_SESSION_PAGE_SIZE, isListedSession } from '@/lib/session-list-ops'
 import { noteListedUnread, setUnseenCompleted } from '@/stores/chat-store/helpers/unseen-completed'
@@ -622,6 +624,7 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
     try {
       await setSessionFlags(folderPath, sessionId, { isSettled: settled })
       if (settled) {
+        closeSessionBoundTabs(projectSessionKey(folderPath, sessionId))
         useChatStore.setState((state) => setUnseenCompleted(state, folderPath, sessionId, false))
         try {
           await setSessionRead(folderPath, sessionId, true)

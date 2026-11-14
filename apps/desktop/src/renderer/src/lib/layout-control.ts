@@ -29,7 +29,9 @@ import {
   moveActivityTab,
   openNewFileTab,
   restoreActivityPanel,
+  terminalPanelId,
 } from '@/components/activity/activity-panel-api'
+import { sessionTerminals } from '@/components/activity/session-terminals'
 import {
   dockOpener,
   forgetDockOpener,
@@ -350,8 +352,44 @@ function parkedTabs(sessionId: string): TabRow[] {
   return tabs
 }
 
+function withOwnedTerminals(sessionId: string, tabs: TabRow[]): TabRow[] {
+  const extra: TabRow[] = []
+  for (const item of sessionTerminals(sessionId)) {
+    const panelId = terminalPanelId(item.terminalId)
+    if (tabs.some((tab) => tab.panelId === panelId || tab.tab === item.terminalId)) continue
+    extra.push({
+      tab: item.terminalId,
+      panelId,
+      kind: 'terminal',
+      title: item.title,
+      active: false,
+      group: 0,
+      openedBy: 'agent',
+    })
+  }
+  return extra.length > 0 ? [...tabs, ...extra] : tabs
+}
+
 function sessionTabs(sessionId: string): TabRow[] {
-  return placement(sessionId).dockLive ? liveTabs(sessionId) : parkedTabs(sessionId)
+  const tabs = placement(sessionId).dockLive ? liveTabs(sessionId) : parkedTabs(sessionId)
+  return withOwnedTerminals(sessionId, tabs)
+}
+
+export interface SessionActivityTab {
+  tab: string
+  panelId: string
+  kind: LayoutTabKind
+  title: string
+}
+
+/** Tabs in this session's activity panel, plus agent terminals waiting to be docked. */
+export function listSessionActivityTabs(sessionId: string): SessionActivityTab[] {
+  return sessionTabs(sessionId).map(({ tab, panelId, kind, title }) => ({ tab, panelId, kind, title }))
+}
+
+/** The live dock is showing this session, so closing a tab here is not another session's. */
+export function sessionDockIsLive(sessionId: string): boolean {
+  return placement(sessionId).dockLive
 }
 
 /** The session's working folder: its worktree when it has one. */

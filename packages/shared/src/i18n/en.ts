@@ -90,6 +90,44 @@ export type Messages = {
       terminal: string
       device: string
     }
+    tabs: {
+      summary: string
+      terminal_one: string
+      terminal_other: string
+      browser_one: string
+      browser_other: string
+      device_one: string
+      device_other: string
+      file_one: string
+      file_other: string
+      miniapp_one: string
+      miniapp_other: string
+      trajectory_one: string
+      trajectory_other: string
+      sideChat_one: string
+      sideChat_other: string
+      toolPreview_one: string
+      toolPreview_other: string
+      mcpApp_one: string
+      mcpApp_other: string
+      modPane_one: string
+      modPane_other: string
+      other_one: string
+      other_other: string
+      hint: {
+        terminal: string
+        browser: string
+        device: string
+        file: string
+        miniapp: string
+        trajectory: string
+        sideChat: string
+        toolPreview: string
+        mcpApp: string
+        modPane: string
+        other: string
+      }
+    }
     miniAppDevServer: string
     toolPreview: {
       title: string
@@ -603,6 +641,8 @@ export type Messages = {
     projectHover: {
       sessions_one: string
       sessions_other: string
+      /** Bottom terminal panel tabs, shared by the project's sessions. */
+      terminalsHint: string
     }
     /** Hover card on an environment row. */
     environmentHover: {
@@ -5212,6 +5252,44 @@ export const en: Messages = {
       terminal: 'Terminal',
       device: 'Device',
     },
+    tabs: {
+      summary: 'Open Tabs',
+      terminal_one: '{{count}} Terminal',
+      terminal_other: '{{count}} Terminals',
+      browser_one: '{{count}} Browser Tab',
+      browser_other: '{{count}} Browser Tabs',
+      device_one: '{{count}} Device',
+      device_other: '{{count}} Devices',
+      file_one: '{{count}} File',
+      file_other: '{{count}} Files',
+      miniapp_one: '{{count}} Mini App',
+      miniapp_other: '{{count}} Mini Apps',
+      trajectory_one: '{{count}} Trajectory',
+      trajectory_other: '{{count}} Trajectories',
+      sideChat_one: '{{count}} Side Chat',
+      sideChat_other: '{{count}} Side Chats',
+      toolPreview_one: '{{count}} Tool Preview',
+      toolPreview_other: '{{count}} Tool Previews',
+      mcpApp_one: '{{count}} MCP App',
+      mcpApp_other: '{{count}} MCP Apps',
+      modPane_one: '{{count}} Mod Pane',
+      modPane_other: '{{count}} Mod Panes',
+      other_one: '{{count}} Tab',
+      other_other: '{{count}} Tabs',
+      hint: {
+        terminal: 'A terminal opened for this session.',
+        browser: 'A browser tab opened for this session.',
+        device: 'A device opened for this session.',
+        file: 'A file open in the activity panel.',
+        miniapp: 'A mini app open in the activity panel.',
+        trajectory: "This session's trajectory.",
+        sideChat: 'A temporary chat branched from this session.',
+        toolPreview: 'A mini app tool UI rendered from sample data. Actions are recorded and do not run the tool.',
+        mcpApp: 'An MCP app open in the activity panel.',
+        modPane: 'A mod pane opened for this session.',
+        other: 'Another activity panel tab.',
+      },
+    },
     miniAppDevServer: 'Hot reloading from {{url}}',
     toolPreview: {
       title: 'Tool UI Preview',
@@ -5765,6 +5843,7 @@ export const en: Messages = {
     projectHover: {
       sessions_one: '{{count}} Session',
       sessions_other: '{{count}} Sessions',
+      terminalsHint: 'Open in the project terminal panel and shared by its sessions.',
     },
     environmentHover: {
       kindLocal: 'This Computer',

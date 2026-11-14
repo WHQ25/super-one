@@ -1,6 +1,8 @@
 /** @vitest-environment jsdom */
 
 import { fireEvent, render, renderHook, screen } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
+import i18n from 'i18next'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { SessionHistoryEntry } from '@superone/shared/agent-types'
 import type { SessionHoverModel } from '@/lib/multi-host/session-hover'
@@ -28,6 +30,7 @@ function entry(sessionId: string, title: string): SessionHistoryEntry {
 }
 
 const hoverModel: SessionHoverModel = {
+  sessionId: 's1',
   title: 'Hydrating the remote transcript',
   projectName: 'transcript-viewer',
   environmentLabel: 'This Mac',
@@ -384,6 +387,30 @@ describe('SessionRow hover card', () => {
     expect(content?.getAttribute('data-align')).toBe('start')
     const trigger = document.querySelector('[data-slot="hover-card-trigger"]')
     expect(trigger?.contains(content)).toBe(false)
+  })
+
+  it('puts open tab counts on one row and hides the row when nothing is open', async () => {
+    const { rerender } = render(
+      <SessionHoverBody
+        model={hoverModel}
+        tabs={[
+          { kind: 'terminal', count: 2 },
+          { kind: 'browser', count: 3 },
+          { kind: 'device', count: 1 },
+        ]}
+      />,
+    )
+    const row = document.querySelector('[data-session-hover-tabs]')
+    expect(row?.childElementCount).toBe(3)
+    expect(row?.textContent).toBe('231')
+    expect(row?.className).toContain('flex-wrap')
+    expect(row?.querySelector('[data-tab-kind="terminal"]')?.getAttribute('aria-label')).toContain(i18n.t('activity.tabs.hint.terminal'))
+
+    await userEvent.hover(row!.querySelector('[data-tab-kind="browser"]')!)
+    expect(await screen.findByRole('tooltip')).toHaveTextContent(i18n.t('activity.tabs.hint.browser'))
+
+    rerender(<SessionHoverBody model={hoverModel} tabs={[]} />)
+    expect(document.querySelector('[data-session-hover-tabs]')).toBeNull()
   })
 })
 

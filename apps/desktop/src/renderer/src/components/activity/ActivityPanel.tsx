@@ -15,6 +15,7 @@ import { ActivityHeaderGroupProvider, ActivityHeaderPrefix } from './ActivityHea
 import { ResizeHandleLine } from '@/components/ResizeHandleLine'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuShortcut, DropdownMenuTrigger } from '@superone/ui/components/ui/dropdown-menu'
 import { isLayoutSwapping, isModPanePanel, isPersonClosingModPane, launchInGroup, restorePanelWidthAfterSideChat, setDockApi, SIDE_CHAT_PANEL_ID, toggleMaximizedActivityGroup, type ModPaneTabParams } from './activity-panel-api'
+import { bumpActivityDockRevision } from './activity-dock-revision'
 import { connectMcpAppTabs } from './mcp-app-tabs'
 import { useActivityLaunchTypes } from './activity-launch-types'
 import { activityPanelComponents } from './panels'
@@ -159,10 +160,12 @@ export function ActivityPanel({ getMaxWidth, transitionMs, className }: Activity
     const dAdd = event.api.onDidAddPanel(() => {
       syncHasPanels()
       edgeFades?.scan()
+      bumpActivityDockRevision()
     })
     const d1 = event.api.onDidRemovePanel((panel) => {
       syncHasPanels()
       edgeFades?.scan()
+      bumpActivityDockRevision()
       // A side chat lives exactly as long as its tab. Ignored mid-swap: parking a
       // session's layout removes every panel, and that is a stash, not a close.
       if (panel.id === SIDE_CHAT_PANEL_ID && !isLayoutSwapping()) {

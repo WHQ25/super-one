@@ -45,6 +45,22 @@ describe('session activity from a paired machine', () => {
     expect(projectOf(read).unseenCompletedSessions.has('s1')).toBe(false)
   })
 
+  it('keeps an idle session that is waiting on the user, and updates that count without a status change', () => {
+    const waiting = apply(store(), activity({ status: 'idle', pendingCount: 1 }))
+    expect(projectOf(waiting)._sessions.s1).toMatchObject({ status: 'idle', activityPendingCount: 1, _historyHydrated: false })
+
+    const running = apply(store(), activity({ status: 'streaming', pendingCount: 0 }))
+    const asked = apply(running, activity({ status: 'streaming', pendingCount: 2 }))
+    expect(projectOf(asked)._sessions.s1).toMatchObject({ status: 'streaming', activityPendingCount: 2 })
+    expect(applySessionActivity(asked, activity({ status: 'streaming', pendingCount: 2 }))).toEqual({})
+  })
+
+  it('does not let a remote summary overwrite a hydrated session', () => {
+    const followed = store({ s1: { status: 'streaming', _historyHydrated: true } })
+    expect(applySessionActivity(followed, activity({ status: 'streaming', pendingCount: 3 }))).toEqual({})
+    expect(projectOf(followed)._sessions.s1.activityPendingCount).toBeUndefined()
+  })
+
   it('creates no entry for an idle session it has not seen, and no change when nothing moved', () => {
     const state = store()
     expect(applySessionActivity(state, activity({ status: 'idle' }))).toEqual({})

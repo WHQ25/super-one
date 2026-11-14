@@ -133,6 +133,7 @@ describe('sidebar hover card row highlight', () => {
       </SidebarHoverCard>,
     )
     expect(screen.getByText('Project row')).toHaveAttribute('data-sidebar-hover-open', 'true')
+    expect(document.querySelector('[data-slot="hover-card-content"]')?.className).toContain('w-80')
   })
 })
 

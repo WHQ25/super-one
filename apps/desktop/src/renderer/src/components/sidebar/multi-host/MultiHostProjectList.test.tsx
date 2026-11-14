@@ -3,6 +3,7 @@ import type { ComponentProps } from 'react'
 import { fireEvent, render, screen } from '@testing-library/react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { projectRef } from '@superone/shared/environment'
+import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
 import type { EnvironmentBucket, HostCheckout } from '@/lib/multi-host/types'
 import { MultiHostEnvironmentScroll } from './MultiHostEnvironmentScroll'
 import { MultiHostProjectList } from './MultiHostProjectList'
@@ -89,6 +90,7 @@ function renderList(extra?: Partial<ComponentProps<typeof MultiHostProjectList>>
 describe('environment sections', () => {
   beforeEach(() => {
     window.app.listAutomations = vi.fn(async () => [])
+    useChatStore.setState({ activeProject: null, projectSessions: {}, agentTitles: {} })
   })
 
   it('lists each device without a painted name bar', () => {
@@ -117,6 +119,35 @@ describe('environment sections', () => {
     renderList({ collapsedEnvironmentIds: ['desktop'] })
 
     expect(screen.queryByText('app')).toBeNull()
+    expect(screen.getByText('remote-app')).toBeInTheDocument()
+  })
+
+  it('keeps a session that needs input visible when its environment is collapsed', () => {
+    const project = createDefaultProjectState()
+    project._sessions = {
+      ask: {
+        ...createDefaultPerSessionState(),
+        pendingQuestion: {
+          requestId: 'q',
+          questions: [{ question: 'Continue?', header: '', options: [], multiSelect: false }],
+        },
+      },
+      run: { ...createDefaultPerSessionState(), status: 'streaming', sessionProvider: 'claude' },
+    }
+    useChatStore.setState({ projectSessions: { '/src/app': project } })
+    renderList({
+      collapsedEnvironmentIds: ['desktop'],
+      folderSessions: {
+        '/src/app': [
+          { sessionId: 'ask', title: 'Needs a decision', lastActiveAt: '2026-10-09T00:00:00.000Z', messageCount: 1 },
+          { sessionId: 'run', title: 'Still working', lastActiveAt: '2026-10-09T00:00:00.000Z', messageCount: 1 },
+        ],
+      },
+    })
+
+    expect(screen.getByText('app')).toBeInTheDocument()
+    expect(screen.getByText('Needs a decision')).toBeInTheDocument()
+    expect(screen.queryByText('Still working')).toBeNull()
     expect(screen.getByText('remote-app')).toBeInTheDocument()
   })
 

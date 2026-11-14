@@ -327,6 +327,12 @@ export interface PerSessionState extends ChatCoreSession {
   replyComments: ReplyComment[]
   _historyHydrated: boolean
   /**
+   * Prompts waiting on the user, copied from a remote `session_activity`
+   * summary. A hydrated transcript uses the pending permission, question, and
+   * plan fields instead.
+   */
+  activityPendingCount?: number
+  /**
    * Edges of the remote transcript window this desktop holds. Null after a
    * legacy `session.load`. Local sessions leave it unset.
    */

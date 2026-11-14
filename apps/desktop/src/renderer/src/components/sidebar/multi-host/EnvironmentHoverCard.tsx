@@ -1,11 +1,18 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Computer, Cpu, Folder, Laptop, Loader2, MemoryStick, Monitor, Pencil, Server } from 'lucide-react'
 import type { NodeLinkPath } from '@superone/shared/environment/node-route'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { loadEnvironmentItems } from '@/lib/environment-list'
 import type { EnvironmentConnection, EnvironmentKind } from '@/lib/multi-host/types'
+import {
+  parseRunningHarnessSignature,
+  runningHarnessSignatureForConnection,
+  type RunningHarnessCount,
+} from '@/lib/multi-host/running-sessions'
+import { useChatStore } from '@/stores/chat'
 import { EnvironmentKindIcon } from './EnvironmentKindIcon'
+import { RunningHarnessLine } from './RunningHarnessLine'
 import { SessionHoverCardTrigger, SidebarHoverCard } from './SidebarHoverCard'
 import { EnvironmentSettingsDialog } from './EnvironmentSettingsDialog'
 
@@ -175,6 +182,14 @@ function cpuLine(
   return t('sidebar.environmentHover.cpu', { name, percent })
 }
 
+function useEnvironmentRunningCounts(connectionId: string | undefined, local: boolean): RunningHarnessCount[] {
+  const signature = useChatStore((state) => {
+    if (!connectionId) return ''
+    return runningHarnessSignatureForConnection(state.projectSessions, connectionId, local)
+  })
+  return useMemo(() => parseRunningHarnessSignature(signature), [signature])
+}
+
 function HoverLine({ icon, children }: { icon: ReactNode; children: ReactNode }) {
   return (
     <div className="flex items-start gap-1.5">
@@ -190,6 +205,8 @@ export function EnvironmentHoverBody({
   connection,
   path,
   projectCount = null,
+  runningCounts,
+  connectionId,
   details,
   waiting = false,
   onEdit,
@@ -201,6 +218,13 @@ export function EnvironmentHoverBody({
   path?: NodeLinkPath | null
   /** `null` until the project list has settled. */
   projectCount?: number | null
+  /**
+   * In-progress sessions by harness. Omit to read the live store for this
+   * machine. An empty list draws nothing.
+   */
+  runningCounts?: readonly RunningHarnessCount[]
+  /** Required for the live count. Stories that pass `runningCounts` can omit it. */
+  connectionId?: string
   details?: EnvironmentHoverDetails | null
   /** System, memory, and CPU are still being read. */
   waiting?: boolean
@@ -209,6 +233,11 @@ export function EnvironmentHoverBody({
   statusLabel?: string
 }) {
   const { t } = useTranslation()
+  const liveRunning = useEnvironmentRunningCounts(
+    runningCounts == null && connection !== 'offline' ? connectionId : undefined,
+    kind === 'local',
+  )
+  const running = runningCounts ?? liveRunning
   const kindLabel = kind === 'local'
     ? t('sidebar.environmentHover.kindLocal')
     : kind === 'remote-desktop'
@@ -280,6 +309,7 @@ export function EnvironmentHoverBody({
           </>
         )}
       </div>
+      <RunningHarnessLine counts={running} slot="environment-running" />
     </div>
   )
 }
@@ -332,6 +362,7 @@ export function EnvironmentHoverCard({
             connection={connection}
             path={path}
             projectCount={projectCount}
+            connectionId={connectionId}
             details={facts}
             waiting={waiting}
             onEdit={onRename ? () => setSettingsOpen(true) : undefined}

@@ -29,8 +29,15 @@ export function applySessionActivity(
   const project = state.projectSessions[projectPath] ?? createDefaultProjectState()
   const session = project._sessions[sessionId]
   const status = activity.status as AgentStatus
-  const followsStatus = session ? !session._historyHydrated && session.status !== status : status !== 'idle'
-  const metadata: Partial<PerSessionState> = !session?._historyHydrated && (session || followsStatus)
+  const hydrated = session?._historyHydrated === true
+  // An idle summary still names a session when it is blocked on the user.
+  // Status alone would drop that row until some later running event.
+  const followsStatus = session
+    ? !hydrated && session.status !== status
+    : status !== 'idle' || activity.pendingCount > 0
+  const pendingChanged = !hydrated && (session?.activityPendingCount ?? 0) !== activity.pendingCount
+    && (session != null || followsStatus)
+  const metadata: Partial<PerSessionState> = !hydrated && (session || followsStatus)
     ? {
       ...brandFromActivity(activity),
       ...(activity.title ? { _title: activity.title } : {}),
@@ -46,16 +53,18 @@ export function applySessionActivity(
   const unseen = unread && !project.unseenCompletedSessions.has(sessionId) ? new Set([...project.unseenCompletedSessions, sessionId])
     : read && project.unseenCompletedSessions.has(sessionId) ? new Set([...project.unseenCompletedSessions].filter((id) => id !== sessionId))
       : null
-  if (!followsStatus && !metadataChanged && !unseen) return {}
+  const writeSession = followsStatus || metadataChanged || pendingChanged
+  if (!writeSession && !unseen) return {}
   return {
     projectSessions: {
       ...state.projectSessions,
       [projectPath]: {
         ...project,
-        ...(followsStatus || metadataChanged ? { _sessions: { ...project._sessions, [sessionId]: {
+        ...(writeSession ? { _sessions: { ...project._sessions, [sessionId]: {
           ...(session ?? { ...applyCachedCodexPermissionPreset(createDefaultPerSessionState()), _historyHydrated: false }),
           ...metadata,
           ...(followsStatus ? { status } : {}),
+          ...(!hydrated ? { activityPendingCount: activity.pendingCount } : {}),
         } } } : {}),
         ...(unseen ? { unseenCompletedSessions: unseen } : {}),
       },

@@ -1,5 +1,5 @@
 import type { ModPaneTabParams } from '@/components/activity/activity-panel-api'
-import { openModPaneTab } from '@/components/activity/activity-panel-api'
+import { closeModPaneTab, openModPaneTab } from '@/components/activity/activity-panel-api'
 import { getModUiClient } from './registry'
 
 /**
@@ -12,6 +12,19 @@ export async function handleModPaneTabClosed(params: ModPaneTabParams | undefine
   if (!client) return
   const result = await client.act('close', { id: params.paneId, clientId: client.clientId })
   if (result && !result.closed) openModPaneTab({ ...params, title, activate: true })
+}
+
+/**
+ * Settle discards the pane. The plugin is told, and a `ui.close` hook that
+ * wants the pane kept does not put the tab back — the session has left the
+ * active list.
+ */
+export async function discardModPane(params: ModPaneTabParams | undefined): Promise<void> {
+  if (!params?.sessionId || !params.paneId) return
+  closeModPaneTab(params.sessionId, params.paneId)
+  const client = getModUiClient(params.projectPath, params.sessionId)
+  if (!client) return
+  await client.act('close', { id: params.paneId, clientId: client.clientId })
 }
 
 /**

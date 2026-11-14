@@ -105,6 +105,31 @@ describe('environment hover details', () => {
     expect(screen.getByText('32GB 可用')).toBeInTheDocument()
   })
 
+  it('shows running sessions by harness on one line', () => {
+    render(
+      <EnvironmentHoverBody
+        label="build-box"
+        kind="cli-node"
+        connection="connected"
+        projectCount={2}
+        runningCounts={[
+          { provider: 'claude', count: 2 },
+          { provider: 'codex', count: 1 },
+        ]}
+      />,
+    )
+    const row = document.querySelector('[data-slot="environment-running"]')
+    expect([...row!.querySelectorAll('.tabular-nums')].map((node) => node.textContent)).toEqual(['2', '1'])
+    expect(row?.querySelector('.claude-session-wrap')).not.toBeNull()
+    expect(row?.querySelector('.codex-session-cursor-run')).not.toBeNull()
+    expect(row?.querySelectorAll(':scope > span')).toHaveLength(2)
+    expect(screen.queryByText(/Running/)).toBeNull()
+    const kind = screen.getByText('Node · Connected')
+    expect(kind.compareDocumentPosition(row!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(screen.getByText('2 Projects').compareDocumentPosition(row!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(document.querySelector('[data-environment-hover]')?.lastElementChild).toBe(row)
+  })
+
   it('shows a core count when the chip name was not reported', () => {
     render(
       <EnvironmentHoverBody

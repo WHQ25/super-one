@@ -15,6 +15,7 @@ const session: PinnedSessionEntry = {
 }
 
 const hover: SessionHoverModel = {
+  sessionId: 's1',
   title: 'Review the sidebar',
   projectName: 'app',
   environmentLabel: 'This Mac',

@@ -10,8 +10,10 @@ import { disposeActivityTermInstance } from './activity-terminal'
 import { closeMcpAppTabs } from './mcp-app-tabs'
 import { recordDockOpener } from './dock-ownership'
 import { useMcpAppLayout } from '@/components/mcp-apps/layout-store'
-import { parseRemoteTerminalKey, remoteSessionKey } from '@superone/shared/remote-resource-key'
+import { parseRemoteTerminalKey } from '@superone/shared/remote-resource-key'
 import { useTerminalStore } from '@/stores/terminal'
+import { bumpActivityDockRevision } from './activity-dock-revision'
+import { terminalLayoutOwner } from './session-terminals'
 
 let dockApi: DockviewApi | null = null
 let pendingAction: (() => void) | null = null
@@ -145,6 +147,7 @@ export function applyDockSnapshot(json: SerializedDockview | null): boolean {
   } finally {
     swappingLayout = false
   }
+  bumpActivityDockRevision()
   return true
 }
 
@@ -685,11 +688,6 @@ function addTerminalPanel(item: { terminalId: string; title?: string }) {
  * command the agent runs no longer yanks the layout while the user reads chat.
  * User actions (the launcher, the tool row's reveal) keep the default.
  */
-function terminalLayoutOwner(item: { terminalId: string; agentSessionId?: string }): string | undefined {
-  const remote = parseRemoteTerminalKey(item.terminalId)
-  return remote && item.agentSessionId ? remoteSessionKey(remote.connectionId, item.agentSessionId) : item.agentSessionId
-}
-
 export function revealTerminalTabInActivity(item: { terminalId: string; title?: string; agentSessionId?: string }, opts?: { reveal?: boolean }) {
   const owner = terminalLayoutOwner(item)
   if (owner != null) recordDockOpener(owner, terminalPanelId(item.terminalId), 'agent')

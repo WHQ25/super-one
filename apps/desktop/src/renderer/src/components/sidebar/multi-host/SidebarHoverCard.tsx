@@ -180,7 +180,7 @@ export function SidebarHoverCard({
       </SidebarHoverAnchorContext.Provider>
       <HoverCardContent
         ref={setCardNode}
-        className={placement.maxHeight == null ? 'w-72 p-3' : 'w-72 overflow-y-auto p-3'}
+        className={placement.maxHeight == null ? 'w-80 p-3' : 'w-80 overflow-y-auto p-3'}
         style={placement.maxHeight == null ? undefined : { maxHeight: placement.maxHeight }}
         side="right"
         align="start"

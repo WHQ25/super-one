@@ -1,5 +1,5 @@
 import { listProjectAutomations, deleteProjectAutomation, runProjectAutomation, onProjectAutomationsChanged } from '@/lib/automation-client'
-import { memo, useMemo, useState, useEffect, useCallback, type RefObject } from 'react'
+import { memo, useMemo, useState, useEffect, useCallback, useRef, type RefObject } from 'react'
 import { useShallow } from 'zustand/react/shallow'
 import { useTranslation } from 'react-i18next'
 import { CalendarClock, ChevronRight, Folder, FolderOpen, FolderX, Loader2, Pencil, Play, Search, SquarePen, Trash2 } from 'lucide-react'
@@ -19,7 +19,7 @@ import { projectHostPath, projectHoverFolders } from '@/lib/multi-host/project-h
 import { ProjectHoverCard } from './multi-host/ProjectHoverCard'
 import { SessionHoverCardTrigger, sidebarHoverCardRowClass } from './multi-host/SessionHoverCard'
 import type { Automation, PinnedSessionEntry, RecentFolder, ScheduledSend, SessionHistoryEntry } from '@superone/shared/agent-types'
-import { getSessionTitle, isEphemeralSession, isLiveSession, withLiveSessionBrand } from './session-state-utils'
+import { getSessionTitle, isEphemeralSession, isLiveSession, sessionNeedsUserInput, withLiveSessionBrand } from './session-state-utils'
 import { DEFAULT_SESSION_TITLE, selectSessionTitle } from '@/lib/session-title'
 import { AutomationDialog } from '../AutomationDialog'
 import { SessionRow, type SessionRowCallbacks } from './SessionRow'
@@ -50,7 +50,7 @@ function SessionGroupsFrame({
   maxHeight?: number
   children: React.ReactNode
 }) {
-  // A collapsed project only keeps attention rows. Those stay in the sidebar flow.
+  // A collapsed project only keeps sessions waiting on the user. Those stay in the sidebar flow.
   // The open list is its own scroller, same as search and Settled.
   if (!open) return children
   return (
@@ -165,7 +165,9 @@ export function shouldSynthesizeActiveSidebarSession(input: {
 /**
  * Mirrors project-list collapse: when the parent's child list is collapsed,
  * still surface children that must stay reachable (running, pending, unseen,
- * and the session currently in the foreground). Expanded lists show every child.
+ * and the session currently in the foreground). A collapsed project is narrower:
+ * only a child waiting on the user, or the one in the foreground, stays.
+ * Expanded lists show every child.
  */
 export function visibleChildSessions(
   children: SessionHistoryEntry[],
@@ -302,11 +304,14 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   // A disconnected environment has nothing to list. Ignore a stored expand so
   // the row collapses as soon as the connection drops.
   const open = isExpanded && !offline
-  // The settled list unmounts with the project. Fold it here so the next expand
-  // does not reopen the group the person left open.
+  // Fold Settled only when this row itself goes from open to closed. Mounting
+  // an already closed row (an environment fold that still shows a prompt) must
+  // not put the group away for the next time the project opens.
+  const expandedRef = useRef(isExpanded)
   useEffect(() => {
-    if (isExpanded) return
-    foldProjectSettled(folder.path)
+    const wasExpanded = expandedRef.current
+    expandedRef.current = isExpanded
+    if (wasExpanded && !isExpanded) foldProjectSettled(folder.path)
   }, [isExpanded, folder.path])
   const { t } = useTranslation()
   const foregroundSessionId = useChatStore((state) =>
@@ -341,6 +346,8 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
           (data.pendingPermissions?.length ?? 0) > 0 ? 1 : 0,
           data.pendingQuestion ? 1 : 0,
           data.pendingPlanApproval ? 1 : 0,
+          (data.pendingAsyncQuestions?.length ?? 0) > 0 ? 1 : 0,
+          data.activityPendingCount ?? 0,
           data.awaitingAssistantReply ? 1 : 0,
           data.sessionProvider ?? '',
           data.acpAgentId ?? '',
@@ -474,14 +481,18 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
         .sessions[session.sessionId]?.realtimeSessionId
       return isLiveSession(entry, isUnseen, typeof realtimeSessionId === 'string')
     }
+    const needsUserInput = (session: SessionHistoryEntry) =>
+      sessionNeedsUserInput(projectSession?._sessions?.[session.sessionId])
     const isForegroundSession = (session: SessionHistoryEntry) =>
       !!foregroundSessionId && session.sessionId === foregroundSessionId
     const isPinnedGroup = (group: SidebarSessionGroup) =>
       isForegroundSession(group.parent) || group.children.some(isForegroundSession)
-    // Collapsed child lists and collapsed project rows both keep the session the
-    // user is viewing on screen, so visibility unions both predicates.
+    // A collapsed child list, while the project stays open, keeps running work
+    // and the session on screen. A collapsed project keeps only a prompt.
     const isVisibleWhenCollapsed = (session: SessionHistoryEntry) =>
       isAttention(session) || isForegroundSession(session)
+    const isVisibleInCollapsedProject = (session: SessionHistoryEntry) =>
+      needsUserInput(session) || isForegroundSession(session)
 
     const sections = partitionSidebarSessionGroups(
       groupSidebarSessions(sessions),
@@ -489,14 +500,21 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
       isAttention,
     )
     // An open project shows every loaded non-settled group. Further pages arrive
-    // when that list scrolls. Collapsed rows still keep only attention, plus the
-    // session the user is already viewing.
+    // when that list scrolls. A collapsed project keeps sessions waiting on the
+    // user, plus the session already on screen. A running turn stays in the
+    // attention order above, and comes back when the project opens.
+    const collapsedSections = {
+      ...sections,
+      attention: sections.attention.filter((group) =>
+        needsUserInput(group.parent) || group.children.some(needsUserInput) || isPinnedGroup(group)),
+    }
     const displayLimit = sections.attention.length + sections.scheduled.length + sections.normal.length
-    const groupsToShow = visibleSidebarSessionGroups(sections, open, displayLimit, isPinnedGroup)
+    const groupsToShow = visibleSidebarSessionGroups(open ? sections : collapsedSections, open, displayLimit, isPinnedGroup)
     return {
       groupsToShow,
       showSessions: open || groupsToShow.length > 0,
       isVisibleWhenCollapsed,
+      isVisibleInCollapsedProject,
     }
   }, [listedSessions, settledSessions, folder.path, open, liveSessionSig, realtimeSessionSig, scheduledBySession, foregroundSessionId])
 
@@ -813,7 +831,11 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                   const hasChildren = children.length > 0 || (parent.childCount ?? 0) > 0
                   const childrenExpanded = hasChildren && expandedChildrenIds.has(parent.sessionId)
                   const childrenCollapsed = hasChildren && !childrenExpanded
-                  const childrenToShow = visibleChildSessions(children, childrenExpanded, derived.isVisibleWhenCollapsed)
+                  const childrenToShow = visibleChildSessions(
+                    children,
+                    open && childrenExpanded,
+                    open ? derived.isVisibleWhenCollapsed : derived.isVisibleInCollapsedProject,
+                  )
                   const parentPresentation = sessionPresentation?.(parent)
                   const childRows = childrenToShow.map((child) => {
                     const childPresentation = sessionPresentation?.(child)

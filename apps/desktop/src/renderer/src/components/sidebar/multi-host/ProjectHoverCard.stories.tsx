@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
+import i18n from 'i18next'
 import { expect, userEvent, within } from 'storybook/test'
 import { projectHoverFolders } from '@/lib/multi-host/project-hover'
 import { ProjectHoverBody, ProjectHoverCard } from './ProjectHoverCard'
@@ -138,6 +139,66 @@ export const Anchored: Story = {
     const card = await body.findByText('acme/super-one')
     expect(card.closest('[data-slot="hover-card-content"]')?.getAttribute('data-side')).toBe('right')
     expect(card.closest('[data-slot="hover-card-content"]')?.getAttribute('data-align')).toBe('start')
+  },
+}
+
+export const SharedTerminals: Story = {
+  name: 'Shared terminal tabs',
+  args: { ...storyArgs, name: 'super-one' },
+  render: () => (
+    <Frame>
+      <ProjectHoverBody
+        name="super-one"
+        repoIdentity={null}
+        folders={projectHoverFolders('/Users/a/src/super-one')}
+        sessionCount={12}
+        sessionPaths={[]}
+        terminalCount={3}
+      />
+    </Frame>
+  ),
+  play: async ({ canvasElement }) => {
+    const row = canvasElement.querySelector('[data-project-terminals]')
+    await expect(row?.textContent).toBe('3')
+    await expect(row?.getAttribute('aria-label')).toContain('3')
+    const chip = row?.querySelector('[data-tab-kind="terminal"]')
+    await expect(chip?.getAttribute('aria-label')).toContain(i18n.t('sidebar.projectHover.terminalsHint'))
+    await userEvent.hover(chip!)
+    const tooltip = await within(canvasElement.ownerDocument.body).findByRole('tooltip')
+    await expect(tooltip.textContent).toContain(i18n.t('sidebar.projectHover.terminalsHint'))
+  },
+}
+
+export const Running: Story = {
+  name: 'Running sessions by harness',
+  args: { ...storyArgs, name: 'super-one' },
+  render: () => (
+    <Frame>
+      <ProjectHoverBody
+        name="super-one"
+        repoIdentity={null}
+        folders={projectHoverFolders('/Users/a/src/super-one')}
+        sessionCount={12}
+        sessionPaths={[]}
+        runningCounts={[
+          { provider: 'claude', count: 2 },
+          { provider: 'codex', count: 1 },
+        ]}
+      />
+    </Frame>
+  ),
+  play: async ({ canvasElement }) => {
+    const row = canvasElement.querySelector('[data-slot="project-running"]')
+    await expect(row).not.toBeNull()
+    await expect(row?.textContent).toContain('2')
+    await expect(row?.textContent).toContain('1')
+    await expect(row?.querySelector('.claude-session-wrap')).not.toBeNull()
+    await expect(row?.querySelector('.codex-session-cursor-run')).not.toBeNull()
+    await expect(canvasElement.querySelector('[data-project-hover]')?.contains(row!)).toBe(true)
+    const title = within(canvasElement).getByText('super-one')
+    await expect(title.compareDocumentPosition(row!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    await expect(within(canvasElement).getByText('12 Sessions').compareDocumentPosition(row!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    await expect(canvasElement.querySelector('[data-project-hover]')?.lastElementChild).toBe(row)
   },
 }
 

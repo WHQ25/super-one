@@ -64,7 +64,7 @@ function Preview({ width = 280 }: { width?: number }) {
           {...callbacks}
           folder={{ id: 'collaboration', name: 'super-sub', path: FOLDER, addedAt: '2026-10-09T00:00:00.000Z', lastOpened: '2026-10-09T00:00:00.000Z' }}
           sessions={[parent]}
-          isExpanded={false}
+          isExpanded
         />
       </div>
     </div>
@@ -114,6 +114,7 @@ function RemoteChildPreview({ width = 280, expanded = true }: { width?: number; 
     <div style={{ width }}>
       <div className="mb-3 flex flex-wrap gap-2 text-xs">
         <button className="rounded border px-2 py-1" onClick={() => publish({})}>Start remote child</button>
+        <button className="rounded border px-2 py-1" onClick={() => publish({ status: 'idle', pendingCount: 1, title: 'Approve the command' })}>Needs input</button>
         <button className="rounded border px-2 py-1" onClick={() => publish({ status: 'idle', completedMessageId: 'done' }, true)}>Finish child</button>
         <button className="rounded border px-2 py-1" onClick={() => publish({ status: 'idle', completedMessageId: 'done', seenCompletedMessageId: 'done' })}>Read completion</button>
       </div>
@@ -145,8 +146,14 @@ export const RemoteChildActivity: Story = {
 }
 
 export const NarrowCollapsedRemoteChildActivity: Story = {
-  ...RemoteChildActivity,
   render: () => <RemoteChildPreview width={220} expanded={false} />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await userEvent.click(canvas.getByRole('button', { name: 'Start remote child' }))
+    await expect(canvas.queryByText('Check the remote build')).not.toBeInTheDocument()
+    await userEvent.click(canvas.getByRole('button', { name: 'Needs input' }))
+    await expect(canvas.findByText('Approve the command')).resolves.toBeTruthy()
+  },
 }
 
 /** Hold each network boundary so the formerly transient duplicate is reproducible. */
@@ -450,6 +457,7 @@ const LONG_TITLE = '你现在连上了 superone 的 mcp 服务器了吗? mcp app
 
 function longTitleHover(): SessionHoverModel {
   return {
+    sessionId: 's1',
     title: LONG_TITLE,
     projectName: 'super-one',
     environmentLabel: 'This Mac',

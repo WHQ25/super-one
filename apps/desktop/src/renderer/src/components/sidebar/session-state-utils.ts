@@ -38,16 +38,52 @@ export function isEphemeralSession(
   return !!session?._sideChatParentId
 }
 
-export function isLiveSession(
-  session:
-    | {
-      status?: string
-      pendingPermissions?: PermissionRequest[]
-      pendingQuestion?: AskUserQuestionRequest | null
-      pendingPlanApproval?: PlanApprovalRequest | null
-      awaitingAssistantReply?: boolean
+type InputSession = {
+  status?: string
+  pendingPermissions?: PermissionRequest[]
+  pendingQuestion?: AskUserQuestionRequest | null
+  pendingPlanApproval?: PlanApprovalRequest | null
+  pendingAsyncQuestions?: readonly unknown[]
+  awaitingAssistantReply?: boolean
+  _historyHydrated?: boolean
+  activityPendingCount?: number
+  _sideChatParentId?: string | null
+} | undefined
+
+/**
+ * The turn is blocked on a person: a permission, a question, a plan, or the
+ * same fact reported by a remote activity summary before the transcript loads.
+ */
+export function sessionNeedsUserInput(session: InputSession): boolean {
+  if (!session || session._sideChatParentId) return false
+  if ((session.pendingPermissions?.length ?? 0) > 0) return true
+  if (session.pendingQuestion) return true
+  if (session.pendingPlanApproval) return true
+  if ((session.pendingAsyncQuestions?.length ?? 0) > 0) return true
+  return session._historyHydrated !== true && (session.activityPendingCount ?? 0) > 0
+}
+
+/** Project paths that have a session waiting on the user. Stable when sorted. */
+export function inputProjectPathKey(
+  projectSessions: Readonly<Record<string, { _sessions?: Readonly<Record<string, InputSession>> } | undefined>>,
+): string {
+  const paths: string[] = []
+  for (const [path, project] of Object.entries(projectSessions)) {
+    const sessions = project?._sessions
+    if (!sessions) continue
+    for (const session of Object.values(sessions)) {
+      if (sessionNeedsUserInput(session)) {
+        paths.push(path)
+        break
+      }
     }
-    | undefined,
+  }
+  paths.sort()
+  return paths.join('\n')
+}
+
+export function isLiveSession(
+  session: InputSession,
   isUnseen: boolean | undefined,
   isRealtimeActive: boolean = false,
 ): boolean {
@@ -55,9 +91,7 @@ export function isLiveSession(
     || isRealtimeActive
     || session?.status === 'streaming'
     || session?.status === 'background'
-    || (session?.pendingPermissions?.length ?? 0) > 0
-    || !!session?.pendingQuestion
-    || !!session?.pendingPlanApproval
+    || sessionNeedsUserInput(session)
     || !!session?.awaitingAssistantReply
 }
 

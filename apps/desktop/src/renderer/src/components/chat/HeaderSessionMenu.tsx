@@ -22,7 +22,9 @@ import { useAppStore } from '@/stores/app'
 import { useRealtimeCallStore } from '@/stores/realtime-call'
 import { selectPanelFillsWindow, useActivityPanelStore } from '@/stores/activity-panel'
 import { setChatFloating } from '@/lib/layout-actions'
+import { projectSessionKey } from '@superone/shared/remote-resource-key'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
+import { closeSessionBoundTabs } from '@/lib/session-bound-tabs'
 import { isRunningChildSettleError } from '@/lib/session-client'
 import { buildChatFormItems, buildSessionMenuItems, canSettleSession } from '@/lib/session-menu-items'
 import { useSpawnChildTurnOpen } from '@/lib/spawn-child-turn'
@@ -191,6 +193,7 @@ export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string
               const { setSessionFlags, setSessionRead } = await import('@/lib/session-client')
               await setSessionFlags(folderPath, entry.sessionId, { isSettled: next })
               if (next) {
+                closeSessionBoundTabs(projectSessionKey(folderPath, entry.sessionId))
                 useChatStore.setState((state) => setUnseenCompleted(state, folderPath, entry.sessionId, false))
                 try {
                   await setSessionRead(folderPath, entry.sessionId, true)

@@ -1,4 +1,4 @@
-import { useId, useRef, useState, type ReactNode } from 'react'
+import { useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { CalendarClock, Cloud, Folder, FolderOpen, Pencil, Search, SquarePen, Trash2 } from 'lucide-react'
@@ -17,6 +17,8 @@ import type { EnvironmentBucket, HostCheckout, SidebarGroupBy, SidebarSort } fro
 import { AutomationDialog } from '@/components/AutomationDialog'
 import { ProjectHistoryList } from '@/components/sidebar/ProjectHistoryList'
 import { ProjectSidebarRow } from '@/components/sidebar/ProjectSidebarRow'
+import { inputProjectPathKey } from '@/components/sidebar/session-state-utils'
+import { useChatStore } from '@/stores/chat'
 import { CloningProjectRow } from '@/components/sidebar/CloningProjectRow'
 import { useBackgroundCloneStore } from '@/stores/background-clones'
 import { SidebarCollapse, SidebarHeightMorph } from '@/components/sidebar/SidebarCollapse'
@@ -141,6 +143,8 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
   } = props
   const collapsedIds = new Set(collapsedEnvironmentIds)
   const backgroundCloneTasks = useBackgroundCloneStore((s) => s.tasks).filter((task) => task.backgrounded)
+  const inputPaths = useChatStore((state) => inputProjectPathKey(state.projectSessions))
+  const inputPathSet = useMemo(() => new Set(inputPaths ? inputPaths.split('\n') : []), [inputPaths])
 
   const environmentHeights = groupBy === 'environment' && !props.flat && props.sectionSizes
     ? multiHostProjectListMaxHeights(
@@ -149,14 +153,15 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
       )
     : null
 
-  const checkoutRow = (checkout: HostCheckout, bucket: EnvironmentBucket, name?: string, sessionsOnly = false) => {
+  const checkoutRow = (checkout: HostCheckout, bucket: EnvironmentBucket, name?: string, sessionsOnly = false, forceCollapsed = false) => {
     const folder = checkoutToRecentFolder(checkout, name)
     return (
       <ProjectSidebarRow
         key={checkout.pathKey}
         folder={folder}
         sessionsOnly={sessionsOnly}
-        isExpanded={expandedProjectKeys.has(checkout.pathKey)}
+        isExpanded={forceCollapsed ? false : expandedProjectKeys.has(checkout.pathKey)}
+        onToggleExpand={forceCollapsed ? () => props.onToggleEnvironment(bucket.environmentId) : props.onToggleProject}
         sessionListMaxHeight={environmentHeights?.sessions.get(checkout.pathKey)}
         sessions={props.folderSessions[checkout.pathKey] ?? EMPTY_SESSIONS}
         sessionsHasMore={props.sessionsHasMore?.[checkout.pathKey] ?? false}
@@ -171,7 +176,6 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
         onLoadMoreSettled={props.onLoadMoreSettled}
         sessionsLoading={props.loadingFolders[checkout.pathKey] === true}
         openingSessionId={props.openingSession?.folderPath === checkout.pathKey ? props.openingSession.sessionId : null}
-        onToggleExpand={props.onToggleProject}
         onSwitchSession={props.onSwitchSession}
         onPinSession={props.onPinSession}
         onSettleSession={props.onSettleSession}
@@ -231,6 +235,12 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
           const collapsed = collapsedEnvironmentIds.includes(bucket.environmentId)
           const projectMax = environmentHeights?.projects.get(bucket.environmentId)
           const cloningTasks = backgroundCloneTasks.filter((task) => task.connectionId === bucket.connectionId)
+          const pierced: HostCheckout[] = []
+          if (collapsed) {
+            for (const checkout of checkouts) {
+              if (inputPathSet.has(checkout.pathKey)) pierced.push(checkout)
+            }
+          }
           return (
             <div key={bucket.environmentId} data-environment-id={bucket.environmentId}>
               <EnvironmentHeader
@@ -249,7 +259,9 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
               />
               {/* Projects sit one step inside their environment, hover fill included. */}
               <div className="pl-1">
-                <SidebarCollapse open={!collapsed} unmountClosed>
+                {/* The fold keeps the full list mounted until the close eases
+                    out. Hide that copy while a prompt is drawn beside it. */}
+                <SidebarCollapse open={!collapsed} unmountClosed className={pierced.length > 0 ? 'invisible' : undefined}>
                   <EnvironmentProjectScroll maxHeight={projectMax?.kind === 'px' ? projectMax.maxHeight : undefined}>
                     {bucket.projectsStatus === 'loading' && checkouts.length === 0 && cloningTasks.length === 0 && (
                       <div className="px-2.5 py-2 text-xs text-sidebar-foreground/70">{t('common.loading')}</div>
@@ -270,6 +282,7 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
                     {checkouts.map((checkout) => checkoutRow(checkout, bucket))}
                   </EnvironmentProjectScroll>
                 </SidebarCollapse>
+                {pierced.map((checkout) => checkoutRow(checkout, bucket, undefined, false, true))}
               </div>
             </div>
           )

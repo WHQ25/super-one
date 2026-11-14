@@ -28,6 +28,7 @@ describe('buildSessionHover', () => {
     })
     expect(fetchSpy).not.toHaveBeenCalled()
     expect(model).toEqual({
+      sessionId: 's1',
       title: 'Fix the sidebar',
       projectName: 'super-one',
       environmentLabel: 'dev-server',

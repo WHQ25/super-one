@@ -1,13 +1,16 @@
 import type { ReactNode } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect, within } from 'storybook/test'
+import i18n from 'i18next'
+import { expect, userEvent, within } from 'storybook/test'
 import { SessionHoverBody, SessionHoverCard, SessionHoverCardTrigger, sidebarHoverCardRowClass } from './SessionHoverCard'
+import type { SessionTabCount } from '@/lib/session-bound-tabs'
 import type { SessionHoverModel } from '@/lib/multi-host/session-hover'
 
 const HOUR = 60 * 60 * 1000
 
 function model(extra?: Partial<SessionHoverModel>): SessionHoverModel {
   return {
+    sessionId: 's1',
     title: 'Fix the sidebar scroll jump',
     projectName: 'super-one',
     environmentLabel: 'dev-server',
@@ -121,6 +124,72 @@ export const Narrow: Story = {
       <SessionHoverBody
         model={model({ environmentLabel: 'build-box-with-a-very-long-hostname', projectName: 'customer-portal-monorepo-legacy-migration' })}
       />
+    </Frame>
+  ),
+}
+
+const openTabs: SessionTabCount[] = [
+  { kind: 'terminal', count: 2 },
+  { kind: 'browser', count: 3 },
+  { kind: 'device', count: 1 },
+  { kind: 'file', count: 4 },
+  { kind: 'miniapp', count: 5 },
+  { kind: 'trajectory', count: 6 },
+  { kind: 'side-chat', count: 7 },
+  { kind: 'tool-preview', count: 8 },
+  { kind: 'mcp-app', count: 9 },
+  { kind: 'mod-pane', count: 10 },
+  { kind: 'other', count: 11 },
+]
+
+const tabHints = {
+  terminal: 'activity.tabs.hint.terminal',
+  browser: 'activity.tabs.hint.browser',
+  device: 'activity.tabs.hint.device',
+  file: 'activity.tabs.hint.file',
+  miniapp: 'activity.tabs.hint.miniapp',
+  trajectory: 'activity.tabs.hint.trajectory',
+  'side-chat': 'activity.tabs.hint.sideChat',
+  'tool-preview': 'activity.tabs.hint.toolPreview',
+  'mcp-app': 'activity.tabs.hint.mcpApp',
+  'mod-pane': 'activity.tabs.hint.modPane',
+  other: 'activity.tabs.hint.other',
+} as const
+
+export const OpenTabs: Story = {
+  name: 'Every open tab kind',
+  args: { model: model(), children: null },
+  render: () => (
+    <Frame>
+      <SessionHoverBody model={model()} tabs={openTabs} />
+    </Frame>
+  ),
+  play: async ({ canvasElement }) => {
+    const row = canvasElement.querySelector('[data-session-hover-tabs]')
+    await expect(row).toBeTruthy()
+    await expect(row?.childElementCount).toBe(openTabs.length)
+    await expect(row?.textContent).toBe('2314567891011')
+    for (const tab of openTabs) {
+      const chip = row?.querySelector(`[data-tab-kind="${tab.kind}"]`)
+      const label = chip?.getAttribute('aria-label') ?? ''
+      await expect(label).toContain(String(tab.count))
+      await expect(label).toContain(i18n.t(tabHints[tab.kind]))
+    }
+    const preview = row?.querySelector('[data-tab-kind="tool-preview"]')
+    await expect(preview).toBeTruthy()
+    await userEvent.hover(preview!)
+    const tooltip = await within(canvasElement.ownerDocument.body).findByRole('tooltip')
+    await expect(tooltip.textContent).toContain(i18n.t('activity.tabs.hint.toolPreview'))
+    await expect(tooltip.textContent).toContain('8')
+  },
+}
+
+export const OpenTabsNarrow: Story = {
+  name: 'Open tabs wrap inside a narrow card',
+  args: { model: model(), children: null },
+  render: () => (
+    <Frame width={160}>
+      <SessionHoverBody model={model()} tabs={openTabs} />
     </Frame>
   ),
 }

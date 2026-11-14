@@ -5,6 +5,7 @@ import { useAppStore } from '@/stores/app'
 import { useTerminalStore } from '@/stores/terminal'
 import { useTerminalPanel } from './useTerminalPanel'
 import { dropActivityTerminalTab, revealTerminalTabInActivity } from '@/components/activity/activity-panel-api'
+import { forgetSessionTerminal, rememberSessionTerminal, terminalLayoutOwner } from '@/components/activity/session-terminals'
 
 export function tabBelongsToProject(item: Pick<TerminalListItem, 'cwd' | 'projectPath'>, projectPath: string): boolean {
   if (item.projectPath === projectPath) return true
@@ -57,6 +58,8 @@ export function useTerminalSync(): void {
     const off = window.terminal.onTerminalEvent((event: TerminalEvent) => {
       const folder = useAppStore.getState().currentFolder
       if (event.type === 'terminal_created') {
+        const layoutKey = terminalLayoutOwner(event.item)
+        if (layoutKey) rememberSessionTerminal({ terminalId: event.item.terminalId, title: event.item.title, layoutKey })
         if (!folder || !tabBelongsToProject(event.item, folder)) return
         // An agent-opened tab is the agent's screen: dock it next to the agent's
         // browser tabs so the user can find it and take over, without opening the
@@ -76,12 +79,21 @@ export function useTerminalSync(): void {
         if (event.ownerDeviceId && folder && !parseRemoteTerminalKey(event.terminalId)) revealRemoteTab(folder, event.terminalId, event.ownerDeviceId, upsertTab, setActive, setOpen)
       }
       if (event.type === 'terminal_exited') {
+        forgetSessionTerminal(event.terminalId)
         dropActivityTerminalTab(event.terminalId)
         for (const [path, pt] of Object.entries(useTerminalStore.getState().byProject)) {
           if (pt.tabs.some((tab) => tab.terminalId === event.terminalId)) removeTab(path, event.terminalId)
         }
       }
     })
+    // Tabs created before this window subscribed still belong to their session.
+    void window.terminal.list().then((items) => {
+      for (const item of items) {
+        const layoutKey = terminalLayoutOwner(item)
+        if (!layoutKey || item.status !== 'running') continue
+        rememberSessionTerminal({ terminalId: item.terminalId, title: item.title, layoutKey })
+      }
+    }).catch(() => {})
     return off
   }, [upsertTab, removeTab, renameTab, setTabOwner, setTabControl, setActive, setOpen])
 }

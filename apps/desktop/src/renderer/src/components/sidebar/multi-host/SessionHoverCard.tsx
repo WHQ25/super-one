@@ -1,22 +1,120 @@
-import { useEffect, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore, type ComponentType, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Folder, GitCommit, GitFork } from 'lucide-react'
+import { AppWindow, Blocks, Bug, File, Folder, GitCommit, GitFork, Globe, MessageCirclePlus, Puzzle, Route, Smartphone, Terminal } from 'lucide-react'
+import type { LayoutTabKind } from '@superone/shared/layout-control'
+import { projectSessionKey } from '@superone/shared/remote-resource-key'
 import { cn } from '@superone/ui/lib/utils'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
 import { formatCompactAge } from '@superone/shared/relative-time'
+import { activityDockRevision, subscribeActivityDockRevision } from '@/components/activity/activity-dock-revision'
+import { sessionTerminalRevision, subscribeSessionTerminals } from '@/components/activity/session-terminals'
 import {
   worktreeCheckoutLabel,
   worktreeInfoRoot,
   type SessionHoverModel,
   type WorktreeCheckoutLabel,
 } from '@/lib/multi-host/session-hover'
+import { sessionTabCounts, type SessionTabCount } from '@/lib/session-bound-tabs'
+import { useActivityViewStateStore } from '@/stores/activity-view-state'
+import { useBrowserStore } from '@/stores/browser'
 import { EnvironmentKindIcon } from './EnvironmentKindIcon'
 import { SessionHoverCardTrigger, SidebarHoverCard, sidebarHoverCardRowClass } from './SidebarHoverCard'
 
 export { SessionHoverCardTrigger, SidebarHoverCard, sidebarHoverCardRowClass }
 
-export function SessionHoverBody({ model }: { model: SessionHoverModel }) {
+const TAB_KIND_ICON: Record<LayoutTabKind, ComponentType<{ className?: string }>> = {
+  terminal: Terminal,
+  browser: Globe,
+  device: Smartphone,
+  file: File,
+  miniapp: AppWindow,
+  trajectory: Route,
+  'side-chat': MessageCirclePlus,
+  'tool-preview': Bug,
+  'mcp-app': Puzzle,
+  'mod-pane': Blocks,
+  other: AppWindow,
+}
+
+const TAB_KIND_LABEL: Record<LayoutTabKind, 'activity.tabs.terminal' | 'activity.tabs.browser' | 'activity.tabs.device' | 'activity.tabs.file' | 'activity.tabs.miniapp' | 'activity.tabs.trajectory' | 'activity.tabs.sideChat' | 'activity.tabs.toolPreview' | 'activity.tabs.mcpApp' | 'activity.tabs.modPane' | 'activity.tabs.other'> = {
+  terminal: 'activity.tabs.terminal',
+  browser: 'activity.tabs.browser',
+  device: 'activity.tabs.device',
+  file: 'activity.tabs.file',
+  miniapp: 'activity.tabs.miniapp',
+  trajectory: 'activity.tabs.trajectory',
+  'side-chat': 'activity.tabs.sideChat',
+  'tool-preview': 'activity.tabs.toolPreview',
+  'mcp-app': 'activity.tabs.mcpApp',
+  'mod-pane': 'activity.tabs.modPane',
+  other: 'activity.tabs.other',
+}
+
+const TAB_KIND_HINT: Record<LayoutTabKind, 'activity.tabs.hint.terminal' | 'activity.tabs.hint.browser' | 'activity.tabs.hint.device' | 'activity.tabs.hint.file' | 'activity.tabs.hint.miniapp' | 'activity.tabs.hint.trajectory' | 'activity.tabs.hint.sideChat' | 'activity.tabs.hint.toolPreview' | 'activity.tabs.hint.mcpApp' | 'activity.tabs.hint.modPane' | 'activity.tabs.hint.other'> = {
+  terminal: 'activity.tabs.hint.terminal',
+  browser: 'activity.tabs.hint.browser',
+  device: 'activity.tabs.hint.device',
+  file: 'activity.tabs.hint.file',
+  miniapp: 'activity.tabs.hint.miniapp',
+  trajectory: 'activity.tabs.hint.trajectory',
+  'side-chat': 'activity.tabs.hint.sideChat',
+  'tool-preview': 'activity.tabs.hint.toolPreview',
+  'mcp-app': 'activity.tabs.hint.mcpApp',
+  'mod-pane': 'activity.tabs.hint.modPane',
+  other: 'activity.tabs.hint.other',
+}
+
+/** Stories pass `tabs`. Production recounts when the dock, browsers, or agent terminals change. */
+function useSessionTabCounts(model: SessionHoverModel, tabs: SessionTabCount[] | undefined): SessionTabCount[] {
+  const layoutKey = projectSessionKey(model.projectPath, model.sessionId)
+  const dockRevision = useSyncExternalStore(subscribeActivityDockRevision, activityDockRevision)
+  const terminalRevision = useSyncExternalStore(subscribeSessionTerminals, sessionTerminalRevision)
+  const browsers = useBrowserStore((s) => s.tabs)
+  const layout = useActivityViewStateStore((s) => s.perSession[layoutKey])
+  const currentSessionId = useActivityViewStateStore((s) => s._currentSessionId)
+  const live = useMemo(
+    () => sessionTabCounts(layoutKey),
+    // The stores are the reason to recount; sessionTabCounts reads them itself.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [layoutKey, dockRevision, terminalRevision, browsers, layout, currentSessionId],
+  )
+  return tabs ?? live
+}
+
+export function SessionHoverTabs({ tabs }: { tabs: SessionTabCount[] }) {
+  const { t } = useTranslation()
+  if (tabs.length === 0) return null
+  return (
+    <TooltipProvider delayDuration={200}>
+      <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1 text-muted-foreground" data-session-hover-tabs role="group" aria-label={t('activity.tabs.summary')}>
+        {tabs.map(({ kind, count }) => {
+          const Icon = TAB_KIND_ICON[kind]
+          const label = t(TAB_KIND_LABEL[kind], { count })
+          const hint = t(TAB_KIND_HINT[kind])
+          return (
+            <Tooltip key={kind}>
+              <TooltipTrigger asChild>
+                <span className="inline-flex items-center gap-1" data-tab-kind={kind} aria-label={`${label}. ${hint}`}>
+                  <Icon className="size-3 shrink-0" />
+                  <span className="tabular-nums">{count}</span>
+                </span>
+              </TooltipTrigger>
+              <TooltipContent side="top" sideOffset={6} className="max-w-64 text-left">
+                <span className="block font-medium">{label}</span>
+                <span className="mt-0.5 block text-background/80">{hint}</span>
+              </TooltipContent>
+            </Tooltip>
+          )
+        })}
+      </div>
+    </TooltipProvider>
+  )
+}
+
+export function SessionHoverBody({ model, tabs }: { model: SessionHoverModel; tabs?: SessionTabCount[] }) {
   const { i18n } = useTranslation()
   const age = formatCompactAge(model.lastActiveAt, { locale: i18n.language })
+  const openTabs = useSessionTabCounts(model, tabs)
   return (
     <div className={cn('flex flex-col gap-2 text-xs', model.connection === 'offline' && 'opacity-80')} data-session-hover>
       <div className="flex items-baseline gap-2">
@@ -40,6 +138,7 @@ export function SessionHoverBody({ model }: { model: SessionHoverModel }) {
           </HoverLine>
         )}
       </div>
+      <SessionHoverTabs tabs={openTabs} />
       {model.tags.length > 0 && (
         <div className="flex flex-wrap gap-1">
           {model.tags.map((tag) => (

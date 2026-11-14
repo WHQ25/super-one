@@ -110,6 +110,28 @@ export const Offline: Story = {
   },
 }
 
+export const RunningSessions: Story = {
+  args: {
+    runningCounts: [
+      { provider: 'claude', count: 2 },
+      { provider: 'codex', count: 1 },
+    ],
+  },
+  render: (args) => <Frame><EnvironmentHoverBody {...args} /></Frame>,
+  play: async ({ canvasElement }) => {
+    const line = canvasElement.querySelector('[data-slot="environment-running"]')
+    await expect(line).not.toBeNull()
+    await expect(line?.textContent).toContain('2')
+    await expect(line?.textContent).toContain('1')
+    await expect(line?.querySelector('.claude-session-wrap')).not.toBeNull()
+    await expect(line?.querySelector('.codex-session-cursor-run')).not.toBeNull()
+    await expect(canvasElement.querySelector('[data-environment-hover]')?.contains(line!)).toBe(true)
+    const kind = within(canvasElement).getByText('Node · Connected')
+    await expect(kind.compareDocumentPosition(line!) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    await expect(canvasElement.querySelector('[data-environment-hover]')?.lastElementChild).toBe(line)
+  },
+}
+
 export const NeedsUpgrade: Story = {
   args: { connection: 'needs-upgrade', path: 'relay' },
   render: (args) => <Frame><EnvironmentHoverBody {...args} /></Frame>,

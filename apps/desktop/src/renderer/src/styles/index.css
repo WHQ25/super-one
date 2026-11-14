@@ -793,29 +793,56 @@ html.liquid-glass :is([data-main-area], [data-tile-id]).dark :is(.brand-scope, [
   --border: oklch(1 0 0 / 0.15);
 }
 html:not(.dark):not(.liquid-glass) [data-has-mod-tint="true"] {
-  --sidebar: color-mix(in srgb, var(--mod-backdrop-tint) 24%, #1e2024);
+  --sidebar: oklch(from var(--mod-backdrop-tint) 0.24 calc(c * 1.4) h);
+  --sidebar-hover: oklch(1 0 0 / 0.08);
+  --sidebar-border: oklch(1 0 0 / 0.12);
+}
+html:not(.dark):not(.liquid-glass) [data-has-mod-tint="true"] [data-main-area] {
+  --border: oklch(0 0 0 / 0.14);
 }
 html.liquid-glass:not(.dark) [data-has-mod-tint="true"] {
-  --sidebar: color-mix(in srgb, var(--mod-backdrop-tint) 28%, oklch(0.22 0.01 240 / 0.78));
+  --sidebar: oklch(from var(--mod-backdrop-tint) 0.24 calc(c * 2.2) h / 0.88);
 }
 html.dark:not(.liquid-glass) [data-has-mod-tint="true"] {
-  --sidebar: color-mix(in srgb, var(--mod-backdrop-tint) 82%, #0d0e11);
+  --sidebar: color-mix(in oklch, var(--mod-backdrop-tint) 85%, #0d0e11);
+  --sidebar-hover: oklch(1 0 0 / 0.08);
+  --sidebar-accent: oklch(1 0 0 / 0.12);
+  --sidebar-border: oklch(1 0 0 / 0.10);
+}
+html.dark:not(.liquid-glass) [data-has-mod-tint="true"] [data-main-area] {
+  --border: oklch(1 0 0 / 0.12);
 }
 html.dark.liquid-glass [data-has-mod-tint="true"] {
-  --sidebar: color-mix(in srgb, var(--mod-backdrop-tint) 58%, transparent);
+  --sidebar: var(--mod-backdrop-tint);
 }
-html:not(.dark) [data-has-mod-tint="true"] [data-activity-outer] {
-  --card: color-mix(in srgb, var(--mod-backdrop-tint) 30%, #ffffff);
+html.dark.liquid-glass [data-has-mod-tint="true"] [data-sidebar-inner] > * {
+  background-color: transparent;
+}
+html:not(.dark):not(.liquid-glass) [data-has-mod-tint="true"] [data-activity-outer] {
+  --card: color-mix(in oklch, var(--mod-backdrop-tint) 92%, #ffffff);
+  --background: var(--card);
+  --border: oklch(0 0 0 / 0.14);
+  --muted: oklch(0 0 0 / 0.06);
+  --accent: oklch(0 0 0 / 0.08);
+  --secondary: oklch(0 0 0 / 0.07);
+  background-color: var(--card);
+}
+html.liquid-glass:not(.dark) [data-has-mod-tint="true"] [data-activity-outer] {
+  --card: var(--mod-backdrop-tint);
   --background: var(--card);
   background-color: var(--card);
 }
 html.dark:not(.liquid-glass) [data-has-mod-tint="true"] [data-activity-outer] {
-  --card: color-mix(in srgb, var(--mod-backdrop-tint) 72%, #161618);
+  --card: color-mix(in oklch, var(--mod-backdrop-tint) 82%, #161618);
   --background: var(--card);
+  --border: oklch(1 0 0 / 0.12);
+  --muted: oklch(1 0 0 / 0.06);
+  --accent: oklch(1 0 0 / 0.08);
+  --secondary: oklch(1 0 0 / 0.07);
   background-color: var(--card);
 }
 html.dark.liquid-glass [data-has-mod-tint="true"] [data-activity-outer] {
-  --card: color-mix(in srgb, var(--mod-backdrop-tint) 62%, oklch(0.16 0 0 / 0.72));
+  --card: var(--mod-backdrop-tint);
   --background: var(--card);
   background-color: var(--card);
 }
@@ -823,4 +850,9 @@ html.dark.liquid-glass [data-has-mod-tint="true"] [data-activity-outer] .dockvie
 [data-has-mod-tint="true"] [data-activity-outer] .dockview-theme-superone {
   --dv-group-view-background-color: var(--card);
   --dv-tabs-and-actions-container-background-color: var(--card);
+}
+[data-mod-placed-inline] [data-mod-placed-id] > div > * {
+  max-height: 21rem;
+  overflow-y: auto;
+  overflow-x: hidden;
 }

@@ -4,7 +4,6 @@ import { AnimatePresence, motion } from 'motion/react'
 import { ArrowDown, PenLine, Play, ShipWheel, Trash2 } from 'lucide-react'
 import { ModPlacedRows, partitionPlacedRows, useModUiState } from '@superone/chat-view/mod-ui'
 import type { ModPlacedRow } from '@superone/shared/mod-ui'
-import { COMPOSER_CONTENT_MAX_HEIGHT } from '../composer-slot/composer-registry'
 import type { ChatMessage as ChatMessageModel, ModelOption } from '@superone/shared/agent-types'
 import type { TranscriptRow } from '@superone/shared/transcript-segments'
 import { SystemNoticeRow } from '@superone/chat-view/presenters/SystemNoticeRow'
@@ -130,7 +129,7 @@ export interface ChatTranscriptBodyProps {
 function InlineModPlaced({ rows }: { rows: readonly ModPlacedRow[] }) {
   if (rows.length === 0) return null
   return (
-    <div className="overflow-y-auto overflow-x-hidden" style={{ maxHeight: COMPOSER_CONTENT_MAX_HEIGHT }}>
+    <div data-mod-placed-inline="">
       <ModPlacedRows rows={rows} />
     </div>
   )

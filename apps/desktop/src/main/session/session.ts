@@ -2698,6 +2698,20 @@ export class Session implements SessionContract {
       }
       return
     }
+    if (event.type === 'slash_command_output' && event.inline && event.content.trim()) {
+      const filtered = this._messages.filter((m) => m.id !== event.messageId)
+      const reportMsg: ChatMessage = {
+        id: event.messageId || `slash-report-${Date.now().toString(36)}`,
+        role: 'assistant',
+        content: [{ type: 'text', text: event.content }],
+        status: 'complete',
+        createdAt: new Date().toISOString(),
+        providerId: 'claude',
+      }
+      this.replaceMessages([...filtered, reportMsg], { fullPersist: true })
+      this.notifyStateChange()
+      return
+    }
     const dialect = messageDialectFor(this.harnessId)
     switch (dialect) {
       case 'claude':

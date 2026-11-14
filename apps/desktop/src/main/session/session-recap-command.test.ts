@@ -46,4 +46,23 @@ describe('local-command /recap transcript row', () => {
     emit({ type: 'slash_command_output', messageId: 'a1', content: 'Total cost: $0.42', command: 'cost' })
     expect(session.snapshot.messages.map((m) => m.id)).toEqual(['u1', 'a1'])
   })
+
+  it('persists inline slash_command_output as assistant text for reload', async () => {
+    const { session, emit, onStateChange } = fixture([msg('u1', 'user'), msg('a1', 'assistant')])
+    const sending = session.send({ content: '/custom-theme', assistantMessageId: 'a-mod' })
+    await vi.waitFor(() => expect(session.snapshot.messages).toHaveLength(3))
+    emit({ type: 'message_start', message: msg('a-mod', 'assistant', { status: 'streaming' }) })
+    emit({ type: 'slash_command_output', messageId: 'a-mod', content: 'theme-examples: Pick a theme on the card.', command: 'custom-theme', inline: true })
+    emit({ type: 'message_complete', messageId: 'a-mod' })
+    await sending
+
+    const last = session.snapshot.messages.at(-1)
+    expect(last).toMatchObject({
+      id: 'a-mod',
+      role: 'assistant',
+      status: 'complete',
+      content: [{ type: 'text', text: 'theme-examples: Pick a theme on the card.' }],
+    })
+    expect(onStateChange).toHaveBeenCalledWith(expect.objectContaining({ messagePersistMode: { kind: 'full' } }))
+  })
 })

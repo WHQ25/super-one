@@ -18,10 +18,10 @@ import { sshCapture, sshUpload } from './ssh-forward'
 /**
  * Discovering and installing a node on a remote host over SSH.
  *
- * SSH is only a bootstrap channel (design §15): registry install of
- * `@super-one/cli` is the product default; local tarball upload is for
- * dev/debug. Once the node is running, product traffic uses the authenticated
- * RPC protocol instead.
+ * SSH is only a bootstrap channel (design §15): the host's npm installs
+ * `@super-one/cli`, from the registry or (dev desktops) from an uploaded
+ * package of this checkout. Once the node is running, product traffic uses
+ * the authenticated RPC protocol instead.
  */
 
 /** Registry install command. `--engine-strict` refuses a host below dependency engines. */
@@ -35,8 +35,6 @@ export type { RemoteInstallSource }
 export interface RemoteHostProbe {
   os: 'linux' | 'darwin' | 'unknown'
   arch: 'x64' | 'arm64' | 'unknown'
-  /** True when the C library is musl (Alpine), which needs a different prebuild. */
-  musl: boolean
   home: string
   /** Absolute path of an existing superone, if one is already installed. */
   superonePath: string | null
@@ -53,11 +51,9 @@ export interface RemoteHostProbe {
   npmPath?: string | null
   /** Effective PATH used by the non-interactive probe. */
   shellPath?: string | null
-  /** `npm` on PATH — required for the registry install path. */
+  /** `npm` on PATH — required to install the node. */
   hasNpm: boolean
   hasSystemd: boolean
-  /** better-sqlite3 prebuild target matching this host. */
-  distTarget: string | null
 }
 
 export function remoteProbeScript(): string {
@@ -68,8 +64,6 @@ export function remoteProbeScript(): string {
     'echo "os=$(uname -s)"',
     'echo "arch=$(uname -m)"',
     'echo "home=$HOME"',
-    // Alpine/musl needs the linuxmusl-* prebuild instead of linux-*.
-    `if [ -f /etc/alpine-release ] || (ldd --version 2>&1 | grep -qi musl); then echo "musl=1"; else echo "musl=0"; fi`,
     // Non-interactive SSH shells skip nvm/fnm/asdf/mise initialization. A login
     // or PATH Node older than the CLI floor must not hide a compatible install.
     ...posixNodeMeetsMinimumFunction().split('\n'),
@@ -100,7 +94,8 @@ export function remoteProbeScript(): string {
     `echo "node_bin_dir=$NODE_BIN_DIR"`,
     `echo "npm_path=$NPM_BIN"`,
     `echo "shell_path=$PATH"`,
-    // Only discover installations owned by this release channel.
+    // Only discover installations owned by this release channel. `current` is
+    // a tarball install from older desktops; it is still found so it is reused or upgraded.
     `SUPERONE_BIN=""`,
     `for c in "${root}/npm/bin/superone" "${root}/current/bin/superone" "$HOME/.local/bin/${bin}"; do`,
     `  [ -n "$SUPERONE_BIN" ] && break`,
@@ -148,7 +143,6 @@ export function parseProbeOutput(stdout: string): RemoteHostProbe {
         ? 'arm64'
         : 'unknown'
 
-  const musl = values.get('musl') === '1'
   const nodeVersionRaw = (values.get('node_version') || '').trim().replace(/^v/, '')
   const nodeVersion = nodeVersionRaw || null
   const nodeMajorRaw = Number.parseInt(values.get('node_major') || '', 10)
@@ -160,7 +154,6 @@ export function parseProbeOutput(stdout: string): RemoteHostProbe {
   return {
     os,
     arch,
-    musl,
     home: values.get('home') || '',
     superonePath: values.get('superone') || null,
     superoneVersion: values.get('superone_version') || null,
@@ -172,20 +165,7 @@ export function parseProbeOutput(stdout: string): RemoteHostProbe {
     shellPath: values.get('shell_path') || null,
     hasNpm: values.get('npm') === '1',
     hasSystemd: values.get('systemd') === '1',
-    distTarget: distTargetFor(os, arch, musl),
   }
-}
-
-/** Map a probed host to the artifact target built by scripts/build-dist.ts. */
-export function distTargetFor(
-  os: RemoteHostProbe['os'],
-  arch: RemoteHostProbe['arch'],
-  musl: boolean,
-): string | null {
-  if (arch === 'unknown') return null
-  if (os === 'linux') return `${musl ? 'linuxmusl' : 'linux'}-${arch}`
-  if (os === 'darwin') return `darwin-${arch}`
-  return null
 }
 
 export interface SshTarget {
@@ -225,27 +205,16 @@ export interface InstallResult {
   /** Absolute remote path to the installed launcher. */
   remoteExec: string
   version: string
-  /** Dist target (upload) or `registry` / package spec. */
+  /** `registry`, or `npm-pack` for an uploaded package. */
   target: string
-  /** Content hash for upload installs; empty for registry. */
+  /** Content hash of an uploaded package; empty for registry. */
   sha256: string
   source: RemoteInstallSource
   /** Set when an older version was replaced. */
   previousVersion?: string
 }
 
-export type InstallProgressStep = 'build' | 'npm' | 'upload' | 'verify' | 'extract' | 'activate'
-
-export interface InstallOptions extends SshTarget {
-  /** Local path to a `superone-<version>-<target>.tar.gz` built by build-dist. */
-  tarballPath: string
-  version: string
-  distTarget: string
-  /** Remote home from the probe; used to build absolute paths. */
-  remoteHome: string
-  previousVersion?: string
-  onProgress?: (phase: InstallProgressStep, detail?: string) => void
-}
+export type InstallProgressStep = 'build' | 'npm' | 'upload'
 
 export interface RegistryInstallOptions extends SshTarget {
   /** npm package version (no leading `v`); must be pinned, never bare `latest`. */
@@ -254,85 +223,6 @@ export interface RegistryInstallOptions extends SshTarget {
   remoteHome: string
   previousVersion?: string
   onProgress?: (phase: InstallProgressStep, detail?: string) => void
-}
-
-/**
- * Upload and activate a distribution on the remote host.
- *
- * The install is checksum-verified before extraction, and activation flips a
- * `current` symlink so a failed install never replaces a working version
- * (design §15 atomic version switch).
- */
-export async function installNodeOverSsh(options: InstallOptions): Promise<InstallResult> {
-  const { destination, extraSshArgs, sshPath } = options
-  const sshOpts = { destination, extraArgs: extraSshArgs, sshPath }
-  const remoteCommand = (command: string): string =>
-    withRemoteNodePath(command, options.nodeBinDir)
-
-  const bytes = await readFile(options.tarballPath)
-  const sha256 = createHash('sha256').update(bytes).digest('hex')
-  const stageName = `superone-${options.version}-${options.distTarget}`
-  const root = remoteSuperoneHome(options.remoteHome)
-  const uploadPath = `${root}/downloads/${basename(options.tarballPath)}`
-
-  options.onProgress?.('upload')
-  await sshUpload({
-    destination,
-    extraArgs: extraSshArgs,
-    sshPath,
-    localPath: options.tarballPath,
-    remotePath: uploadPath,
-    remoteCommand: `mkdir -p ${shellQuote(`${root}/downloads`)} && cat > ${shellQuote(uploadPath)}`,
-    onProgress: (sent, total) =>
-      options.onProgress?.('upload', `${Math.round((sent / total) * 100)}%`),
-  })
-
-  // Verify, extract, and activate in one SSH session — a truncated upload must
-  // never become `current`, and the install must not trip SSH connection limits.
-  options.onProgress?.('verify')
-  const finalize = await sshCapture({
-    ...sshOpts,
-    command: remoteCommand(
-      [
-        `remote_sha="$( (sha256sum ${shellQuote(uploadPath)} 2>/dev/null || shasum -a 256 ${shellQuote(uploadPath)}) | awk '{print $1}' )"`,
-        `if [ "$remote_sha" != ${shellQuote(sha256)} ]; then rm -f ${shellQuote(uploadPath)}; echo "SUPERONE_CHECKSUM_MISMATCH=$remote_sha" >&2; exit 41; fi`,
-        `mkdir -p ${shellQuote(`${root}/versions`)} ${shellQuote(`${options.remoteHome}/.local/bin`)} && chmod 700 ${shellQuote(root)}`,
-        `rm -rf ${shellQuote(`${root}/versions/${stageName}`)}`,
-        `tar xzf ${shellQuote(uploadPath)} -C ${shellQuote(`${root}/versions`)}`,
-        `chmod +x ${shellQuote(`${root}/versions/${stageName}/bin/superone`)}`,
-        `ln -sfn ${shellQuote(`${root}/versions/${stageName}`)} ${shellQuote(`${root}/current`)}`,
-        `ln -sfn ${shellQuote(`${root}/current/bin/superone`)} ${shellQuote(`${options.remoteHome}/.local/bin/${remoteCliName()}`)}`,
-        `rm -f ${shellQuote(uploadPath)}`,
-        `${shellQuote(`${root}/current/bin/superone`)} identity --home ${shellQuote(`${root}/node`)} >/dev/null`,
-        'echo SUPERONE_UPLOAD_OK',
-      ].join(' && '),
-    ),
-    timeoutMs: 120_000,
-  })
-  if (finalize.code !== 0 || !finalize.stdout.includes('SUPERONE_UPLOAD_OK')) {
-    const mismatch = /SUPERONE_CHECKSUM_MISMATCH=([^\n]*)/
-      .exec(finalize.stderr)?.[1]
-      ?.trim()
-    if (mismatch !== undefined) {
-      throw new Error(
-        `checksum mismatch after upload: expected ${sha256}, got ${mismatch || 'none'}`,
-      )
-    }
-    throw new Error(
-      `remote install finalization failed: ${finalize.stderr.trim() || finalize.stdout.trim() || `code ${finalize.code}`}`,
-    )
-  }
-  options.onProgress?.('extract')
-  options.onProgress?.('activate')
-
-  return {
-    remoteExec: `${root}/current/bin/superone`,
-    version: options.version,
-    target: options.distTarget,
-    sha256,
-    source: 'upload',
-    previousVersion: options.previousVersion,
-  }
 }
 
 /**
@@ -358,7 +248,7 @@ export async function installNodeFromRegistry(
   const spec = `${packageName}@${version}`
   options.onProgress?.('npm', spec)
   const remoteExec = await npmInstallOnRemote(options, spec, {
-    failureHint: 'If the package is not published yet or the host is offline, use install source "upload" with a local dist build.',
+    failureHint: 'The package may not be published yet, or the host cannot reach the npm registry.',
   })
   return {
     remoteExec,
@@ -475,10 +365,7 @@ function reportedNodeVersion(probe: RemoteHostProbe): string | null {
  * Explain why a probed host cannot run the node, or null when it can.
  * Returned strings are user-facing and actionable.
  */
-export function preflightBlocker(
-  probe: RemoteHostProbe,
-  source: RemoteInstallSource = 'registry',
-): string | null {
+export function preflightBlocker(probe: RemoteHostProbe): string | null {
   if (probe.os === 'unknown') return 'unsupported remote operating system'
   if (probe.arch === 'unknown') return 'unsupported remote CPU architecture'
   if (!probe.home) return 'could not resolve remote $HOME'
@@ -490,12 +377,9 @@ export function preflightBlocker(
   if (!nodeVersionSatisfies(foundNode)) {
     return `Node.js ${MIN_CLI_NODE_VERSION}+ is required on the remote host, found ${foundNode}`
   }
-  if (source === 'registry' && !probe.hasNpm) {
+  if (!probe.hasNpm) {
     const pathDetail = probe.shellPath ? ` (probe PATH: ${probe.shellPath})` : ''
-    return `npm is required on the remote host for registry install but was not found on PATH${pathDetail}`
-  }
-  if (source === 'upload' && !probe.distTarget) {
-    return `no distribution built for ${probe.os}/${probe.arch}`
+    return `npm is required on the remote host to install the node but was not found on PATH${pathDetail}`
   }
   return null
 }

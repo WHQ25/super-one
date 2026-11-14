@@ -37,7 +37,7 @@ control leases, sessions, and harness execution. Root repository rules apply.
 | HTTP health and authenticated WebSocket | `src/server/node-server.ts` |
 | Files and git | `src/workspace/` |
 | Sessions and runner wiring | `src/session/`, `packages/runtime/src/session/` |
-| Node binary/tarball packaging | `scripts/build-dist.ts` |
+| npm package (`@super-one/cli`) | `scripts/pack-npm.ts` |
 | Local/Docker verification | [labs.md](docs/agent-reference/labs.md) |
 
 ## Commands and verification

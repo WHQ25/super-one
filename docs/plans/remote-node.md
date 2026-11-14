@@ -75,8 +75,6 @@ Long-term docs affected: [remote-node-service.md](../architecture/remote-node-se
 
 ## Install and upgrade
 
-- Packaged desktop ships no upload artifacts: nothing populates
-  `resources/superone-dist` (`dist-locator.ts`).
 - External upgrade launcher: compatibility check, SQLite backup, drain
   `wait|cancel|force`, atomic switch, health check, rollback.
 - Runtime-bundled signed artifact as the default for clean hosts.

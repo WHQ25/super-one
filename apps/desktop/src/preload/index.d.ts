@@ -1051,7 +1051,6 @@ export interface EnvironmentAPI extends MediaComposerAPI {
   addOverSsh(input: {
     destination: string
     remoteExec?: string
-    installSource?: 'registry' | 'upload'
     packageVersion?: string
     remotePort?: number
     remoteNodeHome?: string

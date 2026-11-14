@@ -112,8 +112,8 @@ export interface NodeUpgradeAvailability {
  * between concurrent operations (e.g. repair must not drive the Add dialog).
  *
  * `installing` appears when the host has no CLI yet or needs a version upgrade.
- * - `npm` — registry path (`@super-one/cli`)
- * - `upload` / `verify` / `extract` / `activate` — local dist upload path
+ * - `npm` — the host's npm installs `@super-one/cli`
+ * - `build` / `upload` — a dev desktop packs this checkout and uploads it first
  */
 export type EnvironmentInstallOperation = 'add' | 'upgrade' | 'repair'
 
@@ -127,7 +127,7 @@ export type EnvironmentInstallProgress =
   | ({ phase: 'probing' } & EnvironmentInstallProgressMeta)
   | ({
       phase: 'installing'
-      step: 'build' | 'npm' | 'upload' | 'verify' | 'extract' | 'activate'
+      step: 'build' | 'npm' | 'upload'
       detail?: string
     } & EnvironmentInstallProgressMeta)
   | ({ phase: 'starting' } & EnvironmentInstallProgressMeta)

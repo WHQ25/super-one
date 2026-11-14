@@ -52,7 +52,6 @@ import { resolveCliReleaseVersion } from '../../../../../apps/cli/src/cli-releas
 import { EnvironmentHost, resetEnvironmentHostForTests } from './environment-host'
 import { SshTunnelManager } from './ssh-tunnel-manager'
 import type {
-  InstallOptions,
   InstallResult,
   PackageInstallOptions,
   RegistryInstallOptions,
@@ -749,7 +748,6 @@ describe('add over SSH without a remote path', () => {
   const linuxProbe: RemoteHostProbe = {
     os: 'linux',
     arch: 'x64',
-    musl: false,
     home: '/home/superone',
     superonePath: null,
     superoneVersion: null,
@@ -757,15 +755,12 @@ describe('add over SSH without a remote path', () => {
     nodeVersion: '22.23.4',
     hasNpm: true,
     hasSystemd: true,
-    distTarget: 'linux-x64',
   }
 
   function hostWith(
     rt: NodeRuntime,
     overrides: {
       probe?: RemoteHostProbe
-      findArtifact?: (target: string) => { path: string; version: string; target: string } | null
-      installNode?: (opts: InstallOptions) => Promise<InstallResult>
       installFromRegistry?: (opts: RegistryInstallOptions) => Promise<InstallResult>
       restartNode?: (opts: RemoteRestartOptions) => Promise<void>
     },
@@ -783,8 +778,6 @@ describe('add over SSH without a remote path', () => {
     const host = new EnvironmentHost(ud, {
       tunnels: new SshTunnelManager(fakeForwardStarter(rt.server.url, [])),
       probeHost: async () => overrides.probe ?? linuxProbe,
-      findArtifact: overrides.findArtifact ?? (() => null),
-      installNode: overrides.installNode,
       installFromRegistry: overrides.installFromRegistry,
       restartNode: async (opts) => {
         events.push('restart')
@@ -825,10 +818,6 @@ describe('add over SSH without a remote path', () => {
         superonePath: '/home/superone/.local/bin/superone',
         // Matches hostWith defaultCliVersion
         superoneVersion: '1.2.3',
-      },
-      installNode: async () => {
-        installCalls += 1
-        throw new Error('should not install')
       },
       installFromRegistry: async () => {
         installCalls += 1
@@ -966,9 +955,6 @@ describe('add over SSH without a remote path', () => {
           source: 'registry',
         }
       },
-      installNode: async () => {
-        throw new Error('upload path should not run for registry default')
-      },
     })
 
     const phases: string[] = []
@@ -986,56 +972,12 @@ describe('add over SSH without a remote path', () => {
     host.dispose()
   })
 
-  it('uploads a local dist when installSource is upload', async () => {
-    const rt = await bootNode()
-    const installs: InstallOptions[] = []
-    const { host, bootstrapExec } = hostWith(rt, {
-      findArtifact: (target) => ({ path: `/local/superone-1.2.3-${target}.tar.gz`, version: '1.2.3', target }),
-      installNode: async (opts) => {
-        installs.push(opts)
-        opts.onProgress?.('upload', '100%')
-        opts.onProgress?.('activate')
-        return {
-          remoteExec: '/home/superone/.superone/current/bin/superone',
-          version: opts.version,
-          target: opts.distTarget,
-          sha256: 'deadbeef',
-          source: 'upload',
-        }
-      },
-    })
-
-    const phases: string[] = []
-    const result = await host.addRemoteOverSsh(
-      { destination: 'superone@lab', installSource: 'upload' },
-      (p) => phases.push(p.phase),
-    )
-
-    expect(installs).toHaveLength(1)
-    expect(installs[0]!.distTarget).toBe('linux-x64')
-    expect(bootstrapExec).toEqual(['/home/superone/.superone/current/bin/superone'])
-    expect(result.installed?.source).toBe('upload')
-    expect(phases).toEqual(['probing', 'installing', 'installing', 'starting', 'pairing'])
-    host.dispose()
-  })
-
-  it('fails with an actionable message when upload is requested but no artifact is bundled', async () => {
-    const rt = await bootNode()
-    const { host } = hostWith(rt, { findArtifact: () => null })
-
-    await expect(
-      host.addRemoteOverSsh({ destination: 'superone@lab', installSource: 'upload' }),
-    ).rejects.toThrow(/build:dist --target linux-x64/)
-    host.dispose()
-  })
-
   it('blocks before any install when the remote Node runtime is too old', async () => {
     const rt = await bootNode()
     let installCalls = 0
     const { host } = hostWith(rt, {
       probe: { ...linuxProbe, nodeMajor: 16, nodeVersion: '16.0.0' },
-      findArtifact: (target) => ({ path: '/local/x.tar.gz', version: '1.0.0', target }),
-      installNode: async () => {
+      installFromRegistry: async () => {
         installCalls += 1
         throw new Error('unreachable')
       },
@@ -1157,7 +1099,6 @@ describe('dev channel', () => {
   const devProbe: RemoteHostProbe = {
     os: 'linux',
     arch: 'x64',
-    musl: false,
     home: '/home/superone',
     // An earlier dev deploy of the same version: its code is still stale.
     superonePath: '/home/superone/.superone/dev/npm/bin/superone',
@@ -1166,7 +1107,6 @@ describe('dev channel', () => {
     nodeVersion: '22.23.4',
     hasNpm: true,
     hasSystemd: true,
-    distTarget: 'linux-x64',
   }
 
   function devHost(rt: NodeRuntime): {
@@ -1201,9 +1141,6 @@ describe('dev channel', () => {
           sha256: 'deadbeef',
           source: 'upload',
         }
-      },
-      installNode: async () => {
-        throw new Error('dev channel must not upload a dist tarball')
       },
       installFromRegistry: async () => {
         throw new Error('dev channel must not install from npm')
@@ -1242,7 +1179,7 @@ describe('dev channel', () => {
 
     const steps: string[] = []
     const result = await host.addRemoteOverSsh(
-      { destination: 'superone@lab', installSource: 'registry' },
+      { destination: 'superone@lab' },
       (p) => { if (p.phase === 'installing') steps.push(p.step) },
     )
 
@@ -1334,14 +1271,12 @@ describe('outdated node upgrade', () => {
     ok: true,
     os: 'linux',
     arch: 'x64',
-    musl: false,
     home: '/home/superone',
     superonePath: '/home/superone/.local/bin/superone',
     superoneVersion: '1.0.0',
     nodeMajor: 22,
     hasNpm: true,
     hasSystemd: true,
-    distTarget: 'linux-x64',
   }
 
   it('flags a node behind the desktop on connect without upgrading it', async () => {

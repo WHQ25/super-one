@@ -180,6 +180,40 @@ describe('FileTree folder focus and changed files', () => {
     expect(screen.queryByText('readme.md')).not.toBeInTheDocument()
   }
 
+  it('enters a folder on a second click inside the double-click window without expanding it', async () => {
+    const toggleDir = vi.spyOn(useFileTreeStore.getState(), 'toggleDir')
+    render(<FileTree />)
+    await screen.findByText('readme.md')
+
+    fireEvent.click(screen.getByRole('button', { name: 'src' }))
+    expect(useFileTreeStore.getState().expandedDirs.has('src')).toBe(false)
+    expect(toggleDir).not.toHaveBeenCalled()
+
+    fireEvent.click(screen.getByRole('button', { name: 'src' }))
+    expect(toggleDir).not.toHaveBeenCalled()
+    await waitFor(() => expect(useFileTreeStore.getState().focusPath).toBe('src'))
+    expect(screen.queryByText('readme.md')).not.toBeInTheDocument()
+    expect(toggleDir).not.toHaveBeenCalled()
+    toggleDir.mockRestore()
+  })
+
+  it('expands a folder after the open delay and collapses it on a later click', async () => {
+    render(<FileTree />)
+    await screen.findByText('readme.md')
+    fireEvent.click(screen.getByRole('button', { name: 'src' }))
+    expect(useFileTreeStore.getState().expandedDirs.has('src')).toBe(false)
+    expect(await screen.findByText('app.ts')).toBeInTheDocument()
+    expect(screen.getByText('readme.md')).toBeInTheDocument()
+
+    await new Promise((resolve) => setTimeout(resolve, 500))
+    fireEvent.click(screen.getByRole('button', { name: 'src' }))
+
+    expect(useFileTreeStore.getState().expandedDirs.has('src')).toBe(true)
+    expect(useFileTreeStore.getState().focusPath).toBe('')
+    await waitFor(() => expect(useFileTreeStore.getState().expandedDirs.has('src')).toBe(false))
+    expect(screen.queryByText('app.ts')).not.toBeInTheDocument()
+  })
+
   it('creates files inside the folder opened by a double-click', async () => {
     await enterSrc()
     await chooseCreate('New File')

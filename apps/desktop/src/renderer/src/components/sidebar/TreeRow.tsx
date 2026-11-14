@@ -154,6 +154,12 @@ export function DraftEntryRow({ item, currentFolder }: { item: VisibleItem; curr
 }
 
 const EXPAND_HOVER_DELAY = 500
+/** Second click inside this window enters the folder instead of toggling it. */
+const DOUBLE_CLICK_MS = 400
+/** Single click waits this long before expanding or collapsing. */
+const FOLDER_OPEN_DELAY_MS = 100
+/** File click waits out a second click so double-click can open a new tab. */
+const FILE_OPEN_DELAY_MS = 200
 export const autoExpandedDirs = new Set<string>()
 
 import { getDropAction, getTargetDir, isChildPath, isWithinFolder, toAbsolutePath, internalDragSource } from './drag-drop-utils'
@@ -193,38 +199,59 @@ export const TreeRow = memo(function TreeRow({
   const expandTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const dragIconRef = useRef<HTMLImageElement | null>(null)
   const clickTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  const openTimer = useRef<ReturnType<typeof setTimeout>>(undefined)
 
   useEffect(() => {
     return () => {
       if (expandTimerRef.current) clearTimeout(expandTimerRef.current)
       clearTimeout(clickTimer.current)
+      clearTimeout(openTimer.current)
     }
+  }, [])
+
+  const cancelFolderOpen = useCallback(() => {
+    clearTimeout(openTimer.current)
+    openTimer.current = undefined
   }, [])
 
   const handleClick = useCallback(() => {
     if (isRenaming) return
     if (Date.now() - internalDragSource.lastEndMs < 200) return
-    clearTimeout(clickTimer.current)
-    // A directory waits out a second click: double-click enters that folder,
-    // and the expand must not also run.
-    clickTimer.current = setTimeout(() => {
-      if (item.isDirectory) toggleDir(currentFolder, item.path)
-      else {
-        useSourceControlStore.getState().selectFile(currentFolder, item.path)
-        openFileTab(item.path)
+    if (item.isDirectory) {
+      // The 400ms window stays armed. A second click inside it enters the
+      // folder; the open itself waits 100ms so a faster double-click never
+      // flashes the children.
+      if (clickTimer.current) {
+        cancelFolderOpen()
+        void useFileTreeStore.getState().enterFolder(currentFolder, item.path)
+        return
       }
-    }, 200)
-  }, [item.path, item.isDirectory, currentFolder, toggleDir, isRenaming])
+      clickTimer.current = setTimeout(() => {
+        clickTimer.current = undefined
+      }, DOUBLE_CLICK_MS)
+      openTimer.current = setTimeout(() => {
+        openTimer.current = undefined
+        toggleDir(currentFolder, item.path)
+      }, FOLDER_OPEN_DELAY_MS)
+      return
+    }
+    clearTimeout(clickTimer.current)
+    clickTimer.current = setTimeout(() => {
+      useSourceControlStore.getState().selectFile(currentFolder, item.path)
+      openFileTab(item.path)
+    }, FILE_OPEN_DELAY_MS)
+  }, [item.path, item.isDirectory, currentFolder, toggleDir, isRenaming, cancelFolderOpen])
 
   const handleDoubleClick = useCallback(() => {
     if (isRenaming) return
-    clearTimeout(clickTimer.current)
     if (item.isDirectory) {
+      cancelFolderOpen()
       void useFileTreeStore.getState().enterFolder(currentFolder, item.path)
       return
     }
+    clearTimeout(clickTimer.current)
     openNewFileTab(item.path)
-  }, [item.path, item.isDirectory, currentFolder, isRenaming])
+  }, [item.path, item.isDirectory, currentFolder, isRenaming, cancelFolderOpen])
 
   const handleMouseDown = useCallback((e: React.MouseEvent) => {
     if (e.button !== 0) return

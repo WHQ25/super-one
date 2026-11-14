@@ -232,7 +232,7 @@ export class DesktopSessionHost extends DesktopSessionReads<DesktopSessionRow> i
   }
 
   get servedOperations(): ReadonlySet<string> {
-    return new Set(['session.authorizeMentionApps', 'session.connection.reconnect', 'session.inbox.list', 'session.inbox.cancel', 'session.inbox.update', 'session.contextUsage', 'session.mcpStatus', 'session.mcpAuthenticate', 'session.refreshResources', 'session.stopTask', 'session.startQueued', 'session.reset', 'session.rewind', 'session.previewRewind', 'session.truncateAtCheckpoint',
+    return new Set(['session.authorizeMentionApps', 'session.connection.reconnect', 'session.inbox.list', 'session.inbox.cancel', 'session.inbox.update', 'session.contextUsage', 'session.mcpStatus', 'session.mcpAuthenticate', 'session.refreshResources', 'session.stopTask', 'session.backgroundTasks', 'session.startQueued', 'session.reset', 'session.rewind', 'session.previewRewind', 'session.truncateAtCheckpoint',
       ...(this.deps.sideChats ? ['session.sideChatStart', 'session.sideChatClose'] : []),
       ...(this.deps.scheduledSends ? ['session.scheduledSend.get', 'session.scheduledSend.set', 'session.scheduledSend.clear', 'sessionList.scheduledSends'] : []),
       'sessionList.deleteOlderThan',
@@ -398,6 +398,7 @@ export class DesktopSessionHost extends DesktopSessionReads<DesktopSessionRow> i
         await enqueueSessionQueueOp(sessionId, () => session.updateInbox!(input.inboxId as string, input.delivery as 'steer' | 'queue'))
         return { ok: true }
       case 'session.stopTask': await session.dispatchBackendCommand({ kind: 'claude.stop_task', taskId: input.taskId as string }); return true
+      case 'session.backgroundTasks': return (await session.backgroundTasks?.(typeof input.toolUseId === 'string' ? input.toolUseId : undefined)) ?? false
       case 'session.startQueued': return enqueueSessionQueueOp(sessionId, () => { session.lease.assertMutation(); return session.startQueuedMessages() })
       case 'session.reset': {
         const nextId = input.newSessionId as string | undefined

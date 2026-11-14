@@ -73,6 +73,13 @@ describe('collectBackgroundActivities', () => {
       expect(bashActivities).toHaveLength(1)
     })
 
+    it('shows bash with runInBackground flag set mid-run while taskProgress not completed', () => {
+      const messages = [msg({ ...toolUse('t1', 'Bash', { command: 'sleep 10' }), runInBackground: true } as ContentBlock)]
+      const progress = { t1: { description: 'running', completed: false } }
+      const { bashActivities } = collectBackgroundActivities(messages, progress)
+      expect(bashActivities).toHaveLength(1)
+    })
+
     it('hides bash with run_in_background after task_notification completes', () => {
       const messages = [msg(toolUse('t1', 'Bash', { command: 'sleep 10', run_in_background: true }))]
       const progress = { t1: { description: 'done', completed: true } }

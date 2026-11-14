@@ -118,6 +118,7 @@ export interface ToolBlockProps extends Pick<GenericToolRowProps, 'filePath' | '
   resultOutputPath?: string
   /** Bash only: the working-tree diff the command produced (see BashTerminalPresenter). */
   bashEditDiff?: BashEditDiff
+  runInBackground?: boolean
   autoExpand?: boolean
   backgroundActivity?: boolean
   grouped?: boolean
@@ -250,6 +251,7 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
   bashEditDiff,
   resultTitle,
   resourceLinks,
+  runInBackground,
   autoExpand,
   backgroundActivity = false,
   grouped = false,
@@ -295,9 +297,11 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
   if (isHiddenToolBlock(toolName, result)) return null
 
   if (toolName === 'Bash') {
+    const bashDisplay = bashToolDisplay(params, toolSummary)
     return ports.renderBash({
       toolUseId: toolUseId ?? '',
-      ...bashToolDisplay(params, toolSummary),
+      ...bashDisplay,
+      runInBackground: bashDisplay.runInBackground || runInBackground,
       fallbackResult: isDenied ? undefined : (result ?? liveOutput ?? undefined),
       isStreaming,
       isDenied,

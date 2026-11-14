@@ -1281,6 +1281,32 @@ describe('Session state machine', () => {
       backend.resolveSend?.()
       await pending
     })
+  })
+
+  describe('backgroundTasks', () => {
+    it('forwards optional toolUseId to backend.backgroundTasks for Claude sessions', async () => {
+      const pending = session.send({ content: 'hi', clientMessageId: 'u0' })
+      await new Promise((r) => setTimeout(r, 0))
+
+      await expect(session.backgroundTasks('toolu_bash_1')).resolves.toBe(true)
+      await expect(session.backgroundTasks()).resolves.toBe(true)
+
+      expect(backend.backgroundTasksCalls).toEqual(['toolu_bash_1', undefined])
+      backend.resolveSend?.()
+      await pending
+    })
+
+    it('returns false without calling backend for non-Claude harnesses', async () => {
+      ;({ session, backend } = makeSession({ harnessId: 'codex' }))
+      const pending = session.send({ content: 'hi', clientMessageId: 'u0' })
+      await new Promise((r) => setTimeout(r, 0))
+
+      await expect(session.backgroundTasks('toolu_bash_1')).resolves.toBe(false)
+
+      expect(backend.backgroundTasksCalls).toEqual([])
+      backend.resolveSend?.()
+      await pending
+    })
 
     it('records an explicitly stopped task so a later orphan replay stays silent', async () => {
       await session.dispatchBackendCommand({ kind: 'claude.stop_task', taskId: 'bg-task-1' } as import('./types').BackendCommand)

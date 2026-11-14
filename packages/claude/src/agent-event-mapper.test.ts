@@ -273,6 +273,20 @@ describe('createClaudeAgentEventMapper', () => {
     expect(statuses).not.toContain('background')
   })
 
+  it('re-emits a backgrounded task_started event on task_updated patch.is_backgrounded', () => {
+    const events: AgentEvent[] = []
+    const mapper = createClaudeAgentEventMapper({ messageId: 'm1', emit: (event) => events.push(event) })
+
+    mapper.apply({ type: 'system', subtype: 'task_started', task_id: 'fg1', tool_use_id: 'tu1', description: 'sleep 10', is_backgrounded: false })
+    mapper.apply({ type: 'system', subtype: 'task_updated', task_id: 'fg1', patch: { is_backgrounded: true } })
+
+    const started = events.filter((e) => e.type === 'task_started')
+    expect(started).toEqual([
+      expect.objectContaining({ taskId: 'fg1', toolUseId: 'tu1', description: 'sleep 10', isBackgrounded: false }),
+      expect.objectContaining({ taskId: 'fg1', toolUseId: 'tu1', description: 'sleep 10', isBackgrounded: true }),
+    ])
+  })
+
   it('attaches desktop result metadata and terminal events', () => {
     const events: AgentEvent[] = []
     const mapper = createClaudeAgentEventMapper({

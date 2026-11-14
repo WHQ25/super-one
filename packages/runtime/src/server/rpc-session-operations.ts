@@ -30,6 +30,7 @@ async function callOperation(payload: unknown, ctx: RpcContext, method: string):
       throw Object.assign(new Error('invalid inbox delivery'), { code: 'invalid_argument' })
     }
     if (method === 'session.stopTask') requiredText(p, 'taskId')
+    if (method === 'session.backgroundTasks' && p.toolUseId !== undefined) requiredText(p, 'toolUseId')
     if (method === 'session.forceRecover' && p.message !== undefined && typeof p.message !== 'string') throw Object.assign(new Error('message must be a string'), { code: 'invalid_argument' })
     if (method === 'session.scheduledSend.set') {
       const patch = asRecord(p.patch)

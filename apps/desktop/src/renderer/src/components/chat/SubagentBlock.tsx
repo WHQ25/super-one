@@ -3,6 +3,7 @@ import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Streamdown } from 'streamdown'
 import type { ContentBlock } from '@superone/shared/agent-types'
 import { ToolBlock } from './ToolBlock'
+import { BackgroundTaskActionButton } from './background-task-action'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { getSubagentColorClasses } from './subagent-colors'
 import { NestedToolContext } from './nested-tool-context'
@@ -135,6 +136,10 @@ export function SubagentBlock({
   )
   const colorIndex = useActiveSession((state) => state.subagentColors[taskBlock.toolUseId])
   const colors = useMemo(() => getSubagentColorClasses(colorIndex), [colorIndex])
+  const isPendingPermission = useActiveSession((state) => (
+    state.pendingPermissions?.some((permission) => permission.toolUseId === taskBlock.toolUseId) ?? false
+  ))
+  const canBackground = !isAsync && isRunning && !isFailed && !isStopped && !isPendingPermission
   const nav = useSubagentNavigation()
 
   useEffect(() => {
@@ -253,7 +258,7 @@ export function SubagentBlock({
       childContent={childContent}
       diagnostic={progress?.diagnostic}
       resultText={resultText}
-      trailingAction={trailingAction}
+      trailingAction={trailingAction ?? (canBackground ? <BackgroundTaskActionButton toolUseId={taskBlock.toolUseId} /> : undefined)}
       formatTokens={formatTokens}
       Markdown={DesktopSubagentMarkdown}
     />

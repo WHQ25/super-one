@@ -415,9 +415,14 @@ export function createClaudeAgentEventMapper(
           toolUseId: system.tool_use_id,
           description: system.description ?? '',
           taskType: system.task_type,
+          ...(typeof system.is_backgrounded === 'boolean' ? { isBackgrounded: system.is_backgrounded } : {}),
         })
         break
       case 'task_updated': {
+        const moved = system.patch?.is_backgrounded === true && system.task_id ? activeBackgroundTasks.get(system.task_id) : undefined
+        if (moved?.toolUseId) {
+          emit({ type: 'task_started', taskId: system.task_id, toolUseId: moved.toolUseId, description: moved.description, isBackgrounded: true })
+        }
         const status = system.patch?.status
         if (system.task_id && (status === 'completed' || status === 'failed' || status === 'killed')) {
           activeBackgroundTasks.delete(system.task_id)

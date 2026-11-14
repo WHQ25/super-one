@@ -67,6 +67,7 @@ export interface HarnessCapabilities {
    * have no such control, so the button would do nothing.
    */
   supportsTaskStop: boolean
+  supportsTaskBackground: boolean
   /** Has /compact thread-context compaction. */
   supportsCompact: boolean
   /** Streams content via streaming tool input previews (Edit/Write/etc). */
@@ -155,6 +156,7 @@ const ACP_PROTOCOL_CAPABILITIES = {
   supportsTodos: true,
   supportsSubagents: false,
   supportsTaskStop: false,
+  supportsTaskBackground: false,
   supportsCompact: true,
   supportsStreamingToolInput: false,
   supportsQueuedSteer: true,
@@ -177,6 +179,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsTodos: true,
     supportsSubagents: true,
     supportsTaskStop: true,
+    supportsTaskBackground: true,
     supportsCompact: true,
     supportsStreamingToolInput: true,
     supportsQueuedSteer: true,
@@ -208,6 +211,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsTodos: false,
     supportsSubagents: false,
     supportsTaskStop: false,
+    supportsTaskBackground: false,
     supportsCompact: true,
     supportsStreamingToolInput: false,
     supportsQueuedSteer: true,
@@ -250,6 +254,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsTodos: true,
     supportsSubagents: true,
     supportsTaskStop: false,
+    supportsTaskBackground: false,
     supportsCompact: true,
     supportsStreamingToolInput: false,
     supportsQueuedSteer: false,
@@ -275,6 +280,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsTodos: true,
     supportsSubagents: true,
     supportsTaskStop: false,
+    supportsTaskBackground: false,
     supportsCompact: false,
     supportsStreamingToolInput: true,
     supportsQueuedSteer: false,
@@ -316,6 +322,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsSubagents: true,
     // `runtime.stopTask` kills a background job or interrupts a background child.
     supportsTaskStop: true,
+    supportsTaskBackground: false,
     supportsCompact: true,
     supportsStreamingToolInput: true,
     supportsQueuedSteer: true,

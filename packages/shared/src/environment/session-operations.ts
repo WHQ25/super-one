@@ -26,6 +26,7 @@ export interface SessionOperationMethods {
   'session.inbox.update': { input: { inboxId: string; delivery: 'steer' | 'queue' }; result: { ok: true } }
   'session.connection.reconnect': { input: Record<string, never>; result: { ok: boolean } }
   'session.stopTask': { input: { taskId: string }; result: boolean }
+  'session.backgroundTasks': { input: { toolUseId?: string }; result: boolean }
   'session.startQueued': { input: Record<string, never>; result: boolean }
   'session.reset': { input: { newSessionId?: string }; result: { permissionMode: PermissionMode; sandboxInfo: SandboxInfo } | null }
   'session.rewind': { input: { checkpointId: string; mode: 'files' | 'conversation' | 'code+chat' }; result: RewindFilesResult }
@@ -44,7 +45,7 @@ export const SESSION_OPERATION_METHODS: ReadonlySet<string> = new Set([
   'session.contextUsage', 'session.mcpStatus', 'session.mcpAuthenticate', 'session.refreshResources',
   'session.inbox.list', 'session.inbox.cancel', 'session.inbox.update',
   'session.connection.reconnect',
-  'session.stopTask', 'session.startQueued', 'session.reset',
+  'session.stopTask', 'session.backgroundTasks', 'session.startQueued', 'session.reset',
   'session.rewind', 'session.previewRewind', 'session.truncateAtCheckpoint',
 ])
 export const SESSION_OPERATION_READS: ReadonlySet<string> = new Set(['session.scheduledSend.get', 'session.previewRewind', 'session.contextUsage', 'session.mcpStatus', 'session.inbox.list', 'session.connection.reconnect'])

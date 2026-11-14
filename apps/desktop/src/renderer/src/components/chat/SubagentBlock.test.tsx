@@ -261,4 +261,24 @@ describe('SubagentBlock activity surface', () => {
     expect(screen.getByTestId('tool-block').getAttribute('data-tool')).toBe('Read')
     expect(screen.queryByText('GhostProgressTool')).not.toBeInTheDocument()
   })
+
+  it('shows Run in Background button in header for foreground running subagent and hides when backgrounded', () => {
+    const { rerender } = render(
+      <SubagentBlock
+        taskBlock={agentBlock('toolu_fg', false, { status: 'streaming' })}
+        childBlocks={[]}
+        isStreaming
+      />,
+    )
+    expect(screen.getByRole('button', { name: 'chat.toolBlock.runInBackgroundShortcut' })).toBeInTheDocument()
+
+    rerender(
+      <SubagentBlock
+        taskBlock={agentBlock('toolu_fg', false, { status: 'streaming', runInBackground: true })}
+        childBlocks={[]}
+        isStreaming
+      />,
+    )
+    expect(screen.queryByRole('button', { name: 'chat.toolBlock.runInBackgroundShortcut' })).not.toBeInTheDocument()
+  })
 })

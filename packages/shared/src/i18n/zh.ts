@@ -3016,6 +3016,9 @@ export const zh: Messages = {
       tapToOpen: '点击打开',
     },
     toolBlock: {
+      runInBackground: '转为后台运行',
+      runInBackgroundShortcut: '转为后台运行 (Ctrl+B)',
+      backgroundTaskFailed: '转为后台运行失败',
       nativeCode: {
         applyingPatch: '正在应用补丁…',
         applyPatch: '应用补丁',

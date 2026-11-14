@@ -1203,4 +1203,53 @@ describe('createProductionTurnRunner multi-dispatch', () => {
       rmSync(dir, { recursive: true, force: true })
     }
   })
+
+  it('forwards session.backgroundTasks to the live query and rejects non-Claude sessions', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cbr-claude-bg-'))
+    const bin = join(dir, 'claude')
+    writeFileSync(bin, '#!/bin/sh\n')
+    chmodSync(bin, 0o755)
+    const backgroundTasks = vi.fn(async () => true)
+    const base = bridgeQuery(() => success('live-bg', 'ok'))
+    const queryFn = ((args: Parameters<ClaudeQueryFn>[0]) => Object.assign(base(args), {
+      mcpServerStatus: async () => [],
+      backgroundTasks,
+    })) as unknown as ClaudeQueryFn
+    const runner = createNodeClaudeTurnRunner({
+      binaryPath: bin, resolveProjectPath: () => dir, queryFn, allowSimulatedFallback: false,
+    })
+    const host = {
+      messages: [],
+      assertControl() {},
+      onEvent() {},
+      onQuestion: async () => ({}),
+      onPermission: async () => 'allow' as const,
+    }
+    try {
+      expect(runner.servedOperations?.has('session.backgroundTasks')).toBe(true)
+      await runner({
+        session: session({ sessionId: 'bg-s' }),
+        text: 'hi',
+        onDelta: () => {},
+        signal: new AbortController().signal,
+      })
+      await expect(runner.callOperation!(
+        session({ sessionId: 'bg-s' }),
+        'session.backgroundTasks',
+        { toolUseId: 'tu-bash-1' },
+        host,
+      )).resolves.toBe(true)
+      expect(backgroundTasks).toHaveBeenCalledWith('tu-bash-1')
+
+      await expect(runner.callOperation!(
+        session({ sessionId: 'bg-s', harnessId: 'codex' }),
+        'session.backgroundTasks',
+        {},
+        host,
+      )).rejects.toThrow('Unsupported session operation')
+    } finally {
+      await runner.disposeAll?.()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
 })

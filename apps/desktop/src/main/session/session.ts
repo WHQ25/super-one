@@ -1874,6 +1874,14 @@ export class Session implements SessionContract {
     return this.backend.clearCodexGoal(threadId)
   }
 
+  async backgroundTasks(toolUseId?: string): Promise<boolean> {
+    this.lease.assertMutation()
+    this.assertNotDisposed()
+    this.touchRuntimeActivity()
+    if (!HARNESS_CAPABILITIES[this.harnessId]?.supportsTaskBackground || !this.backend.backgroundTasks) return false
+    return this.backend.backgroundTasks(toolUseId)
+  }
+
   async dispatchBackendCommand(cmd: BackendCommand): Promise<void> {
     this.lease.assertMutation()
     this.assertNotDisposed()

@@ -227,3 +227,16 @@ export const Collapsed: Story = {
     defaultExpanded: false,
   },
 }
+
+export const BackgroundedMidRun: Story = {
+  args: {
+    taskBlock: makeTaskBlock({
+      toolUseId: 'task-bg-midrun',
+      status: 'complete',
+      runInBackground: true,
+    }),
+    childBlocks: [],
+    isStreaming: false,
+    defaultExpanded: true,
+  },
+}

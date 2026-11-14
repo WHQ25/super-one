@@ -2940,6 +2940,9 @@ export type Messages = {
       tapToOpen: string
     }
     toolBlock: {
+      runInBackground: string
+      runInBackgroundShortcut: string
+      backgroundTaskFailed: string
       nativeCode: {
         applyingPatch: string
         applyPatch: string
@@ -8168,6 +8171,9 @@ export const en: Messages = {
       tapToOpen: 'Tap to open',
     },
     toolBlock: {
+      runInBackground: 'Run in Background',
+      runInBackgroundShortcut: 'Run in Background (Ctrl+B)',
+      backgroundTaskFailed: 'Failed to move task to background',
       nativeCode: {
         applyingPatch: 'Applying patch…',
         applyPatch: 'Apply Patch',

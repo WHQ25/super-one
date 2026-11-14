@@ -262,6 +262,7 @@ function App(): React.JSX.Element {
   // Uses e.code since Option remaps e.key to a symbol on macOS.
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
+      if (e.defaultPrevented) return
       const mod = isMac ? e.metaKey : e.ctrlKey
       if (!mod || e.shiftKey || e.code !== 'KeyB') return
       if (e.altKey) {

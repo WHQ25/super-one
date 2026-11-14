@@ -152,6 +152,12 @@ export class FakeBackend implements SessionBackend {
   async stopTask(taskId: string): Promise<void> {
     this.stopTaskCalls.push(taskId)
   }
+  backgroundTasksCalls: Array<string | undefined> = []
+  backgroundTasksResult = true
+  async backgroundTasks(toolUseId?: string): Promise<boolean> {
+    this.backgroundTasksCalls.push(toolUseId)
+    return this.backgroundTasksResult
+  }
   respondToPermissionCalls: Array<{
     requestId: string
     allow: boolean

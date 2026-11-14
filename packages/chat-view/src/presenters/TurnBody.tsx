@@ -65,6 +65,7 @@ export interface TurnToolPresenterProps {
   resultOutputPath?: string
   /** Bash only: the working-tree diff the command produced, drawn as file rows under it. */
   bashEditDiff?: BashEditDiff
+  runInBackground?: boolean
   autoExpand?: boolean
   /** Precomputed edit metadata; only remote surfaces receive these. */
   toolDiff?: string
@@ -323,6 +324,7 @@ export function TurnBlockPresenter({
           resultTitle={resultTitleMap?.get(block.toolUseId)}
           resourceLinks={resourceLinksMap?.get(block.toolUseId)}
           authRequired={block.authRequired}
+          runInBackground={block.runInBackground}
           autoExpand={runtime.isBackgroundTool(block) ? false : undefined}
           toolDiff={block.toolDiff}
           toolDiffTokens={block.toolDiffTokens}

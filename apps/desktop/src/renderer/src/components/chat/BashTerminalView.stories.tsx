@@ -45,9 +45,21 @@ const LARGE_OUTPUT = Array.from({ length: 80 }, (_, i) =>
 export const Streaming: Story = {
   args: {
     toolName: 'Bash',
+    toolUseId: 'bash-streaming',
     input: JSON.stringify({ command: 'bun run typecheck:web' }),
     status: 'streaming',
     elapsedSeconds: 4,
+  },
+}
+
+export const BackgroundedMidRun: Story = {
+  args: {
+    toolName: 'Bash',
+    toolUseId: 'bash-bg-midrun',
+    input: JSON.stringify({ command: 'sleep 30 && echo done' }),
+    status: 'complete',
+    runInBackground: true,
+    result: 'Command running in background',
   },
 }
 

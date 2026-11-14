@@ -148,7 +148,7 @@ export function collectBackgroundActivities(
         const params = parseToolInput(block.input, block.toolName)
         const result = results.get(block.toolUseId)
         const progress = taskProgress[block.toolUseId]
-        const runInBackground = params.run_in_background === true || params.background === true
+        const runInBackground = params.run_in_background === true || params.background === true || block.runInBackground === true
         const hasTaskState = !!progress
         const isStreamingTool = block.status === 'streaming'
         const hasBackgroundSignal = runInBackground || !!result?.outputPath

@@ -769,7 +769,17 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
     busy: entry.busyCount > 0 || entry.live.isBusy || entry.live.hasActiveBackgroundTasks || entry.live.hasScheduledWakeups,
   }))
 
+  runner.servedOperations = new Set(['session.previewRewind', 'session.rewind', 'session.backgroundTasks'])
+
   runner.callOperation = async (session, method, input) => {
+    if (method === 'session.backgroundTasks') {
+      if (session.harnessId !== 'claude') {
+        throw Object.assign(new Error(`Unsupported session operation: ${method}`), { code: 'unsupported' })
+      }
+      const entry = lives.get(session.sessionId)
+      if (!entry) return false
+      return entry.live.backgroundTasks(typeof input.toolUseId === 'string' ? input.toolUseId : undefined)
+    }
     if (method !== 'session.previewRewind' && method !== 'session.rewind') {
       throw Object.assign(new Error(`Unsupported session operation: ${method}`), { code: 'unsupported' })
     }

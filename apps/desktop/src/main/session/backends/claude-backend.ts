@@ -854,6 +854,11 @@ export class ClaudeBackend implements SessionBackend {
     await this.query.stopTask(taskId)
   }
 
+  async backgroundTasks(toolUseId?: string): Promise<boolean> {
+    if (!this.query) return false
+    return this.query.backgroundTasks(toolUseId)
+  }
+
   async handleCommand(cmd: BackendCommand): Promise<void> {
     if (cmd.kind !== 'claude.steer_queued') return
     if (!this.bridge || !this.query || this.turnResolves.size === 0) {

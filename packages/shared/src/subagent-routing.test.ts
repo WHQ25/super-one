@@ -70,4 +70,12 @@ describe('applySubagentTaskStarted', () => {
     const messages = [{ id: 'm', content: [agent('A')] }]
     expect(applySubagentTaskStarted(messages, 'missing', true)).toBe(messages)
   })
+
+  it('marks a foreground Bash block as runInBackground when backgrounded mid-run', () => {
+    const bash = { type: 'tool_use', toolName: 'Bash', toolUseId: 'B1', input: '{}' } as ContentBlock
+    const messages = [{ id: 'm', content: [bash] }]
+    const marked = applySubagentTaskStarted(messages, 'B1', true)
+    expect(marked[0]!.content[0]).toMatchObject({ runInBackground: true })
+    expect(applySubagentTaskStarted(messages, 'B1', false)).toBe(messages)
+  })
 })

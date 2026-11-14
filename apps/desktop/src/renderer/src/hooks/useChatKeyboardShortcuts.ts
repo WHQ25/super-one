@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useChatStore, useActiveSession, lastTouchedPane, type SessionScope } from '@/stores/chat'
+import { triggerBackgroundTasksShortcut } from '@/components/chat/background-task-action'
 
 /**
  * The pane an event happened in.
@@ -75,6 +76,18 @@ export function useChatKeyboardShortcuts(enabled = true) {
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
+  }, [enabled])
+
+  useEffect(() => {
+    if (!enabled) return
+    const handler = (e: KeyboardEvent): void => {
+      if (!e.ctrlKey || e.metaKey || e.altKey || e.shiftKey || e.code !== 'KeyB') return
+      if (e.target instanceof Element && e.target.closest('.xterm')) return
+      if (!triggerBackgroundTasksShortcut(scopeFromEvent(e))) return
+      e.preventDefault()
+    }
+    window.addEventListener('keydown', handler, { capture: true })
+    return () => window.removeEventListener('keydown', handler, { capture: true })
   }, [enabled])
 
   // Seed the per-project session list so the Ctrl+Tab session switcher has data.

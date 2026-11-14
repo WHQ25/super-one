@@ -61,6 +61,11 @@ export function notifyEnvironmentListChanged(connectionId = ''): void {
  * Cached list while someone is subscribed. Concurrent callers share one IPC.
  * No subscriber means no cache: nothing would hear the status push that drops it.
  */
+export function getCachedEnvironmentItems(): EnvironmentListItem[] | null {
+  syncBinding()
+  return items
+}
+
 export function loadEnvironmentItems(): Promise<EnvironmentListItem[]> {
   syncBinding()
   if (listeners.size > 0 && items) return Promise.resolve(items)

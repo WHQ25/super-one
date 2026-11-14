@@ -818,11 +818,20 @@ export function createProductionTurnRunner(opts: NodeProductionRunnerOptions): T
         },
       })
     }
+    if (method === 'session.backgroundTasks') {
+      if (session.harnessId !== 'claude' || !claude.callOperation) {
+        return Promise.reject(Object.assign(new Error(`Unsupported session operation: ${method}`), { code: 'unsupported' }))
+      }
+      return claude.callOperation(session, method, input, host)
+    }
     if (session.harnessId !== 'opencode' || !acpOpenCode.callOperation)
       return Promise.reject(Object.assign(new Error(`Unsupported session operation: ${method}`), { code: 'unsupported' }))
     return acpOpenCode.callOperation(session, method, input, host)
   }
-  runner.servedOperations = acpOpenCode.servedOperations
+  runner.servedOperations = new Set([
+    ...(acpOpenCode.servedOperations ?? []),
+    ...(claude.servedOperations ?? []),
+  ])
   runner.steer = acpOpenCode.steer
   runner.interruptSession = async sessionId => {
     await Promise.all([codex.interruptSession?.(sessionId), acpOpenCode.interruptSession?.(sessionId)])

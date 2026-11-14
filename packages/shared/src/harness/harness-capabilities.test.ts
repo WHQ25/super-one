@@ -48,6 +48,15 @@ describe('per-task stop', () => {
   })
 })
 
+describe('per-task background', () => {
+  it('enables backgrounding foreground tasks only for Claude', () => {
+    expect(HARNESS_CAPABILITIES.claude.supportsTaskBackground).toBe(true)
+    for (const id of ['codex', 'acp-grok', 'acp-antigravity', 'opencode', 'cursor', 'dsh'] as const) {
+      expect(HARNESS_CAPABILITIES[id].supportsTaskBackground).toBe(false)
+    }
+  })
+})
+
 describe('resolveGoalCapability', () => {
   it('returns the harness entry for non-ACP harnesses', () => {
     expect(resolveGoalCapability('claude')?.canPause).toBe(false)

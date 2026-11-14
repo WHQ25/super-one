@@ -85,7 +85,7 @@ export function applySubagentTaskStarted<M extends { content: ContentBlock[] }>(
   let changed = false
   const next = messages.map((message) => {
     const index = message.content.findIndex(block =>
-      block.type === 'tool_use' && block.toolUseId === toolUseId && isSubagentToolName(block.toolName))
+      block.type === 'tool_use' && block.toolUseId === toolUseId && (isSubagentToolName(block.toolName) || (isBackgrounded === true && block.toolName === 'Bash')))
     const block = message.content[index]
     if (!block || block.type !== 'tool_use') return message
     const background = isBackgrounded === true && !block.runInBackground

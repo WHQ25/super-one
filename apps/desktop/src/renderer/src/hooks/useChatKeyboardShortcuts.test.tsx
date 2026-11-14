@@ -11,9 +11,21 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { render, cleanup, fireEvent } from '@testing-library/react'
 
 const togglePlanModeShortcut = vi.fn()
+const callSession = vi.fn(async () => true)
+const appState = { view: 'main' as string }
 
 /** Sessions the fake store knows about; a test can delete one to simulate a close. */
 const liveSessions: Record<string, Record<string, unknown>> = {}
+
+vi.mock('@/lib/session-client', () => ({
+  callSession,
+}))
+
+vi.mock('@/stores/app', () => ({
+  useAppStore: Object.assign((selector: (s: typeof appState) => unknown) => selector(appState), {
+    getState: () => appState,
+  }),
+}))
 
 vi.mock('@/stores/chat', async () => {
   const scope = await import('@/stores/chat-store/session-scope')
@@ -22,8 +34,9 @@ vi.mock('@/stores/chat', async () => {
     toggleTodos: vi.fn(),
     resetSession: vi.fn(),
     fetchSessions: vi.fn(),
-    activeProject: null,
-    projectSessions: { '/repo': { _sessions: liveSessions } },
+    activeProject: '/repo',
+    projectSessions: { '/repo': { _activeSessionId: 'main-sid', _sessions: liveSessions } },
+    _bashOutputs: {},
   }
   const useChatStore = (selector: (s: typeof state) => unknown) => selector(state)
   useChatStore.getState = () => state
@@ -62,6 +75,7 @@ function Harness({ children }: { children?: React.ReactNode }) {
 beforeEach(() => {
   vi.clearAllMocks()
   _resetLastTouchedPane()
+  appState.view = 'main'
   for (const key of Object.keys(liveSessions)) delete liveSessions[key]
   liveSessions[SCOPE.sessionId] = {}
 })
@@ -130,5 +144,74 @@ describe('Shift+Tab pane targeting', () => {
     fireEvent.keyDown(getByTestId('in-portal'), { key: 'Tab', shiftKey: true })
 
     expect(togglePlanModeShortcut).toHaveBeenCalledWith(undefined)
+  })
+})
+
+describe('Ctrl+B background tasks shortcut', () => {
+  it('backgrounds foreground tasks in the targeted Claude session and prevents default', () => {
+    liveSessions[SCOPE.sessionId] = {
+      sessionProvider: 'claude',
+      preferredProvider: 'claude',
+      status: 'streaming',
+      messages: [{
+        id: 'm1',
+        role: 'assistant',
+        status: 'streaming',
+        createdAt: '',
+        content: [{ type: 'tool_use', toolName: 'Bash', toolUseId: 'tu-1', input: '{"command":"sleep 10"}', status: 'streaming' }],
+      }],
+    }
+    const { getByTestId } = render(<Harness />)
+    const prevented = !fireEvent.keyDown(getByTestId('in-pane'), { key: 'b', code: 'KeyB', ctrlKey: true })
+
+    expect(prevented).toBe(true)
+    expect(callSession).toHaveBeenCalledWith('/repo', SCOPE.sessionId, 'session.backgroundTasks', {})
+  })
+
+  it('ignores non-Claude sessions and does not call preventDefault', () => {
+    liveSessions[SCOPE.sessionId] = {
+      sessionProvider: 'codex',
+      preferredProvider: 'codex',
+      status: 'streaming',
+      messages: [{
+        id: 'm1',
+        role: 'assistant',
+        status: 'streaming',
+        createdAt: '',
+        content: [{ type: 'tool_use', toolName: 'Bash', toolUseId: 'tu-1', input: '{"command":"sleep 10"}', status: 'streaming' }],
+      }],
+    }
+    const { getByTestId } = render(<Harness />)
+    const prevented = !fireEvent.keyDown(getByTestId('in-pane'), { key: 'b', code: 'KeyB', ctrlKey: true })
+
+    expect(prevented).toBe(false)
+    expect(callSession).not.toHaveBeenCalled()
+  })
+
+  it('ignores xterm focus and idle sessions with no foreground task', () => {
+    liveSessions[SCOPE.sessionId] = {
+      sessionProvider: 'claude',
+      preferredProvider: 'claude',
+      status: 'streaming',
+      messages: [{
+        id: 'm1',
+        role: 'assistant',
+        status: 'streaming',
+        createdAt: '',
+        content: [{ type: 'tool_use', toolName: 'Bash', toolUseId: 'tu-1', input: '{"command":"sleep 10"}', status: 'streaming' }],
+      }],
+    }
+    const { getByTestId } = render(
+      <Harness>
+        <div className="xterm"><textarea data-testid="xterm-input" /></div>
+      </Harness>,
+    )
+    fireEvent.keyDown(getByTestId('xterm-input'), { key: 'b', code: 'KeyB', ctrlKey: true })
+    expect(callSession).not.toHaveBeenCalled()
+
+    liveSessions[SCOPE.sessionId] = { sessionProvider: 'claude', preferredProvider: 'claude', status: 'idle', messages: [] }
+    const preventedWhenIdle = !fireEvent.keyDown(getByTestId('in-pane'), { key: 'b', code: 'KeyB', ctrlKey: true })
+    expect(preventedWhenIdle).toBe(false)
+    expect(callSession).not.toHaveBeenCalled()
   })
 })

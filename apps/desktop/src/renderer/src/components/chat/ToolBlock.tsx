@@ -20,6 +20,7 @@ import { useStallLevel } from '@/lib/stall-utils'
 import { resolveMiniAppToolIdentity } from '@/lib/miniapp-tool-identity'
 import { useAppStore } from '@/stores/app'
 import { useChatStore, useActiveSession, useBashOutput } from '@/stores/chat'
+import { BackgroundTaskActionButton } from './background-task-action'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
 import { CanvasEditDiff } from './CanvasEditDiff'
@@ -443,14 +444,19 @@ function renderBashEditTool(row: BashEditToolUse): ReactNode {
 
 function BashTerminalView(props: BashToolPresenterProps) {
   const bashOutput = useBashOutput(props.toolUseId)
-  const taskProgress = useActiveSession((state) => state.taskProgress[props.toolUseId])
+  const taskProgress = useActiveSession((state) => state.taskProgress?.[props.toolUseId])
   const isPendingPermission = useActiveSession((state) => (
-    state.pendingPermissions.some((permission) => permission.toolUseId === props.toolUseId)
+    state.pendingPermissions?.some((permission) => permission.toolUseId === props.toolUseId) ?? false
   ))
+  const isForegroundRunning = !props.runInBackground
+    && !props.backgroundActivity
+    && !isPendingPermission
+    && ((props.isStreaming && !props.fallbackResult && !props.isDenied) || (!!bashOutput && !bashOutput.finished))
 
   return (
     <BashTerminalPresenter
       {...props}
+      trailingAction={props.trailingAction ?? (isForegroundRunning ? <BackgroundTaskActionButton toolUseId={props.toolUseId} /> : undefined)}
       bashOutput={bashOutput}
       taskProgress={taskProgress}
       isPendingPermission={isPendingPermission}

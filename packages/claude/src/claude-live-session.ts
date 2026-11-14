@@ -549,6 +549,12 @@ export class ClaudeLiveSession {
     await this.query?.applyFlagSettings({ fastMode: enabled })
   }
 
+  async backgroundTasks(toolUseId?: string): Promise<boolean> {
+    const query = this.query
+    if (!query) return false
+    return query.backgroundTasks(toolUseId)
+  }
+
   /**
    * Switches Ultracode in place. `ultracode` alone, never with `effortLevel`:
    * an effort change sent without the ultracode key turns Ultracode off.

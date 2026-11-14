@@ -394,6 +394,7 @@ export interface SessionBackend {
   setCodexGoal?(threadId: string | null, objective: string, status?: CodexGoalStatus): Promise<CodexGoal | null>
   clearCodexGoal?(threadId: string | null): Promise<boolean>
   stopTask?(taskId: string): Promise<void>
+  backgroundTasks?(toolUseId?: string): Promise<boolean>
   /**
    * Stop every background task the session started, keeping the session. Used
    * when a session is archived: it leaves the list but not the process, so its
@@ -594,6 +595,7 @@ export interface Session {
   getCodexGoal(threadId: string | null): Promise<CodexGoal | null>
   setCodexGoal(threadId: string | null, objective: string, status?: CodexGoalStatus): Promise<CodexGoal | null>
   clearCodexGoal(threadId: string | null): Promise<boolean>
+  backgroundTasks?(toolUseId?: string): Promise<boolean>
   dispatchBackendCommand(cmd: BackendCommand): Promise<void>
   /** Stop the backend's background tasks, if it runs any (see `SessionBackend.stopBackgroundTasks`). */
   stopBackgroundTasks(): Promise<void>

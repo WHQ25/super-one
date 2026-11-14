@@ -3,6 +3,7 @@ import react from '@vitejs/plugin-react'
 import tailwindcss from '@tailwindcss/vite'
 import { resolve } from 'path'
 import { readFileSync } from 'fs'
+import { injectMainEsmShim } from './src/main/main-esm-shim'
 import { patchDocxViewerSource, patchXlsxViewerSource } from './src/main/office-viewer-transform'
 
 const pkg = JSON.parse(readFileSync(resolve('package.json'), 'utf-8'))
@@ -31,6 +32,20 @@ export default defineConfig(({ mode }) => {
       __POSTHOG_PROJECT_TOKEN__: JSON.stringify(env.POSTHOG_PROJECT_TOKEN ?? ''),
       __POSTHOG_HOST__: JSON.stringify(env.POSTHOG_HOST ?? ''),
     },
+    plugins: [
+      {
+        name: 'superone-main-esm-shim',
+        enforce: 'post' as const,
+        generateBundle: {
+          order: 'post',
+          handler(_options, bundle) {
+            for (const file of Object.values(bundle)) {
+              if (file.type === 'chunk') file.code = injectMainEsmShim(file.code)
+            }
+          },
+        },
+      },
+    ],
     build: {
       externalizeDeps: false,
       rollupOptions: {

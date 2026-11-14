@@ -30,6 +30,34 @@ const ctx = {
 }
 
 describe('mapNodeSessionEvents (text-only)', () => {
+  it('stamps a voice delegation onto the user row and the assistant that follows it', () => {
+    const events = mapNodeSessionEvents([
+      envelope({ sequence: '1', eventType: 'session.user_message', payload: { blockId: 'u1', text: 'do it', source: 'doubao-voice', codexTimeline: { provenance: 'realtime-delegated', turnId: 'u1' } } }),
+      envelope({ sequence: '2', eventType: 'session.agent_event', payload: { event: { type: 'message_start', message: { id: 'a1', role: 'assistant', status: 'streaming', content: [], createdAt: 't', providerId: 'codex' } } } }),
+      envelope({ sequence: '3', eventType: 'session.user_message', payload: { blockId: 'parked', text: 'later', queued: true } }),
+      envelope({ sequence: '4', eventType: 'session.user_message', payload: { blockId: 'u2', text: 'typed' } }),
+      envelope({ sequence: '5', eventType: 'session.turn_started', payload: { status: 'streaming' } }),
+      envelope({ sequence: '6', eventType: 'session.assistant_delta', payload: { blockId: 'a2', delta: 'ok' } }),
+    ], ctx)
+    const user = events.find(event => event.type === 'user_message_appended' && event.message.id === 'u1')
+    expect(user).toMatchObject({ message: { metadata: { source: 'doubao-voice', codexTimeline: { provenance: 'realtime-delegated', turnId: 'u1' } } } })
+    const first = events.find(event => event.type === 'message_start' && event.message.id === 'a1')
+    expect(first).toMatchObject({ message: { metadata: { codexTimeline: { provenance: 'realtime-delegated', turnId: 'u1' } } } })
+    expect(events.some(event => event.type === 'user_message_appended' && event.message.id === 'parked')).toBe(false)
+    const second = events.find(event => event.type === 'message_start' && event.message.id === 'a2')
+    expect(second?.type === 'message_start' ? second.message.metadata?.codexTimeline : undefined).toBeUndefined()
+  })
+
+  it('remembers a parked voice row so the steered assistant still inherits it', () => {
+    const events = mapNodeSessionEvents([
+      envelope({ sequence: '1', eventType: 'session.user_message', payload: { blockId: 'u1', text: 'do it', queued: true, source: 'gemini-voice' } }),
+      envelope({ sequence: '2', eventType: 'session.assistant_delta', payload: { blockId: 'a1', delta: 'working' } }),
+    ], ctx)
+    expect(events.find(event => event.type === 'message_start')).toMatchObject({
+      message: { id: 'a1', metadata: { codexTimeline: { provenance: 'realtime-delegated', turnId: 'u1' } } },
+    })
+  })
+
   it('preserves the explanation and blocked path in live and replayed native approvals', async () => {
     const payload = { interactionId: 'explain', kind: 'permission', toolName: 'FileChange', input: {}, createdAt: 1, decisionReason: 'Grant the requested write scope', blockedPath: '/work/reference' }
     expect(mapNodeSessionEvents([envelope({ eventType: 'session.permission_requested', payload })], ctx))

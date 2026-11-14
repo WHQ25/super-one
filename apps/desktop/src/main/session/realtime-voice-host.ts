@@ -17,7 +17,7 @@ export function voiceCapability(session: { snapshot: Pick<Session['snapshot'], '
  */
 export class RealtimeVoiceHost {
   private readonly admission = new VoiceAdmissionHost()
-  private bound: { session: Session; endpoint: VoiceEndpoint; attemptId: string } | null = null
+  private bound: { session: Session | null; endpoint: VoiceEndpoint; attemptId: string } | null = null
   private disconnectTimer?: ReturnType<typeof setTimeout>
 
   get epoch(): string { return this.admission.epoch }
@@ -102,34 +102,66 @@ export class RealtimeVoiceHost {
     })
   }
 
+  /**
+   * The same slot as {@link startShell} for a session that lives on another machine.
+   * There is no local Session to retain, and a phone disconnect does not apply.
+   */
+  startDetached(seat: VoiceSeat, endpoint: VoiceEndpoint, attemptId: string, link: VoiceLink): VoiceStatus {
+    return this.admission.startShell(seat, attemptId, () => {
+      this.bound = { session: null, endpoint, attemptId }
+      const windowCleanup = endpoint.onDisconnect?.(() => { void this.stopSeat(seat, attemptId) })
+      return {
+        start: () => link.start({ sdp: 'v=0\r\n' }),
+        stop: () => link.stop(),
+        release: () => {
+          this.clearDisconnect()
+          this.bound = null
+          windowCleanup?.()
+          link.release?.()
+        },
+      }
+    })
+  }
+
   ready(session: Session, endpoint: VoiceEndpoint, identity: VoiceIdentity): VoiceStatus {
     return this.admission.ready(this.seat(session, endpoint), identity)
+  }
+
+  readySeat(seat: VoiceSeat, identity: VoiceIdentity): VoiceStatus {
+    return this.admission.ready(seat, identity)
   }
 
   stop(session: Session, endpoint: VoiceEndpoint, attemptId: string): Promise<VoiceStatus> {
     return this.admission.stop(this.seat(session, endpoint), attemptId)
   }
 
+  stopSeat(seat: VoiceSeat, attemptId: string): Promise<VoiceStatus> {
+    return this.admission.stop(seat, attemptId)
+  }
+
   disconnected(deviceId: string): void {
     const bound = this.bound
-    if (!bound || bound.endpoint.deviceId !== deviceId || this.disconnectTimer || !this.admission.current()) return
+    if (!bound?.session || bound.endpoint.deviceId !== deviceId || this.disconnectTimer || !this.admission.current()) return
+    const session = bound.session
     this.disconnectTimer = setTimeout(() => {
       const active = this.bound
       const current = this.admission.current()
-      if (!active || !current) return
-      void runHostReaction(() => this.stop(active.session, active.endpoint, current.attemptId))
-      runHostReaction(() => active.session.lease.releaseDelegate(`phone:${deviceId}`))
+      if (!active?.session || !current) return
+      void runHostReaction(() => this.stop(session, active.endpoint, current.attemptId))
+      runHostReaction(() => session.lease.releaseDelegate(`phone:${deviceId}`))
     }, VOICE_DISCONNECT_GRACE_MS)
   }
 
   kicked(deviceId: string): void {
     const bound = this.bound
-    if (!bound || bound.endpoint.deviceId !== deviceId) return
-    void runHostReaction(() => this.stop(bound.session, bound.endpoint, bound.attemptId))
-    runHostReaction(() => bound.session.lease.releaseDelegate(`phone:${deviceId}`))
+    if (!bound?.session || bound.endpoint.deviceId !== deviceId) return
+    const session = bound.session
+    void runHostReaction(() => this.stop(session, bound.endpoint, bound.attemptId))
+    runHostReaction(() => session.lease.releaseDelegate(`phone:${deviceId}`))
   }
 
   reconnect(session: Session, endpoint: VoiceEndpoint): void {
+    if (!this.bound?.session) return
     if (!this.admission.retarget(endpoint.id, session.id, (signal) => endpoint.send(signal))) return
     this.clearDisconnect()
     if (this.bound) this.bound = { ...this.bound, session, endpoint }

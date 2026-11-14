@@ -5,6 +5,7 @@ import { isAllowedSessionCwd } from './session-cwd'
 import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
 import { arch, cpus, freemem, homedir, hostname, platform, totalmem, uptime } from 'node:os'
 import { parseMessageDisplay } from '@superone/shared/message-display'
+import { forwardedVoiceDelegation } from '@superone/shared/voice-delegation'
 import { MOD_UI_MUTATING_OPS, MOD_UI_UNAVAILABLE, type ModUiOp, type ModUiRequest } from '@superone/shared/mod-ui'
 import {
   DATABASE_SCHEMA_GENERATION,
@@ -2354,7 +2355,7 @@ async function handleSessionSend(payload: unknown, ctx: RpcContext): Promise<Rpc
       ...parseMessageDisplay(options),
       ...selections,
       echoUserMessage: options.echoUserMessage === true,
-      ...(options.source === 'task-notification' ? { source: 'task-notification' as const } : {}),
+      ...forwardedVoiceDelegation({ source: options.source, codexTimeline: options.codexTimeline }),
       client: { clientSessionId: ctx.client.clientSessionId },
       leaseId: String(p.leaseId ?? ''),
       generation: String(p.generation ?? ''),

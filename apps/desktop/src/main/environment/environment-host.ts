@@ -12,6 +12,7 @@ import { SESSION_LIST_OPERATION_METHODS, type SessionListOperationMethod, type S
 import { COMPOSER_CALL_METHODS, type ComposerCallMethod, type ComposerCallMethods } from '@superone/shared/environment/composer-requests'
 import { MOD_UI_MUTATING_OPS, MOD_UI_UNAVAILABLE, type ModUiOp, type ModUiRequest } from '@superone/shared/mod-ui'
 import { parseMessageDisplay } from '@superone/shared/message-display'
+import { forwardedVoiceDelegation } from '@superone/shared/voice-delegation'
 import { assertDevChannelTarget, remoteDataChannel, remoteSuperoneHome, remoteNodePort } from './remote-data-path'
 import { packDevCli, type DevCliPackage } from './dev-cli-package'
 import {
@@ -920,6 +921,11 @@ export class EnvironmentHost {
     for (const key of [...this.sessionLeases.keys()]) {
       if (key === prefix || key.startsWith(`${prefix}:`)) this.sessionLeases.delete(key)
     }
+  }
+
+  /** Take the control lease before a voice call, so a lost lease fails before the socket opens. */
+  async holdSession(connectionId: string, sessionId: string): Promise<void> {
+    await this.ensureSessionLease(connectionId, sessionId)
   }
 
   private async ensureSessionLease(
@@ -2138,7 +2144,9 @@ export class EnvironmentHost {
     if (images.length > 0) options.images = images
     Object.assign(options, parseMessageDisplay(input))
     if (input.echoUserMessage) options.echoUserMessage = true
-    if (input.source === 'task-notification') options.source = input.source
+    const voice = forwardedVoiceDelegation(input)
+    if (voice.source) options.source = voice.source
+    if (voice.codexTimeline) options.codexTimeline = voice.codexTimeline
     if (input.turnKind === 'run' || input.turnKind === 'steer' || input.turnKind === 'review' || input.turnKind === 'compact') {
       options.turnKind = input.turnKind
     }

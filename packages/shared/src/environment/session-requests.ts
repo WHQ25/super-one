@@ -1,6 +1,6 @@
 import type { SessionOperationMethods } from './session-operations'
 import { SESSION_OPERATION_METHODS, SESSION_OPERATION_READS } from './session-operations'
-import type { CodexGoal, CodexGoalStatus, ComposerOpenResult } from '../agent-types'
+import type { CodexGoal, CodexGoalStatus, CodexTimelineMetadata, ComposerOpenResult } from '../agent-types'
 import type { MessageDisplayFields } from '../message-display'
 import type { PatchSessionSettingsInput } from './gateway'
 import type { SessionCreateSelections } from './session-create'
@@ -17,8 +17,13 @@ export interface SessionSendRequest extends MessageDisplayFields, SessionSendSel
   text: string
   /** This caller does not optimistically append a user bubble. */
   echoUserMessage?: boolean
-  /** A controller host wake: run its model-facing prompt without a user bubble. */
-  source?: 'task-notification'
+  /**
+   * A controller host wake runs its prompt without a user bubble.
+   * A desktop voice delegation keeps the speech socket here and sends the task to this session.
+   */
+  source?: 'task-notification' | 'doubao-voice' | 'gemini-voice'
+  /** Voice delegation stamp. Only `realtime-delegated` is forwarded to the owning host. */
+  codexTimeline?: CodexTimelineMetadata
   clientMessageId?: string
   /** Desktop project key for AgentEvent routing (`remote:<id>:<path>` for a node). */
   projectPath?: string

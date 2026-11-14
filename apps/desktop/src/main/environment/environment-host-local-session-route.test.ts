@@ -48,6 +48,27 @@ describe('local sessions on the environment route', () => {
     expect(own.sent).toHaveLength(1)
   })
 
+  it('forwards a desktop voice delegation without a steer flag', async () => {
+    const { host, own } = localRoute()
+    await runWindowControl(7, () => host.sendSessionMessage('local', {
+      sessionId: 'own',
+      text: 'voice task',
+      source: 'doubao-voice',
+      clientMessageId: 'voice-1',
+      priority: 'next',
+      codexTimeline: { provenance: 'realtime-delegated', turnId: 'voice-1', localOrder: 9 },
+    }))
+    expect(own.sent).toHaveLength(1)
+    expect(own.sent[0]).toMatchObject({
+      content: 'voice task',
+      source: 'doubao-voice',
+      clientMessageId: 'voice-1',
+      priority: 'next',
+      codexTimeline: { provenance: 'realtime-delegated', turnId: 'voice-1' },
+    })
+    expect(own.sent[0]).not.toHaveProperty('steer')
+  })
+
   it('reads, opens and sends without a mapped follower', async () => {
     const { host, own, forwarded, projectDir } = localRoute()
     expect(await host.getSession('local', 'own')).toMatchObject({ sessionId: 'own', title: 'Mine' })

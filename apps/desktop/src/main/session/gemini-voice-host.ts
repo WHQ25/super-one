@@ -34,11 +34,11 @@ import {
 import type { VoiceIdentity, VoiceStatus } from '@superone/shared/realtime-voice'
 import type { VoiceLink } from '@superone/shared/realtime-voice-admission'
 import log from '../logger'
-import { enqueueSessionQueueOp, queuedSteerCommand } from './session-queue'
 import { getGeminiSpeechKey, getGeminiVoice } from '../gemini/gemini-speech-settings'
 import { connectGeminiSocket, type GeminiSocket } from '../gemini/gemini-socket'
-import { windowVoiceEndpoint } from '../agent/realtime-voice-control'
+import { voiceSeatFor, windowVoiceEndpoint } from '../agent/realtime-voice-control'
 import type { RealtimeVoiceHost, VoiceEndpoint } from './realtime-voice-host'
+import { LocalVoiceConversation, RemoteVoiceConversation, type VoiceConversation } from './voice-conversation'
 import type { Session } from './types'
 
 const MAX_AUDIO_CHUNK = 64 * 1024
@@ -51,10 +51,12 @@ interface PendingTool {
 }
 
 interface ActiveCall {
-  session: Session
+  conversation: VoiceConversation
   sender: WebContents
   attemptId: string
   endpoint: VoiceEndpoint
+  readyVoice(identity: VoiceIdentity): void
+  stopVoice(): Promise<VoiceStatus>
   identity: VoiceIdentity | null
   socket: GeminiSocket | null
   /** `gemini-3.5-transcribe-live`. Captions only. A failure here leaves the call up. */
@@ -107,14 +109,75 @@ export class GeminiVoiceHost {
     const apiKey = getGeminiSpeechKey()
     if (!apiKey) throw Object.assign(new Error('Add a Gemini speech API key in Settings.'), { code: 'failed_precondition' })
     const endpoint = windowVoiceEndpoint(sender, session)
-    const call = this.blank(session, sender, attemptId, endpoint)
+    const conversation = new LocalVoiceConversation(session, 'gemini-voice')
+    const call = this.blank(conversation, sender, attemptId, endpoint, {
+      readyVoice: identity => { this.voices.ready(session, endpoint, identity) },
+      stopVoice: () => this.voices.stop(session, endpoint, attemptId),
+    })
+    return this.admit(call, link => this.voices.startShell(session, endpoint, attemptId, link))
+  }
+
+  /** Speech stays on this desktop. The spoken task is sent to the remote session. */
+  async startRemote(input: {
+    connectionId: string
+    projectPath: string
+    sessionId: string
+    sender: WebContents
+    attemptId: string
+  }): Promise<VoiceStatus> {
+    const apiKey = getGeminiSpeechKey()
+    if (!apiKey) throw Object.assign(new Error('Add a Gemini speech API key in Settings.'), { code: 'failed_precondition' })
+    const target = { id: input.sessionId, projectPath: input.projectPath }
+    const endpoint = windowVoiceEndpoint(input.sender, target)
+    const seat = voiceSeatFor(endpoint, target)
+    const conversation = new RemoteVoiceConversation({
+      connectionId: input.connectionId,
+      projectPath: input.projectPath,
+      sessionId: input.sessionId,
+      source: 'gemini-voice',
+    }, event => {
+      if (!input.sender.isDestroyed()) input.sender.send(AgentIpcChannels.EVENT, event)
+    })
+    await conversation.open()
+    if (input.sender.isDestroyed()) {
+      conversation.close()
+      throw Object.assign(new Error('Window closed before voice started.'), { code: 'cancelled' })
+    }
+    if (conversation.lostControl) {
+      conversation.close()
+      throw Object.assign(new Error('This session is controlled somewhere else.'), { code: 'failed_precondition' })
+    }
+    const call = this.blank(conversation, input.sender, input.attemptId, endpoint, {
+      readyVoice: identity => { this.voices.readySeat(seat, identity) },
+      stopVoice: () => this.voices.stopSeat(seat, input.attemptId),
+    })
+    conversation.onControlLost = () => { void call.stopVoice() }
+    try {
+      return this.admit(call, link => this.voices.startDetached(seat, endpoint, input.attemptId, link))
+    } catch (error) {
+      conversation.close()
+      throw error
+    }
+  }
+
+  private admit(call: ActiveCall, start: (link: VoiceLink) => VoiceStatus): VoiceStatus {
+    let started = false
     const link: VoiceLink = {
-      start: async () => { await this.open(call) },
+      start: async () => {
+        started = true
+        await this.open(call)
+      },
       stop: async () => { await this.stopCall(call) },
     }
+    const previous = this.active
     this.active = call
     try {
-      const status = this.voices.startShell(session, endpoint, attemptId, link)
+      const status = start(link)
+      if (!started) {
+        if (this.active === call) this.active = previous
+        call.conversation.close()
+        return status
+      }
       const admitted = status.call
       if (admitted) {
         call.identity = {
@@ -126,14 +189,14 @@ export class GeminiVoiceHost {
       }
       return status
     } catch (error) {
-      if (this.active === call) this.active = null
+      if (this.active === call) this.active = previous
       throw error
     }
   }
 
   pushAudio(senderId: number, sessionId: string, pcm: Uint8Array): void {
     const call = this.active
-    if (!call || call.sender.id !== senderId || call.session.id !== sessionId || call.stopping) return
+    if (!call || call.sender.id !== senderId || call.conversation.id !== sessionId || call.stopping) return
     if (pcm.byteLength === 0 || pcm.byteLength > MAX_AUDIO_CHUNK) return
     const copy = pcm.slice()
     if (!call.ready || !call.socket) {
@@ -144,9 +207,17 @@ export class GeminiVoiceHost {
     this.sendAudio(call, copy)
   }
 
-  private blank(session: Session, sender: WebContents, attemptId: string, endpoint: VoiceEndpoint): ActiveCall {
+  private blank(
+    conversation: VoiceConversation,
+    sender: WebContents,
+    attemptId: string,
+    endpoint: VoiceEndpoint,
+    voice: Pick<ActiveCall, 'readyVoice' | 'stopVoice'>,
+  ): ActiveCall {
     return {
-      session,
+      conversation,
+      readyVoice: voice.readyVoice,
+      stopVoice: voice.stopVoice,
       sender,
       attemptId,
       endpoint,
@@ -186,9 +257,7 @@ export class GeminiVoiceHost {
 
   private watchSession(call: ActiveCall): void {
     if (call.unsubscribe) return
-    call.unsubscribe = call.session.on((event, replay) => {
-      if (!replay) this.observeSession(call, event)
-    })
+    call.unsubscribe = call.conversation.subscribe(event => this.observeSession(call, event))
   }
 
   private async connectSocket(call: ActiveCall): Promise<void> {
@@ -247,6 +316,7 @@ export class GeminiVoiceHost {
     call.captionReady = false
     call.unsubscribe?.()
     call.unsubscribe = null
+    call.conversation.close()
     if (this.active === call) this.active = null
   }
 
@@ -384,7 +454,7 @@ export class GeminiVoiceHost {
   ): void {
     call.voiceLog = handoff.log
     call.pendingTools.push(tool)
-    call.replyAfter = call.session.snapshot.messages.length
+    call.replyAfter = call.conversation.messages().length
     call.spokenBlocks = new Set()
     call.pendingSpeech = []
     call.settledAssistants = new Set()
@@ -399,7 +469,7 @@ export class GeminiVoiceHost {
     this.collectSpeech(call, settle)
     if (!settle) return
     const outcome = delegationIdleOutcome(
-      call.session.snapshot.messages,
+      call.conversation.messages(),
       call.replyAfter,
       call.pendingDelegates,
       call.settledAssistants,
@@ -411,20 +481,7 @@ export class GeminiVoiceHost {
   }
 
   private collectSpeech(call: ActiveCall, settleAll: boolean): void {
-    const blocks = closedSpeakableBlocks(
-      call.session.snapshot.messages.map(message => ({
-        id: message.id,
-        role: message.role,
-        status: message.status,
-        content: message.content.map(block => (
-          block.type === 'text'
-            ? { type: block.type, id: block.id, text: block.text }
-            : { type: block.type }
-        )),
-      })),
-      call.replyAfter,
-      settleAll,
-    )
+    const blocks = closedSpeakableBlocks(call.conversation.messages(), call.replyAfter, settleAll)
     for (const block of blocks) {
       if (call.spokenBlocks.has(block.key) || !block.spoken) continue
       call.spokenBlocks.add(block.key)
@@ -449,27 +506,9 @@ export class GeminiVoiceHost {
     const utterance = transcript.filter(line => line.role === 'user').map(line => line.text).join('\n')
     const clientMessageId = crypto.randomUUID()
     try {
-      await enqueueSessionQueueOp(call.session.id, async () => {
-        const streaming = call.session.isStreaming()
-        await call.session.send({
-          content: voiceDelegationContent(utterance, transcript, kind),
-          source: 'gemini-voice',
-          clientMessageId,
-          priority: 'next',
-          codexTimeline: { provenance: 'realtime-delegated', turnId: clientMessageId },
-        })
-        if (!streaming) return
-        const steer = queuedSteerCommand(call.session.snapshot.harnessId, clientMessageId)
-        if (!steer) return
-        try {
-          await call.session.dispatchBackendCommand(steer)
-        } catch (error) {
-          log.warn(
-            '[gemini-voice] steer failed sid=%s: %s',
-            call.session.id,
-            redactGeminiText(error instanceof Error ? error.message : String(error)),
-          )
-        }
+      await call.conversation.send({
+        content: voiceDelegationContent(utterance, transcript, kind),
+        clientMessageId,
       })
     } catch (error) {
       this.fail(call, error instanceof Error ? error.message : 'Gemini voice delegation failed.')
@@ -580,7 +619,7 @@ export class GeminiVoiceHost {
   }
 
   private openTranscript(call: ActiveCall, itemId: string, role: 'user' | 'assistant', text: string): void {
-    call.session.emitHostEvent({
+    call.conversation.publish({
       type: 'realtime_transcript_item',
       phase: 'started',
       itemId,
@@ -592,7 +631,7 @@ export class GeminiVoiceHost {
   }
 
   private transcript(call: ActiveCall, itemId: string, text: string, replace = false): void {
-    call.session.emitHostEvent({
+    call.conversation.publish({
       type: 'realtime_transcript_item',
       phase: 'delta',
       itemId,
@@ -602,7 +641,7 @@ export class GeminiVoiceHost {
   }
 
   private completeTranscript(call: ActiveCall, itemId: string, role: 'user' | 'assistant', text: string): void {
-    call.session.emitHostEvent({
+    call.conversation.publish({
       type: 'realtime_transcript_item',
       phase: 'completed',
       itemId,
@@ -615,7 +654,7 @@ export class GeminiVoiceHost {
   private ready(call: ActiveCall): void {
     this.event(call, { type: 'realtime_started', realtimeSessionId: 'gemini', version: 'gemini' })
     if (!call.identity) return
-    try { this.voices.ready(call.session, call.endpoint, call.identity) }
+    try { call.readyVoice(call.identity) }
     catch (error) {
       log.info('[gemini-voice] ready failed: %s', redactGeminiText(error instanceof Error ? error.message : String(error)))
     }
@@ -651,6 +690,6 @@ export class GeminiVoiceHost {
 
   private event(call: ActiveCall, event: AgentEvent): void {
     if (call.sender.isDestroyed()) return
-    call.sender.send(AgentIpcChannels.EVENT, { ...event, sessionId: call.session.id, projectPath: call.session.projectPath })
+    call.sender.send(AgentIpcChannels.EVENT, { ...event, sessionId: call.conversation.id, projectPath: call.conversation.projectPath })
   }
 }

@@ -44,7 +44,7 @@ import { admitDesktopSessionSend, applyDesktopSessionSettings, desktopSendReques
 import { createDesktopSession } from './desktop-session-create'
 import { currentControlScope, isControllerClient, runFencedSessionControl, runHostReaction } from '../session/control-context'
 import { holderClientOf } from '../session/session-lease'
-import { enqueueSessionQueueOp } from '../session/session-queue'
+import { enqueueSessionQueueOp, queuedSteerCommand } from '../session/session-queue'
 import { worktreeExists } from '../git/worktree-alive'
 import { createDesktopMcpAppsPort } from './desktop-mcp-apps-port'
 
@@ -400,6 +400,17 @@ export class DesktopSessionHost extends DesktopSessionReads<DesktopSessionRow> i
       case 'session.stopTask': await session.dispatchBackendCommand({ kind: 'claude.stop_task', taskId: input.taskId as string }); return true
       case 'session.backgroundTasks': return (await session.backgroundTasks?.(typeof input.toolUseId === 'string' ? input.toolUseId : undefined)) ?? false
       case 'session.startQueued': return enqueueSessionQueueOp(sessionId, () => { session.lease.assertMutation(); return session.startQueuedMessages() })
+      case 'session.steer': {
+        const clientMessageId = input.clientMessageId
+        if (typeof clientMessageId !== 'string' || !clientMessageId) throw Object.assign(new Error('clientMessageId is required'), { code: 'invalid_argument' })
+        const command = queuedSteerCommand(session.snapshot.harnessId, clientMessageId)
+        if (!command) throw Object.assign(new Error('Queued steer is not supported on this harness'), { code: 'unsupported' })
+        await enqueueSessionQueueOp(sessionId, async () => {
+          session.lease.assertMutation()
+          await session.dispatchBackendCommand(command)
+        })
+        return { ok: true }
+      }
       case 'session.reset': {
         const nextId = input.newSessionId as string | undefined
         if (nextId && this.deps.sessions.getSession(nextId)) throw Object.assign(new Error('Session id already active'), { code: 'conflict' })

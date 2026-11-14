@@ -10,11 +10,13 @@
  * and non-text payloads never throw.
  */
 import { collaborationTaskMetadata, parseMessageDisplay } from './message-display'
+import { voiceDelegationTurnId, voiceUserMetadata } from './voice-delegation'
 import type {
   AgentEvent,
   AgentStatus,
   AskUserQuestionRequest,
   ChatMessage,
+  CodexTimelineMetadata,
   PermissionRequest,
   PlanApprovalRequest,
   UserQuestion,
@@ -191,13 +193,31 @@ export function nodeUserMessage(ctx: NodeSessionEventMapContext, blockId: string
     ],
     ...(display.contexts ? { contexts: display.contexts } : {}),
     ...(attachments?.length ? { attachments } : {}),
-    ...(display.collaboration ? { metadata: collaborationTaskMetadata(display.collaboration) } : {}),
+    ...(voiceUserFields(payload, blockId) || display.collaboration
+      ? { metadata: {
+          ...(display.collaboration ? collaborationTaskMetadata(display.collaboration) : {}),
+          ...voiceUserFields(payload, blockId),
+        } }
+      : {}),
     createdAt: nowIso,
     providerId: ctx.providerId ?? 'codex',
   }
 }
 
-function assistantMessage(ctx: NodeSessionEventMapContext, blockId: string, nowIso: string): ChatMessage {
+function voiceUserFields(payload: Record<string, unknown>, blockId: string): { source?: 'doubao-voice' | 'gemini-voice'; codexTimeline: CodexTimelineMetadata } | undefined {
+  const voice = voiceUserMetadata(payload, blockId)
+  if (!voice) return undefined
+  return { ...(voice.source ? { source: voice.source } : {}), codexTimeline: voice.codexTimeline }
+}
+
+function withVoiceUserMetadata(message: ChatMessage, payload: Record<string, unknown>): ChatMessage {
+  const voice = voiceUserFields(payload, message.id)
+  if (!voice) return message
+  if (voiceDelegationTurnId(message)) return message
+  return { ...message, metadata: { ...message.metadata, ...voice } }
+}
+
+function assistantMessage(ctx: NodeSessionEventMapContext, blockId: string, nowIso: string, delegationTurnId: string | null): ChatMessage {
   return {
     id: blockId,
     role: 'assistant',
@@ -205,6 +225,22 @@ function assistantMessage(ctx: NodeSessionEventMapContext, blockId: string, nowI
     content: [],
     createdAt: nowIso,
     providerId: ctx.providerId ?? 'codex',
+    ...(delegationTurnId ? { metadata: { codexTimeline: { provenance: 'realtime-delegated', turnId: delegationTurnId } } } : {}),
+  }
+}
+
+function withDelegationStamp(event: AgentEvent, delegationTurnId: string | null): AgentEvent {
+  if (!delegationTurnId || event.type !== 'message_start' || event.message.role !== 'assistant') return event
+  if (event.message.metadata?.codexTimeline?.provenance === 'realtime-delegated') return event
+  return {
+    ...event,
+    message: {
+      ...event.message,
+      metadata: {
+        ...event.message.metadata,
+        codexTimeline: { provenance: 'realtime-delegated', turnId: delegationTurnId },
+      },
+    },
   }
 }
 
@@ -226,7 +262,17 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
   const completedAssistantIds = new Set<string>()
   let lastAssistantId: string | null = null
   let rawTerminalThisTurn = false
+  /** Set by a voice user row so the next assistant inherits the voice card's turn. */
+  let delegationTurnId: string | null = null
   const nowIso = ctx.nowIso ?? (() => new Date().toISOString())
+  const noteUser = (message: ChatMessage, queued: boolean): void => {
+    const turnId = voiceDelegationTurnId(message)
+    if (queued) {
+      if (turnId) delegationTurnId = turnId
+      return
+    }
+    delegationTurnId = turnId
+  }
 
   /**
    * One sticky assistant message per turn for chat UI parity.
@@ -246,10 +292,10 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
       startedAssistantIds.add(id)
       // Unpositioned: the envelope's own event, which follows, carries its seq,
       // and a reducer would take a second event at the same seq for a replay.
-      push({
+      push(withDelegationStamp({
         type: 'message_start',
-        message: assistantMessage(ctx, id, nowIso()),
-      }, false)
+        message: assistantMessage(ctx, id, nowIso(), delegationTurnId),
+      }, delegationTurnId), false)
     }
     lastAssistantId = id
     return id
@@ -278,16 +324,17 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
         break
       }
       case SESSION_DURABLE_EVENT.userMessage: {
-        if (payload.queued === true) break
-        if (ctx.skipUserMessage && payload.echoUserMessage !== true) break
         const blockId = asString(payload.blockId) ?? `user-${envelope.eventId}`
         const text = asString(payload.text) ?? ''
-        push({
-          type: 'user_message_appended',
-          message: (payload.message as ChatMessage | undefined)?.role === 'user'
-            && typeof (payload.message as ChatMessage).id === 'string' && Array.isArray((payload.message as ChatMessage).content)
-            ? payload.message as ChatMessage : nodeUserMessage(ctx, blockId, text, nowIso(), payload),
-        })
+        const carried = (payload.message as ChatMessage | undefined)?.role === 'user'
+          && typeof (payload.message as ChatMessage).id === 'string' && Array.isArray((payload.message as ChatMessage).content)
+          ? payload.message as ChatMessage
+          : nodeUserMessage(ctx, blockId, text, nowIso(), payload)
+        const message = withVoiceUserMetadata(carried, payload)
+        noteUser(message, payload.queued === true)
+        if (payload.queued === true) break
+        if (ctx.skipUserMessage && payload.echoUserMessage !== true) break
+        push({ type: 'user_message_appended', message })
         break
       }
 
@@ -322,14 +369,17 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
           ? asString(asRecord(eventRecord.message).id)
           : asString(eventRecord.messageId)
 
+        // `event` is narrowed past transcript rows above; the stamp helper returns the full union.
+        let outgoing: AgentEvent = event
         if (type === 'message_start' && rawMessageId) {
           startedAssistantIds.add(rawMessageId)
           lastAssistantId = rawMessageId
+          outgoing = withDelegationStamp(event, delegationTurnId)
         } else if (rawMessageId) {
           ensureAssistant(push, rawMessageId)
         }
 
-        push(event)
+        push(outgoing)
         if (
           rawMessageId
           && (type === 'message_complete' || type === 'message_error' || type === 'message_interrupted')

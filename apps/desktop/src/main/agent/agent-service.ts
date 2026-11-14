@@ -2,7 +2,7 @@ import { isAgentProfilesEnabled } from '../session/agent-profile-feature'
 import { readAgentProfile } from '@superone/shared/agent-profile'
 import { registerAgentProfileManagementIpc, unregisterAgentProfileManagementIpc } from '../session/agent-profile-management-ipc'
 import { readDefaultSessionPrefs } from '../session/session-preferences'
-import { preferredVoiceRequest, windowVoiceEndpoint, readyWindowVoice } from './realtime-voice-control'
+import { preferredVoiceRequest, readyWindowVoice, windowVoiceEndpoint, windowVoiceSeat } from './realtime-voice-control'
 import { codexAccountStore } from '../codex/codex-account-store'
 import { resolveProjectExtraDirs } from '@superone/shared/project-extra-dirs'
 import { findAttachment } from '../remote/attachment-thumbnail'
@@ -1213,9 +1213,12 @@ export class AgentService {
     })
 
     windowIpc.handle(AgentIpcChannels.DOUBAO_VOICE_START, async (event, projectPath: string, sessionId: string, attemptId: string) => {
-      if (parseRemoteProjectKey(projectPath)) throw Object.assign(new Error('Doubao voice is only available on this desktop.'), { code: 'failed_precondition' })
       if (!attemptId) throw new Error('Voice attempt is required.')
       const mgr = this.requireSessionManager()
+      const remote = parseRemoteProjectKey(projectPath)
+      if (remote) {
+        return mgr.doubaoVoice.startRemote({ connectionId: remote.connectionId, projectPath, sessionId, sender: event.sender, attemptId })
+      }
       const session = mgr.getSession(sessionId)
       if (!session || session.projectPath !== projectPath) throw new Error('Session unavailable.')
       session.lease.assertMutation()
@@ -1224,9 +1227,13 @@ export class AgentService {
     windowIpc.handle(AgentIpcChannels.DOUBAO_VOICE_STOP, async (event, projectPath: string, sessionId: string, attemptId: string) => {
       const mgr = this.requireSessionManager()
       const session = mgr.getSession(sessionId)
-      if (!session || session.projectPath !== projectPath) return
-      session.lease.assertMutation()
-      return mgr.realtimeVoice.stop(session, windowVoiceEndpoint(event.sender, session), attemptId)
+      if (session) {
+        if (session.projectPath !== projectPath) return
+        session.lease.assertMutation()
+        return mgr.realtimeVoice.stop(session, windowVoiceEndpoint(event.sender, session), attemptId)
+      }
+      if (!parseRemoteProjectKey(projectPath)) return
+      return mgr.realtimeVoice.stopSeat(windowVoiceSeat(event.sender, { id: sessionId, projectPath }), attemptId)
     })
     windowIpc.handle(AgentIpcChannels.DOUBAO_VOICE_MUTE, async (event, sessionId: string, muted: boolean) => {
       this.sessionManager?.doubaoVoice.setMuted(event.sender.id, sessionId, muted === true)
@@ -1234,9 +1241,12 @@ export class AgentService {
     ipcMain.removeListener(AgentIpcChannels.DOUBAO_VOICE_AUDIO, this.onDoubaoAudio)
     ipcMain.on(AgentIpcChannels.DOUBAO_VOICE_AUDIO, this.onDoubaoAudio)
     windowIpc.handle(AgentIpcChannels.GEMINI_VOICE_START, async (event, projectPath: string, sessionId: string, attemptId: string) => {
-      if (parseRemoteProjectKey(projectPath)) throw Object.assign(new Error('Gemini voice is only available on this desktop.'), { code: 'failed_precondition' })
       if (!attemptId) throw new Error('Voice attempt is required.')
       const mgr = this.requireSessionManager()
+      const remote = parseRemoteProjectKey(projectPath)
+      if (remote) {
+        return mgr.geminiVoice.startRemote({ connectionId: remote.connectionId, projectPath, sessionId, sender: event.sender, attemptId })
+      }
       const session = mgr.getSession(sessionId)
       if (!session || session.projectPath !== projectPath) throw new Error('Session unavailable.')
       session.lease.assertMutation()
@@ -1245,9 +1255,13 @@ export class AgentService {
     windowIpc.handle(AgentIpcChannels.GEMINI_VOICE_STOP, async (event, projectPath: string, sessionId: string, attemptId: string) => {
       const mgr = this.requireSessionManager()
       const session = mgr.getSession(sessionId)
-      if (!session || session.projectPath !== projectPath) return
-      session.lease.assertMutation()
-      return mgr.realtimeVoice.stop(session, windowVoiceEndpoint(event.sender, session), attemptId)
+      if (session) {
+        if (session.projectPath !== projectPath) return
+        session.lease.assertMutation()
+        return mgr.realtimeVoice.stop(session, windowVoiceEndpoint(event.sender, session), attemptId)
+      }
+      if (!parseRemoteProjectKey(projectPath)) return
+      return mgr.realtimeVoice.stopSeat(windowVoiceSeat(event.sender, { id: sessionId, projectPath }), attemptId)
     })
     ipcMain.removeListener(AgentIpcChannels.GEMINI_VOICE_AUDIO, this.onGeminiAudio)
     ipcMain.on(AgentIpcChannels.GEMINI_VOICE_AUDIO, this.onGeminiAudio)

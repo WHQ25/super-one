@@ -16,7 +16,7 @@ import type { McpAppsResolvedAttachment } from '@superone/shared/environment/mcp
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
 import { randomUUID } from 'node:crypto'
 import { SESSION_SEND_SELECTION_KEYS, type SessionSendSelections } from '@superone/shared/environment/session-send'
-import { isCodexPermissionPreset, type AgentEvent, type ChatMessage, type ChatMessageSource, type HarnessId } from '@superone/shared/agent-types'
+import { isCodexPermissionPreset, type AgentEvent, type ChatMessage, type ChatMessageSource, type CodexTimelineMetadata, type HarnessId } from '@superone/shared/agent-types'
 import { isAgentOutputEvent } from '@superone/shared/send-failure'
 import { isVoiceSignalingEvent } from '@superone/shared/realtime-voice'
 import { MOD_UI_MUTATING_OPS, MOD_UI_UNAVAILABLE, asNodeCallerModUiRequest, asNodeReaderModEvent, type ModUiOp, type ModUiRequest, type ModUiResult } from '@superone/shared/mod-ui'
@@ -1149,8 +1149,10 @@ export class SessionRuntime {
     /** A launch task from the controller's agent; named after the controller here, whatever it claims. */
     collaboration?: MessageDisplayFields['collaboration']
     echoUserMessage?: boolean
-    /** A controller host wake, kept out of the human transcript. */
-    source?: 'task-notification'
+    /** Who wrote the text. A host wake stays out of the human transcript. */
+    source?: ChatMessageSource
+    /** Voice delegation stamp copied onto the durable user row. */
+    codexTimeline?: CodexTimelineMetadata
     /** Claude-style permission mode for this turn (falls back to session.permissionMode). */
     permissionMode?: string | null
     /** Sandbox policy for this turn (falls back to session.sandboxMode). */
@@ -1244,6 +1246,10 @@ export class SessionRuntime {
         : {}),
       echoUserMessage: input.echoUserMessage,
       source: input.source,
+      ...(input.codexTimeline?.provenance === 'realtime-delegated' ? { codexTimeline: {
+        provenance: 'realtime-delegated' as const,
+        ...(input.codexTimeline.turnId ? { turnId: input.codexTimeline.turnId } : {}),
+      } } : {}),
       requestId: input.requestId,
       model: pick(input.model, session.model),
       effort: pick(input.effort, session.effort),
@@ -1470,6 +1476,7 @@ export class SessionRuntime {
         ...(userBlock.attachments ? { attachments: userBlock.attachments } : {}),
         ...(opts.echoUserMessage ? { echoUserMessage: true } : {}),
         ...(opts.source ? { source: opts.source } : {}),
+        ...(opts.codexTimeline ? { codexTimeline: opts.codexTimeline } : {}),
       },
       causationRequestId: opts.requestId,
     })
@@ -1596,7 +1603,14 @@ export class SessionRuntime {
     delete row.queuedInComposer; delete row.queued
     this.persist(session)
     this.events.appendSession({ sessionId: session.sessionId, eventType: SESSION_DURABLE_EVENT.userMessage,
-      payload: { blockId: row.id, text: row.text, ...parseMessageDisplay(row), attachments: row.attachments },
+      payload: {
+        blockId: row.id,
+        text: row.text,
+        ...parseMessageDisplay(row),
+        attachments: row.attachments,
+        ...(turn.source ? { source: turn.source } : {}),
+        ...(turn.codexTimeline ? { codexTimeline: turn.codexTimeline } : {}),
+      },
       causationRequestId: turn.requestId })
     this.appendAgentEvent(session.sessionId, { type: 'queued_message_consumed', clientMessageId: row.id })
     this.publishComposerQueue(session)

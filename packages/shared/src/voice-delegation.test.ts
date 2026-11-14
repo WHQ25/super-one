@@ -5,16 +5,21 @@ import {
   VOICE_DELEGATION_PREAMBLE,
   VOICE_FALLBACK_SPOKEN,
   VOICE_UPLINK_FRAME_BYTES,
+  acceptVoiceMirrorEvent,
+  applyVoiceAgentEvent,
   buildVoiceInstructions,
   closedSpeakableBlocks,
   delegationIdleOutcome,
   extractSpokenSummary,
+  forwardedVoiceDelegation,
   mergeAsrText,
   slicePcm20ms,
   speakableAgentReply,
   stripVoiceAsides,
   visibleAssistantText,
   voiceDelegationContent,
+  voiceMirrorStreaming,
+  type VoiceMirrorMessage,
 } from './voice-delegation'
 
 describe('voice delegation', () => {
@@ -181,5 +186,62 @@ describe('voice delegation', () => {
       { id: 'a2', role: 'assistant', status: 'complete' },
     ], 0, first.pending, new Set(first.settledIds))
     expect(second).toEqual({ settledIds: ['a2'], pending: 0, finishWatch: true })
+  })
+})
+
+describe('remote voice mirror', () => {
+  const user = (id: string): VoiceMirrorMessage => ({ id, role: 'user', status: 'complete', content: [{ type: 'text', text: id }] })
+
+  it('forwards a voice source and only a delegated timeline', () => {
+    expect(forwardedVoiceDelegation({
+      source: 'gemini-voice',
+      codexTimeline: { provenance: 'realtime-delegated', turnId: 'turn-1', localOrder: 4 },
+    })).toEqual({
+      source: 'gemini-voice',
+      codexTimeline: { provenance: 'realtime-delegated', turnId: 'turn-1' },
+    })
+    expect(forwardedVoiceDelegation({ source: 'task-notification', codexTimeline: { provenance: 'codex', turnId: 'nope' } })).toEqual({
+      source: 'task-notification',
+    })
+    expect(forwardedVoiceDelegation({ source: 'user' })).toEqual({})
+  })
+
+  it('keeps events at or below the load cursor out of the mirror', () => {
+    expect(acceptVoiceMirrorEvent({ seq: 3 }, 3)).toBe(false)
+    expect(acceptVoiceMirrorEvent({ seq: 4 }, 3)).toBe(true)
+    expect(acceptVoiceMirrorEvent({}, 3)).toBe(true)
+  })
+
+  it('appends a turn, streams its text, and closes the row', () => {
+    let messages = applyVoiceAgentEvent([user('old')], {
+      type: 'message_start',
+      message: { id: 'a1', role: 'assistant', status: 'streaming', content: [], createdAt: 't', providerId: 'claude' },
+    })
+    messages = applyVoiceAgentEvent(messages, {
+      type: 'content_delta',
+      messageId: 'a1',
+      delta: { type: 'text', text: 'Hi' },
+    })
+    messages = applyVoiceAgentEvent(messages, {
+      type: 'content_delta',
+      messageId: 'a1',
+      delta: { type: 'text', text: ' there' },
+    })
+    expect(messages.map(message => message.id)).toEqual(['old', 'a1'])
+    expect(messages[1]?.content).toEqual([{ type: 'text', text: 'Hi there' }])
+    messages = applyVoiceAgentEvent(messages, { type: 'message_complete', messageId: 'a1' })
+    expect(messages[1]?.status).toBe('complete')
+    expect(applyVoiceAgentEvent(messages, { type: 'message_start', message: { id: 'a1', role: 'assistant', status: 'streaming', content: [], createdAt: 't', providerId: 'claude' } })[1]?.content).toEqual([{ type: 'text', text: 'Hi there' }])
+    expect(voiceMirrorStreaming('streaming')).toBe(true)
+    expect(voiceMirrorStreaming('idle')).toBe(false)
+    expect(voiceMirrorStreaming('background')).toBeNull()
+  })
+
+  it('replaces the mirror from a transcript snapshot', () => {
+    const next = applyVoiceAgentEvent([user('old')], {
+      type: 'transcript_replaced',
+      messages: [{ id: 'fresh', role: 'assistant', status: 'complete', content: [{ type: 'text', text: 'done' }], createdAt: 't', providerId: 'claude' }],
+    })
+    expect(next).toEqual([{ id: 'fresh', role: 'assistant', status: 'complete', content: [{ type: 'text', text: 'done' }] }])
   })
 })

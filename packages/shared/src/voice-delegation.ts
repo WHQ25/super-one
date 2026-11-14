@@ -1,3 +1,5 @@
+import type { AgentEvent, ChatMessage, CodexTimelineMetadata, ContentBlock } from './agent-types'
+import { applyContentDelta } from './content-delta'
 import { formatRealtimeDelegation, type RealtimeTranscriptLine } from './realtime-timeline'
 
 /**
@@ -231,6 +233,119 @@ export function visibleAssistantText(text: string): string {
   if (!text.includes('<spoken')) return text
   const { display } = extractSpokenSummary(text)
   return display.replace(/\s*<spoken\b[^>]*>[\s\S]*$/i, '').trimEnd()
+}
+
+const VOICE_DELEGATION_SOURCES = ['doubao-voice', 'gemini-voice'] as const
+export type VoiceDelegationSource = (typeof VOICE_DELEGATION_SOURCES)[number]
+
+export function isVoiceDelegationSource(source: unknown): source is VoiceDelegationSource {
+  return source === 'doubao-voice' || source === 'gemini-voice'
+}
+
+/**
+ * Fields a voice send may cross to the host that owns the session.
+ * A host wake still crosses. Any other source, and any timeline that is not a
+ * voice delegation, stays off the wire.
+ */
+export function forwardedVoiceDelegation(input: { source?: unknown; codexTimeline?: unknown }): {
+  source?: 'task-notification' | VoiceDelegationSource
+  codexTimeline?: CodexTimelineMetadata
+} {
+  const source = input.source === 'task-notification' || isVoiceDelegationSource(input.source) ? input.source : undefined
+  const timeline = voiceUserMetadata(input, '')
+  return {
+    ...(source ? { source } : {}),
+    ...(isVoiceDelegationSource(source) && timeline?.codexTimeline ? { codexTimeline: timeline.codexTimeline } : {}),
+  }
+}
+
+/** Stamp stored on a voice user row. `blockId` fills a missing turn id. */
+export function voiceUserMetadata(
+  input: { source?: unknown; codexTimeline?: unknown },
+  blockId: string,
+): { source?: VoiceDelegationSource; codexTimeline: CodexTimelineMetadata } | undefined {
+  const source = isVoiceDelegationSource(input.source) ? input.source : undefined
+  const raw = input.codexTimeline && typeof input.codexTimeline === 'object'
+    ? input.codexTimeline as Record<string, unknown>
+    : null
+  if (!source && raw?.provenance !== 'realtime-delegated') return undefined
+  const turnId = typeof raw?.turnId === 'string' && raw.turnId ? raw.turnId : blockId
+  return {
+    ...(source ? { source } : {}),
+    codexTimeline: { provenance: 'realtime-delegated', ...(turnId ? { turnId } : {}) },
+  }
+}
+
+/** Turn id of a voice user row, so the following assistant can inherit it. */
+export function voiceDelegationTurnId(message: { id: string; metadata?: ChatMessage['metadata'] }): string | null {
+  const timeline = message.metadata?.codexTimeline
+  const source = message.metadata?.source
+  if (timeline?.provenance === 'realtime-delegated' || isVoiceDelegationSource(source)) {
+    return timeline?.turnId || message.id
+  }
+  return null
+}
+
+export interface VoiceMirrorMessage {
+  id: string
+  role: string
+  status?: string
+  content: ContentBlock[]
+}
+
+export function toVoiceMirrorMessage(message: ChatMessage): VoiceMirrorMessage {
+  return {
+    id: message.id,
+    role: message.role,
+    status: message.status,
+    content: message.content,
+  }
+}
+
+/** Events at or below the load cursor are already in the snapshot. */
+export function acceptVoiceMirrorEvent(event: { seq?: number }, baseline: number): boolean {
+  return event.seq === undefined || event.seq > baseline
+}
+
+/**
+ * Fold one live agent event into the voice host's copy of a remote transcript.
+ * Streaming is tracked separately: only `streaming` sets it, and `idle` or
+ * `error` clears it.
+ */
+export function applyVoiceAgentEvent(messages: readonly VoiceMirrorMessage[], event: AgentEvent): VoiceMirrorMessage[] {
+  if (event.type === 'transcript_replaced') return event.messages.map(toVoiceMirrorMessage)
+  if (event.type === 'user_message_appended' || event.type === 'message_start') {
+    return upsertVoiceMirrorMessage(messages, toVoiceMirrorMessage(event.message))
+  }
+  if (event.type === 'content_delta') {
+    const index = messages.findIndex(message => message.id === event.messageId)
+    if (index < 0) return messages as VoiceMirrorMessage[]
+    return messages.map((message, at) => at === index
+      ? { ...message, content: applyContentDelta(message.content, event.delta, Date.now, { replace: event.replace === true }) }
+      : message)
+  }
+  if (event.type === 'message_complete' || event.type === 'message_interrupted' || event.type === 'message_error') {
+    const status = event.type === 'message_complete' ? 'complete' : event.type === 'message_interrupted' ? 'interrupted' : 'error'
+    const index = messages.findIndex(message => message.id === event.messageId)
+    if (index < 0) return messages as VoiceMirrorMessage[]
+    return messages.map((message, at) => at === index ? { ...message, status } : message)
+  }
+  return messages as VoiceMirrorMessage[]
+}
+
+/** `streaming` starts a turn. `idle` and `error` end it. Other statuses leave the flag alone. */
+export function voiceMirrorStreaming(status: string): boolean | null {
+  if (status === 'streaming') return true
+  if (status === 'idle' || status === 'error') return false
+  return null
+}
+
+function upsertVoiceMirrorMessage(messages: readonly VoiceMirrorMessage[], incoming: VoiceMirrorMessage): VoiceMirrorMessage[] {
+  const index = messages.findIndex(message => message.id === incoming.id)
+  if (index < 0) return [...messages, incoming]
+  const current = messages[index]!
+  const content = incoming.content.length > 0 ? incoming.content : current.content
+  return messages.map((message, at) => at === index ? { ...current, ...incoming, content } : message)
 }
 
 /** Split a PCM buffer into 20 ms uplink frames. The remainder waits for the next chunk. */

@@ -26,7 +26,7 @@ export interface ComposerVoiceEntryProps {
    * follows the selected Doubao or Gemini model.
    */
   codexProviderId?: string | null
-  /** Remote sessions cannot open a desktop speech socket (Doubao or Gemini). */
+  /** A session controlled somewhere else cannot open a speech socket on this desktop. */
   allowDoubao?: boolean
 }
 

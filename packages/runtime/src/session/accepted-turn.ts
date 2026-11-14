@@ -1,5 +1,5 @@
 import type { MessageDisplayFields } from '@superone/shared/message-display'
-import type { ChatMessageSource } from '@superone/shared/agent-types'
+import type { ChatMessageSource, CodexTimelineMetadata } from '@superone/shared/agent-types'
 import type { TurnImageAttachment } from './types'
 import type { InputAdmission } from './input-admission'
 
@@ -32,6 +32,8 @@ export interface TurnOpts extends MessageDisplayFields {
    * redacted copy so collaboration credentials never leak into the UI snapshot.
    */
   source?: ChatMessageSource
+  /** Voice delegation stamp. The consumed user row carries it into the transcript. */
+  codexTimeline?: CodexTimelineMetadata
   /** Claude Ultracode from this turn on; omitted keeps the live process's. */
   ultracode?: boolean
   claudeFastMode?: boolean

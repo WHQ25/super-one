@@ -129,6 +129,7 @@ import { PresenceCoordinator } from './remote/presence-coordinator'
 import { setSessionSeenReceipt } from './db-sessions'
 import { getSessionRecord, listWorktreePaths, loadSessionStateBySid, resolveProviderSessionIdForResume, saveSessionStateBySid, updateProviderSessionId } from './session/session-repo'
 import { applyRealtimeTimelineEvent } from './session/realtime-timeline-repo'
+import { publishVoiceRemoteEvent } from './session/voice-remote-events'
 import { SessionEventHub } from './stream/session-event-hub'
 import { recordHubEvents } from './stream/hub-recorder'
 import { deepseekTrajectorySource } from './deepseek/trajectory-source'
@@ -1843,7 +1844,10 @@ function attachEnvironmentStatusBridge(host: EnvironmentHost): void {
     safeSend(AgentIpcChannels.ENVIRONMENT_STATUS_EVENT, snapshot)
   })
   // Remote node turns: map session.events → AgentEvent and stream into chat.
-  host.setAgentEventSink((event) => sessionEvents.publish({ event, source: 'remote-node' }))
+  host.setAgentEventSink((event) => {
+    sessionEvents.publish({ event, source: 'remote-node' })
+    publishVoiceRemoteEvent(event)
+  })
   host.setFollowListener((ref, followed) => rendererInterest.follow(ref, followed))
   // Sessions and projects another client creates, renames or removes on a machine show up here.
   host.onSessionListChanged((_connectionId, projectKey) => safeSend(AgentIpcChannels.SESSIONS_CHANGED, projectKey))

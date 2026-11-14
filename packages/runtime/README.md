@@ -69,5 +69,6 @@ their existing OS-specific locations. External provider homes such as
 `~/.claude` and `~/.codex` remain owned by those providers.
 
 Remote alpha uses the `superone-alpha` command link, `superone-alpha.service`,
-and port 7790; stable uses `superone`, `superone.service`, and port 7788.
+and port 7790; dev uses `superone-dev`, `superone-dev.service`, and port 7792;
+stable uses `superone`, `superone.service`, and port 7788.
 Explicit node/harness overrides remain available for labs and tests.

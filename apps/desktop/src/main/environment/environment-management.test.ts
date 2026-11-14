@@ -23,6 +23,14 @@ const electron = vi.hoisted(() => {
   }
 })
 
+// Unpackaged tests would otherwise be the dev desktop; most cases cover the
+// published (registry) channel.
+const variant = vi.hoisted(() => ({ id: 'alpha' as 'stable' | 'alpha' | 'dev' }))
+vi.mock('../variant', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../variant')>()),
+  variantId: () => variant.id,
+}))
+
 vi.mock('electron', () => ({
   safeStorage: {
     isEncryptionAvailable: () => electron.available,
@@ -46,11 +54,12 @@ import { SshTunnelManager } from './ssh-tunnel-manager'
 import type {
   InstallOptions,
   InstallResult,
+  PackageInstallOptions,
   RegistryInstallOptions,
   RemoteHostProbe,
 } from './remote-install'
 import type { SshForwardHandle } from './ssh-forward'
-import type { RemoteRestartOptions } from './ssh-bootstrap'
+import type { RemoteRestartOptions, SshBootstrapOptions } from './ssh-bootstrap'
 import { remoteNodePort, remoteSuperoneHome } from './remote-data-path'
 
 const dirs: string[] = []
@@ -1139,6 +1148,182 @@ describe('add over SSH without a remote path', () => {
     expect(restarts[0]!.remoteNodeHome).toBe('/home/superone/.superone/alpha/node')
     expect(phases).toEqual(['probing', 'installing', 'starting'])
     // Pairing survives the restart: the same connection is live again.
+    expect(host.connections.getSupervisor(added.connectionId)?.state).toBe('connected')
+    host.dispose()
+  })
+})
+
+describe('dev channel', () => {
+  const devProbe: RemoteHostProbe = {
+    os: 'linux',
+    arch: 'x64',
+    musl: false,
+    home: '/home/superone',
+    // An earlier dev deploy of the same version: its code is still stale.
+    superonePath: '/home/superone/.superone/dev/npm/bin/superone',
+    superoneVersion: '1.2.3',
+    nodeMajor: 22,
+    nodeVersion: '22.23.4',
+    hasNpm: true,
+    hasSystemd: true,
+    distTarget: 'linux-x64',
+  }
+
+  function devHost(rt: NodeRuntime): {
+    host: EnvironmentHost
+    builds: number
+    releases: number
+    uploads: PackageInstallOptions[]
+    restarts: RemoteRestartOptions[]
+    bootstraps: SshBootstrapOptions[]
+  } {
+    const ud = temp('env-mgmt-ud-')
+    electron.setUserData(ud)
+    let builds = 0
+    let releases = 0
+    const uploads: PackageInstallOptions[] = []
+    const restarts: RemoteRestartOptions[] = []
+    const bootstraps: SshBootstrapOptions[] = []
+    const host = new EnvironmentHost(ud, {
+      tunnels: new SshTunnelManager(fakeForwardStarter(rt.server.url, [])),
+      probeHost: async () => devProbe,
+      defaultCliVersion: '1.2.3',
+      packDevCli: async () => {
+        builds += 1
+        return { path: '/tmp/superone-dev-cli-x/super-one-cli-1.2.3.tgz', version: '1.2.3', release: async () => { releases += 1 } }
+      },
+      installFromPackage: async (opts) => {
+        uploads.push(opts)
+        return {
+          remoteExec: '/home/superone/.superone/dev/npm/bin/superone',
+          version: opts.version,
+          target: 'npm-pack',
+          sha256: 'deadbeef',
+          source: 'upload',
+        }
+      },
+      installNode: async () => {
+        throw new Error('dev channel must not upload a dist tarball')
+      },
+      installFromRegistry: async () => {
+        throw new Error('dev channel must not install from npm')
+      },
+      restartNode: async (opts) => {
+        restarts.push(opts)
+      },
+      bootstrapOverSsh: async (opts) => {
+        bootstraps.push(opts)
+        return {
+          localBaseUrl: rt.server.url,
+          localPort: Number(new URL(rt.server.url).port),
+          forward: await fakeForwardStarter(rt.server.url, [])({ destination: opts.destination, remotePort: opts.remotePort! }),
+          pairingToken: rt.auth.createPairingToken().token,
+          environmentId: rt.identity.environmentId,
+          expiresAt: Date.now() + 600_000,
+          unitPreview: '',
+          warnings: [],
+          remoteNodeHome: '/home/superone/.superone/dev/node',
+          remoteExec: opts.remoteExec,
+        }
+      },
+    })
+    return { host, get builds() { return builds }, get releases() { return releases }, uploads, restarts, bootstraps }
+  }
+
+  afterEach(() => {
+    variant.id = 'alpha'
+  })
+
+  it('packs this checkout and redeploys it into the dev channel even when versions match', async () => {
+    variant.id = 'dev'
+    const rt = await bootNode()
+    const dev = devHost(rt)
+    const { host, uploads, restarts, bootstraps } = dev
+
+    const steps: string[] = []
+    const result = await host.addRemoteOverSsh(
+      { destination: 'superone@lab', installSource: 'registry' },
+      (p) => { if (p.phase === 'installing') steps.push(p.step) },
+    )
+
+    expect(dev.builds).toBe(1)
+    expect(uploads).toHaveLength(1)
+    expect(uploads[0]!.tarballPath).toBe('/tmp/superone-dev-cli-x/super-one-cli-1.2.3.tgz')
+    expect(dev.releases).toBe(1)
+    expect(steps[0]).toBe('build')
+    expect(restarts).toHaveLength(1)
+    expect(restarts[0]!.remoteNodeHome).toBe('/home/superone/.superone/dev/node')
+    expect(restarts[0]!.remotePort).toBe(7792)
+    expect(bootstraps[0]!.remotePort).toBe(7792)
+    expect(result.installed?.source).toBe('upload')
+    host.dispose()
+  })
+
+  it('redeploys a dev node from source on upgrade', async () => {
+    variant.id = 'dev'
+    const rt = await bootNode()
+    const dev = devHost(rt)
+    const { host, uploads, restarts } = dev
+    const added = await host.addRemoteOverSsh({ destination: 'superone@lab' })
+    uploads.length = 0
+    restarts.length = 0
+
+    await host.upgradeRemoteNode(added.connectionId)
+
+    expect(dev.builds).toBe(2)
+    expect(uploads).toHaveLength(1)
+    expect(restarts[0]!.remoteNodeHome).toBe('/home/superone/.superone/dev/node')
+    expect(host.connections.getSupervisor(added.connectionId)?.state).toBe('connected')
+    host.dispose()
+  })
+
+  it.each([
+    ['an alpha executable', { remoteExec: '/home/superone/.superone/alpha/npm/bin/superone' }],
+    ['the alpha port', { remotePort: 7790 }],
+    ['the stable node home', { remoteNodeHome: '~/.superone/node' }],
+  ])('refuses a dev add pointed at %s before touching the host', async (_, target) => {
+    variant.id = 'dev'
+    const rt = await bootNode()
+    const dev = devHost(rt)
+
+    await expect(dev.host.addRemoteOverSsh({ destination: 'superone@lab', ...target }))
+      .rejects.toMatchObject({ code: 'failed_precondition' })
+    expect(dev.builds).toBe(0)
+    expect(dev.bootstraps).toEqual([])
+    dev.host.dispose()
+  })
+
+  it('releases the local package when the remote install fails', async () => {
+    variant.id = 'dev'
+    const ud = temp('env-mgmt-ud-')
+    electron.setUserData(ud)
+    let released = false
+    const host = new EnvironmentHost(ud, {
+      probeHost: async () => devProbe,
+      packDevCli: async () => ({ path: '/tmp/p.tgz', version: '1.2.3', release: async () => { released = true } }),
+      installFromPackage: async () => { throw new Error('npm install failed') },
+    })
+
+    await expect(host.addRemoteOverSsh({ destination: 'superone@lab' })).rejects.toThrow('npm install failed')
+    expect(released).toBe(true)
+    host.dispose()
+  })
+
+  it('refuses to redeploy over a node paired on the alpha channel', async () => {
+    // Paired by this desktop before the dev channel existed.
+    const rt = await bootNode()
+    const dev = devHost(rt)
+    const { host, uploads, restarts } = dev
+    const added = await host.addRemoteOverSsh({ destination: 'superone@lab', remoteExec: '/home/superone/.superone/alpha/npm/bin/superone' })
+    variant.id = 'dev'
+
+    await expect(host.upgradeRemoteNode(added.connectionId)).rejects.toMatchObject({
+      code: 'failed_precondition',
+      message: expect.stringMatching(/alpha channel/),
+    })
+    expect(dev.builds).toBe(0)
+    expect(uploads).toEqual([])
+    expect(restarts).toEqual([])
     expect(host.connections.getSupervisor(added.connectionId)?.state).toBe('connected')
     host.dispose()
   })

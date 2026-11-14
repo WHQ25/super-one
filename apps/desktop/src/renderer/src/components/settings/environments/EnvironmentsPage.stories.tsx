@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import i18n from 'i18next'
 import { expect, userEvent, within } from 'storybook/test'
 import type { EnvironmentListItem } from '@superone/shared/environment'
+import { useAppStore } from '@/stores/app'
 import { EnvironmentsPage } from './EnvironmentsPage'
 import { DESKTOP_PATH_ITEMS, DESKTOP_STATUS_ITEMS, ENVIRONMENT_ITEMS, mockEnvironmentApi } from './story-fixtures'
 
@@ -120,3 +121,52 @@ export const AddDesktop: Story = {
     ).toBeInTheDocument()
   },
 }
+
+const sshNode = (id: string, remotePort: number, remoteNodeHome: string): EnvironmentListItem => ({
+  connectionId: id,
+  environmentId: `env-${id}`,
+  label: id,
+  kind: 'remote',
+  state: 'connected',
+  activePath: 'ssh',
+  endpointProfiles: [{
+    endpointId: 'ssh',
+    kind: 'ssh-forward',
+    label: `dev@${id}`,
+    target: `dev@${id}`,
+    ssh: { remotePort, remoteNodeHome },
+  }],
+  preferredEndpointId: 'ssh',
+  platform: { os: 'linux', arch: 'x64' },
+})
+
+const DEV_CHANNEL_ITEMS = [
+  sshNode('dev-box', 7792, '/home/dev/.superone/dev/node'),
+  // Paired before the dev channel existed: redeploying would replace the alpha node.
+  sshNode('legacy-alpha-box', 7790, '/home/dev/.superone/alpha/node'),
+]
+
+/**
+ * Dev build: dev-channel SSH nodes offer Redeploy Dev Build (pack this checkout,
+ * install it into the dev channel, restart) instead of a version-driven upgrade.
+ * A node paired on the alpha channel gets no redeploy action.
+ */
+export const DevRedeploy: Story = {
+  parameters: { items: DEV_CHANNEL_ITEMS },
+  beforeEach: () => {
+    const previous = useAppStore.getState().appVariant
+    useAppStore.setState({ appVariant: 'dev' })
+    return () => useAppStore.setState({ appVariant: previous })
+  },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const redeploy = { name: i18n.t('settings.environments.redeployDevNode') }
+    const dev = within((await canvas.findByText('dev-box')).closest('li') as HTMLElement)
+    await expect(dev.getByRole('button', redeploy)).toBeInTheDocument()
+    await expect(dev.queryByRole('button', { name: i18n.t('settings.environments.upgradeNode') })).toBeNull()
+    const legacy = within((await canvas.findByText('legacy-alpha-box')).closest('li') as HTMLElement)
+    await expect(legacy.queryByRole('button', redeploy)).toBeNull()
+  },
+}
+
+export const DevRedeployNarrow: Story = { ...DevRedeploy, parameters: { items: DEV_CHANNEL_ITEMS, width: 460 } }

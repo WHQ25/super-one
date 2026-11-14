@@ -127,7 +127,7 @@ export type EnvironmentInstallProgress =
   | ({ phase: 'probing' } & EnvironmentInstallProgressMeta)
   | ({
       phase: 'installing'
-      step: 'npm' | 'upload' | 'verify' | 'extract' | 'activate'
+      step: 'build' | 'npm' | 'upload' | 'verify' | 'extract' | 'activate'
       detail?: string
     } & EnvironmentInstallProgressMeta)
   | ({ phase: 'starting' } & EnvironmentInstallProgressMeta)
@@ -143,9 +143,51 @@ export interface SshTunnelSpec {
   identityFile?: string
 }
 
+/**
+ * Side-by-side node installations on one host user. Each channel owns its data
+ * root, loopback port, command link and systemd unit, so a dev node never
+ * touches alpha or stable state.
+ */
+export type NodeChannel = 'stable' | 'alpha' | 'dev'
+
 export const DEFAULT_NODE_REMOTE_PORT = 7788
-export function defaultNodeRemotePort(channel: 'stable' | 'alpha'): number {
-  return channel === 'alpha' ? 7790 : DEFAULT_NODE_REMOTE_PORT
+const NODE_CHANNEL_PORTS: Record<NodeChannel, number> = { stable: DEFAULT_NODE_REMOTE_PORT, alpha: 7790, dev: 7792 }
+
+/** Unknown or missing variants are stable, matching `resolveSuperoneHome`. */
+export function nodeChannelForVariant(variant: string | undefined): NodeChannel {
+  return variant === 'alpha' || variant === 'dev' ? variant : 'stable'
+}
+
+export function defaultNodeRemotePort(channel: NodeChannel): number {
+  return NODE_CHANNEL_PORTS[channel]
+}
+
+/** Command link name in `~/.local/bin`; the systemd unit is `<name>.service`. */
+export function nodeCliName(channel: NodeChannel): string {
+  return channel === 'stable' ? 'superone' : `superone-${channel}`
+}
+
+/**
+ * Another channel whose default install a node target points at, or null.
+ * Paths may be absolute or `~/`-relative; homes and launchers are matched by
+ * their channel-specific suffix, so the remote `$HOME` is not needed.
+ */
+export function otherNodeChannelOf(
+  own: NodeChannel,
+  target: { nodeHome?: string; port?: number; remoteExec?: string },
+): NodeChannel | null {
+  const nodeHome = target.nodeHome?.trim().replace(/\/+$/, '')
+  const exec = target.remoteExec?.trim()
+  for (const channel of Object.keys(NODE_CHANNEL_PORTS) as NodeChannel[]) {
+    if (channel === own) continue
+    const root = channel === 'stable' ? '/.superone' : `/.superone/${channel}`
+    const ownsExec = exec !== undefined && (
+      exec.endsWith(`/.local/bin/${nodeCliName(channel)}`)
+      || ['npm', 'current', 'versions'].some((dir) => exec.includes(`${root}/${dir}/`))
+    )
+    if (nodeHome?.endsWith(`${root}/node`) || target.port === NODE_CHANNEL_PORTS[channel] || ownsExec) return channel
+  }
+  return null
 }
 
 /**
@@ -201,6 +243,19 @@ export function canRepairOverSsh(item: {
   preferredEndpointId?: string
 }): boolean {
   return selectSshRepairProfile(item.endpointProfiles, item.preferredEndpointId) != null
+}
+
+/**
+ * A dev desktop redeploys its build over the repair SSH profile, and only to a
+ * node outside the stable and alpha installs (main enforces the same rule).
+ */
+export function canRedeployDevNode(item: {
+  endpointProfiles: EndpointProfile[]
+  preferredEndpointId?: string
+}): boolean {
+  const profile = selectSshRepairProfile(item.endpointProfiles, item.preferredEndpointId)
+  const spec = profile ? tunnelSpecFromEndpoint(profile) : null
+  return spec != null && otherNodeChannelOf('dev', { nodeHome: profile!.ssh?.remoteNodeHome, port: spec.remotePort }) === null
 }
 
 /** Extra `ssh` argv for a tunnel spec — port and identity file only. */

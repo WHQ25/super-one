@@ -1,4 +1,5 @@
 import { resolveSuperoneHome } from '@superone/runtime/fs/superone-home'
+import { nodeChannelForVariant, nodeCliName } from '@superone/shared/environment/client-view'
 import { DEFAULT_BIND_PORT } from '../config'
 /**
  * systemd-user unit generation for superone.
@@ -60,7 +61,7 @@ WantedBy=default.target
 `
 }
 
-export const SYSTEMD_USER_UNIT_NAME = process.env.SUPERONE_VARIANT === 'alpha' ? 'superone-alpha.service' : 'superone.service'
+export const SYSTEMD_USER_UNIT_NAME = `${nodeCliName(nodeChannelForVariant(process.env.SUPERONE_VARIANT))}.service`
 
 export function systemdUserUnitPath(configHome?: string): string {
   const base = configHome || process.env.XDG_CONFIG_HOME || `${process.env.HOME || '~'}/.config`

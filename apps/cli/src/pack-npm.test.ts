@@ -112,6 +112,8 @@ describe('pack-npm', () => {
 
     const bundle = readFileSync(join(outDir, 'lib', 'cli.mjs'), 'utf8')
     const channel = version.includes('-alpha') ? 'alpha' : 'stable'
+    expect((pkg as { private?: boolean }).private).toBeUndefined()
+    expect(bundle).not.toContain('process.env.SUPERONE_HARNESS_CHANNEL ??=')
     expect(bundle.indexOf(`process.env.SUPERONE_VARIANT = "${channel}";`)).toBeLessThan(bundle.indexOf('var DEFAULT_NODE_HOME'))
     expect(bundle).toContain(`process.env.SUPERONE_VARIANT = "${channel}";`)
     // Bundled CLI should not leave monorepo package names as bare imports.
@@ -123,6 +125,25 @@ describe('pack-npm', () => {
     expect(bundle).toMatch(/(?:from |import\()["']@cursor\/sdk["']/)
     // Version inject for harness release coupling.
     expect(bundle.includes(version)).toBe(true)
+
+    rmSync(outDir, { recursive: true, force: true })
+  }, 60_000)
+
+  it('bakes the dev channel into a dev package without changing its version', async () => {
+    const outDir = join(HERE, '..', 'dist', 'npm-test-dev-out')
+    rmSync(outDir, { recursive: true, force: true })
+
+    await packNpm({ version: '0.0.0-alpha.1', outDir, variant: 'dev' })
+
+    const bundle = readFileSync(join(outDir, 'lib', 'cli.mjs'), 'utf8')
+    expect(bundle).toContain('process.env.SUPERONE_VARIANT = "dev";')
+    expect(bundle).not.toContain('process.env.SUPERONE_VARIANT = "alpha";')
+    // Dev follows the dev desktop's alpha harness manifests; the version has no prerelease tag.
+    expect(bundle).toContain('process.env.SUPERONE_HARNESS_CHANNEL ??= "alpha";')
+    const pkg = JSON.parse(readFileSync(join(outDir, 'package.json'), 'utf8')) as { private?: boolean }
+    expect(pkg.private).toBe(true)
+    const manifest = JSON.parse(readFileSync(join(outDir, 'MANIFEST.json'), 'utf8')) as { variant: string; version: string }
+    expect(manifest).toMatchObject({ variant: 'dev', version: '0.0.0-alpha.1' })
 
     rmSync(outDir, { recursive: true, force: true })
   }, 60_000)

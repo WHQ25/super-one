@@ -12,7 +12,8 @@ import { SESSION_LIST_OPERATION_METHODS, type SessionListOperationMethod, type S
 import { COMPOSER_CALL_METHODS, type ComposerCallMethod, type ComposerCallMethods } from '@superone/shared/environment/composer-requests'
 import { MOD_UI_MUTATING_OPS, MOD_UI_UNAVAILABLE, type ModUiOp, type ModUiRequest } from '@superone/shared/mod-ui'
 import { parseMessageDisplay } from '@superone/shared/message-display'
-import { remoteSuperoneHome, remoteNodePort } from './remote-data-path'
+import { assertDevChannelTarget, remoteDataChannel, remoteSuperoneHome, remoteNodePort } from './remote-data-path'
+import { packDevCli, type DevCliPackage } from './dev-cli-package'
 import {
   harnessAdvertisementChanged,
   harnessAdvertisementKey,
@@ -99,12 +100,14 @@ import {
 } from './ssh-repair'
 import { sshCapture } from './ssh-forward'
 import {
+  installNodeFromPackage,
   installNodeFromRegistry,
   installNodeOverSsh,
   preflightBlocker,
   probeRemoteHost,
   type InstallOptions,
   type InstallResult,
+  type PackageInstallOptions,
   type RegistryInstallOptions,
   type RemoteHostProbe,
   type SshTarget,
@@ -167,6 +170,9 @@ export interface EnvironmentHostOptions {
   /** Injectable for tests; production stops and restarts the node over SSH. */
   restartNode?: (opts: RemoteRestartOptions) => Promise<void>
   findArtifact?: (target: string) => DistArtifact | null
+  /** Injectable for tests; production packs the dev-channel CLI from this checkout. */
+  packDevCli?: () => Promise<DevCliPackage>
+  installFromPackage?: (opts: PackageInstallOptions) => Promise<InstallResult>
   /** Default package version for registry installs (tests / overrides). */
   defaultCliVersion?: string
   /**
@@ -269,6 +275,8 @@ export class EnvironmentHost {
   private readonly installFromRegistry: (opts: RegistryInstallOptions) => Promise<InstallResult>
   private readonly restartNode: (opts: RemoteRestartOptions) => Promise<void>
   private readonly findArtifact: (target: string) => DistArtifact | null
+  private readonly packDevCli: () => Promise<DevCliPackage>
+  private readonly installFromPackage: (opts: PackageInstallOptions) => Promise<InstallResult>
   private readonly defaultCliVersion: string | undefined
   private readonly statusListeners = new Set<(snapshot: SupervisorSnapshot) => void>()
   /** Last snapshot per connection, so list() reports state without a live socket. */
@@ -364,6 +372,8 @@ export class EnvironmentHost {
     this.installFromRegistry = options.installFromRegistry ?? installNodeFromRegistry
     this.restartNode = options.restartNode ?? restartNodeOverSsh
     this.findArtifact = options.findArtifact ?? ((target) => findDistArtifact(target))
+    this.packDevCli = options.packDevCli ?? packDevCli
+    this.installFromPackage = options.installFromPackage ?? installNodeFromPackage
     this.defaultCliVersion = options.defaultCliVersion
     this.connections = new NodeConnectionManager({
       credentialStore: this.credentials,
@@ -3335,8 +3345,15 @@ export class EnvironmentHost {
     // True when this add replaces an existing CLI. A fresh install has nothing
     // to stop; bootstrap starts the node when /health is down.
     let restartAfterInstall = false
-    const installSource: RemoteInstallSource =
-      input.installSource ?? DEFAULT_REMOTE_INSTALL_SOURCE
+    // Dev builds are never published: the dev channel packs this checkout and
+    // installs it with the host's npm, so it has the registry's preconditions.
+    const devChannel = remoteDataChannel() === 'dev'
+    const installSource: RemoteInstallSource = devChannel
+      ? 'registry'
+      : input.installSource ?? DEFAULT_REMOTE_INSTALL_SOURCE
+    if (devChannel) {
+      assertDevChannelTarget({ nodeHome: input.remoteNodeHome, port: remotePort, remoteExec: input.remoteExec })
+    }
 
     // No explicit path: find or install one. SSH key auth is all the user
     // supplies — everything below is derived from the host itself.
@@ -3348,20 +3365,25 @@ export class EnvironmentHost {
       const blocker = preflightBlocker(probe, installSource)
       if (blocker) throw Object.assign(new Error(blocker), { code: 'failed_precondition' })
 
-      const desktopVersion = this.resolveRegistryVersion(input.packageVersion)
-      const decision = decideRemoteCliAction({
-        desktopVersion,
+      if (devChannel) {
+        // Same version as an older dev deploy says nothing about its code: always redeploy.
+        restartAfterInstall = Boolean(probe.superonePath)
+        installed = await this.installDevBuild(sshTarget, probe, onProgress)
+        remoteExec = installed.remoteExec
+      }
+      const decision = devChannel ? null : decideRemoteCliAction({
+        desktopVersion: this.resolveRegistryVersion(input.packageVersion),
         remotePath: probe.superonePath,
         remoteVersion: probe.superoneVersion,
       })
 
-      if (decision.action === 'upgrade_desktop') {
+      if (decision?.action === 'upgrade_desktop') {
         throw Object.assign(new Error(decision.message), { code: decision.code })
       }
 
-      if (decision.action === 'reuse') {
+      if (decision?.action === 'reuse') {
         remoteExec = probe.superonePath!
-      } else if (decision.action === 'install' || decision.action === 'upgrade_node' || decision.action === 'upgrade_node_unknown') {
+      } else if (decision?.action === 'install' || decision?.action === 'upgrade_node' || decision?.action === 'upgrade_node_unknown') {
         if (decision.action === 'upgrade_node') {
           restartAfterInstall = true
           warnings.push(
@@ -3499,6 +3521,29 @@ export class EnvironmentHost {
     }
   }
 
+  /** Pack this checkout and install it into the dev channel with the host's npm. */
+  private async installDevBuild(
+    sshTarget: SshTarget,
+    probe: RemoteHostProbe,
+    onProgress?: (progress: EnvironmentInstallProgress) => void,
+  ): Promise<InstallResult> {
+    onProgress?.({ phase: 'installing', step: 'build' })
+    const pkg = await this.packDevCli()
+    try {
+      return await this.installFromPackage({
+        ...sshTarget,
+        nodeBinDir: probe.nodeBinDir,
+        tarballPath: pkg.path,
+        version: pkg.version,
+        remoteHome: probe.home,
+        previousVersion: probe.superoneVersion ?? undefined,
+        onProgress: (step, detail) => onProgress?.({ phase: 'installing', step, detail }),
+      })
+    } finally {
+      await pkg.release()
+    }
+  }
+
   /**
    * Pin registry installs to a concrete version (design §15.1). Prefer the
    * caller, then host override, then Electron app version, never bare `latest`.
@@ -3592,7 +3637,9 @@ export class EnvironmentHost {
       )
     }
 
-    const targetVersion = this.resolveRegistryVersion()
+    // Dev nodes redeploy this checkout; the version check would only see equal versions.
+    const devChannel = remoteDataChannel() === 'dev'
+    const targetVersion = devChannel ? undefined : this.resolveRegistryVersion()
     const sshTarget: SshTarget = {
       destination: spec.destination,
       extraSshArgs: sshArgsForSpec(spec),
@@ -3603,6 +3650,9 @@ export class EnvironmentHost {
     const probe = await this.probeHost(sshTarget)
     const blocker = preflightBlocker(probe, 'registry')
     if (blocker) throw Object.assign(new Error(blocker), { code: 'failed_precondition' })
+    // Prefer the home captured at pair time; legacy profiles fall back to default.
+    const remoteNodeHome = storedNodeHome || `${remoteSuperoneHome(probe.home)}/node`
+    if (devChannel) assertDevChannelTarget({ nodeHome: remoteNodeHome, port: spec.remotePort })
 
     const warnings: string[] = []
     if (!probe.hasSystemd) {
@@ -3611,25 +3661,26 @@ export class EnvironmentHost {
       )
     }
 
+    const installed = targetVersion === undefined
+      ? await this.installDevBuild(sshTarget, probe, onProgress)
+      : await this.installFromRegistry({
+        ...sshTarget,
+        nodeBinDir: probe.nodeBinDir,
+        version: targetVersion,
+        remoteHome: probe.home,
+        previousVersion: probe.superoneVersion ?? undefined,
+        onProgress: (step, detail) => onProgress?.({ phase: 'installing', step, detail }),
+      })
+
     // Drop our socket before the node goes down, otherwise the supervisor burns
-    // the restart window on reconnect attempts and lands in backoff.
+    // the restart window on reconnect attempts and lands in backoff. A failed
+    // install leaves the running node and its connection untouched.
     this.disconnect(connectionId)
-
-    const installed = await this.installFromRegistry({
-      ...sshTarget,
-      nodeBinDir: probe.nodeBinDir,
-      version: targetVersion,
-      remoteHome: probe.home,
-      previousVersion: probe.superoneVersion ?? undefined,
-      onProgress: (step, detail) => onProgress?.({ phase: 'installing', step, detail }),
-    })
-
     onProgress?.({ phase: 'starting' })
     await this.restartNode({
       ...sshTarget,
       remoteExec: installed.remoteExec,
-      // Prefer the home captured at pair time; legacy profiles fall back to default.
-      remoteNodeHome: storedNodeHome || `${remoteSuperoneHome(probe.home)}/node`,
+      remoteNodeHome,
       remotePort: spec.remotePort,
       nodeBinDir: probe.nodeBinDir,
     })

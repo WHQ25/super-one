@@ -1160,7 +1160,9 @@ export type Messages = {
       olderProtocolVersion: string
       upgradeNode: string
       upgradingNode: string
+      redeployDevNode: string
       upgradeNodeSuccess: string
+      redeployDevNodeSuccess: string
       accessOff: string
       accessPaused: string
       offline: string
@@ -1201,8 +1203,6 @@ export type Messages = {
         destinationHint: string
         autoInstallHint: string
         uploadInstallHint: string
-        useLocalUpload: string
-        useLocalUploadHint: string
         advanced: string
         autoDetected: string
         remoteExec: string
@@ -1214,6 +1214,7 @@ export type Messages = {
         label: string
         progress: {
           probing: string
+          build: string
           npm: string
           upload: string
           verify: string
@@ -6300,7 +6301,9 @@ export const en: Messages = {
       olderProtocolVersion: '(older protocol)',
       upgradeNode: 'Upgrade Node',
       upgradingNode: 'Upgrading node…',
+      redeployDevNode: 'Redeploy Dev Build',
       upgradeNodeSuccess: 'Node upgraded to {{version}}',
+      redeployDevNodeSuccess: 'Dev node redeployed ({{version}})',
       accessOff: 'That device turned off access for this computer. It reconnects once access is back on.',
       accessPaused: 'Control paused on that computer',
       offline: 'Offline',
@@ -6347,9 +6350,6 @@ export const en: Messages = {
           'If superone is missing, the desktop installs @super-one/cli from npm over SSH (pinned version). Key-based SSH or ssh-agent is required.',
         uploadInstallHint:
           'Development mode: upload a local superone dist tarball over SSH instead of using npm.',
-        useLocalUpload: 'Install From Local',
-        useLocalUploadHint:
-          'Requires apps/cli/dist (or a packaged resources/superone-dist) built for the remote OS/arch.',
         advanced: 'Advanced',
         autoDetected: 'Auto-detect / install',
         remoteExec: 'Remote Executable',
@@ -6363,6 +6363,7 @@ export const en: Messages = {
         label: 'Label',
         progress: {
           probing: 'Probing remote host…',
+          build: 'Building dev CLI from source…',
           npm: 'Installing @super-one/cli…',
           upload: 'Uploading package…',
           verify: 'Verifying package…',

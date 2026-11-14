@@ -319,15 +319,28 @@ reconnect hydrates from the node snapshot, then resumes its event cursor.
 ## 8. Node Persistence
 
 The node directory is `<personal root>/node` (`resolveNodeHome` in
-`apps/cli/src/config.ts`): `~/.superone/node` for stable and
-`~/.superone/alpha/node` for alpha, where the personal root comes from
-`SUPERONE_HOME` or the `SUPERONE_VARIANT` baked into the published bundle
-(`packages/runtime/src/fs/superone-home.ts`). Stable and alpha nodes coexist per
-user with separate directories, ports (7788 / 7790), systemd units
-(`superone.service` / `superone-alpha.service`) and binaries
-(`superone` / `superone-alpha`). SSH bootstrap, the systemd unit, diagnostics,
-harness state and identity commands all resolve the same directory for a
-channel.
+`apps/cli/src/config.ts`): `~/.superone/node` for stable,
+`~/.superone/alpha/node` for alpha and `~/.superone/dev/node` for dev, where the
+personal root comes from `SUPERONE_HOME` or the `SUPERONE_VARIANT` baked into the
+bundle (`packages/runtime/src/fs/superone-home.ts`). Stable, alpha and dev nodes
+coexist per user with separate directories, ports (7788 / 7790 / 7792), systemd
+units (`superone.service` / `superone-alpha.service` / `superone-dev.service`) and
+command links (`superone` / `superone-alpha` / `superone-dev`); the channel table
+is `NodeChannel` in `packages/shared/src/environment/client-view.ts`. SSH
+bootstrap, the systemd unit, diagnostics, harness state and identity commands all
+resolve the same directory for a channel.
+
+The desktop picks the channel from its build identity
+(`apps/desktop/src/main/environment/remote-data-path.ts`), never from a version
+string. Stable and alpha desktops install the matching `@super-one/cli` release
+from npm. Nothing is published for dev: a dev desktop (`bun run dev`) packs this
+checkout with `pack:npm --variant dev` (a private package that also pins the
+alpha harness manifests the dev desktop uses), uploads the tarball and installs
+it with the host's npm, on every add and on **Redeploy Dev Build**. Packaged dev
+builds have no checkout and cannot deploy. Add, redeploy and SSH repair refuse a
+target whose node home, port or executable belongs to the stable or alpha
+install (`otherNodeChannelOf`); a record paired before the dev channel existed
+has to be removed and added again.
 
 `SUPERONE_NODE_HOME` is an internal override for automated tests and the dev
 labs, not a production multi-instance feature. Real multi-instance support would

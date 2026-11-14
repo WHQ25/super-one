@@ -1,4 +1,4 @@
-import { remoteSuperoneHome } from './remote-data-path'
+import { assertDevChannelTarget, remoteDataChannel, remoteSuperoneHome } from './remote-data-path'
 /**
  * Re-pair an existing SSH-reachable node without user-supplied secrets.
  *
@@ -109,6 +109,12 @@ export async function repairPairingOverSsh(
     if (!nodeBinDirStored) {
       nodeBinDir = probe.nodeBinDir?.trim() || ''
     }
+  }
+
+  // Repair starts the node if it is down: never the dev build on another
+  // channel's data, nor another channel's node from a dev desktop.
+  if (remoteDataChannel() === 'dev') {
+    assertDevChannelTarget({ nodeHome: remoteNodeHome, port: spec.remotePort, remoteExec })
   }
 
   // The tunnel's local port is ephemeral, so a stored baseUrl is never reusable

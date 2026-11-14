@@ -1,4 +1,5 @@
-import { remoteSuperoneHome, remoteCliName } from './remote-data-path'
+import { channelFromVersion } from '@superone/shared/update-channels'
+import { remoteSuperoneHome, remoteCliName, remoteDataChannel } from './remote-data-path'
 import { createHash } from 'node:crypto'
 import { readFile } from 'node:fs/promises'
 import { basename } from 'node:path'
@@ -233,7 +234,7 @@ export interface InstallResult {
   previousVersion?: string
 }
 
-export type InstallProgressStep = 'npm' | 'upload' | 'verify' | 'extract' | 'activate'
+export type InstallProgressStep = 'build' | 'npm' | 'upload' | 'verify' | 'extract' | 'activate'
 
 export interface InstallOptions extends SshTarget {
   /** Local path to a `superone-<version>-<target>.tar.gz` built by build-dist. */
@@ -271,7 +272,7 @@ export async function installNodeOverSsh(options: InstallOptions): Promise<Insta
   const bytes = await readFile(options.tarballPath)
   const sha256 = createHash('sha256').update(bytes).digest('hex')
   const stageName = `superone-${options.version}-${options.distTarget}`
-  const root = remoteSuperoneHome(options.remoteHome, options.version)
+  const root = remoteSuperoneHome(options.remoteHome)
   const uploadPath = `${root}/downloads/${basename(options.tarballPath)}`
 
   options.onProgress?.('upload')
@@ -300,7 +301,7 @@ export async function installNodeOverSsh(options: InstallOptions): Promise<Insta
         `tar xzf ${shellQuote(uploadPath)} -C ${shellQuote(`${root}/versions`)}`,
         `chmod +x ${shellQuote(`${root}/versions/${stageName}/bin/superone`)}`,
         `ln -sfn ${shellQuote(`${root}/versions/${stageName}`)} ${shellQuote(`${root}/current`)}`,
-        `ln -sfn ${shellQuote(`${root}/current/bin/superone`)} ${shellQuote(`${options.remoteHome}/.local/bin/${remoteCliName(options.version)}`)}`,
+        `ln -sfn ${shellQuote(`${root}/current/bin/superone`)} ${shellQuote(`${options.remoteHome}/.local/bin/${remoteCliName()}`)}`,
         `rm -f ${shellQuote(uploadPath)}`,
         `${shellQuote(`${root}/current/bin/superone`)} identity --home ${shellQuote(`${root}/node`)} >/dev/null`,
         'echo SUPERONE_UPLOAD_OK',
@@ -347,26 +348,104 @@ export async function installNodeFromRegistry(
     throw new Error('registry install requires a pinned package version (not latest)')
   }
 
+  // The package bakes its channel from the version; installing it under another
+  // channel's root would point the node at that channel's data.
+  const channel = remoteDataChannel()
+  if (channelFromVersion(version) !== channel) {
+    throw new Error(`registry version ${version} does not belong to the ${channel} node channel`)
+  }
+
   const spec = `${packageName}@${version}`
-  const root = remoteSuperoneHome(options.remoteHome, version)
+  options.onProgress?.('npm', spec)
+  const remoteExec = await npmInstallOnRemote(options, spec, {
+    failureHint: 'If the package is not published yet or the host is offline, use install source "upload" with a local dist build.',
+  })
+  return {
+    remoteExec,
+    version,
+    target: 'registry',
+    sha256: '',
+    source: 'registry',
+    previousVersion: options.previousVersion,
+  }
+}
+
+export interface PackageInstallOptions extends SshTarget {
+  /** Local `npm pack` tarball of `@super-one/cli`. */
+  tarballPath: string
+  version: string
+  remoteHome: string
+  previousVersion?: string
+  onProgress?: (phase: InstallProgressStep, detail?: string) => void
+}
+
+/**
+ * Upload a locally packed `@super-one/cli` and install it with the host's npm,
+ * the same way as a registry release: npm fetches the native and Agent SDK
+ * dependencies for the host platform.
+ */
+export async function installNodeFromPackage(options: PackageInstallOptions): Promise<InstallResult> {
+  const bytes = await readFile(options.tarballPath)
+  const sha256 = createHash('sha256').update(bytes).digest('hex')
+  const downloads = `${remoteSuperoneHome(options.remoteHome)}/downloads`
+  const uploadPath = `${downloads}/${basename(options.tarballPath)}`
+
+  options.onProgress?.('upload')
+  await sshUpload({
+    destination: options.destination,
+    extraArgs: options.extraSshArgs,
+    sshPath: options.sshPath,
+    localPath: options.tarballPath,
+    remotePath: uploadPath,
+    remoteCommand: `mkdir -p ${shellQuote(downloads)} && cat > ${shellQuote(uploadPath)}`,
+    onProgress: (sent, total) =>
+      options.onProgress?.('upload', `${Math.round((sent / total) * 100)}%`),
+  })
+
+  options.onProgress?.('npm', basename(options.tarballPath))
+  const remoteExec = await npmInstallOnRemote(options, uploadPath, {
+    // A truncated upload must never be installed.
+    before: [
+      `remote_sha="$( (sha256sum ${shellQuote(uploadPath)} 2>/dev/null || shasum -a 256 ${shellQuote(uploadPath)}) | awk '{print $1}' )"`,
+      `if [ "$remote_sha" != ${shellQuote(sha256)} ]; then echo "checksum mismatch after upload: expected ${sha256}, got $remote_sha" >&2; exit 41; fi`,
+    ],
+    // npm copies a tarball's contents into the prefix; drop it whether or not the install succeeded.
+    cleanup: `rm -f ${shellQuote(uploadPath)}`,
+  })
+  return {
+    remoteExec,
+    version: options.version,
+    target: 'npm-pack',
+    sha256,
+    source: 'upload',
+    previousVersion: options.previousVersion,
+  }
+}
+
+/** Install an npm spec into this channel's prefix and link its command; the launcher path. */
+async function npmInstallOnRemote(
+  options: SshTarget & { remoteHome: string },
+  spec: string,
+  steps: { before?: string[]; cleanup?: string; failureHint?: string },
+): Promise<string> {
+  const root = remoteSuperoneHome(options.remoteHome)
   const prefix = `${root}/npm`
   const localBin = `${options.remoteHome}/.local/bin`
   const remoteExec = `${prefix}/bin/${PUBLIC_CLI_BIN}`
-  const commandLink = `${localBin}/${remoteCliName(version)}`
-  const remoteCommand = (command: string): string =>
-    withRemoteNodePath(command, options.nodeBinDir)
+  const commandLink = `${localBin}/${remoteCliName()}`
 
-  options.onProgress?.('npm', spec)
-
-  const installCmd = remoteCommand(
-    [
-      `mkdir -p ${shellQuote(prefix)} ${shellQuote(localBin)}`,
-      registryNpmInstallInvocation(prefix, spec),
-      `ln -sfn ${shellQuote(remoteExec)} ${shellQuote(commandLink)}`,
-      // Prove the launcher is executable; identity is cheap and fails closed.
-      `${shellQuote(remoteExec)} identity --home ${shellQuote(`${root}/node`)} >/dev/null`,
-      `echo "SUPERONE_REGISTRY_OK=${remoteExec}"`,
-    ].join(' && '),
+  const chain = [
+    ...(steps.before ?? []),
+    `mkdir -p ${shellQuote(prefix)} ${shellQuote(localBin)}`,
+    registryNpmInstallInvocation(prefix, spec),
+    `ln -sfn ${shellQuote(remoteExec)} ${shellQuote(commandLink)}`,
+    // Prove the launcher is executable; identity is cheap and fails closed.
+    `${shellQuote(remoteExec)} identity --home ${shellQuote(`${root}/node`)} >/dev/null`,
+    `echo "SUPERONE_REGISTRY_OK=${remoteExec}"`,
+  ].join(' && ')
+  const installCmd = withRemoteNodePath(
+    steps.cleanup ? `(${chain}); rc=$?; ${steps.cleanup}; exit $rc` : chain,
+    options.nodeBinDir,
   )
 
   const result = await sshCapture({
@@ -379,20 +458,9 @@ export async function installNodeFromRegistry(
 
   if (result.code !== 0 || !result.stdout.includes('SUPERONE_REGISTRY_OK=')) {
     const detail = (result.stderr.trim() || result.stdout.trim() || `code ${result.code}`).slice(0, 800)
-    throw new Error(
-      `npm install of ${spec} failed on remote host: ${detail}. ` +
-        `If the package is not published yet or the host is offline, use install source "upload" with a local dist build.`,
-    )
+    throw new Error(`npm install of ${spec} failed on remote host: ${detail}.${steps.failureHint ? ` ${steps.failureHint}` : ''}`)
   }
-
-  return {
-    remoteExec,
-    version,
-    target: 'registry',
-    sha256: '',
-    source: 'registry',
-    previousVersion: options.previousVersion,
-  }
+  return remoteExec
 }
 
 /** Version string preflight compares. Major-only input is major.0.0, so Node 22 is not 22.13. */

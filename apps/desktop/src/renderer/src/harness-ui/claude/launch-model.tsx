@@ -2,12 +2,11 @@ import { claudeFastModeOption, supportsClaudeFastMode } from '@superone/shared/c
 import { useMemo } from 'react'
 import { claudeIdToBucket, hasOneM } from '@superone/shared/agent-types'
 import type { ModelOption, ProviderModelEnv } from '@superone/shared/agent-types'
-import { resolveClaudeDisplayName, resolveClaudeEntries } from '@superone/shared/claude-model-mapping'
+import { claudeEffortLevelsForProvider, resolveClaudeDisplayName, resolveClaudeEntries } from '@superone/shared/claude-model-mapping'
 import { useChatStore } from '@/stores/chat'
 import { FireText } from '@/components/chat/FireText'
 import {
   GroupedModelEffortSelector,
-  type SelectorEffortOption,
   type SelectorModelOption,
 } from '@/components/chat/model-selector/GroupedModelEffortSelector'
 import { pickLaunchRefresh, useHarnessCatalogRefresh } from '../catalog-refresh'
@@ -23,7 +22,6 @@ import {
 import { effortForLevels } from '../effort'
 
 const EMPTY_MODELS: ModelOption[] = []
-const NO_EFFORT: SelectorEffortOption[] = []
 
 export function claudeModelsForProvider(
   catalog: ModelOption[],
@@ -70,11 +68,12 @@ export function ClaudeLaunchModel({
     ?? model
     ?? null
 
-  // Third-party modelMapping freezes Claude effort UI (same as main chat).
-  const effortOptions = useMemo(
-    () => (modelEnv ? NO_EFFORT : levelEffortOptions(selected?.supportedEffortLevels ?? profileEffortLevels(profile))),
-    [modelEnv, selected, profile],
-  )
+  // Third-party modelMapping freezes Claude effort UI (same as main chat and harness settings).
+  const effortOptions = useMemo(() => {
+    const levels = claudeEffortLevelsForProvider(selected, modelEnv)
+    if (modelEnv) return levelEffortOptions(levels)
+    return levelEffortOptions(levels.length > 0 ? levels : profileEffortLevels(profile))
+  }, [modelEnv, selected, profile])
 
   const fastAvailable = offerFastMode === true && supportsClaudeFastMode(selected, modelEnv)
   const params = [...(optionParams ?? []), ...(fastAvailable ? [claudeFastModeOption(claudeFastMode === true)] : [])]

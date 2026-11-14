@@ -77,3 +77,18 @@ export function resolveClaudeDisplayName(
 export function activeClaudeModelEnv(modelEnv: ProviderModelEnv | null | undefined): ProviderModelEnv | null {
   return modelEnv && Object.keys(modelEnv).length > 0 ? modelEnv : null
 }
+
+/**
+ * Effort choices Claude offers for this model under the active provider.
+ *
+ * A third-party slot mapping owns the model the harness actually runs, so the
+ * catalog's effort list no longer applies. The composer, launch picker, and
+ * harness settings all use this so a mapped credential hides effort everywhere.
+ */
+export function claudeEffortLevelsForProvider(
+  model: Pick<ModelOption, 'supportedEffortLevels'> | null | undefined,
+  modelEnv: ProviderModelEnv | null | undefined,
+): NonNullable<ModelOption['supportedEffortLevels']> {
+  if (activeClaudeModelEnv(modelEnv)) return []
+  return model?.supportedEffortLevels ?? []
+}

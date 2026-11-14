@@ -10,7 +10,7 @@ import { useAppStore } from '@/stores/app'
 import { consumerForHarness, resolveEffective } from '@/lib/provider-resolve'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { FireText } from '../FireText'
-import { resolveClaudeDisplayName, resolveClaudeEntries } from '@superone/shared/claude-model-mapping'
+import { activeClaudeModelEnv, claudeEffortLevelsForProvider, resolveClaudeDisplayName, resolveClaudeEntries } from '@superone/shared/claude-model-mapping'
 import { GroupedModelEffortSelector, type SelectorCatalogParam, type SelectorEffortOption, type SelectorModelOption } from './GroupedModelEffortSelector'
 import { useSelectorProviders } from './useSelectorProviders'
 
@@ -84,8 +84,7 @@ export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
   // would rename those models and drop their effort list.
   const activeModelEnv = useMemo(() => {
     if (isRemoteProject) return null
-    const mapping = effective?.modelMapping
-    return mapping && Object.keys(mapping).length > 0 ? mapping : null
+    return activeClaudeModelEnv(effective?.modelMapping)
   }, [effective, isRemoteProject])
 
   const fastModeState = useActiveSession((s) => s.session?.fastModeState)
@@ -133,11 +132,11 @@ export function ClaudeModelSelector({ onCloseAutoFocus }: Props) {
   )
 
   const effortLevels = useMemo((): readonly string[] => {
-    if (activeModelEnv) return []
-    if (currentModel?.supportedEffortLevels?.length) return currentModel.supportedEffortLevels
+    const levels = claudeEffortLevelsForProvider(currentModel, activeModelEnv)
+    if (levels.length > 0) return levels
     // The node's provider table omits effort. Claude Code still accepts these.
-    if (isRemoteProject && currentModel) return ['low', 'medium', 'high', 'xhigh', 'max']
-    return []
+    if (!activeModelEnv && isRemoteProject && currentModel) return ['low', 'medium', 'high', 'xhigh', 'max']
+    return levels
   }, [activeModelEnv, currentModel, isRemoteProject])
 
   const effortOptions = useMemo<SelectorEffortOption[]>(

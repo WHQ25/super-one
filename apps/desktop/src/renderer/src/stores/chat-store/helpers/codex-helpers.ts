@@ -92,6 +92,22 @@ export function currentCodexReasoningEffort(
   return selected ?? model?.defaultReasoningEffort ?? model?.supportedReasoningEfforts?.[0]?.value ?? null
 }
 
+/**
+ * Effort the Codex settings row shows for the catalog of the selected provider.
+ *
+ * While that catalog is still loading, keep the saved preference so the row
+ * does not flash empty. Once it has settled, a missing model or a model with
+ * no reasoning efforts shows no effort — the same as a new Codex session.
+ */
+export function codexSettingsDisplayedEffort(
+  model: ModelOption | undefined,
+  preferred: CodexReasoningEffort | '',
+  catalogSettled: boolean,
+): CodexReasoningEffort | '' {
+  if (model) return resolveCodexReasoningEffort(model, preferred || undefined) ?? ''
+  return catalogSettled ? '' : preferred
+}
+
 export function resolveCodexReasoningEffort(
   model: ModelOption | undefined,
   preferred?: CodexReasoningEffort,

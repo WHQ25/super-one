@@ -10,6 +10,7 @@ import {
   resolveCodexModelSelection,
   resolveCodexReasoningEffort,
 } from './chat'
+import { codexSettingsDisplayedEffort } from './chat-store/helpers/codex-helpers'
 
 function makeUsage(overrides: Partial<CodexUsageInfo> = {}): CodexUsageInfo {
   return {
@@ -165,6 +166,31 @@ describe('resolveCodexReasoningEffort', () => {
       defaultReasoningEffort: 'high',
     }
     expect(resolveCodexReasoningEffort(model)).toBe('high')
+  })
+})
+
+describe('codexSettingsDisplayedEffort', () => {
+  const model: ModelOption = {
+    id: 'm1', name: 'M1', description: '',
+    supportedReasoningEfforts: [{ value: 'low', description: '' }, { value: 'high', description: '' }],
+    defaultReasoningEffort: 'low',
+  }
+
+  it('uses the loaded model when the provider catalog contains it', () => {
+    expect(codexSettingsDisplayedEffort(model, 'high', true)).toBe('high')
+  })
+
+  it('keeps the saved effort while the provider catalog is still loading', () => {
+    expect(codexSettingsDisplayedEffort(undefined, 'high', false)).toBe('high')
+  })
+
+  it('drops a stale effort once the catalog has settled without that model', () => {
+    expect(codexSettingsDisplayedEffort(undefined, 'high', true)).toBe('')
+  })
+
+  it('shows no effort when the settled model has none', () => {
+    const plain: ModelOption = { id: 'chat', name: 'Chat', description: '' }
+    expect(codexSettingsDisplayedEffort(plain, 'high', true)).toBe('')
   })
 })
 

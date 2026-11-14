@@ -28,6 +28,9 @@ import {
 } from '@/components/chat/ModelSelectorLists'
 import { checkAutoModePlanEligibility } from '@/lib/auto-mode-eligibility'
 import type { EffortLevel, PermissionMode, QuestionPreviewFormat, SandboxMode, SettingsProvider } from '@superone/shared/agent-types'
+import { activeClaudeModelEnv, claudeEffortLevelsForProvider, resolveClaudeDisplayName } from '@superone/shared/claude-model-mapping'
+import { consumerForHarness, resolveEffective } from '@/lib/provider-resolve'
+import { useSettingsStore } from '@/stores/settings'
 import { HarnessPreferencesPage, SessionDefaultsSection } from '@/components/preferences/SessionDefaultsSection'
 import { DshSubagentModelsSettings } from '@/components/preferences/DshSubagentModelsSection'
 import { SettingsRow, SettingsSection } from '@/components/settings/SettingsSection'
@@ -43,6 +46,10 @@ function ClaudePreferencesPage() {
     max: t('settings.preferences.effort.levels.max'),
   }
   const currentFolder = useAppStore((s) => s.currentFolder)
+  const experimentalClaudeOpenAiChatEnabled = useAppStore((s) => s.experimentalClaudeOpenAiChatEnabled)
+  const platforms = useSettingsStore((s) => s.platforms)
+  const credentials = useSettingsStore((s) => s.credentials)
+  const bindings = useSettingsStore((s) => s.bindings)
   const availableOutputStyles = useChatStore(selectClaudeOutputStyles)
   const availableModels = useChatStore(selectClaudeModels)
   const refreshClaudeResources = useChatStore((state) => state.refreshClaudeResources)
@@ -131,17 +138,35 @@ function ClaudePreferencesPage() {
     }
   }
 
+  // The default provider is what a new session uses until the composer overrides it.
+  // Its slot mapping renames the model list and hides effort, matching that composer.
+  const modelEnv = useMemo(
+    () => activeClaudeModelEnv(resolveEffective(
+      platforms,
+      credentials,
+      bindings,
+      consumerForHarness('claude'),
+      null,
+      { experimentalClaudeOpenAiChatEnabled },
+    )?.modelMapping),
+    [platforms, credentials, bindings, experimentalClaudeOpenAiChatEnabled],
+  )
   const selectedDefaultModel = availableModels.find((m) => m.id === defaultModel)
-  const supportedEffortLevels = selectedDefaultModel?.supportedEffortLevels ?? []
+  const selectedModelLabel = selectedDefaultModel
+    ? (resolveClaudeDisplayName(selectedDefaultModel, modelEnv) ?? selectedDefaultModel.name)
+    : (defaultModel || t('common.systemDefault'))
+  const supportedEffortLevels = claudeEffortLevelsForProvider(selectedDefaultModel, modelEnv)
   const displayedEffort: EffortLevel | '' =
     defaultEffort && supportedEffortLevels.includes(defaultEffort) ? defaultEffort : ''
 
   async function handleModelSelect(modelId: string) {
     const nextModel = availableModels.find((m) => m.id === modelId)
-    const nextEffort: EffortLevel | '' =
-      nextModel && defaultEffort && nextModel.supportedEffortLevels?.includes(defaultEffort)
-        ? defaultEffort
-        : ''
+    const nextLevels = claudeEffortLevelsForProvider(nextModel, modelEnv)
+    // A mapped provider hides effort but does not erase the saved default. Switching
+    // back to the official catalog should still show it when the model supports it.
+    const nextEffort: EffortLevel | '' = modelEnv
+      ? defaultEffort
+      : (defaultEffort && nextLevels.includes(defaultEffort) ? defaultEffort : '')
     await saveClaudeDefaults(
       { defaultModel: modelId, defaultEffort: nextEffort },
       modelId ? t('settings.preferences.defaultModel.claudeUpdated') : t('settings.preferences.defaultModel.claudeSystemDefault'),
@@ -226,7 +251,7 @@ function ClaudePreferencesPage() {
                   className={settingsSelectTriggerClassName}
                 >
                   <span className="max-w-[160px] truncate">
-                    {selectedDefaultModel?.name ?? (defaultModel || t('common.systemDefault'))}
+                    {selectedModelLabel}
                   </span>
                   <ChevronDown className={cn('size-3.5 shrink-0 text-muted-foreground transition-transform duration-200', modelOpen && 'rotate-180')} />
                 </button>
@@ -235,6 +260,7 @@ function ClaudePreferencesPage() {
                 <ClaudeModelList
                   title={t('settings.preferences.defaultModel.label')}
                   models={availableModels}
+                  modelEnv={modelEnv}
                   activeId={defaultModel}
                   onSelect={handleModelSelect}
                   clearOption={{

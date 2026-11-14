@@ -6,6 +6,7 @@
 import { useLayoutEffect, useState, type ReactNode } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { ModelOption, SandboxCapability, SandboxProbeResult, SettingsProvider } from '@superone/shared/agent-types'
+import { BUILTIN_PLATFORMS, type ConsumerBinding, type Credential } from '@superone/shared/platform-registry'
 import { mockIpc } from '../../../../.storybook/mock-ipc'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
@@ -25,12 +26,26 @@ const CODEX_MODELS: ModelOption[] = [
   { id: 'gpt-5.5-mini', name: 'GPT-5.5 Mini', description: 'Fast' },
 ] as ModelOption[]
 
+const GLM_PLATFORMS = BUILTIN_PLATFORMS.filter((platform) => platform.id === 'zhipu-cn')
+const GLM_CREDENTIAL: Credential = {
+  id: 'glm',
+  platformId: 'zhipu-cn',
+  planId: 'coding',
+  name: 'Work',
+  secret: '',
+  notes: '',
+  sortOrder: 0,
+}
+const GLM_BINDING: ConsumerBinding = { consumer: 'chat:claude', credentialId: 'glm' }
+
 type Scenario = {
   provider: SettingsProvider
   /** Pin the settings request so the rows stay in their loading (disabled) state. */
   loading?: boolean
   /** No models loaded yet: model and effort pickers are disabled. */
   noModels?: boolean
+  /** chat:claude is bound to GLM, so the model list and effort follow that mapping. */
+  claudeThirdParty?: boolean
   sandbox?: { capability: SandboxCapability; probe: SandboxProbeResult | null }
   width?: number
 }
@@ -64,16 +79,19 @@ function Frame({ scenario, children }: { scenario: Scenario; children: ReactNode
     })
     mockIpc('app', 'getProjectPreferences', async () => ({ outputStyle: '' }))
     mockIpc('app', 'saveProjectPreferences', async (_path: unknown, patch: unknown) => patch)
-    mockIpc('app', 'listPlatforms', async () => [])
-    mockIpc('app', 'listCredentials', async () => [])
-    mockIpc('app', 'listBindings', async () => [])
+    const platforms = scenario.claudeThirdParty ? GLM_PLATFORMS : []
+    const credentials = scenario.claudeThirdParty ? [GLM_CREDENTIAL] : []
+    const bindings = scenario.claudeThirdParty ? [GLM_BINDING] : []
+    mockIpc('app', 'listPlatforms', async () => platforms)
+    mockIpc('app', 'listCredentials', async () => credentials)
+    mockIpc('app', 'listBindings', async () => bindings)
     mockIpc('app', 'codexListModels', async () => (scenario.noModels ? [] : CODEX_MODELS))
     mockIpc('app', 'codexListRealtimeVoices', async () => ({ voices: ['cove', 'juniper', 'ember'], defaultVoice: 'cove' }))
     mockIpc('app', 'codexListRealtimeVoicePreviews', async () => ({}))
     mockIpc('app', 'codexDetectExternalAgentConfig', async () => [])
     mockIpc('app', 'connectDeepseek', async () => ({ models: [] }))
 
-    useSettingsStore.setState({ platforms: [], credentials: [], bindings: [], providerScope: 'local' })
+    useSettingsStore.setState({ platforms, credentials, bindings, providerScope: 'local' })
     useAppStore.setState({
       currentFolder: PROJECT,
       settingsProvider: scenario.provider,
@@ -126,6 +144,7 @@ type Story = StoryObj<typeof meta>
 export const Claude: Story = { args: { provider: 'claude' } }
 export const ClaudeLoading: Story = { args: { provider: 'claude', loading: true } }
 export const ClaudeNoModels: Story = { args: { provider: 'claude', noModels: true } }
+export const ClaudeThirdPartyProvider: Story = { args: { provider: 'claude', claudeThirdParty: true } }
 export const ClaudeSandboxMissing: Story = {
   args: {
     provider: 'claude',

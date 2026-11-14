@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ModelOption, ProviderModelEnv } from './agent-types'
-import { resolveClaudeEntries } from './claude-model-mapping'
+import { claudeEffortLevelsForProvider, resolveClaudeEntries } from './claude-model-mapping'
 
 /** Shape of the official catalog the SDK reports: each alias plus its 1M row. */
 const CATALOG: ModelOption[] = [
@@ -44,5 +44,24 @@ describe('resolveClaudeEntries', () => {
     const entries = resolveClaudeEntries(CATALOG, TOKEN_PLAN)
     const haiku = entries.find((e) => e.model.id === 'haiku')
     expect(haiku?.displayName).toBe('Haiku 4.5')
+  })
+})
+
+describe('claudeEffortLevelsForProvider', () => {
+  const opus: ModelOption = {
+    id: 'opus',
+    name: 'Opus',
+    description: '',
+    supportedEffortLevels: ['low', 'medium', 'high', 'xhigh', 'max'],
+  }
+
+  it('keeps the catalog effort list when the provider does not remap models', () => {
+    expect(claudeEffortLevelsForProvider(opus, null)).toEqual(['low', 'medium', 'high', 'xhigh', 'max'])
+    expect(claudeEffortLevelsForProvider(opus, {})).toEqual(['low', 'medium', 'high', 'xhigh', 'max'])
+  })
+
+  it('drops effort when a third-party provider maps the slots', () => {
+    expect(claudeEffortLevelsForProvider(opus, TOKEN_PLAN)).toEqual([])
+    expect(claudeEffortLevelsForProvider(undefined, TOKEN_PLAN)).toEqual([])
   })
 })

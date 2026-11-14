@@ -22,6 +22,7 @@ import { settingsSelectTriggerClassName } from '@/components/settings/select-tri
 import { useSettingsStore } from '@/stores/settings'
 import { useAppStore } from '@/stores/app'
 import { invalidateDefaultCodexPreferencesCache, resolveCodexReasoningEffort, useChatStore } from '@/stores/chat'
+import { codexSettingsDisplayedEffort } from '@/stores/chat-store/helpers/codex-helpers'
 import { DEFAULT_CODEX_PERMISSION_PRESET, type CodexPermissionPreset, type CodexReasoningEffort, type ModelOption } from '@superone/shared/agent-types'
 
 export function CodexPreferencesPage() {
@@ -85,9 +86,7 @@ export function CodexPreferencesPage() {
 
   const selectedModel = codexModels.find((entry) => entry.id === defaultModel)
   const supportedReasoningEfforts = selectedModel?.supportedReasoningEfforts ?? []
-  const displayedReasoningEffort = selectedModel
-    ? (resolveCodexReasoningEffort(selectedModel, defaultReasoningEffort || undefined) ?? '')
-    : defaultReasoningEffort
+  const displayedReasoningEffort = codexSettingsDisplayedEffort(selectedModel, defaultReasoningEffort, !modelsLoading)
   const disabled = loading || saving
   const activePermissionPreset = defaultPermissionPreset || DEFAULT_CODEX_PERMISSION_PRESET
   const currentPermissionPreset = codexPermissionPresetOptions.find((option) => option.id === activePermissionPreset) ?? codexPermissionPresetOptions[1]
@@ -266,7 +265,10 @@ export function CodexPreferencesPage() {
             >
               <Popover open={effortOpen} onOpenChange={setEffortOpen}>
                 <PopoverTrigger asChild>
-                  <button disabled={disabled || (!selectedModel && !displayedReasoningEffort)} className={settingsSelectTriggerClassName}>
+                  <button
+                    disabled={disabled || (!modelsLoading && supportedReasoningEfforts.length === 0) || (modelsLoading && !displayedReasoningEffort)}
+                    className={settingsSelectTriggerClassName}
+                  >
                     <span className="truncate">
                       {displayedReasoningEffort ? formatReasoningEffortLabel(displayedReasoningEffort) : t('common.systemDefault')}
                     </span>

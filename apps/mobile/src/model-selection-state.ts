@@ -1,5 +1,5 @@
 import type { HarnessId, ModelOption, ProviderModelEnv, RemoteEffortOption, RemoteSystemInfo } from '@superone/shared/agent-types'
-import { activeClaudeModelEnv } from '@superone/shared/claude-model-mapping'
+import { activeClaudeModelEnv, claudeEffortLevelsForProvider } from '@superone/shared/claude-model-mapping'
 import { formatEffortLabel } from '@superone/shared/effort-labels'
 
 type ProviderCatalogInfo = Pick<RemoteSystemInfo, 'providers' | 'activeProvider'>
@@ -38,7 +38,13 @@ export function effortOptionsForModel(
   // A mapped provider owns the model/effort pairing in the host — but only a
   // provider that actually remaps models. A credential with no mapping still
   // runs the Claude catalog, and the desktop keeps effort for it.
-  if (harnessId === 'claude' && selectedProviderModelEnv(info, providerId)) return []
+  if (harnessId === 'claude') {
+    const model = info.models?.find((candidate) => candidate.id === modelId)
+    return claudeEffortLevelsForProvider(model, selectedProviderModelEnv(info, providerId)).map((value) => ({
+      value,
+      label: formatEffortLabel(value),
+    }))
+  }
   if (harnessId === 'acp-grok' || harnessId === 'acp-antigravity') return info.efforts ?? []
 
   const model: ModelOption | undefined = info.models?.find((candidate) => candidate.id === modelId)

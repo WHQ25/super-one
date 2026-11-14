@@ -2,6 +2,7 @@ import { useState, useEffect, useLayoutEffect, useCallback, useRef, memo } from 
 import { useTranslation } from 'react-i18next'
 import { AnimatePresence, motion } from 'motion/react'
 import { cn } from '@superone/ui/lib/utils'
+import { useScrollEdgeFade } from '@superone/ui/lib/use-scroll-edge-fade'
 import type { TurnOutlineEntry } from './turn-outline'
 
 import { findActiveTurnId, tickWidth, TICK_MAX } from '@superone/shared/chat-scroll-indicator'
@@ -24,11 +25,15 @@ function splitTitle(text: string): { title: string; summary: string } {
 function ChatScrollIndicatorImpl({ entries, viewportRef, getMessageTop, onJump }: ChatScrollIndicatorProps) {
   const [activeId, setActiveId] = useState<string | null>(null)
   const [hovered, setHovered] = useState<{ index: number; top: number } | null>(null)
-  const [overflow, setOverflow] = useState({ above: false, below: false })
   const rafRef = useRef(0)
   const outerRef = useRef<HTMLDivElement>(null)
   const stripRef = useRef<HTMLDivElement>(null)
   const previewRef = useRef<HTMLDivElement>(null)
+  const fadeRef = useScrollEdgeFade<HTMLDivElement>()
+  const setStripRef = useCallback((node: HTMLDivElement | null) => {
+    stripRef.current = node
+    fadeRef(node)
+  }, [fadeRef])
   const followSuppressedUntil = useRef(0)
   const entriesRef = useRef(entries)
   entriesRef.current = entries
@@ -108,26 +113,7 @@ function ChatScrollIndicatorImpl({ entries, viewportRef, getMessageTop, onJump }
     computeActive()
   }, [entries.length, computeActive])
 
-  const measure = useCallback(() => {
-    const el = stripRef.current
-    if (!el) return
-    setOverflow({ above: el.scrollTop > 1, below: el.scrollTop + el.clientHeight < el.scrollHeight - 1 })
-  }, [])
-
-  useLayoutEffect(() => {
-    measure()
-  }, [measure, entries.length])
-
   const visible = entries.length > 1
-
-  useEffect(() => {
-    const el = stripRef.current
-    if (!el || !visible) return
-    const ro = new ResizeObserver(() => measure())
-    ro.observe(el)
-    if (outerRef.current?.parentElement) ro.observe(outerRef.current.parentElement)
-    return () => ro.disconnect()
-  }, [measure, visible])
 
   useEffect(() => {
     if (!activeId || performance.now() < followSuppressedUntil.current) return
@@ -186,26 +172,11 @@ function ChatScrollIndicatorImpl({ entries, viewportRef, getMessageTop, onJump }
   return (
     <div ref={outerRef} data-chat-scroll-indicator className="absolute right-0 top-1/2 z-20 flex max-h-full w-7 -translate-y-1/2 flex-col pr-1">
       <div
-        ref={stripRef}
-        onScroll={measure}
-        className="hide-scrollbar flex min-h-0 flex-col items-end gap-px overflow-y-auto overscroll-contain"
+        ref={setStripRef}
+        className="hide-scrollbar scroll-edge-fade-y flex min-h-0 flex-col items-end gap-px overflow-y-auto overscroll-contain"
       >
         {entries.map(renderTick)}
       </div>
-      <div
-        data-mod-edge-fade=""
-        className={cn(
-          'pointer-events-none absolute inset-x-0 top-0 h-5 bg-linear-to-b from-card to-transparent transition-opacity duration-150',
-          overflow.above ? 'opacity-100' : 'opacity-0',
-        )}
-      />
-      <div
-        data-mod-edge-fade=""
-        className={cn(
-          'pointer-events-none absolute inset-x-0 bottom-0 h-5 bg-linear-to-t from-card to-transparent transition-opacity duration-150',
-          overflow.below ? 'opacity-100' : 'opacity-0',
-        )}
-      />
       <AnimatePresence>
         {preview && hovered && (
           <motion.div

@@ -31,6 +31,7 @@ import {
 import { isWorkflowSmokeCheck, parseWorkflowInput, parseWorkflowLaunch, workflowToolTargetLabel } from './workflow-utils'
 import { WorkflowBlock } from './WorkflowBlock'
 import type { ContentBlock, GitInfo, GitInfoResult } from '@superone/shared/agent-types'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 
 interface WorktreeStateLike {
   pendingBaseBranch: string | null
@@ -373,13 +374,16 @@ export function ChatStatusBar() {
 
   const sessionProject = scope?.projectPath ?? useChatStore((s) => s.activeProject)
   const canStopTask = useEnvironmentServes(sessionProject, 'session.stopTask')
+  // `session.stopTask` is advertised for every local session. Only Claude and
+  // DeepSeek backends actually stop one Bash, Monitor, or subagent.
+  const canStopOneTask = canStopTask && HARNESS_CAPABILITIES[activeProvider].supportsTaskStop
   const handleStopTask = useCallback((taskId: string) => {
-    if (!activeSessionId || !sessionProject || !canStopTask) return
+    if (!activeSessionId || !sessionProject || !canStopOneTask) return
     void callSession(sessionProject, activeSessionId, 'session.stopTask', { taskId }).catch((err) => {
       toast.error(`Failed to stop task: ${err instanceof Error ? err.message : String(err)}`)
     })
-  }, [sessionProject, activeSessionId, canStopTask])
-  const renderStopButton = useCallback((taskId: string) => canStopTask ? (
+  }, [sessionProject, activeSessionId, canStopOneTask])
+  const renderStopButton = useCallback((taskId: string) => canStopOneTask ? (
     <span
       role="button"
       tabIndex={0}
@@ -390,7 +394,7 @@ export function ChatStatusBar() {
     >
       <Square className="size-2.5 fill-current" />
     </span>
-  ) : null, [handleStopTask, canStopTask])
+  ) : null, [handleStopTask, canStopOneTask])
   const bashLabel = bashActivities.length > 1 ? `${bashActivities.length} Bashes` : 'Bash'
   const agentLabel = agentActivities.length > 1 ? `${agentActivities.length} Agents` : 'Agent'
   const workflowLabel = workflowActivities.length > 1 ? `${workflowActivities.length} Workflows` : 'Workflow'

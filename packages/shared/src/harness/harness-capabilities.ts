@@ -59,6 +59,14 @@ export interface HarnessCapabilities {
   supportsTodos: boolean
   /** Spawns subagent sessions (Agent tool). */
   supportsSubagents: boolean
+  /**
+   * The status bar can stop one background Bash, Monitor, or subagent without
+   * cancelling the parent turn. True only when the backend implements
+   * `stopTask`. Claude uses the SDK `query.stopTask` (`perTaskStopAffordance`).
+   * DeepSeek kills the job or interrupts the background child. Other harnesses
+   * have no such control, so the button would do nothing.
+   */
+  supportsTaskStop: boolean
   /** Has /compact thread-context compaction. */
   supportsCompact: boolean
   /** Streams content via streaming tool input previews (Edit/Write/etc). */
@@ -146,6 +154,7 @@ const ACP_PROTOCOL_CAPABILITIES = {
   supportsPlanMode: true,
   supportsTodos: true,
   supportsSubagents: false,
+  supportsTaskStop: false,
   supportsCompact: true,
   supportsStreamingToolInput: false,
   supportsQueuedSteer: true,
@@ -167,6 +176,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsPlanMode: true,
     supportsTodos: true,
     supportsSubagents: true,
+    supportsTaskStop: true,
     supportsCompact: true,
     supportsStreamingToolInput: true,
     supportsQueuedSteer: true,
@@ -197,6 +207,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsPlanMode: true,
     supportsTodos: false,
     supportsSubagents: false,
+    supportsTaskStop: false,
     supportsCompact: true,
     supportsStreamingToolInput: false,
     supportsQueuedSteer: true,
@@ -238,6 +249,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsPlanMode: true,
     supportsTodos: true,
     supportsSubagents: true,
+    supportsTaskStop: false,
     supportsCompact: true,
     supportsStreamingToolInput: false,
     supportsQueuedSteer: false,
@@ -262,6 +274,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     // updateTodos / task tool deltas when event map lands (PR5+)
     supportsTodos: true,
     supportsSubagents: true,
+    supportsTaskStop: false,
     supportsCompact: false,
     supportsStreamingToolInput: true,
     supportsQueuedSteer: false,
@@ -301,6 +314,8 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsPlanMode: true,
     supportsTodos: true,
     supportsSubagents: true,
+    // `runtime.stopTask` kills a background job or interrupts a background child.
+    supportsTaskStop: true,
     supportsCompact: true,
     supportsStreamingToolInput: true,
     supportsQueuedSteer: true,

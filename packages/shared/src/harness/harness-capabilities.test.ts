@@ -9,6 +9,7 @@ describe('HARNESS_CAPABILITIES', () => {
       expect(acp.supportsPlanMode).toBe(true)
       expect(acp.supportsTodos).toBe(true)
       expect(acp.supportsSubagents).toBe(false)
+      expect(acp.supportsTaskStop).toBe(false)
       expect(acp.supportsCompact).toBe(true)
       expect(acp.supportsQueuedSteer).toBe(true)
       expect(acp.supportsFork).toBe(true)
@@ -21,6 +22,7 @@ describe('HARNESS_CAPABILITIES', () => {
     expect(c.supportsPlanMode).toBe(true)
     expect(c.supportsTodos).toBe(true)
     expect(c.supportsSubagents).toBe(true)
+    expect(c.supportsTaskStop).toBe(true)
     expect(c.supportsQueuedSteer).toBe(true)
   })
 
@@ -30,8 +32,19 @@ describe('HARNESS_CAPABILITIES', () => {
     expect(codex.supportsPlanMode).toBe(true)
     expect(codex.supportsTodos).toBe(false)
     expect(codex.supportsSubagents).toBe(false)
+    expect(codex.supportsTaskStop).toBe(false)
     expect(codex.supportsCompact).toBe(true)
     expect(codex.supportsQueuedSteer).toBe(true)
+  })
+})
+
+describe('per-task stop', () => {
+  it('keeps the status-bar stop for harnesses whose backend implements stopTask', () => {
+    expect(HARNESS_CAPABILITIES.claude.supportsTaskStop).toBe(true)
+    expect(HARNESS_CAPABILITIES.dsh.supportsTaskStop).toBe(true)
+    for (const id of ['codex', 'acp-grok', 'acp-antigravity', 'opencode', 'cursor'] as const) {
+      expect(HARNESS_CAPABILITIES[id].supportsTaskStop).toBe(false)
+    }
   })
 })
 

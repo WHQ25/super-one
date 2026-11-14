@@ -671,7 +671,7 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
   return (
     <GenericToolRowPresenter
       presentation={app?.presentation}
-      trailing={trailing}
+      trailing={trailing ?? trailingAction}
       toolName={toolName}
       toolUseId={toolUseId}
       input={input}

@@ -1,5 +1,5 @@
-import { DeferredDetailStatus, useDeferredToolDetail } from '@superone/chat-view/use-deferred-tool-detail'
-import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { DeferredDetailStatus } from '@superone/chat-view/use-deferred-tool-detail'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Streamdown } from 'streamdown'
 import type { ContentBlock } from '@superone/shared/agent-types'
 import { ToolBlock } from './ToolBlock'
@@ -20,11 +20,6 @@ import {
   buildToolResultMap,
   computeSubagentElapsed,
   groupSubagentChildren,
-  looksLikeBackgroundSubagentAck,
-  parseSubagentIdFromText,
-  parseSubagentOutputFileFromText,
-  parseTaskInput,
-  resolveTaskProgressEntry,
   type ToolErrorMaps,
 } from './subagent-utils'
 import { useSubagentJsonl } from './use-subagent-jsonl'
@@ -34,21 +29,9 @@ import {
   SubagentBlockPresenter,
   type SubagentMarkdownProps,
 } from './presenters/SubagentBlock'
-import { subagentRunState } from '@superone/chat-view/presenters/subagent-run-state'
+import { useSubagentCard } from './use-subagent-card'
 
 const ZERO_TOKENS = { input: 0, output: 0 }
-
-function useStableArray<T>(items: T[]): T[] {
-  const ref = useRef(items)
-  const previous = ref.current
-  if (
-    previous !== items
-    && (previous.length !== items.length || previous.some((item, index) => item !== items[index]))
-  ) {
-    ref.current = items
-  }
-  return ref.current
-}
 
 export interface SubagentBlockProps {
   taskBlock: ContentBlock & { type: 'tool_use' }
@@ -74,7 +57,8 @@ function DesktopSubagentMarkdown({ text }: SubagentMarkdownProps) {
   )
 }
 
-function renderChildBlock(
+/** Render a subagent's child tool row; shared with the full view. */
+export function renderChildBlock(
   block: ContentBlock,
   index: number,
   isStreaming: boolean,
@@ -121,8 +105,6 @@ function renderChildBlock(
   }
 }
 
-const EMPTY_BLOCKS: ContentBlock[] = []
-
 /** Desktop data and filesystem adapter for the portable subagent presenter. */
 export function SubagentBlock({
   taskBlock: shellTaskBlock,
@@ -133,43 +115,26 @@ export function SubagentBlock({
   trailingAction,
 }: SubagentBlockProps) {
   const [expanded, setExpanded] = useState(defaultExpanded ?? false)
-  // A summarized card (`remoteDetail`) carries no children: they load when it opens.
-  const remoteDetail = shellTaskBlock.remoteDetail
-  const deferred = useDeferredToolDetail(remoteDetail, expanded, !isStreaming && !!shellResultBlock, shellTaskBlock.toolUseId)
-  const taskBlock = useMemo(() => remoteDetail
-    ? { ...shellTaskBlock, ...(deferred.detail.input ? { input: deferred.detail.input } : {}), taskResultText: deferred.detail.taskResultText ?? shellTaskBlock.taskResultText }
-    : shellTaskBlock, [remoteDetail, shellTaskBlock, deferred.detail])
-  const resultBlock = remoteDetail && shellResultBlock?.type === 'tool_result' && deferred.detail.result !== undefined
-    ? { ...shellResultBlock, summary: deferred.detail.result }
-    : shellResultBlock
-  const childBlocks = useStableArray(remoteDetail ? deferred.detail.childBlocks ?? EMPTY_BLOCKS : childBlocksProp)
+  const {
+    taskBlock,
+    childBlocks,
+    deferred,
+    rawResultText,
+    progress,
+    taskInput,
+    isAsync,
+    isRunning,
+    isComplete,
+    isFailed,
+    isStopped,
+    asyncOutputPath,
+    outputFile,
+  } = useSubagentCard({ taskBlock: shellTaskBlock, childBlocks: childBlocksProp, resultBlock: shellResultBlock, open: expanded, isStreaming })
   const tokens = useActiveSession(
     (state) => state.subagentTokens[taskBlock.toolUseId] ?? ZERO_TOKENS,
   )
-  const rawResultText = resultBlock?.type === 'tool_result' ? resultBlock.summary : undefined
-  const taskIdHint = useMemo(
-    () => parseSubagentIdFromText(rawResultText) ?? parseSubagentIdFromText(taskBlock.taskResultText),
-    [rawResultText, taskBlock.taskResultText],
-  )
-  const progress = useActiveSession((state) =>
-    resolveTaskProgressEntry(state.taskProgress, taskBlock.toolUseId, taskIdHint),
-  )
   const colorIndex = useActiveSession((state) => state.subagentColors[taskBlock.toolUseId])
   const colors = useMemo(() => getSubagentColorClasses(colorIndex), [colorIndex])
-  const taskInput = useMemo(() => parseTaskInput(taskBlock.input), [taskBlock.input])
-  const isAsync = taskInput.runInBackground || !!taskBlock.runInBackground || looksLikeBackgroundSubagentAck(rawResultText)
-  const { isRunning, isComplete } = subagentRunState({
-    tracked: !!progress || isAsync,
-    // Without live progress (a reload), the block's task facts decide, as on the phone.
-    finished: progress ? !!progress.completed : !!taskBlock.taskStatus || !!taskBlock.taskResultText,
-    hasResult: !!resultBlock,
-    isStreaming,
-  })
-  const taskStatus = progress?.status
-    ?? (resultBlock?.type === 'tool_result' && resultBlock.isError ? 'failed' : undefined)
-    ?? taskBlock.taskStatus
-  const isFailed = isComplete && taskStatus === 'failed'
-  const isStopped = isComplete && !!taskStatus && taskStatus !== 'completed' && !isFailed
   const nav = useSubagentNavigation()
 
   useEffect(() => {
@@ -182,15 +147,6 @@ export function SubagentBlock({
     () => groupSubagentChildren(childBlocks, taskBlock.toolUseId),
     [childBlocks, taskBlock.toolUseId],
   )
-  const asyncOutputPath = useMemo(
-    () => parseSubagentOutputFileFromText(rawResultText),
-    [rawResultText],
-  )
-  const resultOutputPath = resultBlock?.type === 'tool_result' ? resultBlock.outputPath : undefined
-  const outputFile = asyncOutputPath
-    ?? progress?.outputFile
-    ?? taskBlock.taskOutputFile
-    ?? resultOutputPath
   const usesProgressActivity = childItems.length === 0
   const { entries: jsonlEntries, resultText: jsonlResultText } = useSubagentJsonl({
     toolUseId: taskBlock.toolUseId,

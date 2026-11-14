@@ -49,7 +49,6 @@ import {
   SESSION_DURABLE_EVENT,
   TEMP_FILE_RPC_METHODS,
   servesMethod,
-  DEFAULT_REMOTE_INSTALL_SOURCE,
   DESKTOP_UPGRADE_REQUIRED,
   PROTOCOL_GENERATION,
   decideRemoteCliAction,
@@ -61,7 +60,6 @@ import {
   shouldOfferNodeUpgrade,
   sshArgsForSpec,
   tunnelSpecFromEndpoint,
-  type RemoteInstallSource,
 } from '@superone/shared/environment'
 import { EnvironmentRegistryImpl } from './environment-registry'
 import { ArtifactTransferService } from './artifact-transfer-service'
@@ -102,17 +100,14 @@ import { sshCapture } from './ssh-forward'
 import {
   installNodeFromPackage,
   installNodeFromRegistry,
-  installNodeOverSsh,
   preflightBlocker,
   probeRemoteHost,
-  type InstallOptions,
   type InstallResult,
   type PackageInstallOptions,
   type RegistryInstallOptions,
   type RemoteHostProbe,
   type SshTarget,
 } from './remote-install'
-import { findDistArtifact, missingArtifactMessage, type DistArtifact } from './dist-locator'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { basename, join as pathJoin, resolve as pathResolve } from 'node:path'
 import { readdirSync, statSync } from 'node:fs'
@@ -165,11 +160,9 @@ export interface EnvironmentHostOptions {
   /** Injectable for tests; production shells out to the system OpenSSH client. */
   bootstrapOverSsh?: (opts: SshBootstrapOptions) => Promise<SshBootstrapResult>
   probeHost?: (target: SshTarget) => Promise<RemoteHostProbe>
-  installNode?: (opts: InstallOptions) => Promise<InstallResult>
   installFromRegistry?: (opts: RegistryInstallOptions) => Promise<InstallResult>
   /** Injectable for tests; production stops and restarts the node over SSH. */
   restartNode?: (opts: RemoteRestartOptions) => Promise<void>
-  findArtifact?: (target: string) => DistArtifact | null
   /** Injectable for tests; production packs the dev-channel CLI from this checkout. */
   packDevCli?: () => Promise<DevCliPackage>
   installFromPackage?: (opts: PackageInstallOptions) => Promise<InstallResult>
@@ -190,14 +183,9 @@ export interface AddRemoteOverSshInput {
   destination: string
   /**
    * Absolute path to `superone` on the remote host. Optional: when omitted the
-   * host is probed and, if missing, installed via `installSource`.
+   * host is probed and, if missing, `@super-one/cli` is installed with its npm.
    */
   remoteExec?: string
-  /**
-   * How to obtain `superone` when not already on the host.
-   * Default: `registry` (`@super-one/cli`). Use `upload` for local dist / debug.
-   */
-  installSource?: RemoteInstallSource
   /** Pinned CLI version for registry installs; defaults to desktop app version. */
   packageVersion?: string
   remotePort?: number
@@ -271,10 +259,8 @@ export class EnvironmentHost {
   private readonly knownPath: string
   private readonly bootstrap: (opts: SshBootstrapOptions) => Promise<SshBootstrapResult>
   private readonly probeHost: (target: SshTarget) => Promise<RemoteHostProbe>
-  private readonly installNode: (opts: InstallOptions) => Promise<InstallResult>
   private readonly installFromRegistry: (opts: RegistryInstallOptions) => Promise<InstallResult>
   private readonly restartNode: (opts: RemoteRestartOptions) => Promise<void>
-  private readonly findArtifact: (target: string) => DistArtifact | null
   private readonly packDevCli: () => Promise<DevCliPackage>
   private readonly installFromPackage: (opts: PackageInstallOptions) => Promise<InstallResult>
   private readonly defaultCliVersion: string | undefined
@@ -368,10 +354,8 @@ export class EnvironmentHost {
     })
     this.bootstrap = options.bootstrapOverSsh ?? bootstrapNodeOverSsh
     this.probeHost = options.probeHost ?? probeRemoteHost
-    this.installNode = options.installNode ?? installNodeOverSsh
     this.installFromRegistry = options.installFromRegistry ?? installNodeFromRegistry
     this.restartNode = options.restartNode ?? restartNodeOverSsh
-    this.findArtifact = options.findArtifact ?? ((target) => findDistArtifact(target))
     this.packDevCli = options.packDevCli ?? packDevCli
     this.installFromPackage = options.installFromPackage ?? installNodeFromPackage
     this.defaultCliVersion = options.defaultCliVersion
@@ -3346,11 +3330,8 @@ export class EnvironmentHost {
     // to stop; bootstrap starts the node when /health is down.
     let restartAfterInstall = false
     // Dev builds are never published: the dev channel packs this checkout and
-    // installs it with the host's npm, so it has the registry's preconditions.
+    // installs it with the host's npm.
     const devChannel = remoteDataChannel() === 'dev'
-    const installSource: RemoteInstallSource = devChannel
-      ? 'registry'
-      : input.installSource ?? DEFAULT_REMOTE_INSTALL_SOURCE
     if (devChannel) {
       assertDevChannelTarget({ nodeHome: input.remoteNodeHome, port: remotePort, remoteExec: input.remoteExec })
     }
@@ -3362,7 +3343,7 @@ export class EnvironmentHost {
       const probe = await this.probeHost(sshTarget)
       remoteHome = probe.home || undefined
       nodeBinDir = probe.nodeBinDir || undefined
-      const blocker = preflightBlocker(probe, installSource)
+      const blocker = preflightBlocker(probe)
       if (blocker) throw Object.assign(new Error(blocker), { code: 'failed_precondition' })
 
       if (devChannel) {
@@ -3395,35 +3376,15 @@ export class EnvironmentHost {
             `Remote SuperOne CLI version could not be read at ${decision.remotePath}; installing ${decision.targetVersion}.`,
           )
         }
-        if (installSource === 'upload') {
-          const artifact = this.findArtifact(probe.distTarget!)
-          if (!artifact) {
-            throw Object.assign(new Error(missingArtifactMessage(probe.distTarget!)), {
-              code: 'failed_precondition',
-            })
-          }
-          installed = await this.installNode({
-            ...sshTarget,
-            nodeBinDir: probe.nodeBinDir,
-            tarballPath: artifact.path,
-            version: artifact.version,
-            distTarget: artifact.target,
-            remoteHome: probe.home,
-            previousVersion: probe.superoneVersion ?? undefined,
-            onProgress: (step, detail) => onProgress?.({ phase: 'installing', step, detail }),
-          })
-          remoteExec = installed.remoteExec
-        } else {
-          installed = await this.installFromRegistry({
-            ...sshTarget,
-            nodeBinDir: probe.nodeBinDir,
-            version: decision.targetVersion,
-            remoteHome: probe.home,
-            previousVersion: probe.superoneVersion ?? undefined,
-            onProgress: (step, detail) => onProgress?.({ phase: 'installing', step, detail }),
-          })
-          remoteExec = installed.remoteExec
-        }
+        installed = await this.installFromRegistry({
+          ...sshTarget,
+          nodeBinDir: probe.nodeBinDir,
+          version: decision.targetVersion,
+          remoteHome: probe.home,
+          previousVersion: probe.superoneVersion ?? undefined,
+          onProgress: (step, detail) => onProgress?.({ phase: 'installing', step, detail }),
+        })
+        remoteExec = installed.remoteExec
       }
 
       if (!probe.hasSystemd) {
@@ -3559,7 +3520,7 @@ export class EnvironmentHost {
     }
     throw Object.assign(
       new Error(
-        'registry install needs a pinned CLI version (packageVersion or app version); use installSource "upload" for local dist builds',
+        'registry install needs a pinned CLI version (packageVersion or app version)',
       ),
       { code: 'failed_precondition' },
     )
@@ -3648,7 +3609,7 @@ export class EnvironmentHost {
 
     onProgress?.({ phase: 'probing' })
     const probe = await this.probeHost(sshTarget)
-    const blocker = preflightBlocker(probe, 'registry')
+    const blocker = preflightBlocker(probe)
     if (blocker) throw Object.assign(new Error(blocker), { code: 'failed_precondition' })
     // Prefer the home captured at pair time; legacy profiles fall back to default.
     const remoteNodeHome = storedNodeHome || `${remoteSuperoneHome(probe.home)}/node`

@@ -23,7 +23,6 @@
     "dev": "tsx src/cli.ts start --foreground",
     "start": "tsx src/cli.ts start",
     "pair": "tsx src/cli.ts pair-create",
-    "build:dist": "tsx scripts/build-dist.ts",
     "pack:npm": "tsx scripts/pack-npm.ts",
     "publish:npm": "tsx scripts/pack-npm.ts --publish",
     "test": "vitest run",

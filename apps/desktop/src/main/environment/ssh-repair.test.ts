@@ -28,7 +28,6 @@ const SSH_ENDPOINT: EndpointProfile = {
 const PROBE: RemoteHostProbe = {
   os: 'linux',
   arch: 'x64',
-  musl: false,
   home: '/home/u',
   superonePath: '/home/u/.local/bin/superone',
   superoneVersion: '0.52.0-alpha',

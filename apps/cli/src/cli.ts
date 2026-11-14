@@ -2,7 +2,7 @@
  * superone CLI
  *
  * Not directly executable: run it through `tsx` in development, or through the
- * `bin/superone` launcher in a built distribution (see scripts/build-dist.ts).
+ * `bin/superone.mjs` launcher of the npm package (see scripts/pack-npm.ts).
  * `bun run` crashes on better-sqlite3's Node-API addon.
  *
  * Commands:

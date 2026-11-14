@@ -4,7 +4,6 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import {
-  distTargetFor,
   parseProbeOutput,
   preflightBlocker,
   registryNpmInstallInvocation,
@@ -82,13 +81,12 @@ function runProbe(home: string, extraEnv: Record<string, string> = {}): RemoteHo
 }
 
 describe('remote host probe parsing', () => {
-  it('maps a glibc x86_64 Linux host to the linux-x64 artifact', () => {
+  it('parses a glibc x86_64 Linux host with a version-manager Node', () => {
     const probe = parseProbeOutput(
       probeOutput({
         os: 'Linux',
         arch: 'x86_64',
         home: '/home/superone',
-        musl: '0',
         superone: '',
         node_major: '22',
         node_path: '/root/.nvm/versions/node/v22.22.2/bin/node',
@@ -101,8 +99,6 @@ describe('remote host probe parsing', () => {
 
     expect(probe.os).toBe('linux')
     expect(probe.arch).toBe('x64')
-    expect(probe.musl).toBe(false)
-    expect(probe.distTarget).toBe('linux-x64')
     expect(probe.nodeMajor).toBe(22)
     expect(probe.nodePath).toContain('/.nvm/versions/node/')
     expect(probe.nodeBinDir).toContain('/.nvm/versions/node/')
@@ -112,23 +108,12 @@ describe('remote host probe parsing', () => {
     expect(probe.superonePath).toBeNull()
   })
 
-  it('selects the musl artifact on Alpine', () => {
-    const probe = parseProbeOutput(
-      probeOutput({ os: 'Linux', arch: 'aarch64', home: '/root', musl: '1', node_major: '20' }),
-    )
-
-    expect(probe.arch).toBe('arm64')
-    expect(probe.musl).toBe(true)
-    expect(probe.distTarget).toBe('linuxmusl-arm64')
-  })
-
   it('reports an existing installation and its version', () => {
     const probe = parseProbeOutput(
       probeOutput({
         os: 'Linux',
         arch: 'x86_64',
         home: '/home/u',
-        musl: '0',
         superone: '/home/u/.superone/current/bin/superone',
         superone_version: '0.49.4-alpha',
         node_major: '24',
@@ -142,31 +127,19 @@ describe('remote host probe parsing', () => {
 
   it('reports a missing Node runtime as null rather than zero', () => {
     const probe = parseProbeOutput(
-      probeOutput({ os: 'Linux', arch: 'x86_64', home: '/home/u', musl: '0', node_major: '' }),
+      probeOutput({ os: 'Linux', arch: 'x86_64', home: '/home/u', node_major: '' }),
     )
 
     expect(probe.nodeMajor).toBeNull()
   })
 
-  it('leaves an unrecognised platform without an artifact target', () => {
+  it('marks an unrecognised platform as unknown', () => {
     const probe = parseProbeOutput(
-      probeOutput({ os: 'FreeBSD', arch: 'riscv64', home: '/home/u', musl: '0', node_major: '22' }),
+      probeOutput({ os: 'FreeBSD', arch: 'riscv64', home: '/home/u', node_major: '22' }),
     )
 
     expect(probe.os).toBe('unknown')
     expect(probe.arch).toBe('unknown')
-    expect(probe.distTarget).toBeNull()
-  })
-})
-
-describe('artifact target mapping', () => {
-  it('covers every platform/arch/libc combination we build', () => {
-    expect(distTargetFor('linux', 'x64', false)).toBe('linux-x64')
-    expect(distTargetFor('linux', 'arm64', false)).toBe('linux-arm64')
-    expect(distTargetFor('linux', 'x64', true)).toBe('linuxmusl-x64')
-    expect(distTargetFor('darwin', 'arm64', false)).toBe('darwin-arm64')
-    expect(distTargetFor('unknown', 'x64', false)).toBeNull()
-    expect(distTargetFor('linux', 'unknown', false)).toBeNull()
   })
 })
 
@@ -174,7 +147,6 @@ describe('preflight', () => {
   const base: RemoteHostProbe = {
     os: 'linux',
     arch: 'x64',
-    musl: false,
     home: '/home/superone',
     superonePath: null,
     superoneVersion: null,
@@ -182,19 +154,14 @@ describe('preflight', () => {
     nodeVersion: '22.23.4',
     hasNpm: true,
     hasSystemd: true,
-    distTarget: 'linux-x64',
   }
 
-  it('accepts a supported host for registry install', () => {
-    expect(preflightBlocker(base, 'registry')).toBeNull()
+  it('accepts a supported host', () => {
+    expect(preflightBlocker(base)).toBeNull()
   })
 
-  it('blocks registry install when npm is missing', () => {
-    expect(preflightBlocker({ ...base, hasNpm: false }, 'registry')).toContain('npm is required')
-  })
-
-  it('allows upload install without npm when a dist target exists', () => {
-    expect(preflightBlocker({ ...base, hasNpm: false }, 'upload')).toBeNull()
+  it('blocks when npm is missing', () => {
+    expect(preflightBlocker({ ...base, hasNpm: false })).toContain('npm is required')
   })
 
   it('blocks when the remote has no Node runtime', () => {
@@ -210,18 +177,16 @@ describe('preflight', () => {
   })
 
   it.each(['20.19.2', '22.12.9'])(
-    'rejects Node %s for registry and upload install',
+    'rejects Node %s',
     (nodeVersion) => {
       const probe = { ...base, nodeMajor: Number(nodeVersion.split('.')[0]), nodeVersion }
-      expect(preflightBlocker(probe, 'registry')).toContain(`found ${nodeVersion}`)
-      expect(preflightBlocker(probe, 'upload')).toContain(`found ${nodeVersion}`)
+      expect(preflightBlocker(probe)).toContain(`found ${nodeVersion}`)
     },
   )
 
   it.each(['22.13.0', '22.23.4', '24.0.0'])('accepts Node %s', (nodeVersion) => {
     const probe = { ...base, nodeMajor: Number(nodeVersion.split('.')[0]), nodeVersion }
-    expect(preflightBlocker(probe, 'registry')).toBeNull()
-    expect(preflightBlocker(probe, 'upload')).toBeNull()
+    expect(preflightBlocker(probe)).toBeNull()
   })
 
   it('asks npm to enforce dependency engines during registry install', () => {
@@ -231,7 +196,7 @@ describe('preflight', () => {
   })
 
   it('blocks an unsupported architecture', () => {
-    expect(preflightBlocker({ ...base, arch: 'unknown', distTarget: null })).toContain(
+    expect(preflightBlocker({ ...base, arch: 'unknown' })).toContain(
       'unsupported remote CPU architecture',
     )
   })
@@ -256,7 +221,7 @@ describe('preflight', () => {
       const probe = runProbe(home, { SUPERONE_FAKE_LOGIN_NODE: oldNode })
       expect(probe.nodePath).toContain('/v22.13.0/')
       expect(probe.nodeVersion).toBe('22.13.0')
-      expect(preflightBlocker(probe, 'registry')).toBeNull()
+      expect(preflightBlocker(probe)).toBeNull()
     } finally {
       rmSync(home, { recursive: true, force: true })
     }
@@ -269,8 +234,7 @@ describe('preflight', () => {
       writeFakeNode(join(home, '.nvm/versions/node/v22.12.9/bin/node'), '22.12.9')
       const probe = runProbe(home)
       expect(probe.nodeVersion === '20.19.2' || probe.nodeVersion === '22.12.9').toBe(true)
-      expect(preflightBlocker(probe, 'registry')).toContain('22.13.0')
-      expect(preflightBlocker(probe, 'upload')).toContain('22.13.0')
+      expect(preflightBlocker(probe)).toContain('22.13.0')
     } finally {
       rmSync(home, { recursive: true, force: true })
     }

@@ -15,7 +15,8 @@ export const PUBLIC_CLI_PACKAGE = `${PUBLIC_NPM_SCOPE}/cli` as const
 /** Global binary name after `npm i -g @super-one/cli`. */
 export const PUBLIC_CLI_BIN = 'superone'
 
-/** How Desktop gets `superone` onto a remote host over SSH. */
+/**
+ * Where the package npm installed on a remote host came from: the registry,
+ * or a package of the desktop's checkout uploaded by a dev desktop.
+ */
 export type RemoteInstallSource = 'registry' | 'upload'
-
-export const DEFAULT_REMOTE_INSTALL_SOURCE: RemoteInstallSource = 'registry'

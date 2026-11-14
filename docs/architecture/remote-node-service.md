@@ -1241,7 +1241,7 @@ upgrade channel, and their upstream versions need not equal the CLI version.
 
 - Each CLI release pins its managed runtime versions in source
   (`OFFICIAL_CLAUDE_SDK_VERSION`, `OFFICIAL_CODEX_NPM_VERSION` in
-  `packages/runtime/src/harness/managed-official.ts`); `apps/cli/scripts/build-dist.ts`
+  `packages/runtime/src/harness/managed-official.ts`); `apps/cli/scripts/pack-npm.ts`
   injects the release version used for pin lookup.
 - `harness enable claude|codex` installs the pin of the running CLI. It never
   resolves an upstream `latest`.
@@ -1466,8 +1466,7 @@ row in the renderer alone does not consume the node's durable draft.
 
 The Linux installation provides:
 
-- versioned `superone` artifacts with checksum verification
-- atomic version switch on upload installs (`versions/<stage>` + `current` symlink)
+- pinned `@super-one/cli` versions installed with npm (§15.2)
 - a `systemd` user unit (`apps/cli/src/systemd/unit.ts`)
 - linger detection
 - explicit Unix-account binding, data and log paths
@@ -1505,53 +1504,48 @@ Publish policy:
   installs a bare `latest` or channel tag (§15.4)
 - the CLI never imports Electron
 
-### 15.2 Dual install paths (registry default, upload for dev)
+### 15.2 Install paths (registry, dev package)
 
-SSH is only a bootstrap channel. Getting `superone` onto a host has two paths
-(`apps/desktop/src/main/environment/remote-install.ts`, `DEFAULT_REMOTE_INSTALL_SOURCE = 'registry'`):
+SSH is only a bootstrap channel. The host's npm always installs `superone`
+(`apps/desktop/src/main/environment/remote-install.ts`) into
+`<remote root>/npm` without root and links it into `~/.local/bin/<superone|superone-alpha|superone-dev>`:
 
-| Path | When | Mechanism |
+| Path | When | Package |
 |---|---|---|
-| `registry` (default) | Product Settings UI | Over SSH, `npm install -g --prefix <remote root>/npm @super-one/cli@<exact>` without root, linked into `~/.local/bin/<superone\|superone-alpha>` |
-| `upload` (dev/debug) | Local builds, unreleased commits, offline hosts | Desktop uploads `superone-<version>-<target>.tar.gz`, verifies SHA-256 remotely, extracts to `<remote root>/versions/<stage>` and switches `current` with `ln -sfn` in one SSH session |
+| registry | Stable and alpha desktops | `npm install -g --prefix <remote root>/npm @super-one/cli@<exact>` |
+| dev package | Dev desktop (`bun run dev`), on add and **Redeploy Dev Build** | This checkout packed with `pack:npm --variant dev`, uploaded to `<remote root>/downloads`, SHA-256 verified, installed the same way and then deleted |
 
 Rules:
 
 1. Discovery looks only at the channel's own install paths
-   (`<remote root>/npm/bin/superone`, `<remote root>/current/bin/superone`,
-   `~/.local/bin/<bin>`). An install at the desktop's version is reused; an older
-   or unreadable one is upgraded; a newer one asks the user to update the desktop
+   (`<remote root>/npm/bin/superone`, `~/.local/bin/<bin>`, and
+   `<remote root>/current/bin/superone` left by older tarball installs). On
+   stable and alpha, an install at the desktop's version is reused; an older or
+   unreadable one is upgraded; a newer one asks the user to update the desktop
    (`decideRemoteCliAction` in `packages/shared/src/environment/cli-version.ts`).
-2. Registry is the product default; the destination field alone suffices when
-   SSH key auth works. Advanced options pin a version or force upload.
-3. Upload is opt-in and needs a matching local artifact
-   (`apps/desktop/src/main/environment/dist-locator.ts`: `apps/cli/dist/` in dev,
-   `resources/superone-dist/` when packaged).
-4. Both paths share the post-install bootstrap: start the node on loopback, mint
+   A dev desktop always redeploys, because an equal version says nothing about
+   the code.
+2. The destination field alone suffices when SSH key auth works. Advanced
+   options pin a version, node home or port.
+3. Both paths share the post-install bootstrap: start the node on loopback, mint
    a pairing token in memory, open the local forward, pair.
-5. Preflight requires Node.js >= 22.13.0 (`MIN_CLI_NODE_VERSION`). The probe
-   compares the full version, including version-manager candidates, so Node 20
-   and Node 22.0–22.12 are rejected before install. Registry install runs
+4. Preflight requires Node.js >= 22.13.0 (`MIN_CLI_NODE_VERSION`) and npm. The
+   probe compares the full version, including version-manager candidates, so
+   Node 20 and Node 22.0–22.12 are rejected before install. The install runs
    `npm install -g --engine-strict`, so npm also refuses a host that misses a
-   dependency engine before native compilation. npm is required for the
-   registry path, and a supported target for upload. A missing systemd is a
-   warning. When npm has no compatible prebuild for `better-sqlite3` or
-   `node-pty`, the host needs Python 3, make, and a C++ compiler
-   (Debian/Ubuntu: `python3` and `build-essential`).
+   dependency engine before native compilation. A missing systemd is a warning.
+   When npm has no compatible prebuild for `better-sqlite3` or `node-pty`, the
+   host needs Python 3, make, and a C++ compiler (Debian/Ubuntu: `python3` and
+   `build-essential`).
 
-### 15.3 Distribution artifact (upload path and runtime bundle)
+### 15.3 npm package and launcher
 
-`apps/cli/scripts/build-dist.ts` produces a per-OS/arch tarball (`linux`,
-`linuxmusl`, `darwin` × `x64`, `arm64`) with the JS bundle, native
-`better-sqlite3` and `node-pty` beside it, a launcher, a `.sha256` sidecar and
-`MANIFEST.json`. `--with-node` embeds a Node runtime (`bundlesNodeRuntime`);
-otherwise the launcher uses `node` on PATH and refuses anything older than
-Node.js 22.13.0 before starting the bundle. The npm package declares
-`engines.node` of `>=22.13.0`, and its launcher does the same check before
-loading the CLI. esbuild targets `node22`; the runtime floor stays 22.13.0.
-
-The target for clean hosts is a complete artifact with an embedded runtime that
-does not depend on the host's Node.js, covered by checksum and signature.
+`apps/cli/scripts/pack-npm.ts` bundles the CLI and the workspace packages into
+one ESM file. Native addons and the Claude/Cursor Agent SDKs stay npm
+dependencies, so the host's npm installs their platform packages. The package
+declares `engines.node` of `>=22.13.0`, and its launcher refuses an older Node
+before loading the CLI. esbuild targets `node22`; the runtime floor stays
+22.13.0.
 
 ### 15.4 Release channels, npm dist-tags, and CI publish
 
@@ -1584,8 +1578,8 @@ Desktop app version 0.49.4-alpha.3
   → remote: npm install -g --prefix <remote root>/npm @super-one/cli@0.49.4-alpha.3
 ```
 
-So each desktop release offering registry install needs the same version on npm,
-or the user must use upload. Alpha desktops never default to a stable CLI or the
+So each stable or alpha desktop release needs the same version on npm, or the
+install fails. Alpha desktops never default to a stable CLI or the
 reverse.
 
 Operators:

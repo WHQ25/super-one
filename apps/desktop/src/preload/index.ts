@@ -443,7 +443,6 @@ const environmentAPI = {
     destination: string
     remoteExec?: string
     /** Default registry (`@super-one/cli`); `upload` for local dist / debug. */
-    installSource?: 'registry' | 'upload'
     packageVersion?: string
     remotePort?: number
     remoteNodeHome?: string

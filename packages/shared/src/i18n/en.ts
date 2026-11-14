@@ -1217,9 +1217,6 @@ export type Messages = {
           build: string
           npm: string
           upload: string
-          verify: string
-          extract: string
-          activate: string
           starting: string
           pairing: string
         }
@@ -6366,9 +6363,6 @@ export const en: Messages = {
           build: 'Building dev CLI from source…',
           npm: 'Installing @super-one/cli…',
           upload: 'Uploading package…',
-          verify: 'Verifying package…',
-          extract: 'Extracting…',
-          activate: 'Activating install…',
           starting: 'Starting node…',
           pairing: 'Pairing…',
         },

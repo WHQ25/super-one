@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
+import type { HarnessId } from '@superone/shared/agent-types'
 import { ProviderLabel } from '@/components/ProviderLabel'
 import { apiKeyDefault } from '@/harness-ui/api-key-defaults'
 import { useProviderScopeSync } from '@/hooks/useProviderScopeSync'
@@ -8,9 +9,10 @@ import { useAppStore } from '@/stores/app'
 import { useActiveSession } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
 
-export function ActiveProviderHint() {
+export function ActiveProviderHint({ provider }: { provider?: HarnessId } = {}) {
   const { t } = useTranslation()
-  const preferredProvider = useActiveSession((s) => s.preferredProvider)
+  const sessionProvider = useActiveSession((s) => s.preferredProvider)
+  const preferredProvider = provider ?? sessionProvider
   const sessionApiProviderId = useActiveSession((s) => s.apiProviderId)
   const platforms = useSettingsStore((s) => s.platforms)
   const credentials = useSettingsStore((s) => s.credentials)

@@ -1,4 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import {
+  readPrimedSuggestionHarness,
+  readSuggestionPreferenceSnapshot,
+  resetSuggestionPreferencesMemoryForTests,
+} from '@/lib/suggestion-preferences-memory'
 import { resetEnvironmentListCache } from '@/lib/environment-list'
 import type { HarnessId } from '@superone/shared/agent-types'
 
@@ -169,6 +174,7 @@ function resetStore(overrides: Record<string, unknown> = {}) {
 
 beforeEach(() => {
   vi.clearAllMocks()
+  resetSuggestionPreferencesMemoryForTests()
   resetEnvironmentListCache()
   resetStore()
   // Default off so host-switch tests must opt in explicitly (see describe below).
@@ -372,6 +378,28 @@ describe('continueToMain', () => {
     expect(mockWindowApp.openFolder).toHaveBeenCalledWith('/proj')
     expect(useAppStore.getState().view).toBe('main')
     expect(useAppStore.getState().currentFolder).toBe('/proj')
+  })
+
+  it('primes the saved harness order before the new-session page can paint', async () => {
+    mockWindowApp.getRecentFolders.mockResolvedValue([])
+    mockWindowApp.getAppSettings.mockResolvedValue({
+      onboardingCompletedAt: 1,
+      onboardingEpoch: 1,
+      harnessOrder: ['codex', 'claude'],
+      suggestionHarness: { provider: 'codex', acpAgentId: null },
+    })
+    mockWindowApp.needsHarnessAlign.mockResolvedValue(false)
+    mockWindowApp.getStartupData.mockResolvedValue({
+      appVersion: '0.1.0',
+      sandboxCapability: null,
+      cached: { claude: null, codex: null, 'acp-grok': null, 'acp-antigravity': null },
+    })
+    resetStore({ recentFolders: [] })
+
+    await useAppStore.getState().continueToMain()
+
+    expect(readPrimedSuggestionHarness()).toEqual({ provider: 'codex', acpAgentId: null })
+    expect(readSuggestionPreferenceSnapshot().harnessOrder).toEqual(['codex', 'claude'])
   })
 
   it('prewarms nothing when no project opened', async () => {

@@ -282,19 +282,47 @@ export function ProviderSelector({
   const hasEnabledHarness = orderedHarnesses.length > 0
 
   const effectiveAcpAgentId = selectedAcpAgent?.id ?? acpAgentId ?? DEFAULT_ACP_AGENT_ID
-  const { PickerIcon } = HARNESS_CONTROLS[preferredProvider]
   const activeKey = suggestionHarnessKey(preferredProvider, effectiveAcpAgentId)
-  const fixedActive = fixedHarness != null && activeKey === fixedHarness.key
+  // Empty sessions start on Claude until auto-apply commits. Paint the harness
+  // the apply will choose so the icon and the selected tab do not animate over.
+  const autoTarget = useMemo(() => resolveAutoApplyHarness({
+    disableAutoApply: disableAutoApply || !canAutoSelect,
+    harnessUserChosen,
+    hostSessionOwned,
+    fixedHarness,
+    suggestionHarness,
+    orderedHarnesses,
+    messageCount,
+    lastAppliedKey: null,
+    activeKey,
+  }).remember, [
+    disableAutoApply,
+    canAutoSelect,
+    harnessUserChosen,
+    hostSessionOwned,
+    fixedHarness,
+    suggestionHarness,
+    orderedHarnesses,
+    messageCount,
+    activeKey,
+  ])
+  const shownProvider = autoTarget?.provider ?? preferredProvider
+  const shownAcpAgentId = autoTarget
+    ? (isAcpProtocolHarness(autoTarget.provider) ? autoTarget.acpAgentId : null)
+    : effectiveAcpAgentId
+  const shownKey = autoTarget?.key ?? activeKey
+  const { PickerIcon } = HARNESS_CONTROLS[shownProvider]
+  const fixedActive = fixedHarness != null && shownKey === fixedHarness.key
   const menuTabOption = useMemo(
     () => resolveMenuTabOption({
       menuHarnesses,
-      activeKey,
+      activeKey: shownKey,
       rememberedMenu: suggestionMenuHarness,
       // Explicit secondary / ordered list owns the menu tab; don't let stale
       // suggestionMenuHarness override ordered #2.
       secondaryPinned: secondaryHarness != null || harnessOrder.length >= 2,
     }),
-    [menuHarnesses, activeKey, suggestionMenuHarness, secondaryHarness, harnessOrder.length],
+    [menuHarnesses, shownKey, suggestionMenuHarness, secondaryHarness, harnessOrder.length],
   )
   const menuTabLabel = menuTabOption ? optionLabel(menuTabOption) : 'Codex'
   const menuTabActive = hasEnabledHarness && !fixedActive
@@ -332,10 +360,13 @@ export function ProviderSelector({
     selectHarnessOption,
   ])
 
-  const iconKey = hasEnabledHarness ? preferredProvider : 'none'
+  const iconKey = hasEnabledHarness ? shownProvider : 'none'
   const tabsValue = fixedActive ? 'fixed' : 'menu'
-  const selectedAcpForHint = isAcpProtocolHarness(preferredProvider)
-    ? (visibleAcpAgents.find((a) => a.id === effectiveAcpAgentId) ?? selectedAcpAgent)
+  // Product default order is Claude first. Do not paint it while the saved
+  // order is still unknown — that is the startup flash.
+  const hideUnresolvedOrder = suggestionHarness === undefined && harnessCatalog != null
+  const selectedAcpForHint = isAcpProtocolHarness(shownProvider)
+    ? (visibleAcpAgents.find((a) => a.id === (shownAcpAgentId ?? effectiveAcpAgentId)) ?? selectedAcpAgent)
     : null
 
   const onMenuTabActivate = (e: MouseEvent) => {
@@ -351,7 +382,9 @@ export function ProviderSelector({
 
   return (
     <div className="flex flex-col items-center gap-3">
-      {hasEnabledHarness ? (
+      {hideUnresolvedOrder ? (
+        <div className="h-[7.5rem]" role="status" aria-busy="true" aria-label={t('common.loading')} />
+      ) : hasEnabledHarness ? (
         <>
           <AnimatePresence mode="wait" initial={false}>
             <motion.div
@@ -361,10 +394,10 @@ export function ProviderSelector({
               exit={{ opacity: 0, y: -12, scale: 0.85 }}
               transition={{ duration: 0.35, ease: [0.22, 1, 0.36, 1] }}
             >
-              <PickerIcon size={72} acpAgentId={effectiveAcpAgentId} />
+              <PickerIcon size={72} acpAgentId={shownAcpAgentId ?? effectiveAcpAgentId} />
             </motion.div>
           </AnimatePresence>
-          {apiKeyDefault(preferredProvider) && <ActiveProviderHint />}
+          {apiKeyDefault(shownProvider) && <ActiveProviderHint provider={shownProvider} />}
           {fixedHarness && orderedHarnesses.length > 1 ? (
             <Tabs
               value={tabsValue}
@@ -467,7 +500,7 @@ export function ProviderSelector({
               </TabsList>
             </Tabs>
           ) : null}
-          {isAcpProtocolHarness(preferredProvider) && selectedAcpForHint && !selectedAcpForHint.installed && (
+          {isAcpProtocolHarness(shownProvider) && selectedAcpForHint && !selectedAcpForHint.installed && (
             <p className="max-w-xs text-center text-xs text-muted-foreground">
               {t('chat.suggestions.agentInstallHint')}
             </p>

@@ -3,6 +3,7 @@
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useSettingsStore } from '@/stores/settings'
+import { primeSuggestionPreferences } from '@/lib/suggestion-preferences-memory'
 import { ChatSuggestions, ProviderSelector, resetProviderSelectorMemoryForTests } from './ChatSuggestions'
 import { useAppStore } from '@/stores/app'
 import { resetEnvironmentListCache } from '@/lib/environment-list'
@@ -180,6 +181,81 @@ describe('ProviderSelector harness catalog', () => {
       expect(sess.harnessUserChosen).toBe(true)
     })
     resetProviderSelectorMemoryForTests()
+  })
+})
+
+describe('ChatSuggestions harness order on first paint', () => {
+  const catalog = [
+    { id: 'claude', enabled: true, state: 'ready' },
+    { id: 'codex', enabled: true, state: 'ready' },
+  ]
+
+  beforeEach(() => {
+    resetProviderSelectorMemoryForTests()
+    useSettingsStore.setState({
+      bindings: [], credentials: [], platforms: [], fetchProviderData: async () => {},
+    })
+    useAppStore.setState({
+      harnessCatalog: catalog,
+      experimentalAgentsEnabled: false,
+      enabledExperimentalAgents: [],
+    })
+    const project = createDefaultProjectState()
+    project._activeSessionId = 's1'
+    project._sessions = {
+      s1: { ...createDefaultPerSessionState(), _historyHydrated: true, preferredProvider: 'claude' },
+    }
+    useChatStore.setState({
+      activeProject: '/p',
+      projectSessions: { '/p': project },
+      initializeHarness: vi.fn(async () => {}),
+    })
+    window.app.listHarnesses = vi.fn(async () => catalog)
+    window.app.queryHarnessSessionRanks = vi.fn(async () => [])
+  })
+
+  afterEach(() => {
+    cleanup()
+    resetProviderSelectorMemoryForTests()
+  })
+
+  it('shows the saved harness order before settings finish loading', async () => {
+    primeSuggestionPreferences({
+      harnessOrder: ['codex', 'claude'],
+      suggestionHarness: { provider: 'codex', acpAgentId: null },
+    })
+    window.app.getAppSettings = vi.fn(() => new Promise(() => {}))
+
+    render(<ProviderSelector />)
+
+    const tabs = screen.getAllByRole('tab')
+    expect(tabs[0]).toHaveAccessibleName('Codex')
+    expect(tabs[1]).toHaveAccessibleName('Claude Code')
+    expect(tabs[0]).toHaveAttribute('data-state', 'active')
+    expect(screen.queryByRole('status', { name: 'Loading...' })).not.toBeInTheDocument()
+    await act(async () => {})
+  })
+
+  it('does not flash Claude Code while the saved order is still unknown', async () => {
+    let resolveSettings: (settings: unknown) => void = () => {}
+    window.app.getAppSettings = vi.fn(() => new Promise((resolve) => { resolveSettings = resolve }))
+
+    render(<ProviderSelector />)
+
+    expect(screen.queryByRole('tab', { name: 'Claude Code' })).not.toBeInTheDocument()
+    expect(screen.getByRole('status', { name: 'Loading...' })).toBeInTheDocument()
+
+    await act(async () => {
+      resolveSettings({
+        harnessOrder: ['codex', 'claude'],
+        suggestionHarness: { provider: 'codex', acpAgentId: null },
+      })
+    })
+
+    const tabs = await screen.findAllByRole('tab')
+    expect(tabs[0]).toHaveAccessibleName('Codex')
+    expect(tabs[1]).toHaveAccessibleName('Claude Code')
+    expect(screen.queryByRole('tab', { name: 'Claude Code' })).toBe(tabs[1])
   })
 })
 

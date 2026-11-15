@@ -1,21 +1,22 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { HarnessSessionRank, SuggestionHarnessPreference } from '@superone/shared/agent-types'
+import {
+  readSuggestionPreferenceSnapshot,
+  rememberDefaultHarnessPin,
+  rememberSecondaryHarnessPin,
+  rememberSuggestionPreferences,
+  resetSuggestionPreferencesMemoryForTests as resetPreferenceSnapshotForTests,
+  type SuggestionPreferenceSettings,
+} from '@/lib/suggestion-preferences-memory'
 
 const EMPTY_RANKS: HarnessSessionRank[] = []
 const HARNESS_RANK_DAYS = 7
 
 let rememberedRanks: HarnessSessionRank[] = EMPTY_RANKS
-let rememberedSuggestionHarness: SuggestionHarnessPreference | null | undefined
-let rememberedSecondaryHarness: SuggestionHarnessPreference | null = null
-let rememberedHarnessOrder: string[] = []
-let rememberedSuggestionMenuHarness: SuggestionHarnessPreference | null | undefined
 
 export function resetSuggestionPreferencesMemoryForTests(): void {
   rememberedRanks = EMPTY_RANKS
-  rememberedSuggestionHarness = undefined
-  rememberedSecondaryHarness = null
-  rememberedHarnessOrder = []
-  rememberedSuggestionMenuHarness = undefined
+  resetPreferenceSnapshotForTests()
 }
 
 export function useSuggestionPreferences(
@@ -26,47 +27,28 @@ export function useSuggestionPreferences(
 ) {
   const [ranks, setRanks] = useState<HarnessSessionRank[]>(() => rememberedRanks)
   const [suggestionHarness, setSuggestionHarness] = useState<SuggestionHarnessPreference | null | undefined>(
-    () => rememberedSuggestionHarness,
+    () => readSuggestionPreferenceSnapshot().suggestionHarness,
   )
   const [secondaryHarness, setSecondaryHarness] = useState<SuggestionHarnessPreference | null>(
-    () => rememberedSecondaryHarness,
+    () => readSuggestionPreferenceSnapshot().secondaryHarness,
   )
-  const [harnessOrder, setHarnessOrder] = useState<string[]>(() => rememberedHarnessOrder)
+  const [harnessOrder, setHarnessOrder] = useState<string[]>(
+    () => readSuggestionPreferenceSnapshot().harnessOrder,
+  )
   const [suggestionMenuHarness, setSuggestionMenuHarness] = useState<
     SuggestionHarnessPreference | null | undefined
-  >(() => rememberedSuggestionMenuHarness)
+  >(() => readSuggestionPreferenceSnapshot().suggestionMenuHarness)
 
   useEffect(() => {
     let cancelled = false
 
-    const applySettings = (settings: {
-      harnessOrder?: string[]
-      suggestionHarness?: SuggestionHarnessPreference | null
-      secondaryHarness?: SuggestionHarnessPreference | null
-      suggestionMenuHarness?: SuggestionHarnessPreference | null
-    } | null) => {
+    const applySettings = (settings: SuggestionPreferenceSettings | null) => {
       if (cancelled) return
-      const nextOrder = Array.isArray(settings?.harnessOrder) ? settings.harnessOrder : []
-      const nextSuggestion = settings?.suggestionHarness ?? null
-      const nextSecondary = settings?.secondaryHarness ?? null
-      rememberedHarnessOrder = nextOrder
-      rememberedSuggestionHarness = nextSuggestion
-      rememberedSecondaryHarness = nextSecondary
-      setHarnessOrder(nextOrder)
-      setSuggestionHarness(nextSuggestion)
-      setSecondaryHarness(nextSecondary)
-      if (nextSecondary != null) {
-        rememberedSuggestionMenuHarness = nextSecondary
-        setSuggestionMenuHarness(nextSecondary)
-        return
-      }
-      if (rememberedSuggestionMenuHarness !== undefined) {
-        setSuggestionMenuHarness(rememberedSuggestionMenuHarness)
-      } else {
-        const fromDisk = settings?.suggestionMenuHarness ?? null
-        rememberedSuggestionMenuHarness = fromDisk
-        setSuggestionMenuHarness(fromDisk)
-      }
+      const next = rememberSuggestionPreferences(settings)
+      setHarnessOrder(next.harnessOrder)
+      setSuggestionHarness(next.suggestionHarness ?? null)
+      setSecondaryHarness(next.secondaryHarness)
+      setSuggestionMenuHarness(next.suggestionMenuHarness ?? null)
     }
 
     void Promise.all([
@@ -91,15 +73,11 @@ export function useSuggestionPreferences(
   }, [])
 
   const persistDefaultHarness = useCallback((pref: SuggestionHarnessPreference) => {
-    rememberedSuggestionHarness = pref
-    setSuggestionHarness(pref)
     const clearsSecondary = prefsEqual(pref, secondaryHarness)
-    if (clearsSecondary) {
-      rememberedSecondaryHarness = null
-      setSecondaryHarness(null)
-      rememberedSuggestionMenuHarness = null
-      setSuggestionMenuHarness(null)
-    }
+    const next = rememberDefaultHarnessPin(pref, clearsSecondary)
+    setSuggestionHarness(next.suggestionHarness ?? null)
+    setSecondaryHarness(next.secondaryHarness)
+    setSuggestionMenuHarness(next.suggestionMenuHarness ?? null)
     void window.app.saveAppSettings({
       suggestionHarness: pref,
       ...(clearsSecondary ? { secondaryHarness: null, suggestionMenuHarness: null } : {}),
@@ -110,10 +88,9 @@ export function useSuggestionPreferences(
 
   const persistSecondaryHarness = useCallback((pref: SuggestionHarnessPreference) => {
     if (prefsEqual(pref, suggestionHarness === undefined ? null : suggestionHarness)) return
-    rememberedSecondaryHarness = pref
-    setSecondaryHarness(pref)
-    rememberedSuggestionMenuHarness = pref
-    setSuggestionMenuHarness(pref)
+    const next = rememberSecondaryHarnessPin(pref)
+    setSecondaryHarness(next.secondaryHarness)
+    setSuggestionMenuHarness(next.suggestionMenuHarness ?? null)
     void window.app.saveAppSettings({
       secondaryHarness: pref,
       suggestionMenuHarness: pref,

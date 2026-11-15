@@ -23,6 +23,7 @@ import {
 } from '@/lib/remote-project-key'
 import { logWorktreeWrite, readWorktreeSessionReader } from '@superone/shared/session-worktree-log'
 import { isUnsentSession } from './chat-store/helpers/session-liveness'
+import { primeSuggestionPreferences } from '@/lib/suggestion-preferences-memory'
 import type { PerSessionState } from './chat-store/types'
 
 function activeWorktreeSession(projectPath: string): { sessionId: string | null; unsent: boolean } {
@@ -325,7 +326,12 @@ async function runContinueToMain(
     window.app.getStartupData(),
     window.app.getRecentFolders(),
     window.app.getAppSettings(),
+    // Overlap the catalog fetch with startup I/O. ChatSuggestions reads it on
+    // the first paint; a later fetch is what made the picker draw Claude first.
+    get().refreshHarnessCatalog(),
   ])
+  // Saved harness order must be in memory before the new-session page mounts.
+  primeSuggestionPreferences(settings)
   set({
     recentFolders: folders,
     sandboxCapability: startupData.sandboxCapability ?? null,
@@ -371,6 +377,9 @@ async function enterMainAfterGates(
   get: () => AppState,
   set: (partial: Partial<AppState>) => void,
 ): Promise<void> {
+  // Re-read after onboarding or harness align. The new-session draft is created
+  // below, and it has to open on this order instead of Claude.
+  primeSuggestionPreferences(await window.app.getAppSettings().catch(() => null))
   const pending = pendingStartup
   const startupData =
     pending?.startupData ??

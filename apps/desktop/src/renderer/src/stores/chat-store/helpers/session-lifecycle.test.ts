@@ -3,6 +3,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import type { AppSettings, ChatMessage, ClaudeResources, CodexResources, HarnessId, ModelOption } from '@superone/shared/agent-types'
 import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
+import { primeSuggestionPreferences, resetSuggestionPreferencesMemoryForTests } from '@/lib/suggestion-preferences-memory'
 import { clearAllContextUsageHolds } from './context-usage-hold'
 
 /**
@@ -228,6 +229,7 @@ function userMsg(id: string, providerId: 'claude' | 'codex' = 'claude'): ChatMes
 }
 
 beforeEach(() => {
+  resetSuggestionPreferencesMemoryForTests()
   resetStore()
   clearAllContextUsageHolds()
   useCodexRealtimeViewStore.setState({ sessions: {} })
@@ -236,6 +238,30 @@ beforeEach(() => {
   defaultPrefsCache.agentPreference = null
   defaultPrefsCache.claudeSelection = null
   defaultPrefsCache.codexSelection = null
+})
+
+describe('ensureSession draft harness', () => {
+  it('starts a fresh draft on the primed suggestion harness instead of Claude', () => {
+    primeSuggestionPreferences({
+      harnessOrder: ['codex', 'claude'],
+      suggestionHarness: { provider: 'codex', acpAgentId: null },
+    })
+    useChatStore.getState().ensureSession('/primed-draft')
+    expect(activeSession('/primed-draft').preferredProvider).toBe('codex')
+    expect(activeSession('/primed-draft').sessionProvider).toBeNull()
+  })
+
+  it('starts a fresh ACP draft on the primed agent', () => {
+    primeSuggestionPreferences({
+      harnessOrder: ['acp-grok', 'claude'],
+      suggestionHarness: { provider: 'acp-grok', acpAgentId: 'grok-build' },
+    })
+    useChatStore.getState().ensureSession('/primed-grok')
+    expect(activeSession('/primed-grok')).toMatchObject({
+      preferredProvider: 'acp-grok',
+      acpAgentId: 'grok-build',
+    })
+  })
 })
 
 describe('focusProjectImpl', () => {

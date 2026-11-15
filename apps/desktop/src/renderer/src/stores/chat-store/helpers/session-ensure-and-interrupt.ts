@@ -3,7 +3,9 @@ import i18n from 'i18next'
 import { connectionIdForProjectKey } from '@/lib/session-list-ops'
 import { applyEventToSession } from '../event-reducer'
 import { isAppInputRequest } from '@superone/shared/input-request-presentation'
+import { isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import { seedNewSession } from '@/harness-ui/strategies'
+import { readPrimedSuggestionHarness } from '@/lib/suggestion-preferences-memory'
 import { buildSlashCommands } from './chat-helpers'
 import type { ChatStoreSet } from './lifecycle'
 import { applyCachedCodexPermissionPreset, sandboxModeToInfo, sessionDefaultsFor } from './prefs-cache'
@@ -66,16 +68,23 @@ export function ensureSessionImpl(
           new Set(s.disabledSkills),
         )
     project.codexModels = isRemote ? [] : (s.harnessResources.codex?.models ?? [])
-    const draftDefaults = sessionDefaultsFor(DEFAULT_PROVIDER)
+    // A fresh draft used to start on Claude and get corrected after paint.
+    // Startup primes the saved harness before this runs.
+    const primed = readPrimedSuggestionHarness()
+    const draftProvider = primed?.provider ?? DEFAULT_PROVIDER
+    const draftAcpAgentId = primed && isAcpProtocolHarness(draftProvider) ? primed.acpAgentId : null
+    const draftDefaults = sessionDefaultsFor(draftProvider, draftAcpAgentId)
     if (draftDefaults.sandboxMode) project.sandboxInfo = sandboxModeToInfo(draftDefaults.sandboxMode)
 
     const draftId = createSessionId()
     project._activeSessionId = draftId
     const newSession = applyCachedCodexPermissionPreset(createDefaultPerSessionState())
     newSession.cwd = projectPath
+    newSession.preferredProvider = draftProvider
+    if (draftAcpAgentId) newSession.acpAgentId = draftAcpAgentId
     if (draftDefaults.permissionMode) newSession.permissionMode = draftDefaults.permissionMode
     if (!isRemote) {
-      seedNewSession(newSession, newSession.preferredProvider, {
+      seedNewSession(newSession, draftProvider, {
         state: s, project, claudeModels: s.harnessResources.claude?.models ?? [],
       })
     }

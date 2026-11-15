@@ -17,7 +17,7 @@ let currentFolder = 'remote:env-1:/work/app'
 
 vi.mock('@/stores/app', () => ({
   useAppStore: (selector: (s: Record<string, unknown>) => unknown) =>
-    selector({ currentFolder, selectProject, fetchRecentFolders }),
+    selector({ currentFolder, selectProject, fetchRecentFolders, recentFolders: [] }),
 }))
 
 function remoteFolder(name: string, missing?: boolean): RecentFolder {

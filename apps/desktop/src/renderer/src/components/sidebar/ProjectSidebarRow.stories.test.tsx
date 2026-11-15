@@ -45,6 +45,13 @@ it.each([
   try {
     expect(screen.queryByText('Check the remote build')).not.toBeInTheDocument()
     fireEvent.click(screen.getByRole('button', { name: 'Start remote child' }))
+    if (story === 'NarrowCollapsedRemoteChildActivity') {
+      // A collapsed project hides a running child until that child needs a person.
+      expect(screen.queryByText('Check the remote build')).not.toBeInTheDocument()
+      fireEvent.click(screen.getByRole('button', { name: 'Needs input' }))
+      expect(await screen.findByText('Approve the command')).toBeInTheDocument()
+      return
+    }
     const title = await screen.findByText('Check the remote build')
     expect(title.closest('.group\\/session')?.querySelector('.lucide-corner-down-right')).not.toBeNull()
     fireEvent.click(screen.getByRole('button', { name: 'Finish child' }))

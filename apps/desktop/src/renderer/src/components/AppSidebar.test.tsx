@@ -963,10 +963,13 @@ describe('AppSidebar interactions', () => {
     const { AppSidebar } = await import('./AppSidebar')
     render(<AppSidebar />)
 
-    const unseen = await screen.findByText('Unseen completed session')
+    // A collapsed project keeps only a prompt. An unseen completion stays inside
+    // until the project opens, then it still sorts above ordinary history.
+    expect(screen.queryByText('Unseen completed session')).toBeNull()
     expect(screen.queryByText('Normal session 0')).toBeNull()
 
     fireEvent.click(screen.getByText('project-a'))
+    const unseen = await screen.findByText('Unseen completed session')
     const firstNormal = await screen.findByText('Normal session 0')
 
     expect(unseen.compareDocumentPosition(firstNormal) & Node.DOCUMENT_POSITION_FOLLOWING).not.toBe(0)
@@ -1045,7 +1048,20 @@ describe('AppSidebar interactions', () => {
     chatState.projectSessions = {
       '/project-a': {
         _activeSessionId: 'sid-normal-0',
-        _sessions: {},
+        _sessions: {
+          'sid-unseen': {
+            messages: [],
+            status: 'idle',
+            pendingPermissions: [],
+            pendingQuestion: null,
+            pendingPlanApproval: null,
+            awaitingAssistantReply: false,
+            sessionProvider: 'claude',
+            _gitBranch: null,
+            _historyHydrated: false,
+            activityPendingCount: 1,
+          },
+        },
         unseenCompletedSessions: new Set(['sid-unseen']),
       },
     }
@@ -1053,8 +1069,8 @@ describe('AppSidebar interactions', () => {
     const { AppSidebar } = await import('./AppSidebar')
     render(<AppSidebar />)
 
-    // Collapsed rows are already reachable, so clicking one is a plain switch —
-    // it must not toggle the project open under the cursor.
+    // A collapsed project still shows a session waiting on the user. Clicking
+    // that row switches; it must not toggle the project open under the cursor.
     fireEvent.click(await screen.findByText('Unseen completed session'))
     await waitFor(() => expect(chatState.switchSession).toHaveBeenCalledWith('sid-unseen'))
     expect(screen.queryByText('Normal session 1')).toBeNull()
@@ -1122,6 +1138,10 @@ describe('AppSidebar interactions', () => {
     const { AppSidebar } = await import('./AppSidebar')
     render(<AppSidebar />)
 
+    // Waiting on the assistant is not a prompt, so a switched-away draft stays
+    // inside the collapsed project until that project is opened.
+    expect(screen.queryByText('Pending first reply')).toBeNull()
+    fireEvent.click(screen.getByText('project-a'))
     await screen.findByText('Pending first reply')
   })
 

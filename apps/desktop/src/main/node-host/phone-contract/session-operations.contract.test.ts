@@ -143,14 +143,15 @@ describe('phone endpoint: fenced session operations', () => {
     const lease = await phone.rpc<ControlLease>('session.acquireControl', { sessionId: 'own' })
     const proof = { sessionId: 'own', leaseId: lease.leaseId, generation: lease.generation }
     own.harnessId = 'cursor'
-    await expect(phone.rpc('session.steer', { ...proof, clientMessageId: 'q' })).rejects.toMatchObject({ code: 'unsupported' })
+    await phone.rpc('session.steer', { ...proof, clientMessageId: 'q' })
+    expect(operations.dispatchBackendCommand).toHaveBeenCalledWith({ kind: 'cursor.steer_queued', clientMessageId: 'q' })
     own.harnessId = 'codex'
     await phone.rpc('session.steer', { ...proof, clientMessageId: 'q' })
     expect(operations.dispatchBackendCommand).toHaveBeenCalledWith({ kind: 'codex.steer_queued', clientMessageId: 'q' })
     await phone.rpc('session.respondPlan', { ...proof, decision: 'reject', options: { messageId: 'plan', feedback: 'Revise' } })
     expect(operations.dispatchBackendCommand).toHaveBeenCalledWith({ kind: 'codex.plan_approval', messageId: 'plan', status: 'rejected', feedback: 'Revise' })
     await expect(phone.rpc('session.answerAsyncQuestion', { ...proof, messageId: 'missing', itemId: 'i', answers: ['yes'] })).rejects.toThrow('Async question not found')
-    expect(operations.dispatchBackendCommand).toHaveBeenCalledTimes(2)
+    expect(operations.dispatchBackendCommand).toHaveBeenCalledTimes(3)
   })
 
   it('preserves the settings and answers that the phone composer supplies', async () => {

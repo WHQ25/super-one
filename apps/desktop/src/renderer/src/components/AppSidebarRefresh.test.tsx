@@ -1,5 +1,5 @@
 /** @vitest-environment jsdom */
-import { act, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { expect, it } from 'vitest'
 import { chatState, mockEnvironment, mockWindowApp, notifyChat, sessionFixtures } from './AppSidebar.test-setup'
 
@@ -42,6 +42,7 @@ it('reloads after creation invalidates an in-flight list, coalescing repeated no
   })
   render(<AppSidebar />)
   await screen.findByText('Old Session')
+  fireEvent.click(screen.getByText('project-a'))
   const baseline = mockEnvironment.listSessions.mock.calls.length
   const oldRows = [...sessionFixtures.byFolder['/project-a']]
   const stale = deferred<typeof oldRows>()
@@ -69,6 +70,7 @@ it('waits for the authoritative relationship before showing a live collaboration
   })
   render(<AppSidebar />)
   await screen.findByText('Old Session')
+  fireEvent.click(screen.getByText('project-a'))
   const fresh = deferred<typeof sessionFixtures.byFolder[string]>()
   mockEnvironment.listSessions.mockImplementationOnce(() => fresh.promise)
   await act(async () => changed())

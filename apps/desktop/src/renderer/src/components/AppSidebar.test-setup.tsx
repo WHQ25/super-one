@@ -5,7 +5,7 @@ import { resetEnvironmentListCache } from '@/lib/environment-list'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { useMultiHostSidebarStore } from '@/stores/multi-host-sidebar'
 import { DEFAULT_SIDEBAR_SETTINGS } from '@/lib/multi-host/types'
-import { SIDEBAR_SECTION_COLLAPSE_KEY } from '@/components/sidebar/sidebar-section-collapse'
+import { PROJECT_SETTLED_COLLAPSE_KEY, SIDEBAR_SECTION_COLLAPSE_KEY } from '@/components/sidebar/sidebar-section-collapse'
 import { useSyncExternalStore, type HTMLAttributes, type ReactNode } from 'react'
 import type { PinnedSessionEntry, SettledSessionPage } from '@superone/shared/agent-types'
 import type { EnvironmentListItem } from '@superone/shared/environment'
@@ -296,6 +296,7 @@ beforeAll(async () => {
 beforeEach(() => {
   vi.clearAllMocks()
   globalThis.localStorage?.removeItem(SIDEBAR_SECTION_COLLAPSE_KEY)
+  globalThis.localStorage?.removeItem(PROJECT_SETTLED_COLLAPSE_KEY)
   resetEnvironmentListCache()
   useMultiHostSidebarStore.setState({
     settings: { ...DEFAULT_SIDEBAR_SETTINGS },

@@ -58,8 +58,14 @@ vi.mock('electron', () => ({
 }))
 vi.mock('../logger', () => ({ default: { warn: () => {}, info: () => {}, error: () => {}, debug: () => {} } }))
 vi.mock('../media-file-grants', () => ({ mediaFileGrants: () => ({ add: () => {} }) }))
-vi.mock('./browser-automation-bridge', () => ({ browserAutomationCall: vi.fn(async () => ({ webContentsIds: [] })) }))
-vi.mock('../browser/browser-automation-bridge', () => ({ browserAutomationCall: vi.fn(async () => ({ webContentsIds: [] })) }))
+vi.mock('./browser-automation-bridge', () => ({
+  browserAutomationCall: vi.fn(async () => ({ webContentsIds: [] })),
+  sessionChromeCookieBrowser: vi.fn(async () => null),
+}))
+vi.mock('../browser/browser-automation-bridge', () => ({
+  browserAutomationCall: vi.fn(async () => ({ webContentsIds: [] })),
+  sessionChromeCookieBrowser: vi.fn(async () => null),
+}))
 vi.mock('../app-settings-service', () => ({ readAppSettings: () => ({}) }))
 
 /** The node side: accept a push, serve a stat, and let the test break `put`. */

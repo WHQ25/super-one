@@ -19,7 +19,7 @@ function collectTextParts(root: HTMLElement, from?: Node): { parts: TextPart[]; 
   while ((n = w.nextNode())) {
     const node = n as Text
     // Marks hold annotated text; sticky UI (pins, notes) is never the annotated text.
-    if (node.parentElement?.closest(`mark[${STICKY_ID_ATTR}], mark[${STICKY_DRAFT_ATTR}], [data-plan-sticky-ui]`)) {
+    if (node.parentElement?.closest(`mark[${STICKY_ID_ATTR}], mark[${STICKY_DRAFT_ATTR}], [data-plan-sticky-ui], [data-media-player-chrome]`)) {
       continue
     }
     const text = node.textContent ?? ''
@@ -259,9 +259,40 @@ function collectMarkRects(marks: HTMLElement[]): DOMRect[] {
   return out
 }
 
-/** Line-box rects of a range, in viewport coordinates. */
+/**
+ * Line-box rects of a range, in viewport coordinates.
+ * An atomic block the range crosses (a video player) replaces the fragments
+ * inside it — the clock, the `<video>` box — with the block's own border box,
+ * the same rectangle a manual selection paints.
+ */
 export function rangeRects(range: Range): DOMRect[] {
-  return [...range.getClientRects()].filter((r) => r.width > 0 && r.height > 0)
+  const rects = [...range.getClientRects()].filter((r) => r.width > 0 && r.height > 0)
+  const boxes = atomicBlocks(range)
+    .map((el) => el.getBoundingClientRect())
+    .filter((box) => box.width > 0 && box.height > 0)
+  if (boxes.length === 0) return rects
+  const outside = rects.filter((rect) => !boxes.some((box) => coversCenter(box, rect)))
+  return [...outside, ...boxes]
+}
+
+/** Outermost `data-selection-atomic` elements the range touches. */
+function atomicBlocks(range: Range): HTMLElement[] {
+  const node = range.commonAncestorContainer
+  const scope = node instanceof Element ? node : node.parentElement
+  if (!scope) return []
+  const hits: HTMLElement[] = []
+  const outer = scope.closest<HTMLElement>('[data-selection-atomic]')
+  if (outer && range.intersectsNode(outer)) hits.push(outer)
+  for (const el of scope.querySelectorAll<HTMLElement>('[data-selection-atomic]')) {
+    if (!hits.includes(el) && range.intersectsNode(el)) hits.push(el)
+  }
+  return hits.filter((el) => !hits.some((other) => other !== el && other.contains(el)))
+}
+
+function coversCenter(box: DOMRect, rect: DOMRect): boolean {
+  const x = rect.left + rect.width / 2
+  const y = rect.top + rect.height / 2
+  return x >= box.left && x <= box.right && y >= box.top && y <= box.bottom
 }
 
 /**
@@ -344,6 +375,8 @@ export function highlightBandsFromRects(
   const heights = rects.map((r) => r.height).sort((a, b) => a - b)
   const lineH = heights[Math.floor(heights.length / 2)] || 16
   const strokeH = Math.max(8, lineH * strokeRatio)
+  // Taller than a text line: a video or other block box, painted edge to edge.
+  const blockBox = 48
 
   type Raw = { mid: number; top: number; left: number; right: number; boxH: number }
   const raw: Raw[] = rects.map((r) => ({
@@ -376,7 +409,7 @@ export function highlightBandsFromRects(
   return lines.map((L) => {
     const mid = L.mids.reduce((s, x) => s + x, 0) / L.mids.length
     // Prefer line box height when available for stable stroke centering
-    const h = Math.max(strokeH, Math.min(L.boxH * strokeRatio, L.boxH))
+    const h = L.boxH > blockBox ? L.boxH : Math.max(strokeH, Math.min(L.boxH * strokeRatio, L.boxH))
     return {
       top: mid - h / 2,
       left: L.left,

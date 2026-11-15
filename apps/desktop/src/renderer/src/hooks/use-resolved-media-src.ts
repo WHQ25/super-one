@@ -18,6 +18,8 @@ function localFileToMediaUrl(src: string | undefined, port: number): string | un
  */
 export function useResolvedMediaSrc(src: string | undefined): {
   displaySrc: string | undefined
+  /** Filesystem path when `src` names a local file, including a remote file's desktop mirror. */
+  filePath: string | undefined
   loading: boolean
   failed: boolean
 } {
@@ -53,7 +55,9 @@ export function useResolvedMediaSrc(src: string | undefined): {
     }
   }, [src])
 
-  if (!src) return { displaySrc: undefined, loading: false, failed: false }
-  if (isRemote) return { displaySrc: localFileToMediaUrl(remoteSrc, port), loading, failed }
-  return { displaySrc: localFileToMediaUrl(src, port) ?? src, loading: false, failed: false }
+  if (!src) return { displaySrc: undefined, filePath: undefined, loading: false, failed: false }
+  const resolved = isRemote ? remoteSrc : src
+  const filePath = resolved ? localFileUrlToPath(resolved) ?? undefined : undefined
+  if (isRemote) return { displaySrc: localFileToMediaUrl(remoteSrc, port), filePath, loading, failed }
+  return { displaySrc: localFileToMediaUrl(src, port) ?? src, filePath, loading: false, failed: false }
 }

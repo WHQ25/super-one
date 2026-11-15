@@ -94,4 +94,17 @@ describe('markdownOfRange', () => {
     document.body.innerHTML = '<div><p>plain <b>bold</b></p></div>'
     expect(markdownOfRange(rangeOver(document.body))).toBeNull()
   })
+
+  it('quotes a video player as its markdown, not the playback clock', () => {
+    document.body.innerHTML = `<div class="chat-md"><div>
+      <p id="before">Before the clip.</p>
+      <span data-copy-text="![walkthrough](/clips/demo.mp4)" data-slot="markdown-video" style="display:flex">
+        <span data-media-player-chrome>0:00 / 0:05</span>
+      </span>
+      <p id="after">After the clip.</p>
+    </div></div>`
+    expect(markdownOfRange(rangeOver(document.querySelector('.chat-md')!))).toBe(
+      'Before the clip.\n\n![walkthrough](/clips/demo.mp4)\n\nAfter the clip.',
+    )
+  })
 })

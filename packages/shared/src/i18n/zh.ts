@@ -5077,6 +5077,7 @@ export const zh: Messages = {
     showLyrics: '显示歌词',
     hideLyrics: '隐藏歌词',
     untitledAudio: '音频',
+    pathCopied: '路径已复制',
   },
   filePreview: {
     loadFailed: '无法读取该文件',

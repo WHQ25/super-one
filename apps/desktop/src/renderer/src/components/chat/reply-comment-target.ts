@@ -22,7 +22,7 @@ function selectedTextNodes(range: Range, root: HTMLElement): Text[] {
     if (!n.length || !range.intersectsNode(n)) continue
     if (n === range.startContainer && range.startOffset >= n.length) continue
     if (n === range.endContainer && range.endOffset === 0) continue
-    if (n.parentElement?.closest(`[${STICKY_UI_ATTR}]`)) continue
+    if (n.parentElement?.closest(`[${STICKY_UI_ATTR}], [data-media-player-chrome]`)) continue
     nodes.push(n)
   }
   // Whitespace between blocks at either end is no part of the passage.
@@ -40,12 +40,14 @@ export function replyCommentAnchor(selection: Selection | null, root: HTMLElemen
   const range = selection.getRangeAt(0)
   const nodes = selectedTextNodes(range, root)
   const first = nodes[0]
-  const last = nodes[nodes.length - 1]
-  if (!first || !last) return null
-  const clipped = document.createRange()
-  clipped.setStart(first, first === range.startContainer ? range.startOffset : 0)
-  clipped.setEnd(last, last === range.endContainer ? range.endOffset : last.length)
-  const anchorText = clipped.toString()
+  if (!first) return null
+  // Join the kept nodes. A range between the first and last would still
+  // include player chrome that sits in the hole.
+  const anchorText = nodes.map((node) => {
+    const start = node === range.startContainer ? range.startOffset : 0
+    const end = node === range.endContainer ? range.endOffset : node.length
+    return node.data.slice(start, end)
+  }).join('')
   if (!anchorText.trim()) return null
   const row = elementOf(first)?.closest<HTMLElement>('[data-message-id]')
   return { messageId: row?.dataset.messageId ?? null, anchorText }

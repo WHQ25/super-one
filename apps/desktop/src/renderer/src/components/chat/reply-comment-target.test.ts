@@ -1,5 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import { findTextRange } from './plan-annotation-dom'
 import { onReplyCommentEditRequest, replyCommentAnchor, requestReplyCommentEdit } from './reply-comment-target'
 
 function transcript(): HTMLElement {
@@ -48,6 +49,21 @@ describe('replyCommentAnchor', () => {
   it('drops an end resting at the start of the next node', () => {
     const root = transcript()
     expect(replyCommentAnchor(select(['reply', 6], ['tool', 0]), root)?.anchorText).toBe('reply paragraph')
+  })
+
+  it('anchors the prose around a video and leaves the playback clock out', () => {
+    const root = transcript()
+    const row = root.querySelector('[data-message-id="a1"]')!
+    row.querySelector('.chat-md')!.insertAdjacentHTML('beforeend', `
+      <span data-copy-text="![demo](/clips/demo.mp4)" style="display:flex">
+        <span data-media-player-chrome id="clock">0:00 / 0:05</span>
+      </span>
+      <p id="after">After the clip.</p>`)
+    const anchor = replyCommentAnchor(select(['reply', 0], ['after', 5]), root)
+    expect(anchor?.anchorText).toContain('first reply paragraph')
+    expect(anchor?.anchorText).toContain('After')
+    expect(anchor?.anchorText).not.toContain('0:00')
+    expect(findTextRange(root, anchor!.anchorText, row)).not.toBeNull()
   })
 
   it('is null without selected text in the transcript', () => {

@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { ReactNode } from 'react'
-import { userEvent, within } from 'storybook/test'
+import { expect, userEvent, within } from 'storybook/test'
 import sampleVideo from '../../../../../../mobile/assets/preview/sample-clip.mp4?url'
 import sampleAudio from '../../../../../../mobile/assets/audio/incallmanager_ringback.mp3?url'
 import songWithCover from './__fixtures__/song-with-cover.mp3?url'
@@ -40,6 +40,29 @@ export const VideoAuthoredWidth: Story = {
 
 export const VideoNarrow: Story = {
   render: () => <Column width={320}><MarkdownVideoPlayer src={sampleVideo} width={640} /></Column>,
+}
+
+/** Right-click a local clip: save, reveal, mention, and copy its path. */
+export const VideoFileMenu: Story = {
+  render: () => (
+    <Column>
+      <MarkdownVideoPlayer
+        src={sampleVideo}
+        filePath="/Users/me/clips/walkthrough.mp4"
+        copyText="![walkthrough](/Users/me/clips/walkthrough.mp4)"
+      />
+    </Column>
+  ),
+  play: async ({ canvasElement }) => {
+    const video = canvasElement.querySelector('video')
+    if (!video) throw new Error('missing video')
+    await userEvent.pointer({ keys: '[MouseRight]', target: video })
+    const menu = within(document.body)
+    await expect(menu.findByRole('menuitem', { name: 'Save As' })).resolves.toBeVisible()
+    await expect(menu.findByRole('menuitem', { name: 'Copy Path' })).resolves.toBeVisible()
+    await expect(menu.findByRole('menuitem', { name: 'Add to Chat' })).resolves.toBeVisible()
+    await expect(menu.findByRole('menuitem', { name: 'Open Folder' })).resolves.toBeVisible()
+  },
 }
 
 /** A source that never loads: seeking is disabled and the timer reads 0:00. */

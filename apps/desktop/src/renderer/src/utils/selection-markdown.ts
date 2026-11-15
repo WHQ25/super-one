@@ -78,7 +78,9 @@ class Converter {
     if (node.nodeType !== Node.ELEMENT_NODE) return ''
     const el = node as HTMLElement
     if (SKIP.has(el.tagName) || el.getAttribute('aria-hidden') === 'true') return ''
+    // A widget stands for its source. Player chrome (the clock) is not part of it.
     if (el.dataset.copyText !== undefined) return el.dataset.copyText
+    if (el.hasAttribute('data-media-player-chrome')) return ''
     if (el.classList.contains('katex')) return `$${tex(el)}$`
     const inner = (): string => this.inlineChildren(el)
     switch (el.tagName) {
@@ -127,6 +129,11 @@ class Converter {
 
   block(el: Element): string[] {
     if (SKIP.has(el.tagName) || getComputedStyle(el).display === 'none') return []
+    // Block widgets (the video player) are atomic too: quoting one returns its
+    // markdown, not the controls rendered inside it.
+    const copyText = el instanceof HTMLElement ? el.dataset.copyText : undefined
+    if (copyText !== undefined) return copyText.trim() ? [copyText] : []
+    if (el.hasAttribute('data-media-player-chrome')) return []
     const heading = /^H([1-6])$/.exec(el.tagName)
     if (heading) return [`${'#'.repeat(Number(heading[1]))} ${this.inlineChildren(el).trim()}`]
     switch (el.tagName) {

@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type ReactNode, type RefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ComponentProps, type DragEvent, type ReactNode, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Ellipsis, Maximize2, MicVocal, Minimize2, Music, Pause, Play, Volume1, Volume2, VolumeX } from 'lucide-react'
+import { Copy, Ellipsis, FolderOpen, Maximize2, MessageSquarePlus, MicVocal, Minimize2, Music, Pause, Play, Save, Volume1, Volume2, VolumeX } from 'lucide-react'
+import { toast } from 'sonner'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import {
   DropdownMenu,
@@ -12,6 +13,12 @@ import {
 } from '@superone/ui/components/ui/dropdown-menu'
 import { cn } from '@superone/ui/lib/utils'
 import { formatClockDuration } from '@superone/chat-view/presenters/duration-format'
+import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
+import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
+import { hasTextSelection } from '@/lib/file-link'
+import { useAppStore, selectEffectiveProjectRoot } from '@/stores/app'
+import { chatInputAPI } from './chat-input-api'
+import { toMentionPath } from './chat-input-utils'
 import { mediaFileName, readAudioDetails, type AudioDetails, type Lyrics } from './audio-metadata'
 
 const PLAYBACK_RATES = [0.5, 0.75, 1, 1.25, 1.5, 2]
@@ -139,10 +146,15 @@ interface MediaControlsProps {
   fullscreen?: boolean
   /** Player-specific buttons, placed before the options menu. */
   extra?: ReactNode
+  /**
+   * The clock and buttons are player chrome. A text selection that crosses
+   * the player quotes `data-copy-text` on the root, not this readout.
+   */
+  selectionChrome?: boolean
   className?: string
 }
 
-function MediaControls({ media, state, root, fullscreen = false, extra, className }: MediaControlsProps) {
+function MediaControls({ media, state, root, fullscreen = false, extra, selectionChrome = false, className }: MediaControlsProps) {
   const { t } = useTranslation()
   const toggleFullscreen = useCallback(() => {
     if (document.fullscreenElement) void document.exitFullscreen()
@@ -150,7 +162,10 @@ function MediaControls({ media, state, root, fullscreen = false, extra, classNam
   }, [root])
 
   return (
-    <span className={cn('flex items-center gap-1.5', className)}>
+    <span
+      data-media-player-chrome={selectionChrome ? '' : undefined}
+      className={cn('flex items-center gap-1.5', selectionChrome && 'select-none', className)}
+    >
       <IconButton size="md" tooltip={state.playing ? t('mediaPlayer.pause') : t('mediaPlayer.play')} onClick={() => togglePlay(media.current)}>
         {state.playing ? <Pause /> : <Play />}
       </IconButton>
@@ -206,20 +221,90 @@ function MediaControls({ media, state, root, fullscreen = false, extra, classNam
   )
 }
 
+function fileBasename(path: string): string {
+  const slash = Math.max(path.lastIndexOf('/'), path.lastIndexOf('\\'))
+  return slash >= 0 ? path.slice(slash + 1) : path
+}
+
+/** The markdown a reply selection quotes for this video. Paths with spaces stay bracketed. */
+export function videoSelectionMarkdown(alt: string | undefined, filePath: string): string {
+  const dest = /[\s()]/.test(filePath) ? `<${filePath}>` : filePath
+  return `![${(alt ?? '').replace(/\r?\n/g, ' ')}](${dest})`
+}
+
+/** Same file actions as a chat image, plus copying the path a video can actually be pasted as. */
+function useVideoFileMenu(filePath: string | undefined): AdaptiveMenuEntry[] {
+  const { t } = useTranslation()
+  if (!filePath) return []
+  const saveAs = async () => {
+    const defaultDir = useAppStore.getState().currentFolder ?? undefined
+    const res = await window.app.saveFileAs(filePath, fileBasename(filePath), defaultDir)
+    if (res.ok) toast.success(t('chat.image.savedAs', { path: res.savedPath }))
+    else if (!res.canceled) toast.error(t('chat.image.saveAsFailed', { error: res.error ?? '' }))
+  }
+  return [
+    {
+      kind: 'item',
+      id: 'copyPath',
+      label: t('sidebar.contextMenu.copyPath'),
+      icon: Copy,
+      onSelect: () => {
+        // The native menu closes with the document unfocused, so the page clipboard rejects the write.
+        void window.app.clipboardWrite(filePath).then(
+          () => toast.success(t('mediaPlayer.pathCopied')),
+          (error: unknown) => toast.error(t('chat.image.copyFailed', { error: String(error) })),
+        )
+      },
+    },
+    { kind: 'item', id: 'saveAs', label: t('chat.image.saveAs'), icon: Save, onSelect: () => { void saveAs() } },
+    {
+      kind: 'item',
+      id: 'addToChat',
+      label: t('chat.image.addToChat'),
+      icon: MessageSquarePlus,
+      onSelect: () => {
+        const root = selectEffectiveProjectRoot(useAppStore.getState())
+        chatInputAPI.insertMention?.('file', toMentionPath(filePath, root), fileBasename(filePath))
+      },
+    },
+    { kind: 'item', id: 'openFolder', label: t('chat.image.openFolder'), icon: FolderOpen, onSelect: () => { void window.app.revealFile(filePath) } },
+  ]
+}
+
+/** Hand the clip to the OS as a file. The click the browser synthesizes afterwards must not toggle play. */
+function beginVideoFileDrag(filePath: string, event: DragEvent<HTMLElement>, onEnd: () => void) {
+  event.preventDefault()
+  window.app.startDrag([filePath])
+  const mark = () => {
+    onEnd()
+    document.removeEventListener('mouseup', mark)
+    document.removeEventListener('dragend', mark)
+  }
+  document.addEventListener('mouseup', mark)
+  document.addEventListener('dragend', mark)
+}
+
 /**
  * Shared video player: centered with the controls on a bar beneath it.
  * Rendered with spans because `![…](clip.mp4)` lands inside a `<p>`.
  */
-interface MarkdownVideoPlayerProps extends ComponentProps<'video'> {
+interface MarkdownVideoPlayerProps extends Omit<ComponentProps<'video'>, 'src'> {
+  src?: string
   /** Fit the video and control bar inside a file preview's bounded stage. */
   fitToContainer?: boolean
   allowFullscreen?: boolean
+  /** Local file for the context menu and for dragging the clip out. */
+  filePath?: string
+  /** Markdown a reply selection quotes instead of the player chrome. */
+  copyText?: string
 }
 
-export function MarkdownVideoPlayer({ className, style, controls: _controls, fitToContainer = false, allowFullscreen = true, ...props }: MarkdownVideoPlayerProps) {
+export function MarkdownVideoPlayer({ className, style, controls: _controls, fitToContainer = false, allowFullscreen = true, filePath, copyText, ...props }: MarkdownVideoPlayerProps) {
   const rootRef = useRef<HTMLSpanElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
+  const dragEndRef = useRef(0)
   const playback = usePlayback(videoRef)
+  const menu = useVideoFileMenu(filePath)
   const [fullscreen, setFullscreen] = useState(false)
   const bounded = fitToContainer || fullscreen
 
@@ -229,10 +314,13 @@ export function MarkdownVideoPlayer({ className, style, controls: _controls, fit
     return () => document.removeEventListener('fullscreenchange', sync)
   }, [])
 
-  return (
+  const player = (
     <span
       ref={rootRef}
       data-slot="markdown-video"
+      data-copy-text={copyText}
+      data-selection-fill={copyText ? '' : undefined}
+      data-selection-atomic={copyText ? '' : undefined}
       className={cn('my-3 flex w-full flex-col', bounded && 'my-0 h-full min-h-0', fullscreen && 'bg-background', className)}
     >
       <span className={cn('flex justify-center', bounded && 'min-h-0 flex-1 items-center', fullscreen && 'bg-black')}>
@@ -240,8 +328,13 @@ export function MarkdownVideoPlayer({ className, style, controls: _controls, fit
           ref={videoRef}
           preload="metadata"
           {...props}
+          draggable={Boolean(filePath)}
           style={style}
-          onClick={() => togglePlay(videoRef.current)}
+          onDragStart={filePath ? (event) => beginVideoFileDrag(filePath, event, () => { dragEndRef.current = Date.now() }) : undefined}
+          onClick={() => {
+            if (Date.now() - dragEndRef.current < 200) return
+            togglePlay(videoRef.current)
+          }}
           onDoubleClick={() => {
             if (!allowFullscreen) return
             if (document.fullscreenElement) void document.exitFullscreen()
@@ -259,9 +352,18 @@ export function MarkdownVideoPlayer({ className, style, controls: _controls, fit
         state={playback}
         root={allowFullscreen ? rootRef : undefined}
         fullscreen={fullscreen}
+        selectionChrome
         className={cn('mt-1.5 shrink-0 border-t border-border/60 pt-1.5', fullscreen && 'mt-0 px-3 py-2')}
       />
     </span>
+  )
+
+  // A text selection owns the right-click: that menu quotes the markdown.
+  if (!filePath) return player
+  return (
+    <AdaptiveContextMenu items={menu} yieldWhen={hasTextSelection}>
+      {player}
+    </AdaptiveContextMenu>
   )
 }
 

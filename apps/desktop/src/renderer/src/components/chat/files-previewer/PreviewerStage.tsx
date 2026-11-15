@@ -52,12 +52,17 @@ function errorLabelKey(error: PreviewerLoadError): string {
  * A local file the image menu can copy and save. Remote bytes arrive as a data
  * URI or as the mirror's local-file URL; a node path is not a file on this machine.
  */
-export function previewerImageMenuPath(root: string, file: PreviewerFile, url: string | undefined): string | null {
-  if (file.kind !== 'image' || file.absolutePath.startsWith('data:')) return null
+function previewerLocalFilePath(root: string, file: PreviewerFile, url: string | undefined): string | null {
+  if (file.absolutePath.startsWith('data:')) return null
   const mirrored = url ? localFileUrlToPath(url) : null
   if (mirrored) return mirrored
   if (url?.startsWith('data:') || parseRemoteProjectKey(root)) return null
   return isAbsoluteLocalPath(file.absolutePath) ? file.absolutePath : null
+}
+
+export function previewerImageMenuPath(root: string, file: PreviewerFile, url: string | undefined): string | null {
+  if (file.kind !== 'image') return null
+  return previewerLocalFilePath(root, file, url)
 }
 
 /** Only a verdict that can change with time is worth a retry button. */
@@ -159,6 +164,7 @@ export function PreviewerStage({ file, state, mode, root, projectPath, initialMo
         <div data-previewer-media className="h-full w-full cursor-default p-2">
           <MarkdownVideoPlayer
             src={state.url}
+            filePath={previewerLocalFilePath(root, file, state.url) ?? undefined}
             onError={onUndecodable}
             fitToContainer
             allowFullscreen={!card}

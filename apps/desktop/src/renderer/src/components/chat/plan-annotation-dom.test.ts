@@ -1,12 +1,14 @@
 /**
  * @vitest-environment jsdom
  */
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import {
   clearStickyMarks,
   firstLineTopRight,
   highlightBandsFromMarks,
+  highlightBandsFromRects,
   quoteFromLines,
+  rangeRects,
   STICKY_DRAFT_ATTR,
   STICKY_ID_ATTR,
   wrapRangeAsMarks,
@@ -112,6 +114,57 @@ describe('highlightBandsFromMarks', () => {
 })
 
 const PIN = 18
+
+function rectList(rects: DOMRect[]): DOMRectList {
+  return {
+    length: rects.length,
+    item: (index: number) => rects[index] ?? null,
+    *[Symbol.iterator]() { yield* rects },
+  } as unknown as DOMRectList
+}
+
+describe('rangeRects', () => {
+  it('paints an atomic video block instead of the clock and picture inside it', () => {
+    const root = document.createElement('div')
+    root.innerHTML = `
+      <p id="before">Before</p>
+      <span data-selection-atomic id="player">
+        <video></video>
+        <span data-media-player-chrome>0:00 / 0:05</span>
+      </span>
+      <p id="after">After</p>
+    `
+    document.body.appendChild(root)
+    const range = document.createRange()
+    range.setStart(root.querySelector('#before')!.firstChild!, 0)
+    range.setEnd(root.querySelector('#after')!.firstChild!, 5)
+    const player = root.querySelector('#player') as HTMLElement
+    const playerBox = new DOMRect(8, 40, 320, 200)
+    vi.spyOn(player, 'getBoundingClientRect').mockReturnValue(playerBox)
+    const lead = new DOMRect(8, 8, 40, 16)
+    const picture = new DOMRect(90, 48, 140, 150)
+    const clock = new DOMRect(240, 210, 70, 14)
+    const tail = new DOMRect(8, 250, 40, 16)
+    Object.defineProperty(range, 'getClientRects', { value: () => rectList([lead, picture, clock, tail]) })
+
+    const rects = rangeRects(range)
+
+    expect(rects).toContain(playerBox)
+    expect(rects).toContain(lead)
+    expect(rects).toContain(tail)
+    expect(rects).not.toContain(picture)
+    expect(rects).not.toContain(clock)
+    root.remove()
+  })
+})
+
+describe('highlightBandsFromRects', () => {
+  it('fills a block taller than a text line edge to edge', () => {
+    expect(highlightBandsFromRects([new DOMRect(0, 40, 320, 200)])).toEqual([
+      expect.objectContaining({ top: 40, left: 0, width: 320, height: 200 }),
+    ])
+  })
+})
 
 describe('firstLineTopRight', () => {
   it('hangs on the top-right of the first line', () => {

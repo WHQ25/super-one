@@ -5004,6 +5004,7 @@ export type Messages = {
     showLyrics: string
     hideLyrics: string
     untitledAudio: string
+    pathCopied: string
   }
   filePreview: {
     loadFailed: string
@@ -10296,6 +10297,7 @@ export const en: Messages = {
     showLyrics: 'Show Lyrics',
     hideLyrics: 'Hide Lyrics',
     untitledAudio: 'Audio',
+    pathCopied: 'Path copied',
   },
   filePreview: {
     loadFailed: 'Could not read this file',

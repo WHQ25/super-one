@@ -386,6 +386,7 @@ export function FilePreview({ filePath, fileRoot: root }: FilePreviewProps) {
               <div className="flex h-full items-center justify-center p-4">
                 <MarkdownVideoPlayer
                   src={previewSrc(fileContent?.content, () => toMediaUrl(fullFilePath), toMediaUrl)}
+                  filePath={imagePath ?? undefined}
                   preload="auto"
                   fitToContainer
                 />

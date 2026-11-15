@@ -3,7 +3,7 @@ import type { Components, LinkSafetyConfig, MathPlugin } from 'streamdown'
 import type { PluggableList } from 'unified'
 import { createStreamdownCodeComponent } from './CodeBlock'
 import { codePlugin, codePluginLight } from './code-plugins'
-import { toMediaUrl } from '@/lib/path-utils'
+import { localFileUrlToPath, toMediaUrl } from '@/lib/path-utils'
 import {
   resolveMediaSrcForProject,
   isRemoteMediaUrl,
@@ -13,7 +13,7 @@ import { LinkSafetyModal } from './LinkSafetyModal'
 import { MarkdownImage } from './markdown-image'
 import { MarkdownTable } from './MarkdownTable'
 import { MarkdownRemoteMedia } from './markdown-remote-media'
-import { MarkdownAudioPlayer, MarkdownVideoPlayer } from './markdown-media-player'
+import { MarkdownAudioPlayer, MarkdownVideoPlayer, videoSelectionMarkdown } from './markdown-media-player'
 import { openBrowserTab } from '@/components/activity/activity-panel-api'
 import { resolveMarkdownFileLinks } from '@superone/chat-view/presenters/markdown-file-links'
 import { createMarkdownRehypePlugins } from '@superone/chat-view/presenters/markdown-media'
@@ -71,11 +71,18 @@ function localFileToMediaUrl(src: string | undefined): string | undefined {
 
 const AUDIO_EXTS = new Set(['.mp3', '.wav', '.flac', '.aac', '.m4a', '.opus', '.weba'])
 
-function MediaVideo(props: ComponentProps<'video'>) {
+function MediaVideo(props: ComponentProps<'video'> & { alt?: string }) {
   if (isRemoteMediaUrl(props.src)) {
-    return createElement(MarkdownRemoteMedia, { kind: 'video', src: props.src })
+    return createElement(MarkdownRemoteMedia, { kind: 'video', src: props.src, alt: props.alt })
   }
-  return createElement(MarkdownVideoPlayer, { ...props, src: localFileToMediaUrl(props.src) })
+  const { alt, ...rest } = props
+  const filePath = props.src ? localFileUrlToPath(props.src) ?? undefined : undefined
+  return createElement(MarkdownVideoPlayer, {
+    ...rest,
+    src: localFileToMediaUrl(props.src),
+    filePath,
+    copyText: filePath ? videoSelectionMarkdown(alt, filePath) : undefined,
+  })
 }
 
 function MediaAudio(props: ComponentProps<'audio'>) {
@@ -105,8 +112,7 @@ function getMediaExt(src: string | undefined): string | null {
 function MediaImage(props: ComponentProps<'img'>) {
   const ext = getMediaExt(props.src)
   if (ext && isVideoFileName(ext)) {
-    const { alt: _, ...rest } = props
-    return MediaVideo(rest as ComponentProps<'video'>)
+    return MediaVideo(props as ComponentProps<'video'> & { alt?: string })
   }
   if (ext && AUDIO_EXTS.has(ext)) {
     const { alt: _, ...rest } = props

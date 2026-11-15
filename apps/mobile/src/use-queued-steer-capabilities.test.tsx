@@ -12,7 +12,8 @@ test('publishes V2 steering synchronously and clears it for a legacy runtime or 
   })
   expect(hook.result.current.canSteer).toBe(true)
   await hook.rerender({ harness: 'cursor' })
-  expect(hook.result.current.ref.current).toBe(false)
+  // Cursor advertises queued steer on its own. The OpenCode runtime must not apply.
+  expect(hook.result.current.ref.current).toBe(true)
   await hook.rerender({ harness: 'opencode' })
   await act(() => hook.result.current.sync(undefined))
   expect(hook.result.current.canSteer).toBe(false)

@@ -34,13 +34,13 @@ describe('queued composer send', () => {
     })
   })
 
-  it('offers steer on Claude, Codex, Grok and Antigravity', () => {
+  it('offers steer on Claude, Codex, Grok, Antigravity and Cursor', () => {
     expect(canSteerQueued('claude')).toBe(true)
     expect(canSteerQueued('codex')).toBe(true)
     expect(canSteerQueued('acp-grok')).toBe(true)
     expect(canSteerQueued('acp-antigravity')).toBe(true)
     expect(canSteerQueued('opencode')).toBe(false)
-    expect(canSteerQueued('cursor')).toBe(false)
+    expect(canSteerQueued('cursor')).toBe(true)
   })
 
   it('joins text blocks for the edit-back path', () => {

@@ -287,7 +287,7 @@ export function ModChatThemeLayer({
         ? resolved.backdrop
         : keptBackdropRef.current
   shownRef.current = shownBackdrop ?? null
-  const scheme = (shownBackdrop ? parseModBackdropProps(shownBackdrop.result.props)?.colorScheme : undefined) ?? (previewing ? liveScheme : undefined)
+  const scheme = (shownBackdrop ? parseModBackdropProps(shownBackdrop.result.props)?.colorScheme : undefined) ?? (previewing ? backdropScheme(liveBackdrop) : undefined)
   const userScheme = isDark ? 'dark' : 'light'
   const rawThemeStyle = useModThemeStyle(scheme ?? userScheme, {
     fallback: enabled ? (liveTheme || resolved.themeProps) : null,

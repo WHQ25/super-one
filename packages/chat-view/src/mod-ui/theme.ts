@@ -168,7 +168,7 @@ export function parseModBackdropProps(props: Record<string, unknown>): ModBackdr
   const id = typeof props.id === 'string' ? props.id : undefined
   const plugin = typeof props.plugin === 'string' ? props.plugin : undefined
   const rawScheme = props.colorScheme ?? props.overrideColorScheme ?? props.window
-  let colorScheme = rawScheme === 'light' || rawScheme === 'dark' ? rawScheme : undefined
+  let colorScheme: 'light' | 'dark' | undefined = rawScheme === 'light' || rawScheme === 'dark' ? rawScheme : undefined
   const rawGlass = props.glass
   let glass: false | ModBackdropGlass = { blur: 16, opacity: 0.6 }
   if (rawGlass === false) {

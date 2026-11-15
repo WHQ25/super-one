@@ -1,5 +1,5 @@
 import { TranscriptStateScope } from '@superone/ui/lib/transcript-state'
-import { Fragment, useMemo, type ComponentType, type ReactNode } from 'react'
+import { Fragment, memo, useMemo, type ComponentType, type ReactNode } from 'react'
 import { ImageIcon } from 'lucide-react'
 import type { BashEditDiff, CodexPlanApprovalState, ContentBlock, McpResourceLink } from '@superone/shared/agent-types'
 import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
@@ -15,7 +15,7 @@ import {
 import type { GroupContentResult, RenderSegment } from './groupContent'
 import type { RunContinuation } from './run-display'
 import { ModSite, useModMessageId } from '../mod-ui/react'
-import { renderTurnSegments, type TurnSegmentProps } from './turn-segments'
+import { TURN_SEGMENT_CHUNK, type TurnSegmentProps } from './turn-segments'
 import { ReviewMarkerPresenter, TurnNoticePresenter } from './TurnMarkers'
 import { assistantMessageProps, stringProp, toolGroupProps, toolUseProps, type ToolCallFacts } from '../mod-ui/site-props'
 import type { TurnProcessStats } from './turn-process-stats'
@@ -207,6 +207,8 @@ interface RenderOptions {
   resourceLinksMap?: Map<string, McpResourceLink[]>
   toolAppMap?: Map<string, ToolAppAttachment>
   runContinuations?: GroupContentResult['runContinuations']
+  /** What every per-call map above was read from; see `sameSegment`. */
+  toolResultBlockMap?: GroupContentResult['toolResultBlockMap']
   latestPlan?: LatestPlan
   anchors?: ReadonlyMap<ContentBlock, string>
   projectPath: string | null
@@ -380,6 +382,223 @@ export function TurnBlockPresenter({
   }
 }
 
+/** What a block reads of the segment after it. */
+function followingType(segment: RenderSegment | undefined): string | undefined {
+  return segment?.kind === 'block'
+    ? segment.block.type
+    : segment?.kind === 'thinking'
+      ? 'thinking'
+      : segment?.kind === 'tools'
+        ? segment.blocks[0]?.type
+        : segment?.kind === 'subagent'
+          ? 'tool_use'
+          : undefined
+}
+
+/** What a block reads of the segment before it. */
+function precedingType(segment: RenderSegment | undefined): string | undefined {
+  return segment?.kind === 'block' ? segment.block.type : segment?.kind === 'thinking' ? 'thinking' : undefined
+}
+
+const segmentKey = (segment: RenderSegment) => segment.kind === 'block' ? segment.index : segment.startIndex
+
+function renderSegment(segments: RenderSegment[], segmentIndex: number, options: RenderOptions): ReactNode {
+  const segment = segments[segmentIndex]
+  const sealed = options.forceSealed
+    || !options.isStreaming
+    || segmentIndex < segments.length - 1
+  const { parts } = options
+  if (segment.kind === 'subagent') {
+    return (
+      <parts.Subagent
+        key={`sa-${segment.startIndex}`}
+        taskBlock={segment.taskBlock}
+        childBlocks={segment.childBlocks}
+        resultBlock={segment.resultBlock}
+        isStreaming={options.isStreaming}
+      />
+    )
+  }
+  if (segment.kind === 'workflow') {
+    return (
+      <parts.Workflow
+        key={`wf-${segment.startIndex}`}
+        toolBlock={segment.toolBlock}
+        resultBlock={segment.resultBlock}
+        isStreaming={options.isStreaming}
+      />
+    )
+  }
+  if (segment.kind === 'app-tools') {
+    const toolUseCount = segment.blocks.filter((block) => block.type === 'tool_use').length
+    if (toolUseCount > 1) {
+      return (
+        <parts.AppToolGroup
+          key={`atg-${segment.startIndex}`}
+          appId={segment.appId}
+          blocks={segment.blocks}
+          sealed={sealed}
+        />
+      )
+    }
+    return renderBlocks(segment.blocks, segment.startIndex, options)
+  }
+  if (segment.kind === 'thinking') {
+    const text = segment.blocks
+      .map((block) => block.type === 'thinking' ? block.thinking : '')
+      .join('\n\n')
+    const first = segment.blocks[0]
+    const last = segment.blocks[segment.blocks.length - 1]
+    return (
+      <parts.Reasoning
+        key={`th-${segment.startIndex}`}
+        remoteDetails={segment.blocks.some(block => block.remoteDetail) ? segment.blocks.flatMap(block => block.remoteDetail ? [block.remoteDetail] : []) : undefined}
+        text={text}
+        startedAt={first.type === 'thinking' ? first.startedAt : undefined}
+        endedAt={last.type === 'thinking' ? last.endedAt : undefined}
+        blockDone={sealed}
+        showContent={segment.blocks.some(block => block.remoteDetail) || text.trim().length > 0}
+        isFirst={segmentIndex === 0}
+      />
+    )
+  }
+  if (segment.kind === 'block') {
+    return (
+      <TurnBlockPresenter
+        key={segment.index}
+        block={segment.block}
+        index={segment.index}
+        isStreaming={options.isStreaming}
+        toolResultMap={options.toolResultMap}
+        timedOutToolIds={options.timedOutToolIds}
+        errorToolIds={options.errorToolIds}
+        outputPathMap={options.outputPathMap}
+        bashEditDiffMap={options.bashEditDiffMap}
+        exitCodeMap={options.exitCodeMap}
+        resultTitleMap={options.resultTitleMap}
+        resourceLinksMap={options.resourceLinksMap}
+        toolAppMap={options.toolAppMap}
+        runContinuations={options.runContinuations}
+        latestPlan={options.latestPlan}
+        nextBlockType={followingType(segments[segmentIndex + 1])}
+        prevBlockType={precedingType(segments[segmentIndex - 1])}
+        anchorId={options.anchors?.get(segment.block)}
+        projectPath={options.projectPath}
+        parts={parts}
+        runtime={options.runtime}
+      />
+    )
+  }
+  const toolUseCount = segment.blocks.filter((block) => block.type === 'tool_use').length
+  if (toolUseCount > 1) {
+    return (
+      <ToolGroupSite
+        key={`tg-${segment.startIndex}`}
+        calls={segment.blocks.flatMap((b) => b.type === 'tool_use' ? [toolCallFacts(b, options.toolResultMap, options.errorToolIds, options.isStreaming)] : [])}
+        isActive={!sealed}
+        expanded={() => renderBlocks(segment.blocks, segment.startIndex, options)}
+      >
+        <parts.ToolGroup blocks={segment.blocks} sealed={sealed} />
+      </ToolGroupSite>
+    )
+  }
+  return renderBlocks(segment.blocks, segment.startIndex, options)
+}
+
+function segmentContent(segments: RenderSegment[], segmentIndex: number, options: RenderOptions): ReactNode {
+  const id = segmentKey(segments[segmentIndex])
+  return <TranscriptStateScope key={id} id={`claude-${id}`}>{renderSegment(segments, segmentIndex, options)}</TranscriptStateScope>
+}
+
+function segmentEstimate(segment: RenderSegment): number {
+  const text = segment.kind === 'block' && segment.block.type === 'text' ? segment.block.text : ''
+  return text ? Math.max(32, Math.ceil(text.length / 60) * 24 + 12) : 48
+}
+
+function sameBlocks(previous: readonly ContentBlock[], next: readonly ContentBlock[]): boolean {
+  return previous.length === next.length && previous.every((block, index) => block === next[index])
+}
+
+/**
+ * Whether a segment draws the same thing as before. Content blocks are replaced,
+ * never mutated, so identity stands for content; a call also draws its result and
+ * the runs folded into it, which live outside the segment.
+ */
+function sameSegment(previous: RenderSegment, next: RenderSegment, from: RenderOptions, to: RenderOptions): boolean {
+  // A delta that swapped one block keeps every other segment and all the results.
+  if (previous === next && from.toolResultBlockMap === to.toolResultBlockMap
+    && from.runContinuations === to.runContinuations && from.anchors === to.anchors) return true
+  if (previous.kind !== next.kind || segmentKey(previous) !== segmentKey(next)) return false
+  const sameCall = (block: ContentBlock): boolean => {
+    if (!('toolUseId' in block)) return true
+    const id = block.toolUseId
+    if (from.toolResultBlockMap?.get(id) !== to.toolResultBlockMap?.get(id)) return false
+    const before = from.runContinuations?.get(id)
+    const after = to.runContinuations?.get(id)
+    if (!before && !after) return true
+    return !!before && !!after && sameBlocks(before, after)
+      && after.every(later => from.toolResultBlockMap?.get(later.toolUseId) === to.toolResultBlockMap?.get(later.toolUseId))
+  }
+  if (previous.kind === 'block' && next.kind === 'block') {
+    return previous.block === next.block && sameCall(next.block)
+      && from.anchors?.get(previous.block) === to.anchors?.get(next.block)
+  }
+  if (previous.kind === 'subagent' && next.kind === 'subagent') {
+    return previous.taskBlock === next.taskBlock && previous.resultBlock === next.resultBlock
+      && sameBlocks(previous.childBlocks, next.childBlocks)
+  }
+  if (previous.kind === 'workflow' && next.kind === 'workflow') {
+    return previous.toolBlock === next.toolBlock && previous.resultBlock === next.resultBlock
+  }
+  if ('blocks' in previous && 'blocks' in next) {
+    return (previous.kind !== 'app-tools' || next.kind !== 'app-tools' || previous.appId === next.appId)
+      && sameBlocks(previous.blocks, next.blocks) && next.blocks.every(sameCall)
+  }
+  return false
+}
+
+interface TurnSegmentChunkProps {
+  segments: RenderSegment[]
+  from: number
+  to: number
+  options: RenderOptions
+  Segment: ComponentType<TurnSegmentProps>
+}
+
+/**
+ * A streamed delta regroups the whole turn, but changes one chunk of it. Chunks
+ * that draw the same thing skip their render, so a delta costs what changed
+ * and not the length of the turn.
+ */
+function sameChunk(previous: TurnSegmentChunkProps, next: TurnSegmentChunkProps): boolean {
+  const { from, to } = next
+  if (previous.from !== from || previous.to !== to || previous.Segment !== next.Segment) return false
+  const before = previous.options
+  const after = next.options
+  if (before.isStreaming !== after.isStreaming || before.forceSealed !== after.forceSealed
+    || before.projectPath !== after.projectPath || before.parts !== after.parts || before.runtime !== after.runtime
+    || before.latestPlan?.id !== after.latestPlan?.id || before.latestPlan?.approval !== after.latestPlan?.approval) return false
+  // Only the turn's last segment is unsealed while it streams.
+  if ((to === previous.segments.length) !== (to === next.segments.length)) return false
+  if (precedingType(previous.segments[from - 1]) !== precedingType(next.segments[from - 1])
+    || followingType(previous.segments[to]) !== followingType(next.segments[to])) return false
+  for (let index = from; index < to; index++) {
+    if (!sameSegment(previous.segments[index], next.segments[index], before, after)) return false
+  }
+  return true
+}
+
+/** A bounded run of segments that a host with a transcript viewport can evict. */
+const TurnSegmentChunk = memo(function TurnSegmentChunk({ segments, from, to, options, Segment }: TurnSegmentChunkProps) {
+  const contents: ReactNode[] = []
+  let estimate = 0
+  for (let index = from; index < to; index++) {
+    contents.push(segmentContent(segments, index, options))
+    estimate += segmentEstimate(segments[index])
+  }
+  return <Segment id={`claude-${segmentKey(segments[from])}`} estimate={estimate}>{contents}</Segment>
+}, sameChunk)
+
 function renderSegments(
   segments: RenderSegment[],
   options: RenderOptions,
@@ -387,135 +606,23 @@ function renderSegments(
 ): ReactNode[] {
   const from = range?.start ?? 0
   const to = range?.end ?? segments.length
-  const sliced = segments.slice(from, to)
-  const rendered = sliced.map((segment, index) => {
-    const segmentIndex = from + index
-    const sealed = options.forceSealed
-      || !options.isStreaming
-      || segmentIndex < segments.length - 1
-    const { parts } = options
-    if (segment.kind === 'subagent') {
-      return (
-        <parts.Subagent
-          key={`sa-${segment.startIndex}`}
-          taskBlock={segment.taskBlock}
-          childBlocks={segment.childBlocks}
-          resultBlock={segment.resultBlock}
-          isStreaming={options.isStreaming}
-        />
-      )
-    }
-    if (segment.kind === 'workflow') {
-      return (
-        <parts.Workflow
-          key={`wf-${segment.startIndex}`}
-          toolBlock={segment.toolBlock}
-          resultBlock={segment.resultBlock}
-          isStreaming={options.isStreaming}
-        />
-      )
-    }
-    if (segment.kind === 'app-tools') {
-      const toolUseCount = segment.blocks.filter((block) => block.type === 'tool_use').length
-      if (toolUseCount > 1) {
-        return (
-          <parts.AppToolGroup
-            key={`atg-${segment.startIndex}`}
-            appId={segment.appId}
-            blocks={segment.blocks}
-            sealed={sealed}
-          />
-        )
-      }
-      return renderBlocks(segment.blocks, segment.startIndex, options)
-    }
-    if (segment.kind === 'thinking') {
-      const text = segment.blocks
-        .map((block) => block.type === 'thinking' ? block.thinking : '')
-        .join('\n\n')
-      const first = segment.blocks[0]
-      const last = segment.blocks[segment.blocks.length - 1]
-      return (
-        <parts.Reasoning
-          key={`th-${segment.startIndex}`}
-          remoteDetails={segment.blocks.some(block => block.remoteDetail) ? segment.blocks.flatMap(block => block.remoteDetail ? [block.remoteDetail] : []) : undefined}
-          text={text}
-          startedAt={first.type === 'thinking' ? first.startedAt : undefined}
-          endedAt={last.type === 'thinking' ? last.endedAt : undefined}
-          blockDone={sealed}
-          showContent={segment.blocks.some(block => block.remoteDetail) || text.trim().length > 0}
-          isFirst={segmentIndex === 0}
-        />
-      )
-    }
-    if (segment.kind === 'block') {
-      const nextSegment = segments[segmentIndex + 1]
-      const previousSegment = segments[segmentIndex - 1]
-      const nextType = nextSegment?.kind === 'block'
-        ? nextSegment.block.type
-        : nextSegment?.kind === 'thinking'
-          ? 'thinking'
-          : nextSegment?.kind === 'tools'
-            ? nextSegment.blocks[0]?.type
-            : nextSegment?.kind === 'subagent'
-              ? 'tool_use'
-              : undefined
-      const previousType = previousSegment?.kind === 'block'
-        ? previousSegment.block.type
-        : previousSegment?.kind === 'thinking'
-          ? 'thinking'
-          : undefined
-      return (
-        <TurnBlockPresenter
-          key={segment.index}
-          block={segment.block}
-          index={segment.index}
-          isStreaming={options.isStreaming}
-          toolResultMap={options.toolResultMap}
-          timedOutToolIds={options.timedOutToolIds}
-          errorToolIds={options.errorToolIds}
-          outputPathMap={options.outputPathMap}
-          bashEditDiffMap={options.bashEditDiffMap}
-          exitCodeMap={options.exitCodeMap}
-          resultTitleMap={options.resultTitleMap}
-          resourceLinksMap={options.resourceLinksMap}
-          toolAppMap={options.toolAppMap}
-          runContinuations={options.runContinuations}
-          latestPlan={options.latestPlan}
-          nextBlockType={nextType}
-          prevBlockType={previousType}
-          anchorId={options.anchors?.get(segment.block)}
-          projectPath={options.projectPath}
-          parts={parts}
-          runtime={options.runtime}
-        />
-      )
-    }
-    const toolUseCount = segment.blocks.filter((block) => block.type === 'tool_use').length
-    if (toolUseCount > 1) {
-      return (
-        <ToolGroupSite
-          key={`tg-${segment.startIndex}`}
-          calls={segment.blocks.flatMap((b) => b.type === 'tool_use' ? [toolCallFacts(b, options.toolResultMap, options.errorToolIds, options.isStreaming)] : [])}
-          isActive={!sealed}
-          expanded={() => renderBlocks(segment.blocks, segment.startIndex, options)}
-        >
-          <parts.ToolGroup blocks={segment.blocks} sealed={sealed} />
-        </ToolGroupSite>
-      )
-    }
-    return renderBlocks(segment.blocks, segment.startIndex, options)
-  })
-  const contents = rendered.map((content, index) => {
-    const segment = segments[from + index]
-    const id = segment.kind === 'block' ? segment.index : segment.startIndex
-    return <TranscriptStateScope key={id} id={`claude-${id}`}>{content}</TranscriptStateScope>
-  })
-  return renderTurnSegments(sliced, contents, options.parts.Segment, segment => {
-    const index = segment.kind === 'block' ? segment.index : segment.startIndex
-    const text = segment.kind === 'block' && segment.block.type === 'text' ? segment.block.text : ''
-    return { id: `claude-${index}`, estimate: text ? Math.max(32, Math.ceil(text.length / 60) * 24 + 12) : 48 }
-  })
+  const { Segment } = options.parts
+  const rendered: ReactNode[] = []
+  if (!Segment) {
+    for (let index = from; index < to; index++) rendered.push(segmentContent(segments, index, options))
+    return rendered
+  }
+  for (let start = from; start < to; start += TURN_SEGMENT_CHUNK) {
+    rendered.push(<TurnSegmentChunk
+      key={`claude-${segmentKey(segments[start])}`}
+      segments={segments}
+      from={start}
+      to={Math.min(to, start + TURN_SEGMENT_CHUNK)}
+      options={options}
+      Segment={Segment}
+    />)
+  }
+  return rendered
 }
 
 function renderBlocks(blocks: ContentBlock[], startIndex: number, options: RenderOptions): ReactNode[] {
@@ -577,6 +684,7 @@ export function TurnBodyPresenter({
     resourceLinksMap: grouped.resourceLinksMap,
     toolAppMap: grouped.toolAppMap,
     runContinuations: grouped.runContinuations,
+    toolResultBlockMap: grouped.toolResultBlockMap,
     ...(latestPlanId ? { latestPlan: { id: latestPlanId, approval: planApproval } } : {}),
     anchors,
     projectPath,

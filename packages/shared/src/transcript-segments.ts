@@ -1,6 +1,6 @@
 import type { ChatMessage, ContentBlock, CodexThreadItem } from './agent-types'
-import { blockText, boundaryInWindow, contentKeys, expandBoundaryCursor, itemText, resolveTranscriptBoundaries, transcriptLengths, type TranscriptBoundary } from './transcript-boundary'
-import { isToolResultBlock, isToolUseBlock } from './content-delta'
+import { blockText, boundaryInWindow, contentKeyStamp, contentKeys, expandBoundaryCursor, itemText, resolveTranscriptBoundaries, transcriptLengths, type TranscriptBoundary } from './transcript-boundary'
+import { isToolResultBlock, isToolUseBlock, replacedBlockIndex } from './content-delta'
 import { isDismissedCodexAsyncAnswer } from './codex-async-question'
 import { isLegacyCodexMessage, withCodexContent } from './codex-content'
 
@@ -50,6 +50,58 @@ function contentGroups(content: ContentBlock[]): ContentBlock[][] {
     if (isToolUseBlock(block)) owners.set(block.toolUseId, group)
   }
   return groups
+}
+
+/** An uncut turn split at its text blocks, with the content key of each group's first block. */
+interface TurnLayout {
+  content: ContentBlock[]
+  groups: ContentBlock[][]
+  keys: (string | undefined)[]
+}
+
+const turnLayouts = new WeakMap<ChatMessage, TurnLayout>()
+
+/** Whether swapping `from` for `to` keeps every group and content key as it was. */
+function laysOutAlike(from: ContentBlock, to: ContentBlock): boolean {
+  if (from.type !== to.type || (to.type !== 'text' && to.type !== 'thinking' && to.type !== 'tool_use')) return false
+  if (('parentToolUseId' in from ? from.parentToolUseId ?? null : null) !== ('parentToolUseId' in to ? to.parentToolUseId ?? null : null)) return false
+  if (contentKeyStamp(from) || contentKeyStamp(to)) return false
+  return to.type !== 'tool_use' || (from.type === 'tool_use' && from.toolUseId === to.toolUseId)
+}
+
+/**
+ * The layout of an uncut turn. A streamed delta replaces one block of the last
+ * layout, so the turn is not split again for every delta of a long reply.
+ */
+function turnLayout(source: ChatMessage, previous: ChatMessage | undefined): TurnLayout {
+  const content = source.content
+  const last = previous && turnLayouts.get(previous)
+  const changed = last ? replacedBlockIndex(last.content, content) : null
+  let layout: TurnLayout | undefined
+  if (last && changed === -1) layout = { ...last, content }
+  else if (last && changed !== null && laysOutAlike(last.content[changed], content[changed])) {
+    for (let group = last.groups.length - 1; group >= 0 && !layout; group--) {
+      const at = last.groups[group].lastIndexOf(last.content[changed])
+      if (at === -1) continue
+      const groups = last.groups.slice()
+      groups[group] = groups[group].slice()
+      groups[group][at] = content[changed]
+      layout = { content, groups, keys: last.keys }
+    }
+  }
+  if (!layout) {
+    const groups = contentGroups(content)
+    const keys = contentKeys(content)
+    // Groups open in content order, so one pass finds the first block of each.
+    let at = 0
+    layout = { content, groups, keys: groups.map(group => {
+      if (!group.length) return undefined
+      while (content[at] !== group[0]) at++
+      return keys[at]
+    }) }
+  }
+  turnLayouts.set(source, layout)
+  return layout
 }
 
 function itemGroups(items: CodexThreadItem[]): CodexThreadItem[][] {
@@ -129,7 +181,8 @@ export function transcriptSegments(messages: readonly ChatMessage[]): Transcript
   return transcriptView(messages).segments
 }
 
-export function transcriptView(messages: readonly ChatMessage[]): TranscriptView {
+/** `lastView` is the previous view of this transcript; a streamed turn is laid out from it. */
+export function transcriptView(messages: readonly ChatMessage[], lastView?: TranscriptView): TranscriptView {
   // A dismissed question closes the decision queue without creating a visible
   // bubble or cutting the assistant's continuing output at its saved cursor.
   const displayed = messages.filter(message => !isDismissedCodexAsyncAnswer(message, messages))
@@ -182,24 +235,27 @@ export function transcriptView(messages: readonly ChatMessage[]): TranscriptView
     const finalResponse = (content: ContentBlock[]) => content.filter(block => block.type === 'text' && block.id === undefined)
     const sliceOf = (content: ContentBlock[], items: CodexThreadItem[]): ChatMessage => segmentOf({ ...source, status: 'complete', content,
       metadata: { ...source.metadata, ...(legacy ? { codex: { ...source.metadata!.codex!, items, finalResponse: undefined } } : {}) } })
-    const keys = contentKeys(source.content)
-    const keyByBlock = new Map(source.content.map((block, index) => [block, keys[index]]))
+    // Nothing slices an uncut turn: its content is the row, split at its text blocks.
+    const layout = cuts.length || legacy ? undefined
+      : turnLayout(source, lastView?.rows.findLast(row => row.source.id === source.id)?.source)
+    const keyByBlock = layout ? undefined
+      : new Map(contentKeys(source.content).map((key, index) => [source.content[index], key]))
     const firstResult = result.length
     const firstRow = rows.length
     let previous: ChatMessage | undefined
     let firstTurnRow = true
     for (let part = 0; part <= cuts.length; part++) {
       const next = cuts[part]
-      const slice = interval(source, cursors[part - 1], cursors[part])
+      const slice = layout ? { content: layout.content, items: [] as CodexThreadItem[] } : interval(source, cursors[part - 1], cursors[part])
       const groups = legacy ? itemGroups(slice.items).map((items, index, all) => ({ items,
         content: index === all.length - 1 ? finalResponse(slice.content) : [] }))
-        : contentGroups(slice.content).map(content => ({ content, items: [] as CodexThreadItem[] }))
+        : (layout?.groups ?? contentGroups(slice.content)).map(content => ({ content, items: [] as CodexThreadItem[] }))
       const partSegments: { segment: TranscriptSegment; opens: { block?: ContentBlock; itemId?: string } }[] = []
       for (let group = 0; group < groups.length; group++) {
         const value = groups[group]
         // Empty continuations retain the footer immediately after a boundary.
         if (!value.content.length && !value.items.length && next) continue
-        const key = value.items[0]?.id ?? keyByBlock.get(value.content[0]) ?? `part-${part}`
+        const key = value.items[0]?.id ?? (layout ? layout.keys[group] : keyByBlock!.get(value.content[0])) ?? `part-${part}`
         const id = result.length === firstResult ? source.id
           : previous && group === 0 ? `${source.id}:after:${previous.id}` : `${source.id}:segment:${key}`
         const anchorId = source.id

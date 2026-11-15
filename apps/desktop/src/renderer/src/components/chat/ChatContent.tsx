@@ -24,7 +24,7 @@ import { buildDecisionQueue } from './composer-slot/decision-queue'
 import { useDecisionComposerAvailability } from './composer-slot/useDecisionComposerAvailability'
 import { useRestoreChatInputFocus } from '@/hooks/useRestoreChatInputFocus'
 import { useTurnOutline } from '@superone/chat-view/use-turn-outline'
-import { transcriptView } from '@superone/shared/transcript-segments'
+import { transcriptView, type TranscriptView } from '@superone/shared/transcript-segments'
 import { ChatRootContext } from './is-focus-in-chat'
 import { DesktopModUi } from '@/lib/mod-ui/DesktopModUi'
 import { ModChatThemeLayer, ModPaneDockSync } from './mod/ModSurfaces'
@@ -165,7 +165,11 @@ function ChatTranscript({
 
   const messagesLen = displayMessages.length
   const messagesTailId = displayMessages[messagesLen - 1]?.id
-  const { segments, rows: messageRows } = useMemo(() => transcriptView(displayMessages), [displayMessages])
+  const lastView = useRef<TranscriptView | undefined>(undefined)
+  const { segments, rows: messageRows } = useMemo(
+    () => (lastView.current = transcriptView(displayMessages, lastView.current)),
+    [displayMessages],
+  )
   // Use the same transcript row spacing before and after message_start.
   const rows = useMemo(() => pendingMessage
     ? [...messageRows, ...transcriptView([pendingMessage]).rows]

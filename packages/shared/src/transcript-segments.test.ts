@@ -408,3 +408,45 @@ describe('transcript segmentation at live boundaries', () => {
     expect(rows[2].message.content).toEqual([{ type: 'text', text: 'Next' }])
   })
 })
+
+describe('transcript view of a streamed turn', () => {
+  const user: ChatMessage = { ...message('ask', 'Go'), role: 'user', status: 'complete' }
+  const turn: ChatMessage = { ...message('turn', ''), content: [
+    { type: 'text', text: 'Looking.' },
+    { type: 'tool_use', toolUseId: 'read', toolName: 'Read', input: '{}', status: 'complete' },
+    { type: 'tool_result', toolUseId: 'read', summary: 'ok' },
+    { type: 'text', text: 'Next' },
+    { type: 'tool_use', toolUseId: 'run', toolName: 'Bash', input: '{}', status: 'streaming' },
+    { type: 'thinking', thinking: 'Hm' },
+    { type: 'text', text: 'Found' },
+  ] }
+  const replace = (index: number, block: ChatMessage['content'][number]): ChatMessage =>
+    ({ ...turn, content: turn.content.map((value, at) => at === index ? block : value) })
+
+  it.each([
+    ['streamed text', replace(6, { type: 'text', text: 'Found it.' })],
+    ['text that opens an earlier segment', replace(3, { type: 'text', text: 'Next up' })],
+    ['streamed reasoning', replace(5, { type: 'thinking', thinking: 'Hm, so' })],
+    ['progress on a call', replace(4, { type: 'tool_use', toolUseId: 'run', toolName: 'Bash', input: '{}', status: 'streaming', liveOutput: 'line' })],
+    ['a block of another type', replace(5, { type: 'text', text: 'Now text' })],
+    ['an appended block', { ...turn, content: [...turn.content, { type: 'text', text: 'More' }] }],
+    ['a settled turn', { ...turn, status: 'complete' }],
+  ] as [string, ChatMessage][])('lays out %s as a fresh view does', (_name, next) => {
+    // Each call gets its own message: a view is cached by the message it was built from.
+    const last = transcriptView([user, { ...turn }])
+    const view = transcriptView([user, { ...next }], last)
+    const fresh = transcriptView([user, { ...next }])
+    expect(view).toEqual(fresh)
+    expect(view.rows[1].anchors).toEqual(fresh.rows[1].anchors)
+  })
+
+  it('splits the turn again when a window stamped the replaced block', () => {
+    const last = transcriptView([user, { ...turn }])
+    const stamped: ChatMessage['content'][number] = { type: 'text', text: 'Found it.' }
+    stampContentKey(stamped, 'text::9')
+    const next = replace(6, stamped)
+    const view = transcriptView([user, { ...next }], last)
+    expect(view.segments.map(segment => segment.id)).toEqual(transcriptView([user, { ...next }]).segments.map(segment => segment.id))
+    expect(view.segments.at(-1)!.id).toBe('turn:segment:text::9')
+  })
+})

@@ -66,6 +66,7 @@ import {
 import { PlanBlock } from './PlanBlock'
 import {
   groupContent,
+  useGroupedContent,
 } from './chat-message/groupContent'
 
 export { groupContent }
@@ -176,7 +177,7 @@ export const ChatMessage = memo(function ChatMessage({
 
   const apps = useMiniAppStore((s) => s.apps)
   const turnContent = useMemo(() => isUser ? null : turnDisplayContent(message), [isUser, message.content, message.status])
-  const grouped = useMemo(() => turnContent ? groupContent(turnContent, apps) : null, [turnContent, apps])
+  const grouped = useGroupedContent(turnContent, apps)
   const compactTurn = useMemo(() => isUser ? undefined : buildCompactTurn(
     { source: sourceMessage, following: followingMessage, id: segmentId, first: firstSlice },
     content => groupContent(content, apps),

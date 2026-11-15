@@ -204,6 +204,23 @@ function withoutOutputDelta<T extends ToolUseLikeBlock>(block: T): T {
 }
 
 /**
+ * Where `after` differs from `before` when a delta replaced a single block:
+ * its index, -1 when the two hold the same blocks, null for any other change.
+ * Blocks are replaced rather than mutated, so identity stands for content.
+ */
+export function replacedBlockIndex(before: readonly ContentBlock[], after: readonly ContentBlock[]): number | null {
+  if (before.length !== after.length) return null
+  let changed = -1
+  // Streaming changes the tail, so most turns settle this in one comparison.
+  for (let index = after.length - 1; index >= 0; index--) {
+    if (after[index] === before[index]) continue
+    if (changed !== -1) return null
+    changed = index
+  }
+  return changed
+}
+
+/**
  * Append a streamed ContentBlock delta to a message's flat content array.
  *
  * The content array is shared by the top-level agent AND every sub-agent of one

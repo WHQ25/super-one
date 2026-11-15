@@ -1,6 +1,6 @@
 import type { BashEditDiff, ContentBlock, McpResourceLink } from '@superone/shared/agent-types'
 import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
-import { isToolResultBlock } from '@superone/shared/content-delta'
+import { isToolResultBlock, replacedBlockIndex } from '@superone/shared/content-delta'
 import { isJevRunToolName } from '@superone/shared/jev-run-result-shape'
 import { isReadOnlyParsedCommand } from '@superone/shared/codex-command-actions'
 
@@ -61,6 +61,11 @@ export interface GroupContentResult {
    * call's block as its later segments rather than as blocks of their own.
    */
   runContinuations: Map<string, Array<ContentBlock & { type: 'tool_use' }>>
+  /**
+   * The result block every per-call map above was read from, keyed by toolUseId.
+   * Blocks are replaced rather than mutated, so the same block means the same facts.
+   */
+  toolResultBlockMap: Map<string, ContentBlock>
 }
 
 /** The runId a `*_run` call names in its input or result; a regex, so a large result is not parsed on every render. */
@@ -69,11 +74,78 @@ function runIdIn(text: string | undefined): string | null {
   return match?.[1] ?? null
 }
 
-/** Group renderable content without importing stores, Electron, or concrete UI components. */
+/** A grouping with the content it was read from, so the next delta can start from it. */
+export interface GroupedContent {
+  content: readonly ContentBlock[]
+  result: GroupContentResult
+}
+
+/** Whether swapping `from` for `to` leaves every grouping decision as it was. */
+function groupsAlike(from: ContentBlock, to: ContentBlock): boolean {
+  if (from.type !== to.type) return false
+  if (('parentToolUseId' in from ? from.parentToolUseId ?? null : null) !== ('parentToolUseId' in to ? to.parentToolUseId ?? null : null)) return false
+  if (to.type === 'text' || to.type === 'thinking') return true
+  // A run's resumes are held by `runContinuations` as well as by a segment.
+  return from.type === 'tool_use' && to.type === 'tool_use' && from.toolUseId === to.toolUseId
+    && from.toolName === to.toolName && from.input === to.input && !isJevRunToolName(to.toolName)
+}
+
+/**
+ * The previous grouping with one block swapped, when that is all a delta did:
+ * streamed text or reasoning, or progress on a call whose name, input and owner
+ * are unchanged. A streamed turn then costs the delta rather than its length.
+ * Null when the turn has to be grouped again.
+ */
+function regroupedBlock(content: readonly ContentBlock[], previous: GroupedContent): GroupContentResult | null {
+  const changed = replacedBlockIndex(previous.content, content)
+  if (changed === null) return null
+  if (changed === -1) return previous.result
+  const from = previous.content[changed]
+  const to = content[changed]
+  if (!groupsAlike(from, to)) return null
+  const swap = (blocks: ContentBlock[]): ContentBlock[] | null => {
+    const at = blocks.lastIndexOf(from)
+    if (at === -1) return null
+    const next = blocks.slice()
+    next[at] = to
+    return next
+  }
+  const segments = previous.result.segments
+  for (let index = segments.length - 1; index >= 0; index--) {
+    const segment = segments[index]
+    let next: RenderSegment | null = null
+    if (segment.kind === 'block') {
+      if (segment.block === from) next = { ...segment, block: to }
+    } else if (segment.kind === 'workflow') {
+      if (segment.toolBlock === from && to.type === 'tool_use') next = { ...segment, toolBlock: to }
+    } else if (segment.kind === 'subagent') {
+      const childBlocks = swap(segment.childBlocks)
+      if (segment.taskBlock === from && to.type === 'tool_use') next = { ...segment, taskBlock: to }
+      else if (childBlocks) next = { ...segment, childBlocks }
+    } else {
+      const blocks = swap(segment.blocks)
+      if (blocks) next = { ...segment, blocks }
+    }
+    if (!next) continue
+    const swapped = segments.slice()
+    swapped[index] = next
+    return { ...previous.result, segments: swapped }
+  }
+  // A block no segment draws, such as a hidden call.
+  return previous.result
+}
+
+/**
+ * Group renderable content without importing stores, Electron, or concrete UI components.
+ * `previous` is this turn's last grouping under the same ports.
+ */
 export function groupContentPresenter(
   content: ContentBlock[],
   ports: GroupContentPorts,
+  previous?: GroupedContent,
 ): GroupContentResult {
+  const regrouped = previous ? regroupedBlock(content, previous) : null
+  if (regrouped) return regrouped
   const toolNameMap = new Map<string, string>()
   const toolResultMap = new Map<string, string>()
   const timedOutToolIds = new Set<string>()
@@ -84,6 +156,7 @@ export function groupContentPresenter(
   const resultTitleMap = new Map<string, string>()
   const resourceLinksMap = new Map<string, McpResourceLink[]>()
   const toolAppMap = new Map<string, ToolAppAttachment>()
+  const toolResultBlockMap = new Map<string, ContentBlock>()
   const taskToolUseIds = new Set<string>()
   // Read-only calls whose consecutive runs fold into one summary group.
   const collapsibleIds = new Set<string>()
@@ -100,6 +173,9 @@ export function groupContentPresenter(
         collapsibleIds.add(block.toolUseId)
       }
     } else if (isToolResultBlock(block)) {
+      // A second result for one call merges into the maps field by field; a fresh
+      // object keeps that call from ever comparing as unchanged.
+      toolResultBlockMap.set(block.toolUseId, toolResultBlockMap.has(block.toolUseId) ? { ...block } : block)
       if (block.summary) toolResultMap.set(block.toolUseId, block.summary)
       if ('isTimedOut' in block && block.isTimedOut) timedOutToolIds.add(block.toolUseId)
       if ('isError' in block && block.isError) errorToolIds.add(block.toolUseId)
@@ -303,5 +379,6 @@ export function groupContentPresenter(
     resourceLinksMap,
     toolAppMap,
     runContinuations,
+    toolResultBlockMap,
   }
 }

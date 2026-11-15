@@ -87,6 +87,35 @@ describe('shared ContentBlock turn virtualization', () => {
     expect(screen.getByText('Newest streamed reply')).toBeVisible()
   })
 
+  it('redraws only the chunk a streamed delta or an arriving result changed', () => {
+    vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+    const draws = new Map<string, number>()
+    const counted: typeof parts = { ...parts, Tool: ({ toolUseId, result }) => {
+      draws.set(toolUseId!, (draws.get(toolUseId!) ?? 0) + 1)
+      return <span>{toolUseId}{result ? `: ${result}` : ''}</span>
+    } }
+    const view = (blocks: ContentBlock[]) => (
+      <TranscriptStateProvider values={new Map()} scope="turn">
+        <VirtualTranscriptContext.Provider value={{ viewportRef: { current: null }, preserveBlockAnchor: vi.fn(), observeBlock: (_node, callback) => { callback(true); return () => {} } }}>
+          <TurnBodyPresenter isStreaming detailChatMode={false} grouped={group(blocks)} parts={counted} runtime={runtime} projectPath={null} />
+        </VirtualTranscriptContext.Provider>
+      </TranscriptStateProvider>
+    )
+    const { rerender } = render(view([...content, { type: 'text', text: 'Reply' }]))
+    const first = new Map(draws)
+    expect(first.size).toBe(96)
+
+    rerender(view([...content, { type: 'text', text: 'Reply grows' }]))
+    expect(screen.getByText('Reply grows')).toBeVisible()
+    expect(draws).toEqual(first)
+
+    rerender(view([...content, { type: 'text', text: 'Reply grows' }, { type: 'tool_result', toolUseId: 'command-3', summary: 'done' }]))
+    expect(screen.getByText('command-3: done')).toBeVisible()
+    // Chunks hold eight segments: the result redraws the first one and no other.
+    expect([...draws].filter(([id, count]) => count > first.get(id)!).map(([id]) => id))
+      .toEqual(Array.from({ length: 8 }, (_, index) => `command-${index}`))
+  })
+
   it('renders the full turn when the host has no virtual transcript viewport', () => {
     render(<TurnBodyPresenter grouped={group(content)} isStreaming detailChatMode={false} parts={parts} runtime={runtime} projectPath={null} />)
     expect(screen.getAllByRole('button')).toHaveLength(96)

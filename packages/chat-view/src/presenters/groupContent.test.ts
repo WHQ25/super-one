@@ -133,3 +133,39 @@ describe('groupContentPresenter', () => {
     expect(smoke.segments.map((segment) => segment.kind)).toEqual(['block'])
   })
 })
+
+describe('regrouping a streamed turn', () => {
+  const turn: ContentBlock[] = [
+    { type: 'text', text: 'Looking.' },
+    toolUse('read-1', 'Read'),
+    toolResult('read-1'),
+    toolUse('read-2', 'Read'),
+    toolUse('task', 'Task'),
+    { ...toolUse('child', 'Bash', 'task'), status: 'streaming' },
+    { type: 'thinking', thinking: 'Hm' },
+    { type: 'text', text: 'Found' },
+  ]
+  const grouped = { content: turn, result: groupContentPresenter(turn, ports) }
+  const replace = (index: number, block: ContentBlock) => turn.map((value, at) => at === index ? block : value)
+
+  it.each([
+    ['streamed text', replace(7, { type: 'text', text: 'Found it.' })],
+    ['streamed reasoning', replace(6, { type: 'thinking', thinking: 'Hm, so' })],
+    ['progress on a grouped call', replace(3, { ...toolUse('read-2', 'Read'), elapsedSeconds: 2 })],
+    ['progress inside a subagent', replace(5, { ...toolUse('child', 'Bash', 'task'), liveOutput: 'line' })],
+    ['a call whose input grew', replace(3, { ...toolUse('read-2', 'Read'), input: '{"file_path":"a"}' })],
+    ['a call that became hidden', replace(3, toolUse('read-2', 'TodoWrite'))],
+    ['an arriving result', [...replace(3, { ...toolUse('read-2', 'Read'), elapsedSeconds: 2 }), toolResult('read-2')]],
+    ['two replaced blocks', replace(0, { type: 'text', text: 'Look.' }).map((value, at) => at === 7 ? { type: 'text', text: 'Found it.' } as ContentBlock : value)],
+  ])('groups %s as a fresh pass does', (_name, content) => {
+    expect(groupContentPresenter(content, ports, grouped)).toEqual(groupContentPresenter(content, ports))
+  })
+
+  it('keeps the segments and results a text delta did not touch', () => {
+    const result = groupContentPresenter(replace(7, { type: 'text', text: 'Found it.' }), ports, grouped)
+    expect(result.segments.slice(0, -1)).toEqual(grouped.result.segments.slice(0, -1))
+    result.segments.slice(0, -1).forEach((segment, index) => expect(segment).toBe(grouped.result.segments[index]))
+    expect(result.toolResultBlockMap).toBe(grouped.result.toolResultBlockMap)
+    expect(result.segments.at(-1)).toMatchObject({ kind: 'block', block: { text: 'Found it.' } })
+  })
+})

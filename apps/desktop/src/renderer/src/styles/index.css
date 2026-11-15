@@ -801,7 +801,9 @@ html:not(.dark) [data-sidebar-inner] .is-scrolling::-webkit-scrollbar-thumb:hove
 }
 [data-mod-theme-layer]:has(> [data-mod-backdrop="true"]) [data-composer-stage],
 [data-tile-id]:has(> [data-mod-backdrop="true"]) [data-composer-stage],
-[data-main-area]:has(> [data-mod-backdrop="true"]) [data-composer-stage] {
+[data-main-area]:has(> [data-mod-backdrop="true"]) [data-composer-stage],
+[data-main-area]:has(> [data-mod-backdrop="true"]) [data-mini-window-header],
+[data-tile-id]:has(> [data-mod-backdrop="true"]) [data-mini-window-header] {
   background-color: transparent;
 }
 [data-mod-theme-layer]:has(> [data-mod-backdrop="true"]) [data-mod-edge-fade],
@@ -815,8 +817,82 @@ html.liquid-glass :is([data-main-area], [data-tile-id], [data-mod-theme-layer]).
 html.liquid-glass :is([data-main-area], [data-tile-id]).dark :is(.brand-scope, [data-mod-theme-layer]) {
   --border: oklch(1 0 0 / 0.15);
 }
-[data-mod-placed-inline] [data-mod-placed-id] > div > * {
+/* Non-glass theme panes keep a neutral hairline. The scheme class would
+   otherwise put the flat app border on the composer, which reads wrong on
+   the backdrop. Light and dark follow the theme, not the saved appearance. */
+html:not(.liquid-glass) [data-mod-theme-layer].light {
+  --border: oklch(0 0 0 / 0.14);
+}
+html:not(.liquid-glass) [data-mod-theme-layer].dark {
+  --border: oklch(1 0 0 / 0.12);
+}
+/* Active session backdrop tint on the sidebar and activity panel.
+   The mix follows the theme's own light/dark, so a light theme does not wash
+   the sidebar just because the saved appearance is dark. The saved appearance
+   itself stays put. */
+html:not(.liquid-glass) [data-has-mod-tint="true"][data-mod-tint-scheme="light"] {
+  --sidebar: oklch(from var(--mod-backdrop-tint) 0.24 calc(c * 1.4) h);
+  --sidebar-hover: oklch(1 0 0 / 0.08);
+  --sidebar-border: oklch(1 0 0 / 0.12);
+}
+html.liquid-glass [data-has-mod-tint="true"][data-mod-tint-scheme="light"] {
+  --sidebar: oklch(from var(--mod-backdrop-tint) 0.24 calc(c * 2.2) h / 0.88);
+}
+html:not(.liquid-glass) [data-has-mod-tint="true"][data-mod-tint-scheme="dark"] {
+  --sidebar: color-mix(in oklch, var(--mod-backdrop-tint) 85%, #0d0e11);
+  --sidebar-hover: oklch(1 0 0 / 0.08);
+  --sidebar-accent: oklch(1 0 0 / 0.12);
+  --sidebar-border: oklch(1 0 0 / 0.10);
+}
+html.liquid-glass [data-has-mod-tint="true"][data-mod-tint-scheme="dark"] {
+  --sidebar: var(--mod-backdrop-tint);
+}
+html.liquid-glass [data-has-mod-tint="true"][data-mod-tint-scheme="dark"] [data-sidebar-inner] > * {
+  background-color: transparent;
+}
+html:not(.liquid-glass) [data-has-mod-tint="true"][data-mod-tint-scheme="light"] [data-activity-outer] {
+  --card: color-mix(in oklch, var(--mod-backdrop-tint) 92%, #ffffff);
+  --background: var(--card);
+  --border: oklch(0 0 0 / 0.14);
+  --muted: oklch(0 0 0 / 0.06);
+  --accent: oklch(0 0 0 / 0.08);
+  --secondary: oklch(0 0 0 / 0.07);
+  background-color: var(--card);
+}
+html.liquid-glass [data-has-mod-tint="true"][data-mod-tint-scheme="light"] [data-activity-outer] {
+  --card: var(--mod-backdrop-tint);
+  --background: var(--card);
+  background-color: var(--card);
+}
+html:not(.liquid-glass) [data-has-mod-tint="true"][data-mod-tint-scheme="dark"] [data-activity-outer] {
+  --card: color-mix(in oklch, var(--mod-backdrop-tint) 82%, #161618);
+  --background: var(--card);
+  --border: oklch(1 0 0 / 0.12);
+  --muted: oklch(1 0 0 / 0.06);
+  --accent: oklch(1 0 0 / 0.08);
+  --secondary: oklch(1 0 0 / 0.07);
+  background-color: var(--card);
+}
+html.liquid-glass [data-has-mod-tint="true"][data-mod-tint-scheme="dark"] [data-activity-outer] {
+  --card: var(--mod-backdrop-tint);
+  --background: var(--card);
+  background-color: var(--card);
+}
+html.liquid-glass [data-has-mod-tint="true"][data-mod-tint-scheme="dark"] [data-activity-outer] .dockview-theme-superone,
+[data-has-mod-tint="true"] [data-activity-outer] .dockview-theme-superone {
+  --dv-group-view-background-color: var(--card);
+  --dv-tabs-and-actions-container-background-color: var(--card);
+}
+/* Scheme changes snap. The button's transition-all otherwise fades its label
+   through the background color. */
+[data-mod-control] {
+  transition-property: none;
+}
+/* The card's own border stays put. Composer and in-chat cards share h-84. */
+[data-mod-placed-clip] > * {
+  box-sizing: border-box;
   max-height: 21rem;
-  overflow-y: auto;
+  min-height: 0;
   overflow-x: hidden;
+  overflow-y: auto;
 }

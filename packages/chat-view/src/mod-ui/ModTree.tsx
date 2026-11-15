@@ -219,7 +219,7 @@ function ButtonNode({ node }: { node: Extract<ModElement, { type: 'Button' }> })
   const data = { 'data-mod-control': '', 'data-mod-key': key, 'data-mod-plugin': node.press.plugin, 'data-mod-hotkey': touch ? undefined : hotkey }
   if (role === 'dismiss') {
     return (
-      <Button {...data} type="button" size={touch ? 'icon-sm' : 'icon-xs'} variant="ghost" className={`${touch ? 'size-7' : ''} ${PRESSED_CLASS}`} aria-label={label} title={label} disabled={pending} onClick={press} autoFocus={autoFocus}>
+      <Button {...data} type="button" size={touch ? 'icon-sm' : 'icon-xs'} variant="ghost" className={`transition-none ${touch ? 'size-7' : ''} ${PRESSED_CLASS}`} aria-label={label} title={label} disabled={pending} onClick={press} autoFocus={autoFocus}>
         <X />
       </Button>
     )
@@ -231,7 +231,7 @@ function ButtonNode({ node }: { node: Extract<ModElement, { type: 'Button' }> })
       size={touch ? 'sm' : 'xs'}
       variant={plain && !touch ? 'ghost' : variant === 'primary' ? 'default' : 'outline'}
       // A desktop `plain` button is its label in one text row, as in the terminal, so it lines up with the Text beside it.
-      className={`w-fit shrink-0 font-normal ${touch ? 'h-7 px-2.5 font-sans' : plain ? 'h-[var(--mod-row)] rounded-sm px-0' : ''} ${PRESSED_CLASS}`}
+      className={`w-fit shrink-0 font-normal transition-none ${touch ? 'h-7 px-2.5 font-sans' : plain ? 'h-[var(--mod-row)] rounded-sm px-0' : ''} ${PRESSED_CLASS}`}
       style={dimColor ? { opacity: 0.62 } : undefined}
       disabled={pending}
       onClick={press}

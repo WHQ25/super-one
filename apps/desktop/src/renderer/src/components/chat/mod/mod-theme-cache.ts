@@ -167,6 +167,19 @@ export function writeModTheme(input: ModThemeQuery & {
   emit()
 }
 
+/** One theme for Claude. Narrower slots are dropped so they cannot hide it. */
+export function setGlobalModTheme(backdrop: ModBackdropSnapshot | null): void {
+  loadFromStorage()
+  state = {
+    session: {},
+    folder: {},
+    project: {},
+    harness: backdrop ? { backdrop, themeProps: null } : null,
+  }
+  saveToStorage()
+  emit()
+}
+
 /** session, then folder, then project, then harness. A cleared slot stops the walk. */
 export function resolveModTheme(cache: ThemeCacheState, query: ModThemeQuery): ResolvedModTheme {
   const steps: Array<[ModThemeScope, ThemeSlot | null]> = [

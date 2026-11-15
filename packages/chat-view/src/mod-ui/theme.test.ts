@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { modBackdropGlassStyle, modPaneBackground, parseModBackdropProps, parseModThemeScope, parseModThemeStyle } from './theme'
+import { modBackdropGlassStyle, modBackdropTint, modPaneBackground, parseModBackdropProps, parseModThemeScope, parseModThemeStyle } from './theme'
 
 describe('mod theme & backdrop helpers', () => {
   it('maps valid theme tokens, CSS variables, palette colors and aliases while dropping unsafe values', () => {
@@ -54,7 +54,11 @@ describe('mod theme & backdrop helpers', () => {
       id: 'bg',
       plugin: 'theme-mod',
       glass: { blur: 20, opacity: 0.5, tint: '#112233' },
+      colorScheme: 'dark',
     })
+    expect(parseModBackdropProps({ id: 'paper-garden', glass: { tint: '#fbf6ec', opacity: 0.5 } })?.colorScheme).toBe('light')
+    expect(parseModBackdropProps({ id: 'dither-dunes', glass: { tint: '#f1e8d6', opacity: 0.34 } })?.colorScheme).toBe('light')
+    expect(parseModBackdropProps({ id: 'dither-dunes-night', glass: { tint: '#1c1712' }, colorScheme: 'dark' })?.colorScheme).toBe('dark')
     expect(parseModBackdropProps({ id: 'bg', glass: false })).toEqual({
       id: 'bg',
       plugin: undefined,
@@ -69,5 +73,24 @@ describe('mod theme & backdrop helpers', () => {
     expect(modPaneBackground('transparent')).toBe('transparent')
     expect(modPaneBackground('claude')).toBe('var(--primary)')
     expect(modPaneBackground('expression(alert(1))')).toBeUndefined()
+  })
+
+  it('reads a shell tint from glass, then from the backdrop tree background', () => {
+    expect(modBackdropTint({
+      result: {
+        props: { glass: { blur: 8, opacity: 0.4, tint: '#112233' } },
+        tree: { type: 'Box', props: { style: { backgroundColor: '#336699' } } },
+      },
+    })).toBe('#112233')
+    expect(modBackdropTint({
+      result: {
+        props: { glass: false },
+        tree: { type: 'Box', props: { style: { background: 'oklch(0.7 0.1 250)' } } },
+      },
+    })).toBe('oklch(0.7 0.1 250)')
+    expect(modBackdropTint({
+      result: { props: { glass: { tint: 'url(javascript:alert(1))' } }, tree: { type: 'Box', props: {} } },
+    })).toBeUndefined()
+    expect(modBackdropTint(null)).toBeUndefined()
   })
 })

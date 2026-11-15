@@ -1,16 +1,20 @@
-import { useCallback, useEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type CSSProperties, type ReactNode } from 'react'
+import { createPortal } from 'react-dom'
 import { X } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
-import { ModBackdropLayer, ModPlacedRows, ModSurfaceFrame, modPaneBackground, parseModBackdropProps, parseModThemeScope, pressModHotkey, useModThemeStyle, useModUi, useModUiState, windowViewport, type ModBackdropSnapshot, type ModThemeScope } from '@superone/chat-view/mod-ui'
+import { ModBackdropLayer, ModPlacedRows, ModSurfaceFrame, modBackdropTint, modPaneBackground, parseModBackdropProps, parseModThemeScope, pressModHotkey, useModThemeStyle, useModUi, useModUiState, windowViewport, type ModBackdropSnapshot, type ModThemeScope } from '@superone/chat-view/mod-ui'
 import { PaneColorSchemeContext, useIsDark } from '@/hooks/use-is-dark'
 import { MOD_ABOVE_PROMPT_INSTANCE, type ModPane } from '@superone/shared/mod-ui'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useChatStore } from '@/stores/chat'
 import { cn } from '@superone/ui/lib/utils'
 import { closeModPaneTab, isModPaneTabOpen, listModPaneTabs, openModPaneTab } from '@/components/activity/activity-panel-api'
-import { getModThemeCache, resolveModTheme, subscribeModThemeCache, writeModTheme } from './mod-theme-cache'
+import { publishModChromeTint } from './mod-chrome-tint'
+import { holdHarnessScheme } from './mod-harness-scheme'
+import { useModPreviewTheme } from './mod-preview-theme'
+import { getModThemeCache, resolveModTheme, setGlobalModTheme, subscribeModThemeCache, writeModTheme } from './mod-theme-cache'
 
 /** Rows a band may take before it scrolls (the terminal's own cap is similar). */
 const BAND_MAX_ROWS = 8
@@ -157,6 +161,15 @@ interface ThemeTarget {
   projectPath?: string | null
 }
 
+function backdropScheme(snapshot: ModBackdropSnapshot | null | undefined): 'light' | 'dark' | undefined {
+  if (!snapshot) return undefined
+  return parseModBackdropProps(snapshot.result.props)?.colorScheme
+}
+
+function schemeMatches(scheme: 'light' | 'dark' | undefined, dark: boolean): boolean {
+  return scheme !== undefined && (scheme === 'dark') === dark
+}
+
 /**
  * A live payload stays on the scope it names. With no scope it stays on this
  * session, which is how the theme plugin applies a wider choice: it calls
@@ -185,46 +198,96 @@ export function ModChatThemeLayer({
   folderPath,
   sessionId,
   enabled = true,
+  sessionTheme = true,
   children,
 }: ThemeTarget & {
   enabled?: boolean
+  /** False on the new-session page: there is no session theme yet. */
+  sessionTheme?: boolean
   children: ReactNode
 }) {
   const isDark = useIsDark()
   const ctx = useModUi()
   const live = Boolean(enabled && ctx?.client.isAvailable)
   const cache = useSyncExternalStore(subscribeModThemeCache, getModThemeCache, getModThemeCache)
+  const themeSessionId = sessionTheme ? sessionId : null
   const resolved = useMemo(
-    () => (enabled ? resolveModTheme(cache, { sessionId, folderPath, projectPath }) : { backdrop: null, themeProps: null, scope: null }),
-    [cache, enabled, sessionId, folderPath, projectPath],
+    () => (enabled ? resolveModTheme(cache, { sessionId: themeSessionId, folderPath, projectPath }) : { backdrop: null, themeProps: null, scope: null }),
+    [cache, enabled, themeSessionId, folderPath, projectPath],
   )
   const [liveBackdrop, setLiveBackdrop] = useState<ModBackdropSnapshot | null | undefined>(undefined)
   const [liveTheme, setLiveTheme] = useState<Record<string, unknown> | null | undefined>(undefined)
   const [trackedSession, setTrackedSession] = useState(sessionId)
   const themeScopeRef = useRef<ModThemeScope>('session')
   const backdropScopeRef = useRef<ModThemeScope>('session')
+  const keptBackdropRef = useRef<ModBackdropSnapshot | null>(null)
   if (trackedSession !== sessionId) {
     setTrackedSession(sessionId)
     setLiveBackdrop(undefined)
     setLiveTheme(undefined)
     themeScopeRef.current = 'session'
     backdropScopeRef.current = 'session'
+    keptBackdropRef.current = null
   }
   const target = useMemo<ThemeTarget>(() => ({ sessionId, folderPath, projectPath }), [sessionId, folderPath, projectPath])
 
+  const applyScopeRef = useRef<'harness' | 'clear' | null>(null)
+  const shownRef = useRef<ModBackdropSnapshot | null>(null)
   const onThemeChange = useCallback((props: Record<string, unknown> | null) => {
     setLiveTheme(props)
     storeLiveTheme(target, themeScopeRef, backdropScopeRef, { themeProps: props }, props)
   }, [target])
   const onBackdropChange = useCallback((active: ModBackdropSnapshot | null) => {
     setLiveBackdrop(active)
-    storeLiveTheme(target, backdropScopeRef, themeScopeRef, { backdrop: active }, active?.result.props)
+    // A client that has not drawn yet also reports the backdrop as off.
+    // That must not erase the global theme. Only Apply stores one.
+    if (!active || applyScopeRef.current !== 'harness') return
+    setGlobalModTheme(active)
+    applyScopeRef.current = null
+  }, [target])
+  useEffect(() => {
+    const onClick = (event: MouseEvent) => {
+      const targetEl = event.target
+      if (!(targetEl instanceof Element)) return
+      const button = targetEl.closest<HTMLElement>('[data-mod-placed-id] [data-mod-key]')
+      if (!button || !layerRef.current?.contains(button)) return
+      const key = button.dataset.modKey ?? ''
+      if (key === 'off') {
+        applyScopeRef.current = 'clear'
+        keptBackdropRef.current = null
+        setGlobalModTheme(null)
+        return
+      }
+      // Apply and This session both set the one Claude-wide theme.
+      const themeId = key.startsWith('apply-') ? key.slice('apply-'.length) : key.startsWith('session-') ? key.slice('session-'.length) : ''
+      if (!themeId) return
+      applyScopeRef.current = 'harness'
+      const visible = shownRef.current
+      const visibleId = visible ? parseModBackdropProps(visible.result.props)?.id : undefined
+      if (visible && visibleId === themeId) setGlobalModTheme(visible)
+    }
+    document.addEventListener('click', onClick, true)
+    return () => document.removeEventListener('click', onClick, true)
   }, [target])
 
-  // A live backdrop wins. Null means this session has none of its own, so a
-  // wider cached scope can still show.
-  const shownBackdrop = liveBackdrop || resolved.backdrop
-  const scheme = shownBackdrop ? parseModBackdropProps(shownBackdrop.result.props)?.colorScheme : undefined
+  const layerRef = useRef<HTMLDivElement>(null)
+  const previewing = useModPreviewTheme(enabled, liveBackdrop, layerRef)
+  const liveMatches = schemeMatches(backdropScheme(liveBackdrop), isDark)
+  const cacheMatches = schemeMatches(backdropScheme(resolved.backdrop), isDark)
+  if (liveMatches && liveBackdrop) keptBackdropRef.current = liveBackdrop
+  else if (cacheMatches && resolved.backdrop) keptBackdropRef.current = resolved.backdrop
+  else if (!schemeMatches(backdropScheme(keptBackdropRef.current), isDark)) keptBackdropRef.current = null
+  // The placed card resizes the backdrop site. The CLI then reports it off, which
+  // used to drop the picture. Keep the last backdrop that still matches the window.
+  const shownBackdrop = previewing && liveBackdrop
+    ? liveBackdrop
+    : liveMatches && liveBackdrop
+      ? liveBackdrop
+      : cacheMatches && resolved.backdrop
+        ? resolved.backdrop
+        : keptBackdropRef.current
+  shownRef.current = shownBackdrop ?? null
+  const scheme = (shownBackdrop ? parseModBackdropProps(shownBackdrop.result.props)?.colorScheme : undefined) ?? (previewing ? liveScheme : undefined)
   const userScheme = isDark ? 'dark' : 'light'
   const rawThemeStyle = useModThemeStyle(scheme ?? userScheme, {
     fallback: enabled ? (liveTheme || resolved.themeProps) : null,
@@ -237,24 +300,48 @@ export function ModChatThemeLayer({
     const { '--border': _, ...rest } = record
     return rest as CSSProperties
   }, [rawThemeStyle])
-  const painted = Boolean(enabled && (shownBackdrop || (themeStyle && Object.keys(themeStyle).length > 0)))
-  const schemeClass = scheme === 'light' ? 'light' : scheme === 'dark' ? 'dark' : undefined
+  // A dark-only theme stays hidden while the window is light, and the reverse.
+  // Preview paints at once; setTheme catches the window up.
+  const windowMatches = scheme !== undefined && (scheme === 'dark') === isDark
+  const matchesAppearance = previewing || windowMatches
+  const painted = Boolean(enabled && matchesAppearance && (shownBackdrop || (themeStyle && Object.keys(themeStyle).length > 0)))
+  const schemeClass = matchesAppearance && scheme === 'light' ? 'light' : matchesAppearance && scheme === 'dark' ? 'dark' : undefined
+  const chromeTint = enabled && matchesAppearance && sessionId ? modBackdropTint(shownBackdrop) : undefined
+  const chromeScheme = matchesAppearance ? scheme : undefined
+  useEffect(() => {
+    if (!sessionId) return
+    publishModChromeTint(sessionId, chromeTint ?? null, chromeScheme)
+    return () => publishModChromeTint(sessionId, null)
+  }, [sessionId, chromeTint, chromeScheme])
+  useEffect(() => {
+    if (!enabled) holdHarnessScheme(null)
+  }, [enabled])
+  const [backdropHost, setBackdropHost] = useState<HTMLElement | null>(null)
+  useLayoutEffect(() => {
+    // The title bar sits above this layer and has no fill of its own. The
+    // backdrop has to paint the whole chat shell, behind that title.
+    setBackdropHost(layerRef.current?.closest<HTMLElement>('[data-tile-id], [data-main-area]') ?? null)
+  }, [])
+  const backdrop = enabled ? (
+    <ModBackdropLayer
+      viewport={windowViewport(true)}
+      glassEnabled={false}
+      fallback={shownBackdrop}
+      onBackdropChange={onBackdropChange}
+      paint={matchesAppearance}
+      preferLive={previewing || liveMatches}
+    />
+  ) : null
   return (
     <div
+      ref={layerRef}
       data-mod-theme-layer={painted ? '' : undefined}
       data-mod-theme-scope={painted ? (resolved.scope ?? (live ? 'session' : undefined)) : undefined}
       className={cn('relative flex min-h-0 w-full min-w-0 flex-1 flex-col', schemeClass)}
       style={painted ? { ...themeStyle, ...(scheme ? { colorScheme: scheme } : {}) } : undefined}
     >
-      <PaneColorSchemeContext.Provider value={scheme ?? null}>
-        {enabled && (
-          <ModBackdropLayer
-            viewport={windowViewport(true)}
-            glassEnabled={false}
-            fallback={resolved.backdrop}
-            onBackdropChange={onBackdropChange}
-          />
-        )}
+      <PaneColorSchemeContext.Provider value={matchesAppearance ? (scheme ?? null) : null}>
+        {matchesAppearance && backdropHost && backdrop ? createPortal(backdrop, backdropHost) : backdrop}
         <div className="relative z-10 flex min-h-0 w-full min-w-0 flex-1 flex-col">
           {children}
         </div>

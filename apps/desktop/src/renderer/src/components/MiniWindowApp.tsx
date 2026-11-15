@@ -75,6 +75,7 @@ export function MiniWindowHeader({ initialTitle, canRestore, transparentBackgrou
   return (
     <div
       ref={titleBarRef}
+      data-mini-window-header=""
       className={cn(
         'flex h-9 shrink-0 select-none items-center gap-2 px-3',
         transparentBackground ? 'bg-transparent' : 'bg-card',

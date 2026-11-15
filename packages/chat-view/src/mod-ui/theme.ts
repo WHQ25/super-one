@@ -129,12 +129,46 @@ export function parseModThemeScope(props: Record<string, unknown> | null | undef
   return undefined
 }
 
+/**
+ * Color the shell can mix into the sidebar and activity panel.
+ * Glass tint wins. Otherwise the backdrop tree's own background is used.
+ */
+export function modBackdropTint(snapshot: {
+  result: { props?: Record<string, unknown> | null; tree?: unknown }
+} | null | undefined): string | undefined {
+  if (!snapshot?.result) return undefined
+  const props = snapshot.result.props
+  if (isPlainRecord(props)) {
+    const parsed = parseModBackdropProps(props)
+    if (parsed?.glass && parsed.glass.tint) return parsed.glass.tint
+  }
+  const tree = snapshot.result.tree
+  if (!isPlainRecord(tree) || !isPlainRecord(tree.props)) return undefined
+  const style = tree.props.style
+  if (!isPlainRecord(style)) return undefined
+  return safeModCssColor(style.backgroundColor) ?? safeModCssColor(style.background)
+}
+
+/** Light tints need dark text. A named scheme wins; otherwise the tint's own brightness decides. */
+function schemeFromTint(tint: string | undefined): 'light' | 'dark' | undefined {
+  if (!tint) return undefined
+  const hex = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(tint.trim())
+  if (!hex) return undefined
+  const full = hex[1].length === 3 ? hex[1].split('').map((c) => c + c).join('') : hex[1]
+  const channel = (pair: string) => {
+    const v = parseInt(pair, 16) / 255
+    return v <= 0.04045 ? v / 12.92 : ((v + 0.055) / 1.055) ** 2.4
+  }
+  const luminance = 0.2126 * channel(full.slice(0, 2)) + 0.7152 * channel(full.slice(2, 4)) + 0.0722 * channel(full.slice(4, 6))
+  return luminance >= 0.45 ? 'light' : 'dark'
+}
+
 export function parseModBackdropProps(props: Record<string, unknown>): ModBackdropProps | null {
   if (!isPlainRecord(props)) return null
   const id = typeof props.id === 'string' ? props.id : undefined
   const plugin = typeof props.plugin === 'string' ? props.plugin : undefined
-  const rawScheme = props.colorScheme ?? props.overrideColorScheme
-  const colorScheme = rawScheme === 'light' || rawScheme === 'dark' ? rawScheme : undefined
+  const rawScheme = props.colorScheme ?? props.overrideColorScheme ?? props.window
+  let colorScheme = rawScheme === 'light' || rawScheme === 'dark' ? rawScheme : undefined
   const rawGlass = props.glass
   let glass: false | ModBackdropGlass = { blur: 16, opacity: 0.6 }
   if (rawGlass === false) {
@@ -145,6 +179,7 @@ export function parseModBackdropProps(props: Record<string, unknown>): ModBackdr
     const tint = safeModCssColor(rawGlass.tint)
     glass = { blur, opacity, ...(tint ? { tint } : {}) }
   }
+  if (!colorScheme && glass !== false) colorScheme = schemeFromTint(glass.tint)
   return { id, plugin, glass, colorScheme }
 }
 

@@ -1,9 +1,10 @@
-import { useEffect, useLayoutEffect, useCallback, useRef, useState, lazy, Suspense } from 'react'
+import { useEffect, useLayoutEffect, useCallback, useRef, useState, useSyncExternalStore, lazy, Suspense } from 'react'
 import { flushSync } from 'react-dom'
 import { SquareTerminal, LayoutGrid, PanelLeft, PanelRight, PanelLeftDashed, PanelRightDashed } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { LayoutToggle } from '@/components/coding/LayoutToggle'
 import { ChatPanel } from '@/components/chat/ChatPanel'
+import { getModChromeScheme, getModChromeTint, subscribeModChromeTint } from '@/components/chat/mod/mod-chrome-tint'
 import { CodingWorkspace } from '@/components/coding/CodingWorkspace'
 import { ActivityPanel } from '@/components/activity/ActivityPanel'
 import { useActivityPanelOnScreen } from '@/hooks/useActivityPanelOnScreen'
@@ -526,6 +527,16 @@ function App(): React.JSX.Element {
   }, [])
 
   const sessionId = useActiveSession((s) => s._activeSessionId ?? s.session?.sessionId ?? '')
+  const modChromeTint = useSyncExternalStore(
+    subscribeModChromeTint,
+    () => getModChromeTint(sessionId),
+    () => '',
+  )
+  const modChromeScheme = useSyncExternalStore(
+    subscribeModChromeTint,
+    () => getModChromeScheme(sessionId),
+    () => '',
+  )
   const isCodexSession = useActiveSession((s) => resolveProvider({
     sessionProvider: s.sessionProvider,
     preferredProvider: s.preferredProvider,
@@ -600,11 +611,13 @@ function App(): React.JSX.Element {
   return (
     <>
     <div
+      data-has-mod-tint={modChromeTint ? 'true' : undefined}
+      data-mod-tint-scheme={modChromeScheme || undefined}
       className={cn(
         'flex h-screen flex-col overflow-hidden text-foreground',
         compactMiniShell ? (liquidGlass ? 'bg-transparent' : 'bg-card') : 'bg-sidebar',
       )}
-      style={enterAnimation}
+      style={modChromeTint ? { ...enterAnimation, '--mod-backdrop-tint': modChromeTint } as React.CSSProperties : enterAnimation}
     >
       {!compactMiniShell && <WindowsTitleBar showLayoutControls />}
       <div className="group/coding flex min-h-0 flex-1 overflow-hidden">

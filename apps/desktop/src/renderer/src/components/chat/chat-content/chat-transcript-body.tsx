@@ -178,16 +178,15 @@ export function ChatTranscriptBody({
 }: ChatTranscriptBodyProps) {
   const { t } = useTranslation()
   const { available: modUiAvailable, placed } = useModUiState()
-  const { after: anchoredPlacedAfter, tail: anchoredPlacedTail } = useMemo(() => {
-    if (!modUiAvailable) return { after: new Map(), tail: [] }
-    const anchored = placed.filter((r) => Boolean(r.afterUuid))
-    if (anchored.length === 0) return { after: new Map(), tail: [] }
+  const { start: placedStart, after: anchoredPlacedAfter, tail: anchoredPlacedTail } = useMemo(() => {
+    if (!modUiAvailable) return { start: [], after: new Map(), tail: [] }
+    if (placed.length === 0) return { start: [], after: new Map(), tail: [] }
     const ids = new Set<string>()
     for (const row of rows) {
       ids.add(row.source.id)
       ids.add(row.id)
     }
-    return partitionPlacedRows(anchored, ids)
+    return partitionPlacedRows(placed, ids)
   }, [modUiAvailable, placed, rows])
 
   return (
@@ -321,7 +320,7 @@ export function ChatTranscriptBody({
                 {isCompacting && <CompactingIndicator startedAt={compactingStartedAt} />}
                 {!isCompacting && compactError && <CompactErrorIndicator error={compactError} onDismiss={dismissCompactError} />}
                 {isRecapping && <RecappingIndicator />}
-                <InlineModPlaced rows={anchoredPlacedTail} />
+                <InlineModPlaced rows={[...placedStart, ...anchoredPlacedTail]} />
                 <RemoteTranscriptChrome edge="bottom" />
               </SelectionContextMenuZone>
             </RemoteTranscriptEdges>

@@ -3,7 +3,7 @@ import { useEnvironmentServes } from '@/hooks/use-environment-serves'
 import { pendingTurnMessage, sessionFooterTarget } from '@superone/chat-view/presenters/turn-footer-model'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 import { useRef, useEffect, useMemo, useCallback, useState } from 'react'
-import { useModUiState } from '@superone/chat-view/mod-ui'
+
 import { useChatStore, useActiveSession, useSessionScope } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
@@ -267,17 +267,11 @@ function ChatComposerSlot({
   showRealtimeComposer: boolean
   publishComposerOverhang: (px: number) => void
 }) {
-  const { available: modUiAvailable, placed } = useModUiState()
-  const [dismissedPlacedSig, setDismissedPlacedSig] = useState<string | null>(null)
-  const composerPlaced = useMemo(() => placed.filter((r) => !r.afterUuid), [placed])
-  const placedSignature = modUiAvailable ? composerPlaced.map((r) => `${r.plugin}:${r.id}:${r.requestId}`).join('|') : ''
-  const modPlaced = modUiAvailable && composerPlaced.length > 0 && placedSignature !== dismissedPlacedSig
   const composerKind = resolveComposer({
     needsDecision,
     decisionAvailable,
     appConsent,
     appInput: !!appInput,
-    modPlaced,
     voiceEngaged: showRealtimeComposer,
     openedComposerId: openedComposer?.id,
     continuationOffered: !!continuation,
@@ -286,12 +280,11 @@ function ChatComposerSlot({
     ? `${decision.kind}:${decision.request.requestId}`
     : composerKind === 'app-consent' && consentHead ? `app-consent:${consentHead.id}`
     : composerKind === 'app-input' && appInput ? `app-input:${appInput.requestId}`
-    : composerKind === 'mod-placed' ? `mod-placed:${placedSignature}`
     : openedComposer?.id === composerKind ? openedComposer.key
     : composerKind === 'continuation' && continuation ? `continuation:${continuation.sessionId}:${continuation.expiresAt}`
     : composerKind
   const composerFocus = useRestoreChatInputFocus(
-    (needsDecision || !!appInput || !!openedComposer || modPlaced) && decisionAvailable,
+    (needsDecision || !!appInput || !!openedComposer) && decisionAvailable,
     containerRef,
     projectPath && displayedSessionId ? { projectPath, sessionId: displayedSessionId } : undefined,
   )
@@ -314,7 +307,6 @@ function ChatComposerSlot({
         appInput,
         openedComposer,
         continuation,
-        onDismissModPlaced: () => setDismissedPlacedSig(placedSignature),
       })}
     />
   )
@@ -325,7 +317,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   const activeProject = useChatStore((s) => s.activeProject)
   const {
     messages, sessionStatus, pendingPermissions, pendingQuestion, pendingAsyncQuestions, pendingPlanApproval,
-    displayedSessionId, cwd, providerSessionId, sessionProvider, preferredProvider,
+    displayedSessionId, cwd, providerSessionId, sessionProvider, preferredProvider, hostSessionOwned,
     historyHydrated, awaitingAssistantReply, apiRetry, sideChatParentId, isRecapping,
   } = useActiveSession(useShallow((s) => ({
     messages: s.messages,
@@ -339,6 +331,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     providerSessionId: s._providerSessionId,
     sessionProvider: s.sessionProvider,
     preferredProvider: s.preferredProvider,
+    hostSessionOwned: s.hostSessionOwned,
     historyHydrated: s._historyHydrated,
     awaitingAssistantReply: s.awaitingAssistantReply,
     apiRetry: s.apiRetry,
@@ -498,7 +491,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
       <DetailScopeProvider scope={detailScope}>
       <DesktopModUi projectPath={projectPath} sessionId={displayedSessionId ?? null} enabled={drawsMods}>
       {foreground && drawsMods && projectPath && displayedSessionId ? <ModPaneDockSync projectPath={projectPath} sessionId={displayedSessionId} /> : null}
-      <ModChatThemeLayer projectPath={projectPath} folderPath={cwd || null} sessionId={displayedSessionId} enabled={drawsMods}>
+      <ModChatThemeLayer projectPath={projectPath} folderPath={cwd || null} sessionId={displayedSessionId} enabled={drawsMods} sessionTheme={hostSessionOwned}>
       {activeOverlay ?? (
         <>
           {/* The fade belongs to arriving at a different session. Switching between

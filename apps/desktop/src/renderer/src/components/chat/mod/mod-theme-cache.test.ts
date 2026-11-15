@@ -26,6 +26,18 @@ afterEach(() => {
 })
 
 describe('mod theme scope isolation', () => {
+  it('uses folder, project, then harness when there is no session yet', () => {
+    writeModTheme({ scope: 'harness', backdrop: backdrop('all') })
+    writeModTheme({ scope: 'project', projectPath: project, backdrop: backdrop('repo') })
+    writeModTheme({ scope: 'folder', projectPath: project, folderPath: folder, backdrop: backdrop('pkg') })
+    writeModTheme({ scope: 'session', sessionId: 'old', projectPath: project, folderPath: folder, backdrop: backdrop('own') })
+    const cache = getModThemeCache()
+    expect(resolveModTheme(cache, { projectPath: project, folderPath: folder }).scope).toBe('folder')
+    expect(resolveModTheme(cache, { projectPath: project, folderPath: otherFolder }).scope).toBe('project')
+    expect(resolveModTheme(cache, { projectPath: otherProject }).scope).toBe('harness')
+    expect(resolveModTheme(cache, { sessionId: 'old', projectPath: project, folderPath: folder }).scope).toBe('session')
+  })
+
   it('keeps a session theme on that session', () => {
     writeModTheme({ scope: 'session', sessionId: 'a', projectPath: project, folderPath: folder, backdrop: backdrop('a') })
     const cache = getModThemeCache()

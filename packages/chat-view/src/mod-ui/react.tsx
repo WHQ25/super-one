@@ -123,9 +123,12 @@ export function ModSite({ component, instanceId, props, layout, children, engine
     clientModules: result.clientModules,
   }
   // Clipped and positioned: a mod's absolute boxes and negative margins stay inside its own site.
+  // A placed card is the exception: its own border is the frame, and the frame
+  // scrolls the contents. Clipping the site would scroll that border away.
+  const placed = component === 'Placed'
   return (
     <>
-      <div className="relative min-w-0" style={SITE_CLIP}>
+      <div className="relative min-w-0" data-mod-placed-clip={placed ? '' : undefined} style={placed ? undefined : SITE_CLIP}>
         <TreeBoundary tree={result.tree} fallback={own}>
           <ModTree tree={result.tree} env={env} />
         </TreeBoundary>
@@ -411,12 +414,18 @@ export function ModBackdropLayer({
   glassEnabled = true,
   fallback,
   onBackdropChange,
+  paint = true,
+  preferLive = true,
 }: {
   viewport?: ModSiteLayout['viewport']
   className?: string
   glassEnabled?: boolean
   fallback?: ModBackdropSnapshot | null
   onBackdropChange?: (active: ModBackdropSnapshot | null) => void
+  /** False keeps the subscription and draws nothing. A hidden node still flashes on click. */
+  paint?: boolean
+  /** False keeps the fallback when a live update does not match the window. */
+  preferLive?: boolean
 }) {
   const ctx = useModUi()
   const layerRef = useRef<HTMLDivElement>(null)
@@ -457,7 +466,7 @@ export function ModBackdropLayer({
 
   // A live backdrop wins. Fallback is the theme inherited from a wider scope,
   // or the last one cached before this session's client connects.
-  const effective = liveActive && snapshot.result
+  const effective = preferLive && liveActive && snapshot.result
     ? { result: snapshot.result, props: snapshot.props }
     : fallback
       ? fallback
@@ -472,7 +481,7 @@ export function ModBackdropLayer({
     [backdropProps],
   )
 
-  if (!ctx && !fallback) return null
+  if (!paint || (!ctx && !fallback)) return null
   return (
     <div
       ref={layerRef}

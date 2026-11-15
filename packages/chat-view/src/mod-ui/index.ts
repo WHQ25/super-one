@@ -2,7 +2,7 @@ export { ModUiClient, type ModUiClientOptions, type ModUiClientState, type ModUi
 export { ModTree, firstEngineRef, pressModHotkey, treePlainText, type ModTreeEnv, type ModUiPorts } from './ModTree'
 export { ModBackdropLayer, ModMessageScope, ModPlacedRows, ModSite, ModSurfaceFrame, ModUiProvider, partitionPlacedRows, useModMessageId, useModSite, useModThemeStyle, useModUi, useModUiState, type ModBackdropSnapshot, type ModSiteProps, type ModSurfaceFrameProps, type ModThemeStyleOptions } from './react'
 export { MOD_PALETTE_STYLE, decorationStyle, measureCell, windowViewport } from './cells'
-export { modBackdropGlassStyle, modPaneBackground, parseModBackdropProps, parseModThemeScope, parseModThemeStyle, safeModCssColor, type ModBackdropGlass, type ModBackdropProps, type ModThemeScope } from './theme'
+export { modBackdropGlassStyle, modBackdropTint, modPaneBackground, parseModBackdropProps, parseModThemeScope, parseModThemeStyle, safeModCssColor, type ModBackdropGlass, type ModBackdropProps, type ModThemeScope } from './theme'
 export { sanitizeSvg, svgDataUrl } from './svg'
 export { isDrawableModTree } from './validate'
 export * from './site-props'

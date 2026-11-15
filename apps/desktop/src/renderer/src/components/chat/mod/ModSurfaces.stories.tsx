@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from 'react'
 import { ModCommandOutputSite, ModQuestionSite, ModSite, ModSurfaceFrame, ModUiClient, ModUiProvider, commandOutputProps, sessionModeProps, spinnerProps, userMessageProps, stringProp, type ModUiTransport } from '@superone/chat-view/mod-ui'
 import { AskUserQuestionForm } from '@superone/chat-view/presenters/AskUserQuestionForm'
 import type { AgentEvent, AskUserQuestionRequest, ChatMessage } from '@superone/shared/agent-types'
@@ -538,3 +538,66 @@ export const ThemeAndBackdrop: Story = {
     </Session>
   ),
 }
+
+/** Sidebar and activity panel pick up the active session backdrop tint. */
+function ChromeTintFrame({ scheme, narrow = false }: { scheme: 'light' | 'dark'; narrow?: boolean }) {
+  useLayoutEffect(() => {
+    const root = document.documentElement
+    const hadDark = root.classList.contains('dark')
+    root.classList.toggle('dark', scheme === 'dark')
+    return () => { root.classList.toggle('dark', hadDark) }
+  }, [scheme])
+  return (
+    <div
+      data-has-mod-tint="true"
+      data-mod-tint-scheme={scheme}
+      className="flex h-64 max-w-full overflow-hidden rounded-xl border border-border bg-sidebar text-xs text-sidebar-foreground"
+      style={{ width: narrow ? 320 : 640, '--mod-backdrop-tint': '#7aa2f7' } as CSSProperties}
+    >
+      <div data-sidebar-inner="" className="flex w-28 shrink-0 flex-col gap-2 bg-sidebar p-3">
+        <div className="font-medium">Sidebar</div>
+        <div className="rounded-md bg-sidebar-accent px-2 py-1">Session</div>
+      </div>
+      <div data-main-area="" className="flex min-w-0 flex-1 border-l border-border bg-card">
+        <div data-activity-outer="" className="flex w-28 shrink-0 flex-col gap-2 border-r border-border p-3">
+          <div className="font-medium text-card-foreground">Activity</div>
+          <div className="rounded-md bg-muted px-2 py-1 text-muted-foreground">Files</div>
+        </div>
+        <div className="p-3 text-foreground">Conversation stays on the saved appearance.</div>
+      </div>
+    </div>
+  )
+}
+
+/** The chat title sits on the backdrop. The bar itself has no fill. */
+export const ThemeBehindTitle: Story = {
+  render: () => (
+    <Session
+      answers={{
+        Backdrop: drawn(
+          {
+            type: 'Svg',
+            props: {
+              alt: 'Tokyo Night gradient backdrop',
+              source: '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 240"><defs><radialGradient id="g" cx="30%" cy="25%" r="70%"><stop offset="0%" stop-color="#7aa2f7" stop-opacity="0.45"/><stop offset="100%" stop-color="#1a1b26"/></radialGradient></defs><rect width="400" height="240" fill="url(#g)"/></svg>',
+            },
+          },
+          { id: 'tokyo-night', plugin: 'tokyo-night-theme', glass: { blur: 8, opacity: 0.35, tint: '#1a1b26' } },
+        ),
+      }}
+    >
+      <div data-main-area="" className="relative flex h-60 w-[480px] max-w-full flex-col overflow-hidden rounded-xl border border-border bg-card">
+        <div className="relative z-10 flex h-[34px] items-center px-3 text-xs text-muted-foreground">Session title</div>
+        <ModChatThemeLayer>
+          <div className="p-4 text-sm text-foreground">The title bar shows the backdrop through it.</div>
+        </ModChatThemeLayer>
+      </div>
+    </Session>
+  ),
+}
+
+export const ThemeChromeTintLight: Story = { render: () => <ChromeTintFrame scheme="light" /> }
+
+export const ThemeChromeTintDark: Story = { render: () => <ChromeTintFrame scheme="dark" /> }
+
+export const ThemeChromeTintNarrow: Story = { render: () => <ChromeTintFrame scheme="dark" narrow /> }

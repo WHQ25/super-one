@@ -278,7 +278,6 @@ export function ChatTranscriptBody({
                           sourceMessage={row.source}
                           followingMessage={row.following}
                           segmentId={row.id}
-                          firstSlice={row.first}
                           anchors={row.anchors}
                         />
                         {placedAfterRow && <InlineModPlaced rows={placedAfterRow} />}

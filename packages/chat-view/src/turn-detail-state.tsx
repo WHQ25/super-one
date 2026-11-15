@@ -24,7 +24,7 @@ function createStore() {
 
 const Context = createContext<ReturnType<typeof createStore> | null>(null)
 
-/** One disclosure per provider turn, including rows separated by compaction. */
+/** Disclosures by id: a row cut out of a turn keeps its own across unmounts. */
 export function TurnDetailStateProvider({ scope, children }: { scope: string | number; children: ReactNode }) {
   const store = useMemo(createStore, [scope])
   return <Context.Provider value={store}>{children}</Context.Provider>

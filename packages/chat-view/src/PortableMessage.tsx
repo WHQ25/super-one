@@ -94,7 +94,6 @@ export const PortableMessage = memo(function PortableMessage({
   anchors,
   sourceMessage = message,
   followingMessage,
-  firstSlice,
   showFooter = true,
   pendingTurn,
   apiRetry,
@@ -118,7 +117,6 @@ export const PortableMessage = memo(function PortableMessage({
   anchors?: ReadonlyMap<ContentBlock, string>
   sourceMessage?: ChatMessage
   followingMessage?: ChatMessage
-  firstSlice?: boolean
   showFooter?: boolean
   pendingTurn?: PendingTurnPhase
   apiRetry?: TurnRetryInfo | null
@@ -202,7 +200,7 @@ export const PortableMessage = memo(function PortableMessage({
       : isUser
       ? <UserMessageContentPresenter message={message} text={goalObjective} promptKeywords={sentKeywords} Block={UserToolBlock} asyncQuestions={asyncQuestions} />
       : <PortableTurn message={message} isStreaming={isStreaming} isLastAssistant={isLastAssistant} anchors={anchors}
-          sourceMessage={sourceMessage} followingMessage={followingMessage} segmentId={segmentId} firstSlice={firstSlice} />
+          sourceMessage={sourceMessage} followingMessage={followingMessage} segmentId={segmentId} />
 
   // Copy text is only needed once the turn settles (the button hides while
   // streaming), so skip concatenating the whole turn on every delta.

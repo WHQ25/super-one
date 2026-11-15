@@ -891,7 +891,6 @@ export function PortableTurn({
   sourceMessage = message,
   followingMessage,
   segmentId = message.id,
-  firstSlice,
 }: {
   message: ChatMessage
   isStreaming: boolean
@@ -900,14 +899,13 @@ export function PortableTurn({
   sourceMessage?: ChatMessage
   followingMessage?: ChatMessage
   segmentId?: string
-  firstSlice?: boolean
 }) {
   const portableContent = useMemo(() => portableToolBlocks(turnDisplayContent(message)), [message.content, message.status])
   const grouped = useMemo(() => groupContentPresenter(portableContent, PORTABLE_GROUP_PORTS), [portableContent])
   const compactTurn = useMemo(() => buildCompactTurn(
-    { source: sourceMessage, following: followingMessage, id: segmentId, first: firstSlice },
+    { source: sourceMessage, following: followingMessage, id: segmentId },
     content => groupContentPresenter(portableToolBlocks(content), PORTABLE_GROUP_PORTS),
-  ), [sourceMessage, followingMessage, segmentId, firstSlice])
+  ), [sourceMessage, followingMessage, segmentId])
   const state = message.metadata?.codex?.planApproval
   const canRespond = !isStreaming && isLastAssistant
   // The latest plan answers through the native approval sheet.

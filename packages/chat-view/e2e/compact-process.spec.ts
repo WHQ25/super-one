@@ -11,13 +11,14 @@ test.beforeEach(async ({ page }) => {
   await expect(page.locator('html')).toHaveAttribute('data-chat-view-ready', 'true')
 })
 
-test('one Detail folds process on both sides of a compaction in a completed turn', async ({ page }) => {
+test('each side of a compaction folds its own process under its own Detail', async ({ page }) => {
   await page.evaluate(messages => (globalThis as any).__applyHost({ type: 'hydrate', messages, sessionStatus: 'idle' }), compactProcessHistory())
 
   const detail = page.locator('.turn-detail-section button')
-  await expect(detail).toHaveCount(1)
-  await expect(detail).toHaveAttribute('aria-expanded', 'false')
-  await expect(detail).toContainText('6')
+  await expect(detail).toHaveCount(2)
+  await expect(detail.first()).toHaveAttribute('aria-expanded', 'false')
+  await expect(detail.first()).toContainText('5')
+  await expect(detail.last()).toContainText('1')
   await expect(page.getByText('Continuing the implementation.')).toBeVisible()
   await expect(page.getByText('The implementation is ready.')).toBeVisible()
   await expect(page.locator('[data-turn-id="process-compact"]')).toBeVisible()
@@ -25,15 +26,17 @@ test('one Detail folds process on both sides of a compaction in a completed turn
   await expect(page.getByText('echo after-compact', { exact: true })).toHaveCount(0)
   await expect(page.getByText(/Thought for/)).toHaveCount(0)
 
-  await detail.click()
-  await expect(page.getByText('echo before-compact', { exact: true })).toBeVisible()
+  await detail.last().click()
   await expect(page.getByText('echo after-compact', { exact: true })).toBeVisible()
   await expect(page.getByText(/Thought for/)).toBeVisible()
+  await expect(page.getByText('echo before-compact', { exact: true })).toHaveCount(0)
+  await detail.first().click()
+  await expect(page.getByText('echo before-compact', { exact: true })).toBeVisible()
   const order = await page.locator('article[data-turn-id], [data-turn-id="process-compact"]').evaluateAll(elements => elements.map(el => el.getAttribute('data-turn-id')))
   expect(order).toEqual(['compact-process', 'process-compact', 'compact-process:after:process-compact'])
-  await detail.click()
+  await detail.first().click()
   await expect(page.getByText('echo before-compact', { exact: true })).toHaveCount(0)
-  await expect(page.getByText('echo after-compact', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('echo after-compact', { exact: true })).toBeVisible()
 })
 
 test('uses the whole-turn threshold when each side of the cut has few tools', async ({ page }) => {
@@ -41,11 +44,12 @@ test('uses the whole-turn threshold when each side of the cut has few tools', as
   source!.content = source!.content.filter(block => !('toolUseId' in block) || !['before-1', 'before-2', 'before-3'].includes(block.toolUseId))
   await page.evaluate(messages => (globalThis as any).__applyHost({ type: 'hydrate', messages, sessionStatus: 'idle' }), [source, compact])
   const detail = page.locator('.turn-detail-section button')
-  await expect(detail).toHaveCount(1)
-  await expect(detail).toContainText('3')
+  await expect(detail).toHaveCount(2)
+  await expect(detail.first()).toContainText('2')
+  await expect(detail.last()).toContainText('1')
   await expect(page.getByText('echo before-compact', { exact: true })).toHaveCount(0)
   await expect(page.getByText('echo after-compact', { exact: true })).toHaveCount(0)
-  await detail.click()
+  await detail.last().click()
   await expect(page.getByText('echo after-compact', { exact: true })).toBeVisible()
 })
 
@@ -57,7 +61,7 @@ test('folds a live continuation when the turn completes', async ({ page }, info)
   await expect(page.getByText('echo after-compact', { exact: true })).toBeVisible()
 
   await page.evaluate(messages => (globalThis as any).__applyHost({ type: 'applyReductionPatch', messages, sessionStatus: 'idle' }), history)
-  await expect(page.locator('.turn-detail-section button')).toHaveCount(1)
+  await expect(page.locator('.turn-detail-section button')).toHaveCount(2)
   await expect(page.getByText('echo before-compact', { exact: true })).toHaveCount(0)
   await expect(page.getByText('echo after-compact', { exact: true })).toHaveCount(0)
   await expect(page.getByText(/Thought for/)).toHaveCount(0)
@@ -70,7 +74,7 @@ test('folds a live continuation when the turn completes', async ({ page }, info)
   await page.screenshot({ path: info.outputPath('compact-process-collapsed.png') })
 })
 
-test('shows the shared disclosure when compaction precedes the first output', async ({ page }) => {
+test('shows one disclosure when compaction precedes the first output', async ({ page }) => {
   const [complete] = compactProcessHistory()
   const empty: ChatMessage = { ...complete!, status: 'streaming', content: [] }
   const compact = buildCompactBoundaryMessage({ type: 'compact_boundary', trigger: 'auto', preTokens: 120_000, postTokens: 20_000 },
@@ -93,7 +97,7 @@ test('keeps an unfinished tool tail visible across the cut', async ({ page }) =>
   await expect(page.getByText('echo after-compact', { exact: true })).toBeVisible()
 })
 
-test('one Detail controls a legacy Codex turn split by multiple compactions', async ({ page }) => {
+test('each stretch of a legacy Codex turn split by multiple compactions has its own Detail', async ({ page }) => {
   const command = (id: string): CodexThreadItem => ({ id, type: 'command_execution', command: `echo ${id}`,
     aggregatedOutput: '', status: 'completed', exitCode: 0 })
   const source: ChatMessage = { id: 'legacy-process', role: 'assistant', providerId: 'codex', content: [],
@@ -114,16 +118,17 @@ test('one Detail controls a legacy Codex turn split by multiple compactions', as
   ] } } }
   await page.evaluate(messages => (globalThis as any).__applyHost({ type: 'hydrate', messages, sessionStatus: 'idle' }), [complete, first, second])
   const detail = page.locator('.turn-detail-section button')
-  await expect(detail).toHaveCount(1)
-  await expect(detail).toContainText('3')
-  for (const id of ['before-compact', 'between-compacts', 'after-compacts']) {
-    await expect(page.getByText(`echo ${id}`, { exact: true })).toHaveCount(0)
-  }
+  const commands = ['before-compact', 'between-compacts', 'after-compacts']
+  await expect(detail).toHaveCount(3)
+  for (const id of commands) await expect(page.getByText(`echo ${id}`, { exact: true })).toHaveCount(0)
   await expect(page.getByText('The implementation is ready.')).toBeVisible()
-  await detail.click()
-  for (const id of ['before-compact', 'between-compacts', 'after-compacts']) {
+  for (const [index, id] of commands.entries()) {
+    await expect(detail.nth(index)).toContainText('1')
+    await detail.nth(index).click()
     await expect(page.getByText(`echo ${id}`, { exact: true })).toBeVisible()
+    for (const later of commands.slice(index + 1)) await expect(page.getByText(`echo ${later}`, { exact: true })).toHaveCount(0)
   }
-  await detail.click()
-  await expect(page.getByText('echo after-compacts', { exact: true })).toHaveCount(0)
+  await detail.nth(1).click()
+  await expect(page.getByText('echo between-compacts', { exact: true })).toHaveCount(0)
+  await expect(page.getByText('echo after-compacts', { exact: true })).toBeVisible()
 })

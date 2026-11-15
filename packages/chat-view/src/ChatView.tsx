@@ -822,7 +822,7 @@ export function ChatView() {
             <PortableMessage
               key={message.id}
               message={message}
-              segmentId={row.id} anchors={row.anchors} showFooter={row.final} sourceMessage={row.source} followingMessage={row.following} firstSlice={row.first}
+              segmentId={row.id} anchors={row.anchors} showFooter={row.final} sourceMessage={row.source} followingMessage={row.following}
               asyncQuestions={codexAsyncAnswerQuestions(message, state.messages)}
               scheme={state.scheme}
               pendingPermission={state.pendingPermission ?? null}

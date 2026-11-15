@@ -12,6 +12,8 @@ import {
   type StorageHarnessRuntime,
   type StorageInventory,
 } from '@superone/shared/desktop-storage'
+import { isConcreteHarnessId } from '@superone/shared/harness/acp-brand'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { SettingsPage, SettingsSection } from './SettingsSection'
 import {
   optimizePlan,
@@ -198,7 +200,7 @@ export function StorageSettingsPage() {
                 description={isRetiredHarness(runtime.id) ? t('storageSettings.retiredAntigravity') : undefined}
                 testId={`storage-harness-${runtime.id}`}
                 onReveal={(path) => { void window.app.revealFile(path) }}
-                onAction={(action) => ask(action, runtime.id === 'cursor' ? undefined : runtime.id)}
+                onAction={(action) => ask(action, runtime.id)}
               />
             ))}
           </SettingsSection>
@@ -227,7 +229,6 @@ export function StorageSettingsPage() {
 
 function runtimeRows(inventory: StorageInventory): StorageHarnessRuntime[] {
   return (inventory.harnessRuntimes ?? [])
-    .filter((row) => row.id !== 'cursor')
     .sort((left, right) => (left.id < right.id ? -1 : left.id > right.id ? 1 : 0))
 }
 
@@ -246,10 +247,7 @@ function runtimeCategory(runtime: StorageHarnessRuntime): StorageCategory {
 }
 
 function harnessTitle(id: string): string {
-  if (id === 'claude') return 'Claude'
-  if (id === 'codex') return 'Codex'
-  if (id === 'acp-antigravity') return 'Antigravity'
-  return id
+  return isConcreteHarnessId(id) ? HARNESS_CAPABILITIES[id].displayName : id
 }
 
 function optimizeNotice(

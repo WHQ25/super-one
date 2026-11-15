@@ -261,8 +261,8 @@ describe('ModSurface theme and backdrop', () => {
     await surface.call('hostReply', { requestId: req.requestId, clientId: CLIENT, reply: { kind: 'promptPaint', painted: true } })
     expect(await paintPromise).toEqual({ painted: true })
 
-    const ac = await surface.call('promptAutocomplete', { clientId: CLIENT, surface: 'desktop', input: '/custom-theme ', cursor: 14 })
-    expect(sent.at(-1)).toMatchObject({ subtype: 'ui_prompt_autocomplete', client_id: CLIENT, surface: 'desktop', input: '/custom-theme ', cursor: 14 })
+    const ac = await surface.call('promptAutocomplete', { clientId: CLIENT, surface: 'desktop', text: '/custom-theme ', cursor: 14 })
+    expect(sent.at(-1)).toMatchObject({ subtype: 'ui_prompt_autocomplete', client_id: CLIENT, surface: 'desktop', text: '/custom-theme ', cursor: 14 })
     expect(ac).toEqual({ items: [{ label: 'halftone-dusk' }] })
   })
 

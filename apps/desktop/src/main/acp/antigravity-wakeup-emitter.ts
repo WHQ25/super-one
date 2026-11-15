@@ -37,6 +37,7 @@ export interface WakeupEmitContext {
   unlockedPostStallStream: boolean
   streamedPreUserPostStall: boolean
   emitEvent: (event: AgentEvent) => void
+  onWakeupToolUseEmitted?: (toolUseId: string, messageId: string) => void
 }
 
 export function findAntigravityTranscriptPath(
@@ -219,6 +220,7 @@ export function emitWakeupProgressSteps(
         } else if (tc.resultPending && !ctx.emittedWakeupToolUseIds.has(tc.toolUseId)) {
           ctx.emittedWakeupToolUseIds.add(tc.toolUseId)
           ctx.unflushedWakeupReplay = true
+          ctx.onWakeupToolUseEmitted?.(tc.toolUseId, targetMessageId)
           ctx.emitEvent({
             type: 'content_delta',
             messageId: targetMessageId,
@@ -295,6 +297,7 @@ export function emitWakeupProgressSteps(
         continue
       }
       ctx.emittedWakeupToolUseIds.add(tc.toolUseId)
+      ctx.onWakeupToolUseEmitted?.(tc.toolUseId, targetMessageId)
       ctx.emitEvent({
         type: 'content_delta',
         messageId: targetMessageId,
@@ -392,6 +395,23 @@ export function flushRemainingWakeupToolResults(
   }
 }
 
+const NON_INTERACTIVE_WAKEUP_TOOLS = new Set([
+  'read_file',
+  'view_file',
+  'grep_search',
+  'find_by_name',
+  'list_dir',
+  'search_web',
+  'read_url_content',
+  'manage_task',
+  'manage_subagents',
+  'schedule',
+  'define_subagent',
+  'send_message',
+  'list_resources',
+  'read_resource',
+])
+
 export function resolveWakeupStallTimeoutMs(
   wakeup: ParentWakeupProgress,
   profile: 'standard' | 'auto' | 'bypass',
@@ -401,10 +421,13 @@ export function resolveWakeupStallTimeoutMs(
 ): number {
   if (wakeup.pendingToolRawName === 'ask_question') return interactionStallTimeoutMs
   if (profile !== 'standard') return wakeupResponseTimeoutMs
+  if (!hasExplicitStallTimeout && wakeup.pendingToolRawName && NON_INTERACTIVE_WAKEUP_TOOLS.has(wakeup.pendingToolRawName)) {
+    return wakeupResponseTimeoutMs
+  }
   if (hasExplicitStallTimeout || wakeup.pendingToolRawName !== 'run_command') {
     return interactionStallTimeoutMs
   }
-  return Math.max(interactionStallTimeoutMs, (wakeup.pendingToolWaitMs ?? 1_500) + 1_000)
+  return Math.max(interactionStallTimeoutMs, (wakeup.pendingToolWaitMs ?? 1_500) + 2_000)
 }
 
 export function evaluateWakeupReplayDrop(

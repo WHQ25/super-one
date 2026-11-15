@@ -1,357 +1,36 @@
-import { readFileSync } from 'node:fs'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { isSubagentToolName } from '@superone/shared/tool-ui'
 import {
-  clearSettledWakeupBackgroundTasks,
   createBackgroundTaskTrackerState,
   disposeBackgroundTaskTracker,
   noteBackgroundTaskMappedEvents,
   pruneStaleUnboundBackgroundTasks,
-  syncBackgroundTasks,
-  type BackgroundTaskTrackerState,
 } from './antigravity-background-task'
 import { resolveAntigravityBrainRoots } from './antigravity-profile'
 import {
-  extractParentWakeupProgress,
-  extractSpawnedSubagentsFromParentTranscript,
-  type SpawnedSubagentRef,
-} from './antigravity-subagent-transcript'
-import {
-  emitWakeupProgressSteps,
   evaluateWakeupReplayDrop,
-  findAntigravityTranscriptPath,
-  flushRemainingWakeupToolResults,
   resetWakeupReplayState,
-  resolveWakeupStallTimeoutMs,
-  syncTrackedSubagentEntries,
-  type TrackedSubagent,
 } from './antigravity-wakeup-emitter'
+import {
+  ensurePollingTimer,
+  isEffectiveWakeupPending,
+  noteForegroundTurnEndedOnState,
+  settleWakeupWaiters,
+  stopPollingTimer,
+  syncSessionSubagents,
+  type AntigravityIdleWakeupHooks,
+  type SessionSubagentState,
+} from './antigravity-wakeup-coordinator'
 
 export * from './antigravity-subagent-transcript'
 export * from './antigravity-background-task'
+export type { AntigravityIdleWakeupHooks }
 
-const POLL_INTERVAL_MS = 250
-const IDLE_POLL_INTERVAL_MS = 1_000
 const DEFAULT_NO_WAKEUP_TIMEOUT_MS = 5_000
 const DEFAULT_WAKEUP_RESPONSE_TIMEOUT_MS = 120_000
 const DEFAULT_INTERACTION_STALL_TIMEOUT_MS = 1_500
 
-export interface AntigravityIdleWakeupHooks {
-  isPromptActive: () => boolean
-  ensureMessage: () => string
-  completeMessage: () => void
-  permissionProfile?: () => 'standard' | 'auto' | 'bypass'
-}
-
-interface SessionSubagentState {
-  parentSessionId: string
-  brainRoots: string[]
-  emitEvent: (event: AgentEvent) => void
-  idleHooks?: AntigravityIdleWakeupHooks
-  boundConversationIds: Set<string>
-  trackedByToolUseId: Map<string, TrackedSubagent>
-  bgTasks: BackgroundTaskTrackerState
-  wakeupMessageId: string
-  idleWakeupMessageId: string | null
-  subagentWakeupPending: boolean
-  /** Foreground prompt already returned; keep reading the transcript until the task finishes. */
-  backgroundWatch: boolean
-  parentTurnEnded: boolean
-  activeWakeupMinSpawnStepIndex: number | null
-  allWorkCompletedAtMs: number | null
-  awaitingToolSinceMs: number | null
-  noWakeupTimeoutMs: number
-  wakeupResponseTimeoutMs: number
-  interactionStallTimeoutMs: number
-  hasExplicitStallTimeout: boolean
-  emittedWakeupStepIndices: Set<number>
-  emittedWakeupToolUseIds: Set<string>
-  emittedWakeupToolResultIds: Set<string>
-  replayedBackgroundToolIds: Set<string>
-  unflushedWakeupReplay: boolean
-  stalledWakeupToolReplay: boolean
-  unlockedPostStallStream: boolean
-  streamedPreUserPostStall: boolean
-  wakeupWaiters: Array<(outcome: 'completed' | 'cancelled') => void>
-  timer: ReturnType<typeof setInterval> | null
-  timerIntervalMs: number
-}
-
 const sessionStates = new Map<string, SessionSubagentState>()
-
-function isEffectiveWakeupPending(state: SessionSubagentState): boolean {
-  if (state.subagentWakeupPending) return true
-  for (const entry of state.bgTasks.tasksByToolUseId.values()) {
-    if (entry.wakeupRequired) return true
-  }
-  return false
-}
-
-function releaseForegroundForBackgroundWatch(state: SessionSubagentState): void {
-  const step = state.bgTasks.idleWatchStepIndex ?? state.activeWakeupMinSpawnStepIndex
-  if (typeof step === 'number' && (state.bgTasks.idleWatchStepIndex === null || step < state.bgTasks.idleWatchStepIndex)) {
-    state.bgTasks.idleWatchStepIndex = step
-  }
-  state.backgroundWatch = true
-  state.parentTurnEnded = false
-  const waiters = state.wakeupWaiters.splice(0, state.wakeupWaiters.length)
-  for (const resolve of waiters) resolve('completed')
-}
-
-function wakeupHasUnseenSteps(
-  state: SessionSubagentState,
-  wakeup: ReturnType<typeof extractParentWakeupProgress>,
-): boolean {
-  return wakeup.steps.some(
-    (step) =>
-      !state.emittedWakeupStepIndices.has(step.stepIndex) ||
-      step.toolCalls.some(
-        (call) => call.hasResult && !call.resultPending && !state.emittedWakeupToolResultIds.has(call.toolUseId),
-      ),
-  )
-}
-
-function emitBackgroundWatch(
-  state: SessionSubagentState,
-  parentRaw: string,
-  now: number,
-  anyActive: boolean,
-): void {
-  const hooks = state.idleHooks
-  if (!hooks) return
-  const afterStepIndex = state.bgTasks.idleWatchStepIndex ?? state.activeWakeupMinSpawnStepIndex ?? 0
-  const wakeup = extractParentWakeupProgress(parentRaw, afterStepIndex)
-  let stillRunning = anyActive
-  if (wakeupHasUnseenSteps(state, wakeup)) {
-    const targetMsgId = state.idleWakeupMessageId ?? hooks.ensureMessage()
-    state.idleWakeupMessageId = targetMsgId
-    if (emitWakeupProgressSteps(state, wakeup, targetMsgId, now)) stillRunning = true
-  }
-  if (!stillRunning && wakeup.awaitingToolExecution) {
-    state.unflushedWakeupReplay = true
-    state.stalledWakeupToolReplay = true
-    state.unlockedPostStallStream = false
-    // Hand the cursor to this step. The next sync drops the index once no
-    // SYSTEM_MESSAGE remains after it, so the permission tool stays on the
-    // next prompt instead of a forever idle poll.
-    const stalledStep = wakeup.steps[wakeup.steps.length - 1]
-    if (stalledStep) state.bgTasks.idleWatchStepIndex = stalledStep.stepIndex
-    if (state.idleWakeupMessageId) hooks.completeMessage()
-    state.idleWakeupMessageId = null
-    settleWakeupWaiters(state, 'completed')
-    return
-  }
-  const elapsedSinceDone = state.allWorkCompletedAtMs === null ? 0 : now - state.allWorkCompletedAtMs
-  const plannerStalled =
-    !stillRunning &&
-    wakeup.sawSystemMessage &&
-    !wakeup.completed &&
-    elapsedSinceDone >= state.wakeupResponseTimeoutMs
-  if (stillRunning || (!wakeup.completed && !plannerStalled)) return
-  const targetMsgId = state.idleWakeupMessageId
-  if (targetMsgId) {
-    state.stalledWakeupToolReplay = false
-    flushRemainingWakeupToolResults(state, wakeup, targetMsgId)
-  }
-  const lastStep = wakeup.steps[wakeup.steps.length - 1]
-  if (lastStep) state.bgTasks.idleWatchStepIndex = lastStep.stepIndex
-  state.idleWakeupMessageId = null
-  if (targetMsgId) hooks.completeMessage()
-  settleWakeupWaiters(state, 'completed')
-}
-
-function settleWakeupWaiters(state: SessionSubagentState, outcome: 'completed' | 'cancelled'): void {
-  state.subagentWakeupPending = false
-  state.backgroundWatch = false
-  state.parentTurnEnded = false
-  state.activeWakeupMinSpawnStepIndex = null
-  state.allWorkCompletedAtMs = null
-  state.awaitingToolSinceMs = null
-  state.hasExplicitStallTimeout = false
-  clearSettledWakeupBackgroundTasks(state.bgTasks)
-  const waiters = state.wakeupWaiters.splice(0, state.wakeupWaiters.length)
-  for (const resolve of waiters) {
-    resolve(outcome)
-  }
-}
-
-function syncSessionSubagents(state: SessionSubagentState): void {
-  const now = Date.now()
-  const parentTranscriptPath = findAntigravityTranscriptPath(state.parentSessionId, state.brainRoots, true)
-  let parentRaw = ''
-  let spawnedRefs: SpawnedSubagentRef[] = []
-  if (parentTranscriptPath) {
-    try {
-      parentRaw = readFileSync(parentTranscriptPath, 'utf8')
-      if (state.trackedByToolUseId.size > 0) {
-        spawnedRefs = extractSpawnedSubagentsFromParentTranscript(parentRaw)
-      }
-    } catch {
-      void 0
-    }
-  }
-
-  syncTrackedSubagentEntries(state, spawnedRefs, now)
-
-  const bgSummary = parentRaw
-    ? syncBackgroundTasks(state.bgTasks, parentRaw, state.parentTurnEnded, state.emitEvent)
-    : {
-        anyActiveNonDaemon: false,
-        anyWakeupRequired: isEffectiveWakeupPending(state) && !state.subagentWakeupPending,
-        minWakeupSpawnStepIndex: null,
-        emittedCompletionFromTranscript: false,
-        emittedCompletedToolUseIds: [] as string[],
-        hasActiveIdleWatch: state.bgTasks.idleWatchStepIndex !== null,
-      }
-
-  if (bgSummary.emittedCompletionFromTranscript && (state.parentTurnEnded || state.backgroundWatch)) {
-    // The bash card was already backfilled. Remember its id so a later permission
-    // stall does not treat the replayed tool_call_update as the stalled tool.
-    // unflushed stays false until the wakeup text is actually rendered.
-    if (state.parentTurnEnded) state.unflushedWakeupReplay = true
-    for (const id of bgSummary.emittedCompletedToolUseIds) {
-      state.replayedBackgroundToolIds.add(id)
-    }
-  }
-  if (
-    bgSummary.minWakeupSpawnStepIndex !== null &&
-    (state.activeWakeupMinSpawnStepIndex === null ||
-      bgSummary.minWakeupSpawnStepIndex < state.activeWakeupMinSpawnStepIndex)
-  ) {
-    state.activeWakeupMinSpawnStepIndex = bgSummary.minWakeupSpawnStepIndex
-  }
-
-  const anyActiveSubagent = [...state.trackedByToolUseId.values()].some((e) => !e.completed)
-  let anyActive = anyActiveSubagent || bgSummary.anyActiveNonDaemon
-  const wakeupPending = state.subagentWakeupPending || bgSummary.anyWakeupRequired
-
-  if (anyActive) {
-    state.allWorkCompletedAtMs = null
-  } else if ((state.trackedByToolUseId.size > 0 || wakeupPending) && state.allWorkCompletedAtMs === null) {
-    state.allWorkCompletedAtMs = now
-  }
-
-  if (state.parentTurnEnded && wakeupPending && anyActive && state.idleHooks) {
-    releaseForegroundForBackgroundWatch(state)
-  }
-
-  if (
-    state.backgroundWatch &&
-    !state.parentTurnEnded &&
-    state.idleHooks &&
-    !state.idleHooks.isPromptActive() &&
-    parentRaw
-  ) {
-    emitBackgroundWatch(state, parentRaw, now, anyActive)
-  } else if (state.parentTurnEnded && !wakeupPending) {
-    settleWakeupWaiters(state, 'completed')
-  } else if (wakeupPending && state.parentTurnEnded) {
-    const afterStepIndex =
-      state.activeWakeupMinSpawnStepIndex ??
-      (spawnedRefs.length > 0 ? spawnedRefs[spawnedRefs.length - 1]!.stepIndex : 0)
-    const wakeup = extractParentWakeupProgress(parentRaw, afterStepIndex)
-    if (emitWakeupProgressSteps(state, wakeup, state.wakeupMessageId, now)) {
-      anyActive = true
-    }
-
-    if (!anyActive && wakeup.completed) {
-      state.stalledWakeupToolReplay = false
-      flushRemainingWakeupToolResults(state, wakeup, state.wakeupMessageId)
-      settleWakeupWaiters(state, 'completed')
-    } else if (!anyActive && wakeup.awaitingToolExecution) {
-      if (state.awaitingToolSinceMs === null) state.awaitingToolSinceMs = now
-      const stallMs = resolveWakeupStallTimeoutMs(
-        wakeup,
-        state.idleHooks?.permissionProfile?.() ?? 'standard',
-        state.interactionStallTimeoutMs,
-        state.wakeupResponseTimeoutMs,
-        state.hasExplicitStallTimeout,
-      )
-      if (now - state.awaitingToolSinceMs >= stallMs) {
-        state.unflushedWakeupReplay = true
-        state.stalledWakeupToolReplay = true
-        state.unlockedPostStallStream = false
-        settleWakeupWaiters(state, 'completed')
-      }
-    } else {
-      state.awaitingToolSinceMs = null
-      if (!anyActive && state.allWorkCompletedAtMs !== null) {
-        const elapsedSinceDone = now - state.allWorkCompletedAtMs
-        if (!wakeup.sawSystemMessage && elapsedSinceDone >= state.noWakeupTimeoutMs) {
-          settleWakeupWaiters(state, 'completed')
-        } else if (wakeup.sawSystemMessage && elapsedSinceDone >= state.wakeupResponseTimeoutMs) {
-          settleWakeupWaiters(state, 'completed')
-        }
-      }
-    }
-  } else if (
-    !wakeupPending &&
-    !state.parentTurnEnded &&
-    state.bgTasks.idleWatchStepIndex !== null &&
-    state.idleHooks &&
-    !state.idleHooks.isPromptActive() &&
-    parentRaw
-  ) {
-    const idleWakeup = extractParentWakeupProgress(parentRaw, state.bgTasks.idleWatchStepIndex)
-    const hasNewStepWork = idleWakeup.steps.some(
-      (s) =>
-        !state.emittedWakeupStepIndices.has(s.stepIndex) ||
-        s.toolCalls.some(
-          (tc) => tc.hasResult && !tc.resultPending && !state.emittedWakeupToolResultIds.has(tc.toolUseId),
-        ),
-    )
-    if (hasNewStepWork) {
-      const targetMsgId = state.idleWakeupMessageId ?? state.idleHooks.ensureMessage()
-      state.idleWakeupMessageId = targetMsgId
-      emitWakeupProgressSteps(state, idleWakeup, targetMsgId, now)
-      if (idleWakeup.completed) {
-        state.stalledWakeupToolReplay = false
-        flushRemainingWakeupToolResults(state, idleWakeup, targetMsgId)
-        const lastStep = idleWakeup.steps[idleWakeup.steps.length - 1]
-        if (lastStep) state.bgTasks.idleWatchStepIndex = lastStep.stepIndex
-        state.idleWakeupMessageId = null
-        state.idleHooks.completeMessage()
-      }
-    }
-  }
-
-  ensurePollingTimer(state)
-}
-
-function desiredPollingIntervalMs(state: SessionSubagentState): number | null {
-  const anyActiveSubagent = [...state.trackedByToolUseId.values()].some((e) => !e.completed)
-  const anyActiveBg = [...state.bgTasks.tasksByToolUseId.values()].some(
-    (e) => Boolean(e.taskId) && e.wakeupRequired && !e.completed,
-  )
-  const wakeupPending = isEffectiveWakeupPending(state)
-  if (state.backgroundWatch || anyActiveSubagent || anyActiveBg || (wakeupPending && state.parentTurnEnded)) {
-    return POLL_INTERVAL_MS
-  }
-  if (state.bgTasks.idleWatchStepIndex !== null && state.idleHooks) {
-    return IDLE_POLL_INTERVAL_MS
-  }
-  return null
-}
-
-function stopPollingTimer(state: SessionSubagentState): void {
-  if (!state.timer) return
-  clearInterval(state.timer)
-  state.timer = null
-  state.timerIntervalMs = 0
-}
-
-function ensurePollingTimer(state: SessionSubagentState): void {
-  const desiredMs = desiredPollingIntervalMs(state)
-  if (desiredMs === null) {
-    stopPollingTimer(state)
-    return
-  }
-  if (state.timer && state.timerIntervalMs === desiredMs) return
-  if (state.timer) clearInterval(state.timer)
-  state.timerIntervalMs = desiredMs
-  state.timer = setInterval(() => syncSessionSubagents(state), desiredMs)
-  state.timer.unref?.()
-}
 
 function getOrCreateSessionState(
   parentSessionId: string,
@@ -362,6 +41,7 @@ function getOrCreateSessionState(
 ): SessionSubagentState {
   let state = sessionStates.get(parentSessionId)
   if (!state) {
+    const bgTasks = createBackgroundTaskTrackerState()
     state = {
       parentSessionId,
       brainRoots: customBrainRoots ?? resolveAntigravityBrainRoots(),
@@ -369,12 +49,13 @@ function getOrCreateSessionState(
       ...(idleHooks ? { idleHooks } : {}),
       boundConversationIds: new Set(),
       trackedByToolUseId: new Map(),
-      bgTasks: createBackgroundTaskTrackerState(),
+      bgTasks,
       wakeupMessageId: messageId,
       idleWakeupMessageId: null,
       subagentWakeupPending: false,
       backgroundWatch: false,
       parentTurnEnded: false,
+      foregroundEndStepIndex: null,
       activeWakeupMinSpawnStepIndex: null,
       allWorkCompletedAtMs: null,
       awaitingToolSinceMs: null,
@@ -390,6 +71,10 @@ function getOrCreateSessionState(
       stalledWakeupToolReplay: false,
       unlockedPostStallStream: false,
       streamedPreUserPostStall: false,
+      onWakeupToolUseEmitted: (toolUseId, targetMsgId) => {
+        const bgEntry = bgTasks.tasksByToolUseId.get(toolUseId)
+        if (bgEntry) bgEntry.messageId = targetMsgId
+      },
       wakeupWaiters: [],
       timer: null,
       timerIntervalMs: 0,
@@ -398,6 +83,7 @@ function getOrCreateSessionState(
     return state
   }
   if (!state.parentTurnEnded && state.wakeupMessageId !== messageId) {
+    state.idleWakeupMessageId = null
     pruneStaleUnboundBackgroundTasks(state.bgTasks)
     if (!isEffectiveWakeupPending(state)) {
       state.activeWakeupMinSpawnStepIndex = null
@@ -488,6 +174,12 @@ export function noteAntigravitySubagentEvents(
   }
 }
 
+export function markAntigravityForegroundTurnEnded(parentSessionId: string): void {
+  const state = sessionStates.get(parentSessionId)
+  if (!state) return
+  noteForegroundTurnEndedOnState(state)
+}
+
 export function hasPendingAntigravitySubagentWakeup(parentSessionId: string): boolean {
   const state = sessionStates.get(parentSessionId)
   if (!state) return false
@@ -542,6 +234,7 @@ export function resumeAntigravityTurnOnSteer(parentSessionId: string): void {
   const state = sessionStates.get(parentSessionId)
   if (!state) return
   state.parentTurnEnded = false
+  state.foregroundEndStepIndex = null
   for (const resolve of state.wakeupWaiters.splice(0, state.wakeupWaiters.length)) resolve('completed')
   ensurePollingTimer(state)
 }

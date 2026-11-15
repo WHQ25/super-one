@@ -1,4 +1,5 @@
 import { fileURLToPath } from 'node:url'
+import { normalizeTranscriptTool } from '@superone/shared/tool-ui'
 import { unwrapAntigravityToolOutputText } from './antigravity-protocol'
 
 const BACKGROUND_TASK_ID_RE = /Tool is running as a background task with task id:\s*([^\r\n]+)/
@@ -15,8 +16,12 @@ export const COMMAND_EXIT_CODE_RE = /(?:^|\r?\n)(?:The command|Command) exited w
 
 export interface SpawnedBackgroundTaskRef {
   taskId: string
+  toolUseId: string
+  plannerStepIndex: number
   stepIndex: number
   toolName: string
+  rawInputJson: string
+  toolSummary?: string
   command?: string
   description?: string
   timerCondition?: string
@@ -195,18 +200,40 @@ export function extractSpawnedBackgroundTasksFromTranscript(raw: string): {
 
   const tasks: SpawnedBackgroundTaskRef[] = []
   const byTaskId = new Map<string, SpawnedBackgroundTaskRef>()
-  let pendingPlannerCalls: Array<{ rawName: string; args: Record<string, unknown> }> = []
+  let pendingPlannerCalls: Array<{
+    rawName: string
+    args: Record<string, unknown>
+    toolUseId: string
+    plannerStepIndex: number
+    rawInputJson: string
+    toolSummary?: string
+  }> = []
   let pendingCallIdx = 0
 
   for (const { stepIndex, rec } of records) {
     if (rec.type === 'PLANNER_RESPONSE') {
       const rawCalls = Array.isArray(rec.tool_calls) ? rec.tool_calls : []
       pendingPlannerCalls = []
-      for (const tc of rawCalls) {
+      for (let cIdx = 0; cIdx < rawCalls.length; cIdx += 1) {
+        const tc = rawCalls[cIdx]
         if (!tc || typeof tc !== 'object') continue
         const tcObj = tc as Record<string, unknown>
         const rawName = typeof tcObj.name === 'string' && tcObj.name ? tcObj.name : 'tool'
-        pendingPlannerCalls.push({ rawName, args: unwrapAntigravityTranscriptArgs(tcObj.args) })
+        const args = unwrapAntigravityTranscriptArgs(tcObj.args)
+        const normalized = normalizeTranscriptTool(rawName, args)
+        const toolUseId =
+          typeof tcObj.id === 'string' && tcObj.id.trim()
+            ? tcObj.id.trim()
+            : `agy_wakeup_tool_${stepIndex}_${cIdx}`
+        const toolSummary = summarizeAntigravityTranscriptToolCall(normalized.toolName, normalized.input)
+        pendingPlannerCalls.push({
+          rawName,
+          args,
+          toolUseId,
+          plannerStepIndex: stepIndex,
+          rawInputJson: JSON.stringify(normalized.input),
+          ...(toolSummary ? { toolSummary } : {}),
+        })
       }
       pendingCallIdx = 0
       continue
@@ -251,8 +278,12 @@ export function extractSpawnedBackgroundTasksFromTranscript(raw: string): {
       const createdAtMs = typeof rec.created_at === 'string' ? Date.parse(rec.created_at) : Number.NaN
       const entry: SpawnedBackgroundTaskRef = {
         taskId: launch.taskId,
+        toolUseId: matchedCall?.toolUseId ?? `agy_bg_tool_${stepIndex}`,
+        plannerStepIndex: matchedCall?.plannerStepIndex ?? stepIndex,
         stepIndex,
         toolName: rawName,
+        rawInputJson: matchedCall?.rawInputJson ?? '{}',
+        ...(matchedCall?.toolSummary ? { toolSummary: matchedCall.toolSummary } : {}),
         ...(command ? { command } : {}),
         ...(description ? { description } : {}),
         ...(timerCondition ? { timerCondition } : {}),
@@ -267,6 +298,33 @@ export function extractSpawnedBackgroundTasksFromTranscript(raw: string): {
   }
 
   return { lastUserStepIndex, tasks }
+}
+
+export function resolveAntigravityForegroundEndStepIndex(raw: string): number | null {
+  const records = parseAntigravityTranscriptRecords(raw)
+  let lastUserStepIndex = -1
+  for (const { stepIndex, rec } of records) {
+    if (rec.type === 'USER_INPUT' && stepIndex > lastUserStepIndex) {
+      lastUserStepIndex = stepIndex
+    }
+  }
+  let lastDoneStepIndex: number | null = null
+  for (const { stepIndex, rec } of records) {
+    if (stepIndex <= lastUserStepIndex) continue
+    const content = typeof rec.content === 'string' ? rec.content : ''
+    const isSystemMsg = rec.type === 'SYSTEM_MESSAGE' || content.includes('<SYSTEM_MESSAGE>')
+    if (isSystemMsg) continue
+    if (rec.type === 'PLANNER_RESPONSE') {
+      if (rec.status === 'DONE' || rec.status === 'ERROR') {
+        lastDoneStepIndex = stepIndex
+      }
+      continue
+    }
+    if (rec.type === 'GENERIC') {
+      lastDoneStepIndex = stepIndex
+    }
+  }
+  return lastDoneStepIndex ?? (lastUserStepIndex >= 0 ? lastUserStepIndex : null)
 }
 
 export function extractCompletedBackgroundTasksFromTranscript(

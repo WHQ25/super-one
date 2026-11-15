@@ -19,6 +19,7 @@ export interface TrackedBackgroundTask {
   startedAtMs: number
   taskId?: string
   spawnStepIndex?: number
+  completedStepIndex?: number
   logFile?: string
   watchingLog: boolean
   emittedTaskStarted: boolean
@@ -172,11 +173,15 @@ export function syncBackgroundTasks(
   parentRaw: string,
   parentTurnEnded: boolean,
   emitEvent: (event: AgentEvent) => void,
+  opts?: {
+    fallbackMessageId?: string
+    keepIdleWatch?: boolean
+  },
 ): BackgroundTaskSyncSummary {
   const { lastUserStepIndex, tasks: spawnedTasks } = extractSpawnedBackgroundTasksFromTranscript(parentRaw)
   const completedMap = extractCompletedBackgroundTasksFromTranscript(
     parentRaw,
-    lastUserStepIndex,
+    -1,
     spawnedTasks,
   )
   let emittedCompletionFromTranscript = false
@@ -201,11 +206,14 @@ export function syncBackgroundTasks(
     if (entry.wireCompleted && !isSchedule) continue
 
     const expectedRawTool = isSchedule ? 'schedule' : 'run_command'
-    let matchIdx = currentTurnTasks.findIndex(
-      (ref) =>
-        ref.toolName === expectedRawTool &&
-        (!entry.command || !ref.command || entry.command === ref.command),
-    )
+    let matchIdx = currentTurnTasks.findIndex((ref) => ref.toolUseId === entry.toolUseId)
+    if (matchIdx < 0) {
+      matchIdx = currentTurnTasks.findIndex(
+        (ref) =>
+          ref.toolName === expectedRawTool &&
+          (!entry.command || !ref.command || entry.command === ref.command),
+      )
+    }
     if (matchIdx < 0) {
       matchIdx = currentTurnTasks.findIndex((ref) => ref.toolName === expectedRawTool)
     }
@@ -239,6 +247,7 @@ export function syncBackgroundTasks(
       const preCheck = extractParentWakeupProgress(parentRaw, match.stepIndex)
       if (preCheck.completed) {
         entry.completed = true
+        entry.completedStepIndex = completedMap.get(match.taskId)?.systemStepIndex
         entry.wakeupRequired = false
         continue
       }
@@ -263,6 +272,59 @@ export function syncBackgroundTasks(
     }
   }
 
+  if (opts?.fallbackMessageId) {
+    for (const ref of spawnedTasks) {
+      if (
+        tracker.boundTaskIds.has(ref.taskId) ||
+        tracker.tasksByToolUseId.has(ref.toolUseId) ||
+        ref.isDaemon ||
+        ref.cancelledInTurn ||
+        completedMap.has(ref.taskId)
+      ) {
+        continue
+      }
+      const normalizedToolName = ref.toolName === 'schedule' ? 'schedule' : 'Bash'
+      const description = ref.description || ref.toolSummary || ref.command || normalizedToolName
+      tracker.boundTaskIds.add(ref.taskId)
+      const entry: TrackedBackgroundTask = {
+        toolUseId: ref.toolUseId,
+        messageId: opts.fallbackMessageId,
+        toolName: normalizedToolName,
+        rawInputJson: ref.rawInputJson,
+        ...(ref.toolSummary ? { toolSummary: ref.toolSummary } : {}),
+        ...(ref.command ? { command: ref.command } : {}),
+        description,
+        isDaemon: false,
+        startedAtMs: ref.createdAtMs ?? Date.now(),
+        taskId: ref.taskId,
+        spawnStepIndex: ref.stepIndex,
+        ...(ref.logFile ? { logFile: ref.logFile } : {}),
+        watchingLog: false,
+        emittedTaskStarted: false,
+        wireCompleted: false,
+        completed: false,
+        wakeupRequired: true,
+      }
+      tracker.tasksByToolUseId.set(entry.toolUseId, entry)
+      if (entry.toolName === 'Bash') {
+        entry.emittedTaskStarted = true
+        emitEvent({
+          type: 'task_started',
+          taskType: 'local_bash',
+          toolUseId: entry.toolUseId,
+          taskId: ref.taskId,
+          description: entry.description,
+          ...(entry.logFile ? { outputFile: entry.logFile } : {}),
+          isBackgrounded: true,
+        })
+        if (entry.logFile) {
+          entry.watchingLog = true
+          watchBashOutput(entry.toolUseId, entry.logFile)
+        }
+      }
+    }
+  }
+
   for (const entry of tracker.tasksByToolUseId.values()) {
     if (!entry.taskId || entry.completed) continue
 
@@ -270,6 +332,7 @@ export function syncBackgroundTasks(
     if (!completedResult) continue
 
     entry.completed = true
+    entry.completedStepIndex = completedResult.systemStepIndex
     if (entry.watchingLog) {
       unwatchBashOutput(entry.toolUseId)
       entry.watchingLog = false
@@ -337,7 +400,12 @@ export function syncBackgroundTasks(
   const hasActiveDaemonInTranscript = spawnedTasks.some(
     (ref) => ref.isDaemon && !ref.cancelledInTurn && !completedMap.has(ref.taskId),
   )
-  if (!hasActiveDaemonInTranscript && !anyActiveNonDaemon && tracker.idleWatchStepIndex !== null) {
+  if (
+    !hasActiveDaemonInTranscript &&
+    !anyActiveNonDaemon &&
+    !opts?.keepIdleWatch &&
+    tracker.idleWatchStepIndex !== null
+  ) {
     const idleCheck = extractParentWakeupProgress(parentRaw, tracker.idleWatchStepIndex)
     if (!idleCheck.sawSystemMessage) {
       tracker.idleWatchStepIndex = null
@@ -351,6 +419,21 @@ export function syncBackgroundTasks(
     emittedCompletionFromTranscript,
     emittedCompletedToolUseIds,
     hasActiveIdleWatch: tracker.idleWatchStepIndex !== null,
+  }
+}
+
+export function reconcileForegroundCompletedBackgroundTasks(
+  tracker: BackgroundTaskTrackerState,
+  foregroundEndStepIndex: number,
+): void {
+  for (const entry of tracker.tasksByToolUseId.values()) {
+    if (
+      entry.completed &&
+      typeof entry.completedStepIndex === 'number' &&
+      entry.completedStepIndex <= foregroundEndStepIndex
+    ) {
+      entry.wakeupRequired = false
+    }
   }
 }
 

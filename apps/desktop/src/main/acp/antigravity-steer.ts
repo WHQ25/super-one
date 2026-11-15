@@ -9,6 +9,7 @@ import {
 } from './antigravity-runtime-bridge'
 import {
   hasPendingAntigravitySubagentWakeup,
+  markAntigravityForegroundTurnEnded,
   resumeAntigravityTurnOnSteer,
   waitForAntigravitySubagentWakeup,
 } from './antigravity-subagent'
@@ -92,6 +93,9 @@ export function createAntigravitySteerablePrompt(opts: {
         let effectiveStopReason = String(value.stopReason ?? 'end_turn')
         await new Promise((r) => setTimeout(r, 0))
         if (id !== activeLegId || finalSettled) return
+        if (effectiveStopReason === 'end_turn' && !opts.turn.superseded) {
+          markAntigravityForegroundTurnEnded(opts.sessionId)
+        }
         if (
           effectiveStopReason === 'end_turn' &&
           !opts.turn.superseded &&

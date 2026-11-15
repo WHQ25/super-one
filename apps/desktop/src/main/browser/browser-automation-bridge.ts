@@ -4,7 +4,7 @@ import { AgentIpcChannels } from '@superone/shared/agent-types'
 import log from '../logger'
 import { currentHostActionConnection } from '../mcp/artifact-registry'
 import { rememberTabDriver } from './browser-tab-drivers'
-import { chromeBridgeIsConnected, chromeWebContentsId, ownerDrivesChromeOnly, tryChromeBrowserCall } from './chrome-browser'
+import { chromeBridgeIsConnected, chromeWebContentsId, ownerChromeCookieBrowser, tryChromeBrowserCall } from './chrome-browser'
 import { holdHostPainting, withHostPainting } from './host-paint-lease'
 import { remoteSessionKey } from '@superone/shared/remote-resource-key'
 
@@ -230,11 +230,11 @@ function recordDriver(webContentsId: number, sessionId: string): void {
   rememberTabDriver(webContentsId, sessionId, currentHostActionConnection())
 }
 
-/** Chrome is the cookie jar when this session has Chrome tabs and no built-in browser tab. */
-export async function sessionDrivesChromeOnly(sessionId: string): Promise<boolean> {
-  if (!chromeBridgeIsConnected()) return false
+/** Extension browser whose cookies this session should use, or null when it is not the only jar. */
+export async function sessionChromeCookieBrowser(sessionId: string): Promise<string | null> {
+  if (!chromeBridgeIsConnected()) return null
   const { owner } = ownerFor(sessionId)
-  return ownerDrivesChromeOnly(owner, (op, input, signal) => dispatchOwned(sessionId, op as BrowserAutomationOp, input, signal))
+  return ownerChromeCookieBrowser(owner, (op, input, signal) => dispatchOwned(sessionId, op as BrowserAutomationOp, input, signal))
 }
 
 export async function resolveBrowserWebContentsId(sessionId: string, tab?: string): Promise<number> {

@@ -27,7 +27,7 @@ describe('session host mention grants', () => {
     authorize.mockResolvedValue(['board'])
     expect(await phone.rpc('session.authorizeMentionApps', {
       sessionId: 'own', leaseId: lease.leaseId, generation: lease.generation, ...apps,
-    })).toEqual({ miniappIds: ['board'], desktopAppsGranted: false })
+    })).toEqual({ miniappIds: ['board'], desktopAppsGranted: false, chromeBrowserBundleIds: [] })
     expect(authorize).toHaveBeenCalledExactlyOnceWith(['board'], projectDir, 'own')
   })
 })

@@ -1154,7 +1154,8 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
         url: z.string().optional().describe("Initial URL. A schemeless host like 'example.com' gets https; loopback gets http. Defaults to a blank tab."),
         tab: z.string().optional().describe('Existing browser tab id to reuse/focus instead of creating a new one.'),
         readiness: z.enum(['load', 'none']).default('load').describe("'load' waits for loading to stop (default); 'none' returns as soon as the tab exists."),
-        host: z.enum(['embedded', 'chrome']).optional().describe("chrome opens the tab in the user's Chrome. Default embedded."),
+        host: z.enum(['embedded', 'chrome']).optional().describe('chrome opens the tab in a browser that loaded the SuperOne extension. Default embedded.'),
+        browser: z.enum(['chrome', 'chrome-beta', 'chrome-canary', 'chromium', 'edge', 'brave', 'arc']).optional().describe('Which connected browser to open in when more than one extension is connected.'),
       },
     },
     async (args) => {

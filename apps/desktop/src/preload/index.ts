@@ -2073,6 +2073,23 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.APP_ICON_SET, pngDataUri),
   resetAppIcon: () =>
     ipcRenderer.invoke(AgentIpcChannels.APP_ICON_RESET),
+  getChromeBridgeStatus: () =>
+    ipcRenderer.invoke(AgentIpcChannels.CHROME_BRIDGE_STATUS) as Promise<{ connected: boolean; browsers: string[]; extensionDir: string }>,
+  revealChromeExtension: () =>
+    ipcRenderer.invoke(AgentIpcChannels.CHROME_BRIDGE_REVEAL) as Promise<void>,
+  listChromeExtensionBrowsers: () =>
+    ipcRenderer.invoke(AgentIpcChannels.CHROME_BRIDGE_LIST_BROWSERS) as Promise<string[]>,
+  openChromeExtensionPage: (browserId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.CHROME_BRIDGE_OPEN_EXTENSIONS, browserId) as Promise<{ opened: boolean; url: string }>,
+  onChromeBridgeStatus: (callback: (status: { connected: boolean; browsers: string[]; extensionDir: string }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, status: { connected: boolean; browsers: string[]; extensionDir: string }): void => {
+      callback(status)
+    }
+    ipcRenderer.on(AgentIpcChannels.CHROME_BRIDGE_STATUS_CHANGED, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.CHROME_BRIDGE_STATUS_CHANGED, handler)
+    }
+  },
   onAppSettingsChange: (callback: (settings: unknown) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, settings: unknown): void => {
       callback(settings)

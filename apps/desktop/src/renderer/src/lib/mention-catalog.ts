@@ -14,9 +14,11 @@ export function useMentionAppIcon(project: string | null, kind: string, id: stri
 const pending = new Map<string, Promise<MentionCatalog>>()
 
 /** Share overlapping composer/popup reads, without retaining stale host settings. */
-export function loadMentionCatalog(projectPath: string): Promise<MentionCatalog> {
-  const existing = pending.get(projectPath)
-  if (existing) return existing
+export function loadMentionCatalog(projectPath: string, opts?: { fresh?: boolean }): Promise<MentionCatalog> {
+  if (!opts?.fresh) {
+    const existing = pending.get(projectPath)
+    if (existing) return existing
+  }
   const request = Promise.resolve().then(() => window.environment.getMentionCatalog(projectPath))
     .then(result => result && Array.isArray(result.capabilityIds) && Array.isArray(result.apps) ? result : EMPTY_MENTION_CATALOG)
     .then(catalog => {

@@ -12,4 +12,8 @@ export interface MentionCatalog {
     iconDataUri?: string
   }>
   environments?: EnvironmentMentionCandidate[]
+  /** True when this host's browser extension is connected. Older hosts omit it. */
+  chromeBridgeConnected?: boolean
+  /** Extension browser ids currently connected. Older hosts omit it and mean every Chromium bundle. */
+  connectedBrowsers?: string[]
 }

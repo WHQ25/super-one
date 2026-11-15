@@ -1,5 +1,7 @@
 import type { MentionCatalog } from '@superone/shared/mention-catalog'
 import { availableMentionCapabilityIds } from '@superone/shared/mention-capabilities'
+import { desktopMentionScope, includeDesktopMention, type DesktopMentionScope } from '@superone/shared/chrome-browser-apps'
+import { chromeBridgeHub } from '../browser/chrome-bridge-hub'
 import { statSync } from 'node:fs'
 import { nativeImage } from 'electron'
 import { readAppSettings } from '../app-settings-service'
@@ -77,15 +79,16 @@ function decodeMiniAppIcon(path: string): string | undefined {
 async function listRemoteMentionApps(
   projectPath: string,
   query: string,
-  includeDesktopApps: boolean,
+  desktopScope: DesktopMentionScope,
   iconsById: boolean,
   limit = APP_RESULT_LIMIT,
   desktopIconsEnabled = true,
+  connectedBrowsers?: readonly string[],
 ) {
   const settled = await Promise.allSettled([
     discoverApps(),
     discoverProjectApps(projectPath),
-    includeDesktopApps ? listInstalledApps() : Promise.resolve([]),
+    desktopScope === 'none' ? Promise.resolve([]) : listInstalledApps(),
   ])
   const userApps = settled[0].status === 'fulfilled' ? settled[0].value : []
   const projectApps = settled[1].status === 'fulfilled' ? settled[1].value : []
@@ -99,6 +102,7 @@ async function listRemoteMentionApps(
     .map((entry) => ({ kind: 'miniapp' as const, path: entry.id, label: entry.manifest.name,
       description: entry.manifest.description || entry.id, ...icon(miniAppIconDataUri(entry), iconsById) }))
   const matchedDesktopApps = installedApps
+    .filter((entry) => includeDesktopMention(entry.bundleId, desktopScope, connectedBrowsers))
     .filter((entry) => matchesRemoteMentionApp({ id: entry.bundleId, name: entry.app, aliases: entry.aliases }, query))
     .slice(0, limit)
   const desktopIcons = await Promise.allSettled(matchedDesktopApps.map((entry) => desktopIconsEnabled ? resolveAppIconDataUri(entry.bundleId) : Promise.resolve(null)))
@@ -137,7 +141,16 @@ export async function searchRemoteMentions(
   const { listAgentMentionTargets } = await import('../session/agent-profiles')
   const agents = discoverAllAgents(projectPath).map((agent) => ({ name: agent.name, model: agent.model ?? '' }))
   const capabilityIds = availableMentionCapabilityIds(readAppSettings(), process.platform)
-  const apps = await listRemoteMentionApps(projectPath, query, capabilityIds.includes('computer'), !!options.iconsById)
+  const connectedBrowsers = chromeBridgeHub.browsers()
+  const apps = await listRemoteMentionApps(
+    projectPath,
+    query,
+    desktopMentionScope(capabilityIds.includes('computer'), connectedBrowsers),
+    !!options.iconsById,
+    undefined,
+    true,
+    connectedBrowsers,
+  )
   const roots = [cwd, ...(options.additionalDirs ?? []).filter((dir) => dir && dir !== cwd)]
   const gitMention = await resolveGitMentionCapabilities(cwd)
   return {
@@ -157,11 +170,13 @@ export async function searchRemoteMentions(
 /** The same catalog for this host's window and its remote controllers. */
 export async function readMentionCatalog(projectPath: string): Promise<MentionCatalog> {
   const capabilityIds = availableMentionCapabilityIds(readAppSettings(), process.platform)
+  const connectedBrowsers = chromeBridgeHub.browsers()
+  const chromeBridgeConnected = connectedBrowsers.length > 0
   const { readEnvironmentMentionTargets } = await import('../remote/environment-mention-targets')
   const [apps, environments] = await Promise.all([
     // The full native app list is metadata only; extracting every installed icon would bloat the relay reply.
-    listRemoteMentionApps(projectPath, '', capabilityIds.includes('computer'), false, Infinity, false),
+    listRemoteMentionApps(projectPath, '', desktopMentionScope(capabilityIds.includes('computer'), connectedBrowsers), false, Infinity, false, connectedBrowsers),
     readEnvironmentMentionTargets().catch(() => []),
   ])
-  return { capabilityIds, apps, environments }
+  return { capabilityIds, apps, environments, chromeBridgeConnected, connectedBrowsers }
 }

@@ -3,9 +3,55 @@
 // (1 MiB per message). SuperOne speaks the same framing on a unix socket, with
 // no size cap. This process rejoins Chrome chunks and splits oversized socket
 // frames. Keep the chunk shape in sync with packages/shared/src/chrome-bridge-protocol.ts.
+import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 import { createConnection } from 'node:net'
 import { join } from 'node:path'
+
+// Keep in sync with browserIdFromAppPath in packages/shared/src/chrome-extension-browsers.ts.
+const APP_BUNDLE_IDS = [
+  ['google chrome canary.app', 'chrome-canary'],
+  ['google chrome beta.app', 'chrome-beta'],
+  ['google chrome.app', 'chrome'],
+  ['chromium.app', 'chromium'],
+  ['microsoft edge.app', 'edge'],
+  ['brave browser.app', 'brave'],
+  ['arc.app', 'arc'],
+]
+
+function browserIdFromAppPath(command) {
+  const names = []
+  const pattern = /([^/\\]+)\.app(?=[/\\]|$)/gi
+  for (const match of command.matchAll(pattern)) {
+    if (match[1]) names.push(`${match[1].toLowerCase()}.app`)
+  }
+  for (const name of names) {
+    for (const [needle, id] of APP_BUNDLE_IDS) {
+      if (name === needle) return id
+    }
+  }
+  return undefined
+}
+
+function browserIdFromParents() {
+  let pid = process.ppid
+  for (let i = 0; i < 8 && pid > 1; i++) {
+    let output
+    try {
+      output = execFileSync('/bin/ps', ['-p', String(pid), '-o', 'ppid=,command='], { encoding: 'utf8', timeout: 1000 })
+    } catch {
+      break
+    }
+    const match = String(output).match(/^\s*(\d+)\s+([\s\S]*)$/)
+    if (!match) break
+    const id = browserIdFromAppPath(match[2])
+    if (id) return id
+    const next = Number(match[1])
+    if (!Number.isInteger(next) || next === pid) break
+    pid = next
+  }
+  return 'unknown'
+}
 
 const CHUNK_CHARS = 512 * 1024
 const home = process.env.SUPERONE_HOME
@@ -69,7 +115,7 @@ function consume(buffer, onMessage) {
 }
 
 socket.on('connect', () => {
-  socket.write(frame(JSON.stringify({ auth: token })))
+  socket.write(frame(JSON.stringify({ auth: token, browser: browserIdFromParents() })))
 })
 
 socket.on('data', (chunk) => {

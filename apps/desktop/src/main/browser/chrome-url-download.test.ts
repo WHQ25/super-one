@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const bridge = vi.hoisted(() => ({ sessionDrivesChromeOnly: vi.fn(async () => false) }))
+const bridge = vi.hoisted(() => ({ sessionChromeCookieBrowser: vi.fn(async () => null as string | null) }))
 const chrome = vi.hoisted(() => ({
   chromeHostDownload: vi.fn(async () => ({
     path: '/Users/me/Downloads/a.txt',
@@ -19,7 +19,7 @@ import { downloadThroughUserChrome } from './chrome-url-download'
 describe('downloadThroughUserChrome', () => {
   beforeEach(() => {
     vi.clearAllMocks()
-    bridge.sessionDrivesChromeOnly.mockResolvedValue(false)
+    bridge.sessionChromeCookieBrowser.mockResolvedValue(null)
   })
 
   it('leaves the built-in cookie jar alone when Chrome is not the only browser', async () => {
@@ -32,12 +32,12 @@ describe('downloadThroughUserChrome', () => {
   })
 
   it('asks Chrome for the file and strips a directory from the name', async () => {
-    bridge.sessionDrivesChromeOnly.mockResolvedValue(true)
+    bridge.sessionChromeCookieBrowser.mockResolvedValue('edge')
     await downloadThroughUserChrome({
       sessionId: 'sess-1',
       url: 'https://x.test/a.txt',
       filename: 'nested/../a.txt',
     })
-    expect(chrome.chromeHostDownload).toHaveBeenCalledWith('https://x.test/a.txt', 'a.txt')
+    expect(chrome.chromeHostDownload).toHaveBeenCalledWith('https://x.test/a.txt', 'a.txt', 'edge')
   })
 })

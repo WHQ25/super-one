@@ -1,4 +1,6 @@
+import { extensionBrowserForBundle } from '@superone/shared/chrome-browser-apps'
 import type { SessionOperationMethods } from '@superone/shared/environment/session-operations'
+import { chromeBridgeHub } from '../browser/chrome-bridge-hub'
 
 type Operation = SessionOperationMethods['session.authorizeMentionApps']
 
@@ -17,11 +19,19 @@ export async function authorizeMentionApps(
     ? await (await import('../mcp/superone-mcp-server')).authorizeMentionedMiniApps(miniappIds, projectPath, sessionId, assertControl)
     : []
   assertControl()
+  const connectedBrowsers = new Set(chromeBridgeHub.browsers())
+  const chromeBrowserBundleIds = desktopApps.filter((app) => {
+    const browser = extensionBrowserForBundle(app.bundleId)
+    return browser != null && connectedBrowsers.has(browser)
+  }).map((app) => app.bundleId)
+  const computerApps = chromeBrowserBundleIds.length
+    ? desktopApps.filter((app) => !chromeBrowserBundleIds.includes(app.bundleId))
+    : desktopApps
   let desktopAppsGranted = false
-  if (desktopApps.length && process.platform === 'darwin') {
+  if (computerApps.length && process.platform === 'darwin') {
     const { grantComputerUseSessionApps } = await import('../computer-use/tools')
     assertControl()
-    desktopAppsGranted = grantComputerUseSessionApps(sessionId, desktopApps) > 0
+    desktopAppsGranted = grantComputerUseSessionApps(sessionId, computerApps) > 0
   }
-  return { miniappIds: granted, desktopAppsGranted }
+  return { miniappIds: granted, desktopAppsGranted, chromeBrowserBundleIds }
 }

@@ -21,6 +21,7 @@ import { formatCompactAge } from '@superone/shared/relative-time'
 import { PLAIN_MENTION_GROUP_LIMIT, orderDirectSearchGroups, shouldDirectSearch, type DirectSearchRankedGroup } from '@superone/shared/mention-direct-search'
 import { compareMentionMatchKeys, fileMentionMatchKey, gitMentionRefMatchKey, mentionMatchKey, sortByMentionMatch, type MentionMatchKey } from '@superone/shared/mention-match-tier'
 import { BUILTIN_CAPABILITIES, type BuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
+import { desktopMentionScope, includeDesktopMention } from '@superone/shared/chrome-browser-apps'
 import { listAgentMentionTargets } from '@/lib/agent-mention-targets'
 import { resolveSessionIconFromBrandKey } from '@/components/harness/resolve-session-icon'
 import { groupItems, PopupSectionHeader } from './popup-groups'
@@ -550,18 +551,21 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     const environmentSettled = desktopAppsReady
     useEffect(() => {
       let cancelled = false
-      const refresh = () => {
+      let request = 0
+      const refresh = (fresh = false) => {
         if (!activeProject) {
           setCatalogState({ project: activeProject, value: EMPTY_MENTION_CATALOG })
           return
         }
-        void loadMentionCatalog(activeProject).then(value => {
-          if (!cancelled) setCatalogState({ project: activeProject, value })
+        const id = ++request
+        void loadMentionCatalog(activeProject, { fresh }).then(value => {
+          if (!cancelled && id === request) setCatalogState({ project: activeProject, value })
         })
       }
       refresh()
-      const unsubscribe = window.app?.onAppSettingsChange?.(refresh)
-      return () => { cancelled = true; unsubscribe?.() }
+      const unsubscribe = window.app?.onAppSettingsChange?.(() => refresh(true))
+      const unsubscribeChrome = window.app?.onChromeBridgeStatus?.(() => refresh(true))
+      return () => { cancelled = true; unsubscribe?.(); unsubscribeChrome?.() }
     }, [activeProject])
 
     // Reset selection when entering a portal or changing its phase.
@@ -583,6 +587,8 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       widget: catalog.capabilityIds.includes('widget'),
     }), [catalog])
     const computerUseEnabled = capabilityEnabled.computer
+    const connectedBrowsers = catalog.connectedBrowsers
+    const desktopScope = desktopMentionScope(computerUseEnabled, connectedBrowsers ?? catalog.chromeBridgeConnected === true)
     const miniApps = useMemo(() => catalog.apps.filter(app => app.kind === 'miniapp'), [catalog])
     const installedDesktopApps = useMemo(() => catalog.apps.filter(app => app.kind === 'desktop-app'), [catalog])
     const matchedMiniApps = useMemo<FlatItem[]>(() => {
@@ -877,8 +883,9 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
     }, [directSearch, git.refs, query, gitRefItems])
 
     const matchedDesktopApps = useMemo<FlatItem[]>(() => {
-      // Only when Computer Use is enabled.
-      if (!computerUseEnabled) return []
+      // Computer Use lists every installed app. A connected browser extension
+      // still lists Chromium browsers when Computer Use is off.
+      if (desktopScope === 'none') return []
       if (isPortalMode) return []
       // Hide when browsing into a subdirectory; require a query so empty `@`
       // is not flooded with every installed app (capabilities stay visible).
@@ -894,6 +901,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
           if (aliasMatch !== null) break
         }
         if (nameMatch === null && idMatch === null && aliasMatch === null) continue
+        if (!includeDesktopMention(app.path, desktopScope, connectedBrowsers)) continue
         matches.push({
           kind: 'desktop-app',
           bundleId: app.path,
@@ -904,7 +912,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         if (matches.length >= DESKTOP_APP_MENTION_LIMIT) break
       }
       return matches
-    }, [computerUseEnabled, installedDesktopApps, query, isBrowseMode, isPortalMode])
+    }, [connectedBrowsers, desktopScope, installedDesktopApps, query, isBrowseMode, isPortalMode])
 
     const flatItems: FlatItem[] = useMemo(() => {
       if (isEnvironmentMode) return matchedEnvironments

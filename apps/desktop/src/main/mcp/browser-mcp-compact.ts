@@ -4,6 +4,7 @@
  */
 
 import { BROWSER_MEMORY_DISCOVERY_HINT } from '@superone/shared/browser-memory'
+import { EXTENSION_BROWSERS, type ExtensionBrowserId } from '@superone/shared/chrome-extension-browsers'
 import { withMemoryDiscoveryHint } from '@superone/shared/interaction-memory'
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
@@ -63,10 +64,15 @@ export type { PrimitiveRunner }
 
 const parseJson = parseReply
 
+const EXTENSION_BROWSER_IDS = EXTENSION_BROWSERS.map((browser) => browser.id) as [
+  ExtensionBrowserId,
+  ...ExtensionBrowserId[],
+]
+
 export const BROWSER_TABS_DESCRIPTION =
   'Discover and change browser tabs for this session. '
   + 'action=list (default) returns a TOON table of tab id / url / title / loading. '
-  + 'action=open creates or reuses a tab (optional url). host=chrome opens it in the user\'s Chrome instead of SuperOne\'s browser; the returned id is chrome:<tabId>. '
+  + 'action=open creates or reuses a tab (optional url). host=chrome opens it in a browser that loaded the SuperOne extension; set browser when more than one is connected. The returned id is chrome:<browser>:<tabId>. '
   + 'action=navigate|back|forward|reload changes that tab\'s page — pass url, or port (+ optional path) for localhost. '
   + 'action=close discards tabs you opened and are done with — pass one id or an array; it is not undoable, so never close a tab the user is reading. '
   + 'Use the returned tab id as `tab` on other browser tools. Not for clicking or typing (browser_act).'
@@ -211,7 +217,8 @@ export function registerCompactBrowserTools(
         path: z.string().optional().describe('Optional path/query for the port form.'),
         protocol: z.enum(['http', 'https']).optional().describe('Protocol for the port form. Defaults to http.'),
         readiness: z.enum(['load', 'none']).optional().describe("'load' waits for loading to stop (default); 'none' returns immediately."),
-        host: z.enum(['embedded', 'chrome']).optional().describe("Where action=open creates a tab. chrome drives the user's Chrome via the SuperOne extension. Default embedded."),
+        host: z.enum(['embedded', 'chrome']).optional().describe('Where action=open creates a tab. chrome drives a browser that loaded the SuperOne extension. Default embedded.'),
+        browser: z.enum(EXTENSION_BROWSER_IDS).optional().describe('Which connected browser action=open uses when more than one extension is connected. Omit when only one is connected.'),
       },
     },
     async (args) => {
@@ -235,6 +242,7 @@ export function registerCompactBrowserTools(
           tab: args.tab,
           readiness: args.readiness,
           host: args.host,
+          browser: args.browser,
         })
       }
       return runPrimitive('browser_navigate', {

@@ -21,6 +21,7 @@ import { callSession, hostTakesDesktopChoices, resetHostSession } from '@/lib/se
 import { formatEnvironmentMentionReminder } from '@superone/shared/environment-mention'
 import { expandPathRefTagsForAgent } from '@superone/shared/miniapp-prompt-tags'
 import { isBuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
+import { extensionBrowserForBundle, formatChromiumBrowserMentionReminder, isChromiumBrowserBundle } from '@superone/shared/chrome-browser-apps'
 import { sendStartsStreaming, shouldQueueUserSend } from './session-send-request'
 import { isAcpProtocolHarness, isAntigravityAcpAgent } from '@superone/shared/acp-brand'
 import { resolveProvider } from './provider-routing'
@@ -289,25 +290,25 @@ export async function sendMessageImpl(
     }
     capabilityReminderSuffix = `\n\n<superone-capability-reminder>\n${lines.join('\n')}\n</superone-capability-reminder>`
   }
-  // Reminder is filled only after grant IPC succeeds (see below near authorize).
-  let pendingDesktopAppReminder = ''
-  if (desktopAppMentions.length > 0) {
+  const desktopAppReminder = (mentions: Mention[]) => {
+    if (mentions.length === 0) return ''
     const lines: string[] = [
       'User @-mentioned these installed desktop apps. Computer Use is temporarily authorized for them for this session — do NOT request another grant for these bundle ids.',
       'Prefer computer_* tools when interacting with them:',
     ]
     const seen = new Set<string>()
-    for (const m of desktopAppMentions) {
+    for (const m of mentions) {
       if (!m.value || seen.has(m.value)) continue
       seen.add(m.value)
       lines.push(`- "${m.displayName || m.value}" (bundleId: ${m.value})`)
     }
+    if (seen.size === 0) return ''
     if (!capabilityMentions.some((m) => m.kind === 'computer')) {
       lines.push(
         'Tools start with "mcp__superone__computer_" (Claude) or "mcp__superone.computer_" (Codex).',
       )
     }
-    pendingDesktopAppReminder = `\n\n<superone-desktop-app-reminder>\n${lines.join('\n')}\n</superone-desktop-app-reminder>`
+    return `\n\n<superone-desktop-app-reminder>\n${lines.join('\n')}\n</superone-desktop-app-reminder>`
   }
   // MCP server items: the host reads their text now so the model need not call a tool for it.
   // No session yet means no server answered a search either, so there is nothing to read.
@@ -316,7 +317,7 @@ export async function sendMessageImpl(
     ? import('../../../components/mcp-apps/mention-content').then(({ mcpMentionContentForModel }) =>
       mcpMentionContentForModel(projectPath, mcpMentionSid, mentions))
     : ''
-  // desktop-app reminder is appended only after grant IPC succeeds (below).
+  // Desktop-app and Chrome-extension reminders are appended after the host says which path each app took.
   let finalContent =
     agentContent +
     contextSuffix +
@@ -328,7 +329,7 @@ export async function sendMessageImpl(
     capabilityReminderSuffix +
     annotationSuffix
   const codexCommand = parseCodexCommand(rawContent)
-  // Note: codex command is re-built after grant if desktop-app reminder is added.
+  // Note: codex command is re-built after grant if a desktop-app or browser reminder is added.
   let resolvedCodexCommand: CodexCommand | null = effectiveProvider === 'codex'
     ? (codexCommand ?? { kind: 'run', prompt: finalContent })
     : null
@@ -611,7 +612,7 @@ export async function sendMessageImpl(
     .filter((m) => m.kind === 'desktop-app' && m.value)
     .map((m) => ({ app: m.displayName || m.value, bundleId: m.value }))
   const remoteMentionApps = !hostTakesDesktopChoices(projectPath)
-  let hostAppGrants: { miniappIds: string[]; desktopAppsGranted: boolean } | null = null
+  let hostAppGrants: { miniappIds: string[]; desktopAppsGranted: boolean; chromeBrowserBundleIds?: string[] } | null = null
   if (remoteMentionApps && resolvedSessionId && (miniAppMentions.length || desktopAppGrants.length)) {
     try {
       hostAppGrants = await callSession(projectPath, resolvedSessionId, 'session.authorizeMentionApps', {
@@ -621,6 +622,22 @@ export async function sendMessageImpl(
       console.warn('[sendMessage] host mention app grants unavailable:', error)
     }
   }
+  const chromeBundleIds = new Set<string>()
+  if (remoteMentionApps) {
+    for (const bundleId of hostAppGrants?.chromeBrowserBundleIds ?? []) chromeBundleIds.add(bundleId)
+  } else if (desktopAppGrants.some((app) => isChromiumBrowserBundle(app.bundleId))) {
+    try {
+      const status = await window.app?.getChromeBridgeStatus?.()
+      const connected = new Set(status?.browsers ?? [])
+      for (const app of desktopAppGrants) {
+        const browser = extensionBrowserForBundle(app.bundleId)
+        if (browser && connected.has(browser)) chromeBundleIds.add(app.bundleId)
+      }
+    } catch (error) {
+      console.warn('[sendMessage] chrome bridge status unavailable:', error)
+    }
+  }
+  const computerAppGrants = desktopAppGrants.filter((app) => !chromeBundleIds.has(app.bundleId))
   const miniAppAuthorizations = miniAppMentions.map((m) => m.value)
   if (miniAppAuthorizations.length > 0 && resolvedSessionId) {
     try {
@@ -656,18 +673,33 @@ export async function sendMessageImpl(
     }
   }
 
+  const appendModelReminder = (reminder: string) => {
+    if (!reminder) return
+    finalContent += reminder
+    if (effectiveProvider === 'codex' && resolvedCodexCommand?.kind === 'run') {
+      resolvedCodexCommand = { kind: 'run', prompt: finalContent }
+    }
+  }
+  if (chromeBundleIds.size > 0) {
+    appendModelReminder(formatChromiumBrowserMentionReminder(
+      desktopAppMentions
+        .filter((mention) => mention.value && chromeBundleIds.has(mention.value))
+        .map((mention) => ({ name: mention.displayName || mention.value, bundleId: mention.value })),
+      effectiveProvider === 'codex' ? 'codex' : 'claude',
+    ))
+  }
   // Temporary Computer Use grants from @ desktop-app mentions (session-scoped, no HITL).
-  if (desktopAppGrants.length > 0 && resolvedSessionId && (remoteMentionApps || window.app?.grantComputerUseSessionApps)) {
+  // A connected browser extension keeps Chromium browsers on browser tools instead.
+  if (computerAppGrants.length > 0 && resolvedSessionId && (remoteMentionApps || window.app?.grantComputerUseSessionApps)) {
     try {
       const ok = remoteMentionApps ? hostAppGrants?.desktopAppsGranted : await window.app.grantComputerUseSessionApps(
         resolvedSessionId,
-        desktopAppGrants,
+        computerAppGrants,
       )
-      if (ok && pendingDesktopAppReminder) {
-        finalContent += pendingDesktopAppReminder
-        if (effectiveProvider === 'codex' && resolvedCodexCommand?.kind === 'run') {
-          resolvedCodexCommand = { kind: 'run', prompt: finalContent }
-        }
+      if (ok) {
+        appendModelReminder(desktopAppReminder(
+          desktopAppMentions.filter((mention) => mention.value && computerAppGrants.some((app) => app.bundleId === mention.value)),
+        ))
       }
     } catch (err) {
       console.error('[sendMessage] computer-use session grant failed:', err)

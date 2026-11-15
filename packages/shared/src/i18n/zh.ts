@@ -1350,6 +1350,28 @@ export const zh: Messages = {
     },
     browser: {
       title: '浏览器',
+      ownBrowser: {
+        title: '你的浏览器',
+        disconnected: {
+          label: '扩展未加载',
+          description: '装上这个扩展之后，浏览器工具就可以控制你自己的 Chrome、Edge、Brave、Arc 或 Chromium。',
+        },
+        connected: {
+          label: '扩展已连接',
+          description: '已经连上扩展的浏览器会各自单独控制。@ 其中一个，就用浏览器工具控制它。没装扩展的 Chromium 浏览器，在开启 Computer Use 时仍走 Computer Use。应用更新后，到那个浏览器的扩展页重新加载。',
+        },
+        drag: '拖动文件夹',
+        show: '在访达中显示',
+        steps: {
+          choose: '选择要安装到哪个浏览器。',
+          open: '打开它的扩展程序页，并开启开发者模式。macOS 可能会询问是否允许 SuperOne 控制这个浏览器。',
+          drag: '把这个文件夹拖进那个页面。浏览器会按已解压的扩展装上。应用更新后，在同一页重新加载。',
+          openPage: '打开页面',
+          copyAddress: '复制地址',
+          copied: '已复制',
+          openFailed: '没能打开 {{browser}}。复制地址，粘贴到地址栏。',
+        },
+      },
       downloadDir: {
         label: '下载目录',
         description: '内置浏览器下载的文件保存位置。智能体可在单次下载中指定其他目录。',

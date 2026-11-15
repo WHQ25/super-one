@@ -1,7 +1,7 @@
 import { cdpSend } from './browser-cdp'
 import { isSecureWebMcpOrigin, sanitizeWebMcpTool, type WebMcpTool } from './browser-webmcp'
 import { ensureChromeCdpTarget } from './chrome-browser'
-import { cdpTransportFor, chromeTabIdFromTarget, type CdpTransport } from './cdp-transport'
+import { cdpTransportFor, chromeBrowserFromTarget, chromeTabIdFromTarget, type CdpTransport } from './cdp-transport'
 
 const DEFAULT_SETTLE_MS = 200
 const DEFAULT_CALL_TIMEOUT_MS = 30_000
@@ -279,7 +279,7 @@ async function mergeAuthorizedPageTools(webContentsId: number, session: WebMcpSe
  */
 export async function readChromeWebMcp(webContentsId: number, opts?: { settleMs?: number }): Promise<ChromeWebMcpRead> {
   const tabId = chromeTabIdFromTarget(webContentsId)
-  const transport = cdpTransportFor(webContentsId) ?? ensureChromeCdpTarget(tabId)
+  const transport = cdpTransportFor(webContentsId) ?? ensureChromeCdpTarget(tabId, chromeBrowserFromTarget(webContentsId))
   let session = sessions.get(webContentsId)
   if (!session) session = openSession(webContentsId, transport)
   let enabledNow = false

@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import userEvent from '@testing-library/user-event'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { WebmcpTrustedOrigin } from '@superone/shared/agent-types'
 
@@ -15,10 +16,28 @@ const getAppSettings = vi.fn()
 const saveAppSettings = vi.fn()
 const getDefaultDownloadDir = vi.fn()
 const selectFolder = vi.fn()
+const getChromeBridgeStatus = vi.fn()
+const revealChromeExtension = vi.fn()
+const startDrag = vi.fn()
+const listChromeExtensionBrowsers = vi.fn()
+const openChromeExtensionPage = vi.fn()
+const clipboardWrite = vi.fn()
 
 Object.defineProperty(window, 'app', {
   configurable: true,
-  value: { getAppSettings, saveAppSettings, getDefaultDownloadDir, selectFolder },
+  value: {
+    getAppSettings,
+    saveAppSettings,
+    getDefaultDownloadDir,
+    selectFolder,
+    getChromeBridgeStatus,
+    revealChromeExtension,
+    startDrag,
+    listChromeExtensionBrowsers,
+    openChromeExtensionPage,
+    clipboardWrite,
+    onChromeBridgeStatus: () => () => {},
+  },
 })
 
 const { BrowserSettingsPage } = await import('./BrowserSettingsPage')
@@ -60,6 +79,68 @@ beforeEach(() => {
   getDefaultDownloadDir.mockReset()
   getDefaultDownloadDir.mockResolvedValue('/Users/dev/Downloads')
   selectFolder.mockReset()
+  getChromeBridgeStatus.mockReset()
+  getChromeBridgeStatus.mockResolvedValue({ connected: false, extensionDir: '/Users/dev/.superone/dev/chrome-extension' })
+  revealChromeExtension.mockReset()
+  startDrag.mockReset()
+  listChromeExtensionBrowsers.mockReset()
+  listChromeExtensionBrowsers.mockResolvedValue(['chrome'])
+  openChromeExtensionPage.mockReset()
+  openChromeExtensionPage.mockResolvedValue({ opened: true, url: 'chrome://extensions' })
+  clipboardWrite.mockReset()
+  clipboardWrite.mockResolvedValue(undefined)
+})
+
+describe('browser settings — own browser', () => {
+  it('walks through choosing a browser, opening or copying its extensions page, and dragging the folder', async () => {
+    await renderPage()
+    expect(await screen.findByText('Extension Not Loaded')).toBeTruthy()
+    expect(screen.getByText('Choose the browser to install it in.')).toBeTruthy()
+    expect(screen.getByText('chrome://extensions')).toBeTruthy()
+
+    await userEvent.click(screen.getByRole('tab', { name: 'Edge' }))
+    expect(screen.getByText('edge://extensions')).toBeTruthy()
+    await userEvent.click(screen.getByRole('button', { name: 'Copy Address' }))
+    await waitFor(() => expect(clipboardWrite).toHaveBeenCalledWith('edge://extensions'))
+
+    await userEvent.click(screen.getByRole('button', { name: 'Open Page' }))
+    await waitFor(() => expect(openChromeExtensionPage).toHaveBeenCalledWith('edge'))
+
+    expect(screen.getByText(/Drag this folder onto that page/)).toBeTruthy()
+    const folder = screen.getByLabelText('Drag Folder')
+    expect(folder).toHaveTextContent('/Users/dev/.superone/dev/chrome-extension')
+    fireEvent.dragStart(folder)
+    expect(startDrag).toHaveBeenCalledWith(['/Users/dev/.superone/dev/chrome-extension'])
+    fireEvent.click(screen.getByRole('button', { name: 'Show in Finder' }))
+    expect(revealChromeExtension).toHaveBeenCalledOnce()
+  })
+
+  it('tells the user to copy the address when the extensions page does not open', async () => {
+    openChromeExtensionPage.mockResolvedValue({ opened: false, url: 'chrome://extensions' })
+    await renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: 'Open Page' }))
+    expect(await screen.findByText('Could not open Google Chrome. Copy the address and paste it into the address bar.')).toBeTruthy()
+  })
+
+  it('selects an installed browser other than Chrome when Chrome is missing', async () => {
+    listChromeExtensionBrowsers.mockResolvedValue(['arc'])
+    await renderPage()
+    expect(await screen.findByRole('tab', { name: 'Arc', selected: true })).toBeTruthy()
+    expect(screen.getByText('chrome://extensions')).toBeTruthy()
+  })
+
+  it('hides the install steps once the extension is connected', async () => {
+    getChromeBridgeStatus.mockResolvedValue({ connected: true, extensionDir: '/Users/dev/.superone/dev/chrome-extension' })
+    await renderPage()
+    expect(await screen.findByText('Extension Connected')).toBeTruthy()
+    expect(screen.getByText(/Each browser with this extension connected is controlled on its own/)).toBeTruthy()
+    expect(screen.getByText('/Users/dev/.superone/dev/chrome-extension')).toBeTruthy()
+    expect(screen.queryByLabelText('Drag Folder')).toBeNull()
+    expect(screen.queryByText('Choose the browser to install it in.')).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: 'Show in Finder' }))
+    expect(revealChromeExtension).toHaveBeenCalledOnce()
+    expect(startDrag).not.toHaveBeenCalled()
+  })
 })
 
 describe('browser settings — WebMCP grants', () => {

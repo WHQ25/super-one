@@ -1298,6 +1298,22 @@ export type Messages = {
     }
     browser: {
       title: string
+      ownBrowser: {
+        title: string
+        disconnected: { label: string; description: string }
+        connected: { label: string; description: string }
+        drag: string
+        show: string
+        steps: {
+          choose: string
+          open: string
+          drag: string
+          openPage: string
+          copyAddress: string
+          copied: string
+          openFailed: string
+        }
+      }
       downloadDir: {
         label: string
         description: string
@@ -6548,6 +6564,28 @@ export const en: Messages = {
     },
     browser: {
       title: 'Browser',
+      ownBrowser: {
+        title: 'Your Browser',
+        disconnected: {
+          label: 'Extension Not Loaded',
+          description: 'Browser tools can drive your own Chrome, Edge, Brave, Arc, or Chromium after this extension is loaded.',
+        },
+        connected: {
+          label: 'Extension Connected',
+          description: 'Each browser with this extension connected is controlled on its own. Mention one to drive it with the browser tools. A Chromium browser without the extension stays on Computer Use when that is on. After an app update, reload the extension in that browser.',
+        },
+        drag: 'Drag Folder',
+        show: 'Show in Finder',
+        steps: {
+          choose: 'Choose the browser to install it in.',
+          open: 'Open its extensions page and turn on Developer mode. macOS may ask you to allow SuperOne to control that browser.',
+          drag: 'Drag this folder onto that page. The browser installs it as an unpacked extension. After an app update, reload it there.',
+          openPage: 'Open Page',
+          copyAddress: 'Copy Address',
+          copied: 'Copied',
+          openFailed: 'Could not open {{browser}}. Copy the address and paste it into the address bar.',
+        },
+      },
       downloadDir: {
         label: 'Download Directory',
         description: 'Where files downloaded in the built-in browser are saved. The agent may override it per download.',

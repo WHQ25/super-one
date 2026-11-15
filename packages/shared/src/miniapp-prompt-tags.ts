@@ -16,6 +16,8 @@ export const DESKTOP_APP_TAG_REGEX =
   /<superone-desktop-app>\s*<name>([\s\S]*?)<\/name>\s*<bundleId>([\s\S]*?)<\/bundleId>\s*<\/superone-desktop-app>/g
 export const DESKTOP_APP_REMINDER_REGEX =
   /\n*<superone-desktop-app-reminder>[\s\S]*?<\/superone-desktop-app-reminder>\n*/g
+export const CHROME_BROWSER_REMINDER_REGEX =
+  /\n*<superone-chrome-browser-reminder>[\s\S]*?<\/superone-chrome-browser-reminder>\n*/g
 
 /** Popup-selected file / directory / agent mentions (not bare typed @text). */
 export const PATH_REF_TAG_REGEX =
@@ -43,6 +45,7 @@ export function replaceMiniAppTagsWithMention(text: string): string {
       .replace(SESSION_REMINDER_REGEX, '')
       .replace(ENVIRONMENT_REMINDER_REGEX, '')
       .replace(DESKTOP_APP_REMINDER_REGEX, '')
+      .replace(CHROME_BROWSER_REMINDER_REGEX, '')
       .replace(MINIAPP_TAG_REGEX, (_, appName, appId) =>
         wrapMiniAppMention(String(appId).trim(), String(appName).trim()),
       )
@@ -66,6 +69,7 @@ export function stripMiniAppMarkup(text: string): string {
       .replace(SESSION_REMINDER_REGEX, '')
       .replace(ENVIRONMENT_REMINDER_REGEX, '')
       .replace(DESKTOP_APP_REMINDER_REGEX, '')
+      .replace(CHROME_BROWSER_REMINDER_REGEX, '')
       .replace(MINIAPP_TAG_REGEX, (_, appName) => `@${String(appName).trim()}`)
       .replace(SESSION_TAG_REGEX, (_, title) => `@${String(title).trim()}`)
       .replace(ENVIRONMENT_TAG_REGEX, (_, name) => `@${String(name).trim()}`)

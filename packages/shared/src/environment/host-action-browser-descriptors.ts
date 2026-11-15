@@ -9,7 +9,7 @@ export const HOST_ACTION_BROWSER_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
       "type": "object",
       "properties": {
         "tab": {
-          "description": "Browser view id, a development mini-app view id (miniapp:<appId>, or one returned by miniapp_dev_preview or browser_tabs), or a Chrome tab id chrome:<tabId> from browser_tabs. Omit when only one view is open.",
+          "description": "Browser view id, a development mini-app view id (miniapp:<appId>, or one returned by miniapp_dev_preview or browser_tabs), or an extension tab id chrome:<browser>:<tabId> from browser_tabs. chrome:<tabId> still works when only one browser extension is connected. Omit when only one view is open.",
           "type": "string"
         },
         "description": {
@@ -32,7 +32,7 @@ export const HOST_ACTION_BROWSER_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
       "type": "object",
       "properties": {
         "tab": {
-          "description": "Browser view id, a development mini-app view id (miniapp:<appId>, or one returned by miniapp_dev_preview or browser_tabs), or a Chrome tab id chrome:<tabId> from browser_tabs. Omit when only one view is open.",
+          "description": "Browser view id, a development mini-app view id (miniapp:<appId>, or one returned by miniapp_dev_preview or browser_tabs), or an extension tab id chrome:<browser>:<tabId> from browser_tabs. chrome:<tabId> still works when only one browser extension is connected. Omit when only one view is open.",
           "type": "string"
         },
         "description": {
@@ -69,7 +69,7 @@ export const HOST_ACTION_BROWSER_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
       "type": "object",
       "properties": {
         "tab": {
-          "description": "Browser view id, a development mini-app view id (miniapp:<appId>, or one returned by miniapp_dev_preview or browser_tabs), or a Chrome tab id chrome:<tabId> from browser_tabs. Omit when only one view is open.",
+          "description": "Browser view id, a development mini-app view id (miniapp:<appId>, or one returned by miniapp_dev_preview or browser_tabs), or an extension tab id chrome:<browser>:<tabId> from browser_tabs. chrome:<tabId> still works when only one browser extension is connected. Omit when only one view is open.",
           "type": "string"
         },
         "description": {
@@ -169,7 +169,7 @@ export const HOST_ACTION_BROWSER_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
       "type": "object",
       "properties": {
         "tab": {
-          "description": "Browser view id, a development mini-app view id (miniapp:<appId>, or one returned by miniapp_dev_preview or browser_tabs), or a Chrome tab id chrome:<tabId> from browser_tabs. Omit when only one view is open.",
+          "description": "Browser view id, a development mini-app view id (miniapp:<appId>, or one returned by miniapp_dev_preview or browser_tabs), or an extension tab id chrome:<browser>:<tabId> from browser_tabs. chrome:<tabId> still works when only one browser extension is connected. Omit when only one view is open.",
           "type": "string"
         },
         "description": {
@@ -247,7 +247,7 @@ export const HOST_ACTION_BROWSER_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
       "type": "object",
       "properties": {
         "tab": {
-          "description": "Browser view id, a development mini-app view id (miniapp:<appId>, or one returned by miniapp_dev_preview or browser_tabs), or a Chrome tab id chrome:<tabId> from browser_tabs. Omit when only one view is open.",
+          "description": "Browser view id, a development mini-app view id (miniapp:<appId>, or one returned by miniapp_dev_preview or browser_tabs), or an extension tab id chrome:<browser>:<tabId> from browser_tabs. chrome:<tabId> still works when only one browser extension is connected. Omit when only one view is open.",
           "type": "string"
         },
         "description": {
@@ -292,7 +292,7 @@ export const HOST_ACTION_BROWSER_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
       "type": "object",
       "properties": {
         "tab": {
-          "description": "Browser view id, a development mini-app view id (miniapp:<appId>, or one returned by miniapp_dev_preview or browser_tabs), or a Chrome tab id chrome:<tabId> from browser_tabs. Omit when only one view is open.",
+          "description": "Browser view id, a development mini-app view id (miniapp:<appId>, or one returned by miniapp_dev_preview or browser_tabs), or an extension tab id chrome:<browser>:<tabId> from browser_tabs. chrome:<tabId> still works when only one browser extension is connected. Omit when only one view is open.",
           "type": "string"
         },
         "description": {
@@ -317,7 +317,7 @@ export const HOST_ACTION_BROWSER_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
   },
   {
     "name": "browser_tabs",
-    "description": "Discover and change browser tabs for this session. action=list (default) returns a TOON table of tab id / url / title / loading. action=open creates or reuses a tab (optional url). host=chrome opens it in the user's Chrome instead of SuperOne's browser; the returned id is chrome:<tabId>. action=navigate|back|forward|reload changes that tab's page — pass url, or port (+ optional path) for localhost. action=close discards tabs you opened and are done with — pass one id or an array; it is not undoable, so never close a tab the user is reading. Use the returned tab id as `tab` on other browser tools. Not for clicking or typing (browser_act).",
+    "description": "Discover and change browser tabs for this session. action=list (default) returns a TOON table of tab id / url / title / loading. action=open creates or reuses a tab (optional url). host=chrome opens it in a browser that loaded the SuperOne extension; set browser when more than one is connected. The returned id is chrome:<browser>:<tabId>. action=navigate|back|forward|reload changes that tab's page — pass url, or port (+ optional path) for localhost. action=close discards tabs you opened and are done with — pass one id or an array; it is not undoable, so never close a tab the user is reading. Use the returned tab id as `tab` on other browser tools. Not for clicking or typing (browser_act).",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -386,11 +386,24 @@ export const HOST_ACTION_BROWSER_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
           ]
         },
         "host": {
-          "description": "Where action=open creates a tab. chrome drives the user's Chrome via the SuperOne extension. Default embedded.",
+          "description": "Where action=open creates a tab. chrome drives a browser that loaded the SuperOne extension. Default embedded.",
           "type": "string",
           "enum": [
             "embedded",
             "chrome"
+          ]
+        },
+        "browser": {
+          "description": "Which connected browser action=open uses when more than one extension is connected. Omit when only one is connected.",
+          "type": "string",
+          "enum": [
+            "chrome",
+            "chrome-beta",
+            "chrome-canary",
+            "chromium",
+            "edge",
+            "brave",
+            "arc"
           ]
         }
       },
@@ -407,7 +420,7 @@ export const HOST_ACTION_BROWSER_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
       "type": "object",
       "properties": {
         "tab": {
-          "description": "Browser view id, a development mini-app view id (miniapp:<appId>, or one returned by miniapp_dev_preview or browser_tabs), or a Chrome tab id chrome:<tabId> from browser_tabs. Omit when only one view is open.",
+          "description": "Browser view id, a development mini-app view id (miniapp:<appId>, or one returned by miniapp_dev_preview or browser_tabs), or an extension tab id chrome:<browser>:<tabId> from browser_tabs. chrome:<tabId> still works when only one browser extension is connected. Omit when only one view is open.",
           "type": "string"
         },
         "description": {
@@ -601,7 +614,7 @@ export const HOST_ACTION_BROWSER_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
       "type": "object",
       "properties": {
         "tab": {
-          "description": "Browser view id, a development mini-app view id (miniapp:<appId>, or one returned by miniapp_dev_preview or browser_tabs), or a Chrome tab id chrome:<tabId> from browser_tabs. Omit when only one view is open.",
+          "description": "Browser view id, a development mini-app view id (miniapp:<appId>, or one returned by miniapp_dev_preview or browser_tabs), or an extension tab id chrome:<browser>:<tabId> from browser_tabs. chrome:<tabId> still works when only one browser extension is connected. Omit when only one view is open.",
           "type": "string"
         },
         "description": {

@@ -13,6 +13,7 @@ import { MCP_RESOURCE_REMINDER_REGEX, MCP_RESOURCE_TAG_REGEX, mcpResourceTagMent
 import { MCP_APP_TOOLS_REMINDER_REGEX } from './mcp-app-tools'
 import { ENVIRONMENT_REMINDER_REGEX, ENVIRONMENT_TAG_REGEX, encodeEnvironmentMentionValue, type EnvironmentMentionRole } from './environment-mention'
 import {
+  CHROME_BROWSER_REMINDER_REGEX,
   DESKTOP_APP_REMINDER_REGEX,
   DESKTOP_APP_TAG_REGEX,
   MINIAPP_REMINDER_REGEX,
@@ -218,6 +219,7 @@ export function parseUserMentions(text: string): UserTextSegment[] {
     .replace(MINIAPP_REMINDER_REGEX, '')
     .replace(CAPABILITY_REMINDER_REGEX, '')
     .replace(DESKTOP_APP_REMINDER_REGEX, '')
+    .replace(CHROME_BROWSER_REMINDER_REGEX, '')
     .replace(SESSION_REMINDER_REGEX, '')
     .replace(ENVIRONMENT_REMINDER_REGEX, '')
     .replace(AGENT_REMINDER_REGEX, '')

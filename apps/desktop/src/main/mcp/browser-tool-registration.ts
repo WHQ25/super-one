@@ -12,7 +12,7 @@ export const browserDescriptionField = {
 
 export const browserTabField = {
   tab: z.string().optional().describe(
-    'Browser view id, a development mini-app view id (miniapp:<appId>, or one returned by miniapp_dev_preview or browser_tabs), or a Chrome tab id chrome:<tabId> from browser_tabs. Omit when only one view is open.',
+    'Browser view id, a development mini-app view id (miniapp:<appId>, or one returned by miniapp_dev_preview or browser_tabs), or an extension tab id chrome:<browser>:<tabId> from browser_tabs. chrome:<tabId> still works when only one browser extension is connected. Omit when only one view is open.',
   ),
 }
 

@@ -4,7 +4,7 @@ import type { RewindFilesResult, PermissionMode, SandboxInfo, ContextUsageInfo, 
 export interface SessionOperationMethods {
   'session.authorizeMentionApps': {
     input: { miniappIds: string[]; desktopApps: Array<{ app: string; bundleId: string }> }
-    result: { miniappIds: string[]; desktopAppsGranted: boolean }
+    result: { miniappIds: string[]; desktopAppsGranted: boolean; chromeBrowserBundleIds: string[] }
   }
   /** One answer per question of a Codex agent message's async question item. */
   'session.answerAsyncQuestion': { input: { messageId: string; itemId: string; answers: string[] }; result: { reply: string } }

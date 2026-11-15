@@ -35,13 +35,19 @@ browser_memory_read   list topics or read one topic of personal website experien
 browser_memory_write  save, update, deprecate or restore one topic
 ```
 
-## User's Chrome
+## User's browser
 
-When the SuperOne Chrome extension is connected, the same tools can drive Chrome.
-`browser_tabs` `action=open` with `host:"chrome"` opens a tab in a SuperOne tab
-group and returns `tab: "chrome:<id>"`. Tabs the user shares from the extension
-popup are listed the same way. Pass that id as `tab` on the other browser tools.
-Omit `tab` only when it is the only view this session can drive.
+When a Chromium browser has the SuperOne extension connected, the same tools
+can drive that browser. Each connected browser is separate: Chrome does not
+control Edge. `browser_tabs` `action=open` with `host:"chrome"` opens a tab in
+a SuperOne tab group. Pass `browser` (`chrome`, `edge`, `brave`, `arc`,
+`chromium`, `chrome-beta`, or `chrome-canary`) when more than one is connected.
+The returned id is `chrome:<browser>:<id>`. Tabs the user shares from that
+browser's extension popup are listed the same way. Pass that id as `tab` on
+the other browser tools. `chrome:<id>` still works when only one browser is
+connected, or when the tab id is unique. Omit `tab` only when it is the only
+view this session can drive. A Chromium browser without the extension is not
+controlled from here.
 
 A shared tab is available to every session on this computer. A tab the agent
 opened belongs to the session that opened it. Chrome shows a debugging banner

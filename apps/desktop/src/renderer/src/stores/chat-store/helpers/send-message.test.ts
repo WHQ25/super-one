@@ -1383,6 +1383,94 @@ it('grants a remote desktop app only on the session host before sending', async 
     })
     expect(localGrant).not.toHaveBeenCalled()
     expect(sentText()).toContain('<superone-desktop-app-reminder>')
+    expect(sentText()).not.toContain('<superone-chrome-browser-reminder>')
+  } finally { window.app.grantComputerUseSessionApps = previous }
+})
+
+it('drives a mentioned Chromium browser with browser tools when the extension is connected', async () => {
+  const previousGrant = window.app.grantComputerUseSessionApps
+  const previousStatus = window.app.getChromeBridgeStatus
+  const localGrant = vi.fn().mockResolvedValue(true)
+  window.app.grantComputerUseSessionApps = localGrant
+  window.app.getChromeBridgeStatus = vi.fn().mockResolvedValue({ connected: true, browsers: ['chrome'], extensionDir: '/ext' })
+  try {
+    seedProject('/proj', 'sid-1', {
+      mentions: [
+        { kind: 'desktop-app', value: 'com.google.Chrome', displayName: 'Google Chrome' },
+        { kind: 'desktop-app', value: 'com.apple.Notes', displayName: 'Notes' },
+      ],
+    })
+    await useChatStore.getState().sendMessage('check the page')
+    expect(localGrant).toHaveBeenCalledWith('sid-1', [{ app: 'Notes', bundleId: 'com.apple.Notes' }])
+    const text = sentText()
+    const chromeReminder = text.slice(text.indexOf('<superone-chrome-browser-reminder>'), text.indexOf('</superone-chrome-browser-reminder>'))
+    const computerReminder = text.slice(text.indexOf('<superone-desktop-app-reminder>'), text.indexOf('</superone-desktop-app-reminder>'))
+    expect(chromeReminder).toContain('com.google.Chrome')
+    expect(chromeReminder).not.toContain('com.apple.Notes')
+    expect(computerReminder).toContain('com.apple.Notes')
+    expect(computerReminder).not.toContain('com.google.Chrome')
+  } finally {
+    window.app.grantComputerUseSessionApps = previousGrant
+    window.app.getChromeBridgeStatus = previousStatus
+  }
+})
+
+it('keeps a Chromium browser on Computer Use when a different browser extension is connected', async () => {
+  const previousGrant = window.app.grantComputerUseSessionApps
+  const previousStatus = window.app.getChromeBridgeStatus
+  const localGrant = vi.fn().mockResolvedValue(true)
+  window.app.grantComputerUseSessionApps = localGrant
+  window.app.getChromeBridgeStatus = vi.fn().mockResolvedValue({ connected: true, browsers: ['edge'], extensionDir: '/ext' })
+  try {
+    seedProject('/proj', 'sid-1', {
+      mentions: [{ kind: 'desktop-app', value: 'com.google.Chrome', displayName: 'Google Chrome' }],
+    })
+    await useChatStore.getState().sendMessage('click the toolbar')
+    expect(localGrant).toHaveBeenCalledWith('sid-1', [{ app: 'Google Chrome', bundleId: 'com.google.Chrome' }])
+    expect(sentText()).toContain('<superone-desktop-app-reminder>')
+    expect(sentText()).not.toContain('<superone-chrome-browser-reminder>')
+  } finally {
+    window.app.grantComputerUseSessionApps = previousGrant
+    window.app.getChromeBridgeStatus = previousStatus
+  }
+})
+
+it('keeps Chromium browsers on Computer Use when the extension is disconnected', async () => {
+  const previousGrant = window.app.grantComputerUseSessionApps
+  const previousStatus = window.app.getChromeBridgeStatus
+  const localGrant = vi.fn().mockResolvedValue(true)
+  window.app.grantComputerUseSessionApps = localGrant
+  window.app.getChromeBridgeStatus = vi.fn().mockResolvedValue({ connected: false, browsers: [], extensionDir: '/ext' })
+  try {
+    seedProject('/proj', 'sid-1', {
+      mentions: [{ kind: 'desktop-app', value: 'com.google.Chrome', displayName: 'Google Chrome' }],
+    })
+    await useChatStore.getState().sendMessage('click the toolbar')
+    expect(localGrant).toHaveBeenCalledWith('sid-1', [{ app: 'Google Chrome', bundleId: 'com.google.Chrome' }])
+    expect(sentText()).toContain('<superone-desktop-app-reminder>')
+    expect(sentText()).not.toContain('<superone-chrome-browser-reminder>')
+  } finally {
+    window.app.grantComputerUseSessionApps = previousGrant
+    window.app.getChromeBridgeStatus = previousStatus
+  }
+})
+
+it('uses the session host classification for a remote Chromium mention', async () => {
+  const previous = window.app.grantComputerUseSessionApps
+  window.app.grantComputerUseSessionApps = vi.fn()
+  try {
+    seedProject('remote:env-1:/work/app', 'sid-1', {
+      mentions: [{ kind: 'desktop-app', value: 'company.thebrowser.Browser', displayName: 'Arc' }],
+    })
+    mockEnvCallSession.mockResolvedValueOnce({
+      miniappIds: [],
+      desktopAppsGranted: false,
+      chromeBrowserBundleIds: ['company.thebrowser.Browser'],
+    })
+    await useChatStore.getState().sendMessage('open the docs')
+    expect(window.app.grantComputerUseSessionApps).not.toHaveBeenCalled()
+    expect(sentText()).toContain('<superone-chrome-browser-reminder>')
+    expect(sentText()).not.toContain('<superone-desktop-app-reminder>')
   } finally { window.app.grantComputerUseSessionApps = previous }
 })
 

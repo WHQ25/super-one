@@ -1,7 +1,7 @@
 import {
   chromeTabRef,
   isChromeTabId,
-  parseChromeTabRef,
+  parseChromeTabTarget,
   type ChromeBridgeEventName,
   type ChromeBridgeEvents,
   type ChromeTabInfo,
@@ -54,6 +54,10 @@ interface ConsoleEntry {
   timestamp: string
 }
 
+interface TrackedTab extends ChromeTabInfo {
+  browser: string
+}
+
 export interface ChromeRendererDispatch {
   (op: string, input: unknown, signal?: AbortSignal): Promise<unknown>
 }
@@ -61,7 +65,7 @@ export interface ChromeRendererDispatch {
 export type ChromeCallResult = { routed: false } | { routed: true; result: unknown }
 
 let hub: ChromeBridgeHub = chromeBridgeHub
-let tabs: ChromeTabInfo[] = []
+let tabs: TrackedTab[] = []
 let unsub: (() => void) | null = null
 const targets = new Map<number, TargetState>()
 const prepared = new Set<number>()
@@ -77,7 +81,12 @@ export function bindChromeBridge(client: ChromeBridgeHub, opts?: { downloadDir?:
   unsub?.()
   hub = client
   downloadDir = opts?.downloadDir ?? downloadDir
-  unsub = client.onEvent(handleEvent)
+  const offEvent = client.onEvent(handleEvent)
+  const offConnection = client.onConnection(() => forgetDisconnected())
+  unsub = () => {
+    offEvent()
+    offConnection()
+  }
 }
 
 export function setChromeDownloadDir(dir: string): void {
@@ -95,33 +104,49 @@ export function resetChromeBrowserForTests(): void {
   hub = chromeBridgeHub
 }
 
-function handleEvent(event: ChromeBridgeEventName, params: ChromeBridgeEvents[ChromeBridgeEventName]): void {
+function endpointId(browser: string, tabId: number): number {
+  return chromeTargetId(tabId, browser)
+}
+
+function forgetDisconnected(): void {
+  const live = new Set(hub.browsers())
+  for (const tab of tabs) {
+    if (!live.has(tab.browser)) dropTarget(tab.browser, tab.tabId)
+  }
+  tabs = tabs.filter((tab) => live.has(tab.browser))
+}
+
+function handleEvent(
+  event: ChromeBridgeEventName,
+  params: ChromeBridgeEvents[ChromeBridgeEventName],
+  browser: string,
+): void {
   if (event === 'tabs.changed') {
-    const next = (params as ChromeBridgeEvents['tabs.changed']).tabs ?? []
+    const next = ((params as ChromeBridgeEvents['tabs.changed']).tabs ?? []).map((tab) => ({ ...tab, browser }))
     const seen = new Set(next.map((tab) => tab.tabId))
     for (const tab of tabs) {
-      if (!seen.has(tab.tabId)) dropTarget(tab.tabId, 'tab closed')
+      if (tab.browser === browser && !seen.has(tab.tabId)) dropTarget(tab.browser, tab.tabId)
     }
-    tabs = next
+    tabs = [...tabs.filter((tab) => tab.browser !== browser), ...next]
     return
   }
   if (event === 'cdp.event') {
     const body = params as ChromeBridgeEvents['cdp.event']
-    const state = targets.get(chromeTargetId(body.tabId))
+    const state = targets.get(endpointId(browser, body.tabId))
     if (!state) return
-    if (body.method === 'Page.downloadWillBegin') noteDownloadBegin(body.tabId, body.params)
-    rememberConsole(body.tabId, body.method, body.params)
+    if (body.method === 'Page.downloadWillBegin') noteDownloadBegin(browser, body.tabId, body.params)
+    rememberConsole(browser, body.tabId, body.method, body.params)
     for (const listener of state.listeners) listener(body.method, body.params)
     return
   }
   if (event === 'cdp.detached') {
     const body = params as ChromeBridgeEvents['cdp.detached']
-    dropTarget(body.tabId, body.reason || 'detached')
+    dropTarget(browser, body.tabId, body.reason || 'detached')
     return
   }
   if (event === 'downloads.progress') {
     const body = params as ChromeBridgeEvents['downloads.progress']
-    const tabId = typeof body.tabId === 'number' ? body.tabId : tabIdForUrl(body.url)
+    const tabId = typeof body.tabId === 'number' ? body.tabId : tabIdForUrl(browser, body.url)
     if (tabId == null) return
     recordChromePageDownload({
       guid: body.guid,
@@ -131,13 +156,13 @@ function handleEvent(event: ChromeBridgeEventName, params: ChromeBridgeEvents[Ch
       bytes: body.bytes,
       state: body.state,
       startedAt: Date.now(),
-      webContentsId: chromeTargetId(tabId),
+      webContentsId: endpointId(browser, tabId),
     })
   }
 }
 
-function tabIdForUrl(url: string): number | null {
-  const hit = tabs.find((tab) => tab.url === url)
+function tabIdForUrl(browser: string, url: string): number | null {
+  const hit = tabs.find((tab) => tab.browser === browser && tab.url === url)
   return hit ? hit.tabId : null
 }
 
@@ -146,7 +171,7 @@ function fileName(pathOrUrl: string): string {
   return slash >= 0 ? pathOrUrl.slice(slash + 1) : pathOrUrl
 }
 
-function noteDownloadBegin(tabId: number, params: unknown): void {
+function noteDownloadBegin(browser: string, tabId: number, params: unknown): void {
   const body = params as { guid?: string; url?: string; suggestedFilename?: string }
   if (!body.guid) return
   noteChromePageDownload({
@@ -157,17 +182,18 @@ function noteDownloadBegin(tabId: number, params: unknown): void {
     bytes: 0,
     state: 'progressing',
     startedAt: Date.now(),
-    webContentsId: chromeTargetId(tabId),
+    webContentsId: endpointId(browser, tabId),
   })
 }
 
-function rememberConsole(tabId: number, method: string, params: unknown): void {
+function rememberConsole(browser: string, tabId: number, method: string, params: unknown): void {
   const entry = consoleEntry(method, params)
   if (!entry) return
-  const buf = consoleBuffers.get(tabId) ?? []
+  const id = endpointId(browser, tabId)
+  const buf = consoleBuffers.get(id) ?? []
   buf.push(entry)
   if (buf.length > CONSOLE_CAP) buf.splice(0, buf.length - CONSOLE_CAP)
-  consoleBuffers.set(tabId, buf)
+  consoleBuffers.set(id, buf)
 }
 
 function consoleEntry(method: string, params: unknown): ConsoleEntry | null {
@@ -195,29 +221,29 @@ function normalizeLevel(level: string | undefined): ConsoleEntry['level'] {
   return 'log'
 }
 
-function dropTarget(tabId: number, reason: string): void {
-  const id = chromeTargetId(tabId)
+function dropTarget(browser: string, tabId: number, reason = 'tab closed'): void {
+  const id = endpointId(browser, tabId)
   const state = targets.get(id)
-  prepared.delete(tabId)
-  consoleBuffers.delete(tabId)
+  prepared.delete(id)
+  consoleBuffers.delete(id)
   if (!state) return
   targets.delete(id)
   unregisterCdpTransport(id)
   for (const listener of state.detach) listener(reason)
 }
 
-export function ensureChromeCdpTarget(tabId: number): CdpTransport {
-  return transport(tabId)
+export function ensureChromeCdpTarget(tabId: number, browser = 'chrome'): CdpTransport {
+  return transport(browser, tabId)
 }
 
-function transport(tabId: number): CdpTransport {
-  const id = chromeTargetId(tabId)
+function transport(browser: string, tabId: number): CdpTransport {
+  const id = endpointId(browser, tabId)
   const existing = cdpTransportFor(id)
   if (existing) return existing
   const state: TargetState = { listeners: new Set(), detach: new Set() }
   targets.set(id, state)
   const created: CdpTransport = {
-    send: (method, params) => hub.call('cdp.send', { tabId, method, params: params ?? {} }),
+    send: (method, params) => hub.call('cdp.send', { tabId, method, params: params ?? {} }, { browserId: browser }),
     subscribe(listener) {
       state.listeners.add(listener)
       return () => state.listeners.delete(listener)
@@ -231,39 +257,51 @@ function transport(tabId: number): CdpTransport {
   return created
 }
 
-async function ensureReady(tabId: number): Promise<void> {
-  transport(tabId)
-  if (prepared.has(tabId)) return
-  prepared.add(tabId)
-  const send = (method: string, params?: object) => hub.call('cdp.send', { tabId, method, params: params ?? {} })
+async function ensureReady(browser: string, tabId: number): Promise<void> {
+  transport(browser, tabId)
+  const id = endpointId(browser, tabId)
+  if (prepared.has(id)) return
+  prepared.add(id)
+  const send = (method: string, params?: object) => hub.call('cdp.send', { tabId, method, params: params ?? {} }, { browserId: browser })
   await send('Page.enable')
   await send('Runtime.enable')
   await send('Log.enable')
   await send('Emulation.setFocusEmulationEnabled', { enabled: true }).catch(() => undefined)
   if (downloadDir) {
     await send(DOWNLOAD_DIR_COMMAND, { behavior: 'allow', downloadPath: downloadDir }).catch((err) => {
-      log.warn('[chrome-browser] download behavior failed tab=%d %s', tabId, err instanceof Error ? err.message : String(err))
+      log.warn('[chrome-browser] download behavior failed browser=%s tab=%d %s', browser, tabId, err instanceof Error ? err.message : String(err))
     })
   }
 }
 
-function eligible(owner: string): ChromeTabInfo[] {
+function eligible(owner: string): TrackedTab[] {
   return tabs.filter((tab) => tab.kind === 'shared' || tab.owner === owner)
 }
 
 /**
- * Chrome's cookie jar is the right one when this session is not also driving
- * SuperOne's built-in browser. Several Chrome tabs still share that one jar.
+ * The extension browser whose cookie jar this session is driving, when every
+ * eligible tab is in that one browser and no built-in tab is open.
  */
+export async function ownerChromeCookieBrowser(
+  owner: string,
+  dispatch: ChromeRendererDispatch,
+  signal?: AbortSignal,
+): Promise<string | null> {
+  if (!hub.connected) return null
+  const browsers = new Set(eligible(owner).map((tab) => tab.browser))
+  if (browsers.size !== 1) return null
+  const embedded = await embeddedBrowserTabs(dispatch, signal)
+  if (embedded.length > 0) return null
+  return [...browsers][0] ?? null
+}
+
+/** Chrome's cookie jar is the right one when `ownerChromeCookieBrowser` names one browser. */
 export async function ownerDrivesChromeOnly(
   owner: string,
   dispatch: ChromeRendererDispatch,
   signal?: AbortSignal,
 ): Promise<boolean> {
-  if (!hub.connected) return false
-  if (eligible(owner).length === 0) return false
-  const embedded = await embeddedBrowserTabs(dispatch, signal)
-  return embedded.length === 0
+  return (await ownerChromeCookieBrowser(owner, dispatch, signal)) != null
 }
 
 const CHROME_DOWNLOAD_TIMEOUT_MS = 10 * 60 * 1000
@@ -276,21 +314,36 @@ export interface ChromeHostDownload {
   state: 'completed'
 }
 
-/** Download with Chrome's own cookie jar. The file lands in Chrome's download directory. */
-export async function chromeHostDownload(url: string, filename?: string): Promise<ChromeHostDownload> {
+/** Download with the connected browser's own cookie jar. The file lands in that browser's download directory. */
+export async function chromeHostDownload(url: string, filename?: string, browserId?: string): Promise<ChromeHostDownload> {
+  const browser = connectedBrowser(browserId)
   const result = await hub.call('downloads.download', {
     url,
     ...(filename ? { filename } : {}),
-  }, { timeoutMs: CHROME_DOWNLOAD_TIMEOUT_MS })
+  }, { timeoutMs: CHROME_DOWNLOAD_TIMEOUT_MS, browserId: browser })
   if (!result?.path) throw new Error('Chrome download finished without a file')
   return result
 }
 
-function requireTab(owner: string, tab: string): ChromeTabInfo {
-  const tabId = parseChromeTabRef(tab)
-  const info = eligible(owner).find((item) => item.tabId === tabId)
-  if (!info) throw new Error(`Chrome tab not found in this session: ${tab}`)
-  return info
+function connectedBrowser(requested?: string): string {
+  const live = hub.browsers()
+  if (requested) {
+    if (!live.includes(requested)) {
+      throw new Error(`Browser "${requested}" is not connected. Connected: ${live.join(', ') || 'none'}.`)
+    }
+    return requested
+  }
+  if (live.length === 1) return live[0]!
+  if (live.length === 0) throw new Error('Chrome bridge is not connected. Open the SuperOne extension in the browser.')
+  throw new Error(`More than one browser extension is connected (${live.join(', ')}). Pass browser, or a tab id like chrome:<browser>:<id>.`)
+}
+
+function requireTab(owner: string, tab: string): TrackedTab {
+  const parsed = parseChromeTabTarget(tab)
+  const matches = eligible(owner).filter((item) => item.tabId === parsed.tabId && (!parsed.browser || item.browser === parsed.browser))
+  if (matches.length === 1) return matches[0]!
+  if (matches.length === 0) throw new Error(`Chrome tab not found in this session: ${tab}`)
+  throw new Error(`Chrome tab ${tab} is open in more than one browser (${matches.map((item) => item.browser).join(', ')}). Use chrome:<browser>:<id>.`)
 }
 
 function inputRecord(input: unknown): Record<string, unknown> {
@@ -312,12 +365,12 @@ async function embeddedBrowserTabs(dispatch: ChromeRendererDispatch, signal?: Ab
   }
 }
 
-async function resolveOmitted(owner: string, dispatch: ChromeRendererDispatch, signal?: AbortSignal): Promise<ChromeTabInfo | null> {
+async function resolveOmitted(owner: string, dispatch: ChromeRendererDispatch, signal?: AbortSignal): Promise<TrackedTab | null> {
   const mine = eligible(owner)
   if (mine.length === 0) return null
   const embedded = await embeddedBrowserTabs(dispatch, signal)
-  if (mine.length === 1 && embedded.length === 0) return mine[0]
-  const ids = [...embedded.map((tab) => tab.tab), ...mine.map((tab) => chromeTabRef(tab.tabId))]
+  if (mine.length === 1 && embedded.length === 0) return mine[0]!
+  const ids = [...embedded.map((tab) => tab.tab), ...mine.map((tab) => chromeTabRef(tab.tabId, tab.browser))]
   throw new Error(`Multiple browser tabs are open; specify "tab". Open tabs: ${ids.join(', ')}`)
 }
 
@@ -332,8 +385,8 @@ export async function chromeWebContentsId(
   if (tab && !isChromeTabId(tab)) return null
   const info = tab ? requireTab(owner, tab) : await resolveOmitted(owner, dispatch, signal)
   if (!info) return null
-  transport(info.tabId)
-  return chromeTargetId(info.tabId)
+  transport(info.browser, info.tabId)
+  return endpointId(info.browser, info.tabId)
 }
 
 export async function tryChromeBrowserCall(
@@ -377,13 +430,14 @@ async function listTabs(owner: string, dispatch: ChromeRendererDispatch, signal?
   return { tabs: tabsOut, count: tabsOut.length }
 }
 
-function describeTab(tab: ChromeTabInfo): Record<string, unknown> {
+function describeTab(tab: TrackedTab): Record<string, unknown> {
   return {
-    tab: chromeTabRef(tab.tabId),
+    tab: chromeTabRef(tab.tabId, tab.browser),
     url: tab.url,
     title: tab.title,
     loading: tab.loading,
     host: 'chrome',
+    browser: tab.browser,
     kind: tab.kind,
   }
 }
@@ -396,7 +450,7 @@ async function ownedIds(owner: string, dispatch: ChromeRendererDispatch, signal?
   } catch {
     embedded = []
   }
-  return { webContentsIds: [...embedded, ...eligible(owner).map((tab) => chromeTargetId(tab.tabId))] }
+  return { webContentsIds: [...embedded, ...eligible(owner).map((tab) => endpointId(tab.browser, tab.tabId))] }
 }
 
 async function closeMixed(owner: string, requested: string[], dispatch: ChromeRendererDispatch, signal?: AbortSignal): Promise<unknown> {
@@ -407,7 +461,7 @@ async function closeMixed(owner: string, requested: string[], dispatch: ChromeRe
   for (const id of chromeIds) {
     try {
       const info = requireTab(owner, id)
-      await hub.call('tabs.close', { tabId: info.tabId }, { signal })
+      await hub.call('tabs.close', { tabId: info.tabId }, { signal, browserId: info.browser })
       closed.push(id)
     } catch (err) {
       failed.push({ tab: id, error: err instanceof Error ? err.message : String(err) })
@@ -431,36 +485,41 @@ async function closeMixed(owner: string, requested: string[], dispatch: ChromeRe
 }
 
 async function openTab(owner: string, raw: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
-  const created = await hub.call('tabs.create', { owner, url: 'about:blank' }, { signal })
-  transport(created.tabId)
-  return { ok: true, tab: chromeTabRef(created.tabId), url: created.url, title: created.title }
+  const browser = connectedBrowser(typeof raw.browser === 'string' ? raw.browser : undefined)
+  const created = await hub.call('tabs.create', { owner, url: 'about:blank' }, { signal, browserId: browser })
+  transport(browser, created.tabId)
+  return { ok: true, tab: chromeTabRef(created.tabId, browser), url: created.url, title: created.title }
 }
 
-async function runChromeOp(owner: string, info: ChromeTabInfo, op: string, raw: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
-  const tab = chromeTabRef(info.tabId)
+async function runChromeOp(owner: string, info: TrackedTab, op: string, raw: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
+  const tab = chromeTabRef(info.tabId, info.browser)
   if (op === 'open') return { ok: true, tab, url: info.url, title: info.title }
   if (op === 'close') {
-    await hub.call('tabs.close', { tabId: info.tabId }, { signal })
-    return { ok: true, closed: [tab], remaining: eligible(owner).filter((item) => item.tabId !== info.tabId).length }
+    await hub.call('tabs.close', { tabId: info.tabId }, { signal, browserId: info.browser })
+    return {
+      ok: true,
+      closed: [tab],
+      remaining: eligible(owner).filter((item) => item.browser !== info.browser || item.tabId !== info.tabId).length,
+    }
   }
   if (op === 'resolveWebContentsId') {
-    transport(info.tabId)
-    return { webContentsId: chromeTargetId(info.tabId) }
+    transport(info.browser, info.tabId)
+    return { webContentsId: endpointId(info.browser, info.tabId) }
   }
   if (op === 'focusView') {
-    await hub.call('tabs.activate', { tabId: info.tabId }, { signal })
+    await hub.call('tabs.activate', { tabId: info.tabId }, { signal, browserId: info.browser })
     return { ok: true }
   }
-  await ensureReady(info.tabId)
-  const exec: PageScriptExecutor = (script) => evaluate(info.tabId, script, signal)
+  await ensureReady(info.browser, info.tabId)
+  const exec: PageScriptExecutor = (script) => evaluate(info.browser, info.tabId, script, signal)
   const pageInput = raw as PageScriptInput
   switch (op) {
     case 'snapshot':
-      return snapshot(info.tabId, exec, pageInput)
+      return snapshot(info, exec, pageInput)
     case 'screenshot':
-      return screenshot(info.tabId, exec, raw.selector, signal)
+      return screenshot(info, exec, raw.selector, signal)
     case 'navigate':
-      return navigate(info.tabId, raw, signal)
+      return navigate(info, raw, signal)
     case 'evaluate': {
       const value = await exec(evaluateExpressionScript(raw.expression))
       assertEvaluateResultSize(value)
@@ -468,17 +527,17 @@ async function runChromeOp(owner: string, info: ChromeTabInfo, op: string, raw: 
     }
     case 'resolvePoint': {
       const point = await resolvePagePoint(exec, pageInput)
-      return { ...point, webContentsId: chromeTargetId(info.tabId) }
+      return { ...point, webContentsId: endpointId(info.browser, info.tabId) }
     }
     case 'emulateViewport':
-      return emulateViewport(info.tabId, raw, signal)
+      return emulateViewport(info, raw, signal)
     case 'recordStart': {
-      const started = await hub.call('record.start', { tabId: info.tabId }, { signal, timeoutMs: 15_000 })
+      const started = await hub.call('record.start', { tabId: info.tabId }, { signal, timeoutMs: 15_000, browserId: info.browser })
       return { ...started, tab }
     }
     case 'recordStop': {
       if (typeof raw.recordingId !== 'string') throw new Error('recordStop requires recordingId')
-      return hub.call('record.stop', { tabId: info.tabId, recordingId: raw.recordingId }, { signal, timeoutMs: 70_000 })
+      return hub.call('record.stop', { tabId: info.tabId, recordingId: raw.recordingId }, { signal, timeoutMs: 70_000, browserId: info.browser })
     }
     default:
       if (op === 'query' || op === 'inspect' || op === 'click' || op === 'hover' || op === 'type' || op === 'press' || op === 'scroll' || op === 'select' || op === 'drag' || op === 'wait_for') {
@@ -488,28 +547,28 @@ async function runChromeOp(owner: string, info: ChromeTabInfo, op: string, raw: 
   }
 }
 
-async function evaluate(tabId: number, script: string, signal?: AbortSignal): Promise<unknown> {
+async function evaluate(browser: string, tabId: number, script: string, signal?: AbortSignal): Promise<unknown> {
   const res = await hub.call('cdp.send', {
     tabId,
     method: 'Runtime.evaluate',
     params: { expression: script, returnByValue: true, awaitPromise: true, userGesture: true },
-  }, { signal }) as { result?: { value?: unknown }; exceptionDetails?: { text?: string; exception?: { description?: string } } }
+  }, { signal, browserId: browser }) as { result?: { value?: unknown }; exceptionDetails?: { text?: string; exception?: { description?: string } } }
   if (res?.exceptionDetails) {
     throw new Error(res.exceptionDetails.exception?.description || res.exceptionDetails.text || 'Page script failed')
   }
   return res?.result?.value
 }
 
-async function snapshot(tabId: number, exec: PageScriptExecutor, input: PageScriptInput): Promise<Record<string, unknown>> {
+async function snapshot(info: TrackedTab, exec: PageScriptExecutor, input: PageScriptInput): Promise<Record<string, unknown>> {
   const page = await snapshotPage(exec, input)
-  if (snapshotInclude(input).includes('console')) page.console = readConsole(tabId, input.console)
+  if (snapshotInclude(input).includes('console')) page.console = readConsole(info.browser, info.tabId, input.console)
   return page
 }
 
-function readConsole(tabId: number, query: unknown): ConsoleEntry[] {
+function readConsole(browser: string, tabId: number, query: unknown): ConsoleEntry[] {
   const q = (query ?? {}) as { level?: ConsoleEntry['level'][]; grep?: string; regex?: boolean; ignoreCase?: boolean; invert?: boolean; max?: number }
   const levels = new Set(q.level?.length ? q.level : ['warning', 'error'])
-  let list = (consoleBuffers.get(tabId) ?? []).filter((entry) => levels.has(entry.level))
+  let list = (consoleBuffers.get(endpointId(browser, tabId)) ?? []).filter((entry) => levels.has(entry.level))
   if (q.grep) {
     const flags = q.ignoreCase === false ? '' : 'i'
     const matches = q.regex === true
@@ -522,7 +581,7 @@ function readConsole(tabId: number, query: unknown): ConsoleEntry[] {
   return list.slice(-max)
 }
 
-async function screenshot(tabId: number, exec: PageScriptExecutor, selector: unknown, signal?: AbortSignal): Promise<unknown> {
+async function screenshot(info: TrackedTab, exec: PageScriptExecutor, selector: unknown, signal?: AbortSignal): Promise<unknown> {
   let clip: { x: number; y: number; width: number; height: number; scale: number } | undefined
   if (typeof selector === 'string' && selector) {
     const box = await exec(`(() => { const el = document.querySelector(${JSON.stringify(selector)}); if (!el) return null; el.scrollIntoView({ block: 'center', inline: 'center' }); const b = el.getBoundingClientRect(); return { x: b.x, y: b.y, width: b.width, height: b.height, vw: innerWidth, vh: innerHeight }; })()`) as { x: number; y: number; width: number; height: number; vw: number; vh: number } | null
@@ -535,10 +594,10 @@ async function screenshot(tabId: number, exec: PageScriptExecutor, selector: unk
     clip = { x, y, width: right - x, height: bottom - y, scale: 1 }
   }
   const shot = await hub.call('cdp.send', {
-    tabId,
+    tabId: info.tabId,
     method: 'Page.captureScreenshot',
     params: { format: 'png', fromSurface: true, ...(clip ? { clip } : {}) },
-  }, { signal, timeoutMs: 20_000 }) as { data?: string }
+  }, { signal, timeoutMs: 20_000, browserId: info.browser }) as { data?: string }
   if (!shot?.data) throw new Error('Screenshot capture failed')
   const size = pngSize(shot.data)
   return { mimeType: 'image/png', data: shot.data, width: size.width, height: size.height }
@@ -550,7 +609,7 @@ function pngSize(base64: string): { width: number; height: number } {
   return { width: buf.readUInt32BE(16), height: buf.readUInt32BE(20) }
 }
 
-async function navigate(tabId: number, raw: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
+async function navigate(info: TrackedTab, raw: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
   const action = raw.action === 'back' || raw.action === 'forward' || raw.action === 'reload' ? raw.action : undefined
   const url = action ? undefined : resolveNavigateUrl({
     url: typeof raw.url === 'string' ? raw.url : undefined,
@@ -558,18 +617,18 @@ async function navigate(tabId: number, raw: Record<string, unknown>, signal?: Ab
     path: typeof raw.path === 'string' ? raw.path : undefined,
     protocol: raw.protocol === 'https' ? 'https' : raw.protocol === 'http' ? 'http' : undefined,
   })
-  const info = await hub.call('tabs.navigate', {
-    tabId,
+  const next = await hub.call('tabs.navigate', {
+    tabId: info.tabId,
     ...(url ? { url } : {}),
     ...(action ? { action } : {}),
     wait: raw.readiness !== 'none',
     ...(typeof raw.timeoutMs === 'number' ? { timeoutMs: raw.timeoutMs } : {}),
-  }, { signal, timeoutMs: 60_000 })
-  return { ok: true, action: action ?? 'navigate', url: info.url, title: info.title, loading: info.loading, tab: chromeTabRef(info.tabId) }
+  }, { signal, timeoutMs: 60_000, browserId: info.browser })
+  return { ok: true, action: action ?? 'navigate', url: next.url, title: next.title, loading: next.loading, tab: chromeTabRef(next.tabId, info.browser) }
 }
 
-async function emulateViewport(tabId: number, raw: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
-  const send = (method: string, params: object) => hub.call('cdp.send', { tabId, method, params }, { signal })
+async function emulateViewport(info: TrackedTab, raw: Record<string, unknown>, signal?: AbortSignal): Promise<unknown> {
+  const send = (method: string, params: object) => hub.call('cdp.send', { tabId: info.tabId, method, params }, { signal, browserId: info.browser })
   if (raw.reset === true || raw.width == null || raw.height == null) {
     await send('Emulation.clearDeviceMetricsOverride', {}).catch(() => undefined)
     return { ok: true }

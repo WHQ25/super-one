@@ -4766,6 +4766,11 @@ export const AgentIpcChannels = {
   APP_SETTINGS_GET: 'app:settings-get',
   APP_SETTINGS_SAVE: 'app:settings-save',
   APP_SETTINGS_CHANGED: 'app:settings-changed',
+  CHROME_BRIDGE_STATUS: 'app:chrome-bridge-status',
+  CHROME_BRIDGE_REVEAL: 'app:chrome-bridge-reveal',
+  CHROME_BRIDGE_STATUS_CHANGED: 'app:chrome-bridge-status-changed',
+  CHROME_BRIDGE_LIST_BROWSERS: 'app:chrome-bridge-list-browsers',
+  CHROME_BRIDGE_OPEN_EXTENSIONS: 'app:chrome-bridge-open-extensions',
   /**
    * Node surface served to controller desktops. It runs while one is paired
    * or a "Pair New Desktop" QR is open (see `remoteNodeAccessEnabled`).

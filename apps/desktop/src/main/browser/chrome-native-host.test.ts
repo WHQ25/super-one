@@ -3,9 +3,17 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 import { chromeExtensionIdentity } from '@superone/shared/chrome-bridge-protocol'
+import { EXTENSION_BROWSERS } from '@superone/shared/chrome-extension-browsers'
 import { chromeHostWrapperScript, chromeNativeHostDirectories, chromeNativeHostManifest, installChromeNativeHost } from './chrome-native-host'
 
 describe('chrome native host install', () => {
+  it('names the same application bundles the shared path matcher knows', () => {
+    const host = readFileSync(join(import.meta.dirname, '../../../resources/chrome-native-host/host.mjs'), 'utf8')
+    for (const browser of EXTENSION_BROWSERS) {
+      expect(host).toContain(browser.appFile.toLowerCase())
+    }
+  })
+
   it('pins the extension id and the wrapper path in the manifest', () => {
     const manifest = JSON.parse(chromeNativeHostManifest('com.superone.browser_bridge.dev', '/tmp/host.sh', chromeExtensionIdentity('dev').id))
     expect(manifest.allowed_origins).toEqual([`chrome-extension://${chromeExtensionIdentity('dev').id}/`])

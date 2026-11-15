@@ -1,5 +1,5 @@
 import { chromeHostDownload, type ChromeHostDownload } from './chrome-browser'
-import { sessionDrivesChromeOnly } from './browser-automation-bridge'
+import { sessionChromeCookieBrowser } from './browser-automation-bridge'
 
 function chromeRelativeName(name: string | undefined): string | undefined {
   if (!name) return undefined
@@ -18,6 +18,7 @@ export async function downloadThroughUserChrome(opts: {
   filename?: string
 }): Promise<ChromeHostDownload | null> {
   if (!opts.sessionId) return null
-  if (!(await sessionDrivesChromeOnly(opts.sessionId))) return null
-  return chromeHostDownload(opts.url, chromeRelativeName(opts.filename))
+  const browser = await sessionChromeCookieBrowser(opts.sessionId)
+  if (!browser) return null
+  return chromeHostDownload(opts.url, chromeRelativeName(opts.filename), browser)
 }

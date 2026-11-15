@@ -4,7 +4,7 @@ import { ChromeBridgeHub } from './chrome-bridge-hub'
 import { bindChromeBridge, chromeHostDownload, ownerDrivesChromeOnly, resetChromeBrowserForTests, tryChromeBrowserCall } from './chrome-browser'
 import { chromePageDownloads, resetChromePageDownloadsForTests } from './chrome-download-feed'
 import type { ChromeRendererDispatch } from './chrome-browser'
-import { chromeTabIdFromTarget, chromeTargetId } from './cdp-transport'
+import { chromeBrowserFromTarget, chromeTabIdFromTarget, chromeTargetId } from './cdp-transport'
 import { cdpSend } from './browser-cdp'
 
 const shared = { tabId: 4, url: 'https://example.com', title: 'Example', loading: false, active: true, kind: 'shared' as const }
@@ -47,7 +47,7 @@ describe('chrome browser routing', () => {
     bindChromeBridge(hub)
     const result = await tryChromeBrowserCall('sess-a', 'open', { host: 'chrome' }, undefined, dispatch([]))
     expect(seen).toEqual(['tabs.create'])
-    expect(result).toEqual({ routed: true, result: { ok: true, tab: 'chrome:9', url: 'about:blank', title: '' } })
+    expect(result).toEqual({ routed: true, result: { ok: true, tab: 'chrome:chrome:9', url: 'about:blank', title: '' } })
   })
 
   it('evaluates the shared snapshot script in a shared Chrome tab', async () => {
@@ -171,8 +171,40 @@ describe('chrome browser routing', () => {
       dispatch([]),
     )
     expect(chromeTabIdFromTarget(chromeTargetId(tabId))).toBe(tabId)
+    expect(chromeTargetId(4)).toBe(1_000_000_000 + 4)
+    expect(chromeBrowserFromTarget(chromeTargetId(4, 'edge'))).toBe('edge')
+    expect(chromeTabIdFromTarget(chromeTargetId(4, 'edge'))).toBe(4)
+    expect(chromeTargetId(4, 'edge')).toBeGreaterThan(chromeTargetId(4))
     expect(sentTab).toBe(tabId)
     expect(result).toEqual({ routed: true, result: { value: 'Gemini' } })
+  })
+
+  it('drives each connected browser on its own', async () => {
+    const sent: string[] = []
+    const hub = new ChromeBridgeHub()
+    for (const browser of ['chrome', 'edge']) {
+      hub.attach((json) => {
+        const request = JSON.parse(json) as { id: number; method: string }
+        sent.push(`${browser}:${request.method}`)
+        hub.receive(JSON.stringify({
+          id: request.id,
+          result: { tabId: 4, url: 'about:blank', title: '', loading: false, active: false, kind: 'agent', owner: 'sess-a' },
+        }), browser)
+      }, browser)
+    }
+    bindChromeBridge(hub)
+    hub.receive(JSON.stringify({ event: 'tabs.changed', params: { tabs: [shared] } }), 'chrome')
+    hub.receive(JSON.stringify({ event: 'tabs.changed', params: { tabs: [{ ...shared, url: 'https://edge.example' }] } }), 'edge')
+    await expect(tryChromeBrowserCall('sess-a', 'open', { host: 'chrome' }, undefined, dispatch([]))).rejects.toThrow(/Pass browser/)
+    const opened = await tryChromeBrowserCall('sess-a', 'open', { host: 'chrome', browser: 'edge' }, undefined, dispatch([]))
+    expect(opened).toEqual({ routed: true, result: { ok: true, tab: 'chrome:edge:4', url: 'about:blank', title: '' } })
+    await expect(tryChromeBrowserCall('sess-a', 'click', { tab: 'chrome:4' }, undefined, dispatch([]))).rejects.toThrow(/more than one browser/)
+    const edge = await tryChromeBrowserCall('sess-a', 'focusView', { tab: 'chrome:edge:4' }, undefined, dispatch([]))
+    expect(edge).toEqual({ routed: true, result: { ok: true } })
+    expect(await ownerDrivesChromeOnly('sess-a', dispatch([]))).toBe(false)
+    expect(sent).toContain('edge:tabs.create')
+    expect(sent).toContain('edge:tabs.activate')
+    expect(sent.filter((item) => item.startsWith('chrome:'))).toEqual([])
   })
 
   it('sends CDP for a Chrome target through the bridge', async () => {

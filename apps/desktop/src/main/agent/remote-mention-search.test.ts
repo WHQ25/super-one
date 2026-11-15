@@ -6,6 +6,9 @@ const mocks = vi.hoisted(() => ({
   listInstalledApps: vi.fn(),
   resolveAppIconDataUri: vi.fn(),
   searchMentions: vi.fn(),
+  capabilityIds: ['computer'] as string[],
+  chromeConnected: false,
+  connectedBrowsers: [] as string[],
 }))
 
 vi.mock('electron', () => ({
@@ -28,7 +31,13 @@ vi.mock('../miniapp/miniapp-service', () => ({
 vi.mock('./discover-resources', () => ({ discoverAllAgents: () => [] }))
 vi.mock('./fuzzy-file-search', () => ({ searchMentions: mocks.searchMentions }))
 vi.mock('../session/agent-profiles', () => ({ listAgentMentionTargets: () => [] }))
-vi.mock('@superone/shared/mention-capabilities', () => ({ availableMentionCapabilityIds: () => ['computer'] }))
+vi.mock('@superone/shared/mention-capabilities', () => ({ availableMentionCapabilityIds: () => mocks.capabilityIds }))
+vi.mock('../browser/chrome-bridge-hub', () => ({
+  chromeBridgeHub: {
+    get connected() { return mocks.chromeConnected },
+    browsers: () => mocks.connectedBrowsers,
+  },
+}))
 
 vi.mock('../remote/environment-mention-targets', () => ({ readEnvironmentMentionTargets: async () => [{ role: 'local', id: 'this-host', label: 'This host', status: 'connected' }] }))
 
@@ -42,6 +51,9 @@ describe('remote mention app results', () => {
     mocks.listInstalledApps.mockResolvedValue([])
     mocks.resolveAppIconDataUri.mockResolvedValue(null)
     mocks.searchMentions.mockReturnValue([{ kind: 'file', path: 'src/App.tsx' }])
+    mocks.capabilityIds = ['computer']
+    mocks.chromeConnected = false
+    mocks.connectedBrowsers = []
   })
 
   it('returns desktop and miniapp identities with bounded PNG artwork', async () => {
@@ -170,8 +182,40 @@ describe('host mention metadata catalog', () => {
     expect(mocks.discoverProjectApps).toHaveBeenLastCalledWith('/node/project')
     expect(catalog.apps).toHaveLength(50)
     expect(catalog.capabilityIds).toEqual(['computer'])
+    expect(catalog.chromeBridgeConnected).toBe(false)
     expect(catalog.environments?.[0]?.id).toBe('this-host')
     expect(mocks.resolveAppIconDataUri).not.toHaveBeenCalled()
     expect(mocks.searchMentions).not.toHaveBeenCalled()
+  })
+
+  it('lists only Chromium browsers when Computer Use is off and the extension is connected', async () => {
+    mocks.capabilityIds = []
+    mocks.chromeConnected = true
+    mocks.connectedBrowsers = ['chrome', 'arc']
+    mocks.discoverApps.mockResolvedValue([])
+    mocks.discoverProjectApps.mockResolvedValue([])
+    mocks.listInstalledApps.mockResolvedValue([
+      { app: 'Safari', bundleId: 'com.apple.Safari', aliases: [] },
+      { app: 'Google Chrome', bundleId: 'com.google.Chrome', aliases: ['Chrome'] },
+      { app: 'Arc', bundleId: 'company.thebrowser.Browser', aliases: [] },
+    ])
+    const catalog = await readMentionCatalog('/node/project')
+    expect(catalog.chromeBridgeConnected).toBe(true)
+    expect(catalog.connectedBrowsers).toEqual(['chrome', 'arc'])
+    expect(catalog.apps.map((app) => app.path)).toEqual(['com.google.Chrome', 'company.thebrowser.Browser'])
+  })
+
+  it('omits a Chromium browser whose extension is not connected', async () => {
+    mocks.capabilityIds = []
+    mocks.chromeConnected = true
+    mocks.connectedBrowsers = ['chrome']
+    mocks.discoverApps.mockResolvedValue([])
+    mocks.discoverProjectApps.mockResolvedValue([])
+    mocks.listInstalledApps.mockResolvedValue([
+      { app: 'Google Chrome', bundleId: 'com.google.Chrome', aliases: [] },
+      { app: 'Arc', bundleId: 'company.thebrowser.Browser', aliases: [] },
+    ])
+    const catalog = await readMentionCatalog('/node/project')
+    expect(catalog.apps.map((app) => app.path)).toEqual(['com.google.Chrome'])
   })
 })

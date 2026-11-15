@@ -679,6 +679,11 @@ interface AppAPI extends WindowLayoutAPI {
   pickAppIconFile(): Promise<string | null>
   setAppIcon(pngDataUri: string): Promise<AppSettings>
   resetAppIcon(): Promise<AppSettings>
+  getChromeBridgeStatus(): Promise<{ connected: boolean; browsers: string[]; extensionDir: string }>
+  revealChromeExtension(): Promise<void>
+  listChromeExtensionBrowsers(): Promise<string[]>
+  openChromeExtensionPage(browserId: string): Promise<{ opened: boolean; url: string }>
+  onChromeBridgeStatus(callback: (status: { connected: boolean; browsers: string[]; extensionDir: string }) => void): () => void
   onAppSettingsChange(callback: (settings: AppSettings) => void): () => void
   getSystemLocale(): Promise<string>
   onLocaleChanged(callback: (locale: Locale) => void): () => void

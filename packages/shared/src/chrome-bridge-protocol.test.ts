@@ -5,6 +5,7 @@ import {
   chromeTabRef,
   isChromeTabId,
   parseChromeTabRef,
+  parseChromeTabTarget,
   splitChromeBridgeMessage,
 } from './chrome-bridge-protocol'
 
@@ -18,6 +19,11 @@ describe('chrome bridge protocol', () => {
   it('round-trips a chrome tab id', () => {
     expect(isChromeTabId(chromeTabRef(12))).toBe(true)
     expect(parseChromeTabRef('chrome:12')).toBe(12)
+    expect(chromeTabRef(4, 'edge')).toBe('chrome:edge:4')
+    expect(parseChromeTabTarget('chrome:12')).toEqual({ tabId: 12 })
+    expect(parseChromeTabTarget('chrome:edge:4')).toEqual({ browser: 'edge', tabId: 4 })
+    expect(parseChromeTabTarget('chrome:chrome-beta:3')).toEqual({ browser: 'chrome-beta', tabId: 3 })
+    expect(parseChromeTabRef('chrome:edge:4')).toBe(4)
     expect(isChromeTabId('browser-1')).toBe(false)
     expect(() => parseChromeTabRef('chrome:nope')).toThrow(/Invalid Chrome tab id/)
   })

@@ -1,3 +1,4 @@
+import { EXTENSION_BROWSERS } from '@superone/shared/chrome-extension-browsers'
 import {
   ChromeBridgeChunkAssembler,
   isChromeBridgeChunk,
@@ -10,47 +11,109 @@ import {
   type ChromeBridgeResponse,
 } from '@superone/shared/chrome-bridge-protocol'
 
-type EventListener = (event: ChromeBridgeEventName, params: ChromeBridgeEvents[ChromeBridgeEventName]) => void
+type EventListener = (
+  event: ChromeBridgeEventName,
+  params: ChromeBridgeEvents[ChromeBridgeEventName],
+  browserId: string,
+) => void
 
 interface Pending {
+  browserId: string
   resolve: (result: unknown) => void
   reject: (error: Error) => void
   timer: ReturnType<typeof setTimeout>
   cleanup: () => void
 }
 
+interface Link {
+  send: (json: string) => void
+  generation: number
+}
+
 const DEFAULT_TIMEOUT_MS = 30_000
+const BROWSER_ORDER = EXTENSION_BROWSERS.map((browser) => browser.id)
 
 /**
- * One authenticated Chrome native-host connection.
- * Messages are JSON strings. Chunk envelopes from the protocol are joined first.
+ * One authenticated native-host connection per browser.
+ * A replacement only retires that browser's previous socket. The old socket's
+ * close carries the generation from its own attach and does not drop the new
+ * link, or any other browser. Messages are JSON strings. Chunk envelopes from
+ * the protocol are joined per browser first.
  */
 export class ChromeBridgeHub {
-  private sendRaw: ((json: string) => void) | null = null
+  private readonly links = new Map<string, Link>()
   private readonly pending = new Map<number, Pending>()
   private readonly events = new Set<EventListener>()
-  private readonly assembler = new ChromeBridgeChunkAssembler()
+  private readonly connectionListeners = new Set<(connected: boolean) => void>()
+  private readonly assemblers = new Map<string, ChromeBridgeChunkAssembler>()
   private nextId = 1
+  private nextGeneration = 1
   connected = false
 
-  attach(send: (json: string) => void): void {
-    this.detach('replaced')
-    this.sendRaw = send
+  /** Replaces only this browser. Returns the generation the close handler must pass back. */
+  attach(send: (json: string) => void, browserId = 'chrome'): number {
+    const id = browserId || 'chrome'
+    this.failPending('replaced', id)
+    const generation = this.nextGeneration++
+    this.links.set(id, { send, generation })
+    this.assemblers.delete(id)
     this.connected = true
+    this.notifyConnection()
+    return generation
   }
 
-  detach(reason: string): void {
+  /** Drops every browser. A single socket close must use `detachBrowser`. */
+  detach(reason: string, notify = true): void {
+    const was = this.connected
     this.connected = false
-    this.sendRaw = null
-    for (const [, pending] of this.pending) {
+    this.links.clear()
+    this.assemblers.clear()
+    this.failPending(reason)
+    if (notify && was) this.notifyConnection()
+  }
+
+  /** No-ops when `generation` is not the live link, so a replaced socket cannot win. */
+  detachBrowser(browserId: string, reason: string, generation: number): void {
+    const link = this.links.get(browserId)
+    if (!link || link.generation !== generation) return
+    this.links.delete(browserId)
+    this.assemblers.delete(browserId)
+    this.failPending(reason, browserId)
+    this.connected = this.links.size > 0
+    this.notifyConnection()
+  }
+
+  browsers(): string[] {
+    return [...this.links.keys()].sort((a, b) => this.browserRank(a) - this.browserRank(b))
+  }
+
+  onConnection(listener: (connected: boolean) => void): () => void {
+    this.connectionListeners.add(listener)
+    return () => this.connectionListeners.delete(listener)
+  }
+
+  private notifyConnection(): void {
+    for (const listener of this.connectionListeners) listener(this.connected)
+  }
+
+  private browserRank(id: string): number {
+    const index = BROWSER_ORDER.indexOf(id as (typeof BROWSER_ORDER)[number])
+    return index >= 0 ? index : BROWSER_ORDER.length
+  }
+
+  private failPending(reason: string, browserId?: string): void {
+    for (const [id, pending] of this.pending) {
+      if (browserId && pending.browserId !== browserId) continue
       clearTimeout(pending.timer)
       pending.cleanup()
+      this.pending.delete(id)
       pending.reject(new Error(`Chrome bridge disconnected (${reason})`))
     }
-    this.pending.clear()
   }
 
-  receive(json: string): void {
+  receive(json: string, browserId?: string): void {
+    const browser = browserId ?? (this.links.size === 1 ? [...this.links.keys()][0] : undefined)
+    if (!browser) return
     let parsed: unknown
     try {
       parsed = JSON.parse(json) as unknown
@@ -58,15 +121,20 @@ export class ChromeBridgeHub {
       return
     }
     if (isChromeBridgeChunk(parsed)) {
-      const joined = this.assembler.accept(parsed)
+      let assembler = this.assemblers.get(browser)
+      if (!assembler) {
+        assembler = new ChromeBridgeChunkAssembler()
+        this.assemblers.set(browser, assembler)
+      }
+      const joined = assembler.accept(parsed)
       if (!joined) return
-      this.receive(joined)
+      this.receive(joined, browser)
       return
     }
     const message = parsed as Partial<ChromeBridgeResponse & ChromeBridgeEventMessage>
     if (typeof message.id === 'number') {
       const pending = this.pending.get(message.id)
-      if (!pending) return
+      if (!pending || pending.browserId !== browser) return
       clearTimeout(pending.timer)
       pending.cleanup()
       this.pending.delete(message.id)
@@ -77,7 +145,7 @@ export class ChromeBridgeHub {
     if (typeof message.event === 'string') {
       const event = message.event as ChromeBridgeEventName
       const params = (message.params ?? {}) as ChromeBridgeEvents[ChromeBridgeEventName]
-      for (const listener of this.events) listener(event, params)
+      for (const listener of this.events) listener(event, params, browser)
     }
   }
 
@@ -89,11 +157,10 @@ export class ChromeBridgeHub {
   call<M extends ChromeBridgeMethod>(
     method: M,
     params: ChromeBridgeMethods[M]['params'],
-    opts?: { timeoutMs?: number; signal?: AbortSignal },
+    opts?: { timeoutMs?: number; signal?: AbortSignal; browserId?: string },
   ): Promise<ChromeBridgeMethods[M]['result']> {
-    if (!this.sendRaw || !this.connected) {
-      return Promise.reject(new Error('Chrome bridge is not connected. Open the SuperOne extension in Chrome.'))
-    }
+    const target = this.targetLink(opts?.browserId)
+    if ('error' in target) return Promise.reject(new Error(target.error))
     const timeoutMs = opts?.timeoutMs ?? DEFAULT_TIMEOUT_MS
     const id = this.nextId++
     const request: ChromeBridgeRequest<M> = { id, method, params }
@@ -114,10 +181,33 @@ export class ChromeBridgeHub {
         reject(new Error('Chrome bridge call was cancelled'))
       }
       const cleanup = () => opts?.signal?.removeEventListener('abort', onAbort)
-      this.pending.set(id, { resolve: resolve as (result: unknown) => void, reject, timer, cleanup })
+      this.pending.set(id, {
+        browserId: target.browserId,
+        resolve: resolve as (result: unknown) => void,
+        reject,
+        timer,
+        cleanup,
+      })
       opts?.signal?.addEventListener('abort', onAbort, { once: true })
-      this.sendRaw!(JSON.stringify(request))
+      target.send(JSON.stringify(request))
     })
+  }
+
+  private targetLink(requested?: string): { browserId: string; send: (json: string) => void } | { error: string } {
+    if (this.links.size === 0) {
+      return { error: 'Chrome bridge is not connected. Open the SuperOne extension in the browser.' }
+    }
+    if (requested) {
+      const link = this.links.get(requested)
+      if (!link) return { error: `Browser "${requested}" is not connected. Connected: ${this.browsers().join(', ')}.` }
+      return { browserId: requested, send: link.send }
+    }
+    if (this.links.size === 1) {
+      const entry = [...this.links.entries()][0]
+      if (!entry) return { error: 'Chrome bridge is not connected. Open the SuperOne extension in the browser.' }
+      return { browserId: entry[0], send: entry[1].send }
+    }
+    return { error: `More than one browser extension is connected (${this.browsers().join(', ')}). Pass browser.` }
   }
 }
 

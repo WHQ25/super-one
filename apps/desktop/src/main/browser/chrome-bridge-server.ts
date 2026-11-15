@@ -3,6 +3,7 @@ import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSy
 import { createServer, type Socket } from 'node:net'
 import { join } from 'node:path'
 import { app } from 'electron'
+import { extensionConnectionBrowser } from '@superone/shared/chrome-extension-browsers'
 import type { ChromeBridgeAuth } from '@superone/shared/chrome-bridge-protocol'
 import { bindChromeBridge, setChromeDownloadDir } from './chrome-browser'
 import { chromeBridgeHub } from './chrome-bridge-hub'
@@ -126,10 +127,20 @@ export function startChromeBridge(): void {
 function accept(socket: Socket, token: string): void {
   let buffer = Buffer.alloc(0)
   let authed = false
+  let generation: number | null = null
+  let browserId = 'unknown'
   const fail = (reason: string) => {
     log.warn('[chrome-bridge] %s', reason)
     socket.destroy()
   }
+  const detachThis = (reason: string) => {
+    if (generation == null) return
+    const current = generation
+    generation = null
+    chromeBridgeHub.detachBrowser(browserId, reason, current)
+  }
+  socket.on('close', () => detachThis('native host closed'))
+  socket.on('error', () => detachThis('native host error'))
   socket.on('data', (chunk) => {
     buffer = Buffer.concat([buffer, chunk])
     try {
@@ -141,19 +152,18 @@ function accept(socket: Socket, token: string): void {
             return
           }
           authed = true
-          chromeBridgeHub.attach((message) => {
+          browserId = extensionConnectionBrowser(parsed.browser)
+          generation = chromeBridgeHub.attach((message) => {
             if (!socket.destroyed) socket.write(encodeFrame(message))
-          })
-          socket.on('close', () => chromeBridgeHub.detach('native host closed'))
+          }, browserId)
           return
         }
-        chromeBridgeHub.receive(json)
+        chromeBridgeHub.receive(json, browserId)
       })
     } catch (err) {
       fail(err instanceof Error ? err.message : String(err))
     }
   })
-  socket.on('error', () => chromeBridgeHub.detach('native host error'))
 }
 
 export function isChromeBridgeAuth(value: unknown): value is ChromeBridgeAuth {

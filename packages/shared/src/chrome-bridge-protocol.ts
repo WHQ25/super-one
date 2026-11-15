@@ -57,14 +57,26 @@ export function isChromeTabId(tab: unknown): tab is string {
   return typeof tab === 'string' && tab.startsWith(CHROME_TAB_PREFIX)
 }
 
-export function chromeTabRef(tabId: number): string {
-  return `${CHROME_TAB_PREFIX}${tabId}`
+/** `chrome:<tabId>` or, when the browser is known, `chrome:<browser>:<tabId>`. */
+export function chromeTabRef(tabId: number, browser?: string): string {
+  return browser ? `${CHROME_TAB_PREFIX}${browser}:${tabId}` : `${CHROME_TAB_PREFIX}${tabId}`
 }
 
 export function parseChromeTabRef(tab: string): number {
-  const id = Number(tab.slice(CHROME_TAB_PREFIX.length))
-  if (!Number.isInteger(id) || id < 0) throw new Error(`Invalid Chrome tab id: ${tab}`)
-  return id
+  return parseChromeTabTarget(tab).tabId
+}
+
+export function parseChromeTabTarget(tab: string): { browser?: string; tabId: number } {
+  if (!isChromeTabId(tab)) throw new Error(`Invalid Chrome tab id: ${tab}`)
+  const rest = tab.slice(CHROME_TAB_PREFIX.length)
+  const colon = rest.indexOf(':')
+  const browser = colon === -1 ? undefined : rest.slice(0, colon)
+  const rawId = colon === -1 ? rest : rest.slice(colon + 1)
+  const tabId = Number(rawId)
+  if ((browser !== undefined && !/^[a-z0-9-]+$/.test(browser)) || !Number.isInteger(tabId) || tabId < 0) {
+    throw new Error(`Invalid Chrome tab id: ${tab}`)
+  }
+  return browser ? { browser, tabId } : { tabId }
 }
 
 export type ChromeTabKind = 'shared' | 'agent'
@@ -152,6 +164,8 @@ export interface ChromeBridgeChunk {
 
 export interface ChromeBridgeAuth {
   auth: string
+  /** Catalog browser id. Absent or unknown must not take the Chrome slot. */
+  browser?: string
 }
 
 export const CHROME_NATIVE_CHUNK_CHARS = 512 * 1024

@@ -78,9 +78,9 @@ export function includeDesktopMention(
 
 export function formatChromiumBrowserMentionReminder(
   apps: Array<{ name: string; bundleId: string }>,
-  harness: 'claude' | 'codex',
+  provider: string,
 ): string {
-  const prefix = harness === 'codex' ? 'mcp__superone.browser_' : 'mcp__superone__browser_'
+  const prefix = provider === 'codex' ? 'mcp__superone.browser_' : 'mcp__superone__browser_'
   const lines = [
     'User @-mentioned these Chromium browsers. Each one has the SuperOne extension connected, so drive that browser with browser tools and host "chrome". Pass browser set to the id below, or a tab id like "chrome:<browser>:<id>". Do not use computer_* tools for these apps.',
     'Only tabs the user shared from that browser\'s extension, or tabs opened with browser_tabs host:"chrome" for that browser, can be controlled.',

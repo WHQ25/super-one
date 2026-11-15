@@ -685,7 +685,7 @@ export async function sendMessageImpl(
       desktopAppMentions
         .filter((mention) => mention.value && chromeBundleIds.has(mention.value))
         .map((mention) => ({ name: mention.displayName || mention.value, bundleId: mention.value })),
-      effectiveProvider === 'codex' ? 'codex' : 'claude',
+      effectiveProvider,
     ))
   }
   // Temporary Computer Use grants from @ desktop-app mentions (session-scoped, no HITL).

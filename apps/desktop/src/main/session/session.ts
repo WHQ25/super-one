@@ -1854,6 +1854,15 @@ export class Session implements SessionContract {
     return this.backend.getCodexGoal(threadId)
   }
 
+  async catchUpCodexPrompt(): Promise<{ ok: boolean }> {
+    this.assertNotDisposed()
+    this.touchRuntimeActivity()
+    if (this.harnessId !== 'codex') return { ok: false }
+    await this.ensureStarted()
+    if (!this.backend.catchUpCodexPrompt) return { ok: false }
+    return this.backend.catchUpCodexPrompt()
+  }
+
   async setCodexGoal(threadId: string | null, objective: string, status?: CodexGoalStatus): Promise<CodexGoal | null> {
     this.lease.assertMutation()
     this.assertNotDisposed()

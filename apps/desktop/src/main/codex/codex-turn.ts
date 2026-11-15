@@ -1,3 +1,4 @@
+import { readCodexCollaborationModeName } from '@superone/codex/prompt-sample'
 import { codexNativeApprovalRequest } from '@superone/codex/native-approval'
 import { codexItemDuration, withCodexReasoningTiming } from '@superone/codex/item-timing'
 import { claimCodexServerRequest, finishCodexServerRequest } from '@superone/codex/server-request-lifecycle'
@@ -1305,6 +1306,7 @@ export async function resolveThread(
   )
   const modelProvider = providerOverride?.id
   if (session.threadId && session.threadReady) {
+    syncCodexPromptSampling(session)
     trace('codex.thread', 'reuse_ready', {
       threadId: session.threadId,
       cwd,
@@ -1396,7 +1398,18 @@ export async function resolveThread(
   if (resolvedTier) session.serviceTier = resolvedTier
   session.threadId = resolvedThreadId
   session.threadReady = true
+  syncCodexPromptSampling(session, threadResult.collaborationMode ?? thread?.collaborationMode)
   return resolvedThreadId
+}
+
+/** Plan mode and a custom model provider do not sample. An unknown mode keeps the last one. */
+export function syncCodexPromptSampling(session: CodexSession, mode?: unknown): void {
+  if (mode !== undefined) {
+    const modeName = readCodexCollaborationModeName(mode)
+    if (modeName) session.collaborationMode = modeName
+  }
+  session.promptSampling = session.collaborationMode !== 'plan'
+    && getCodexProviderOverrideFor(session.apiProviderId) == null
 }
 
 export function isCodexEmptyRolloutError(error: unknown): boolean {
@@ -2477,6 +2490,7 @@ function buildTurnStartParams(
     session.model,
     session.modelReasoningEffort,
   )
+  syncCodexPromptSampling(session, request.collaborationMode)
   // Consumed by this turn only. `kind: 'application'` makes the app server
   // render it as a developer-role message inserted immediately BEFORE the
   // user input — inside the conversation, at the tail. `developer_instructions`

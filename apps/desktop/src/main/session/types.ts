@@ -391,6 +391,7 @@ export interface SessionBackend {
   /** Timers inside the runtime (Claude CronCreate / ScheduleWakeup / `/loop`) that a release would drop. */
   hasScheduledWakeups?(): boolean
   getCodexGoal?(threadId: string | null): Promise<CodexGoal | null>
+  catchUpCodexPrompt?(): Promise<{ ok: boolean }>
   setCodexGoal?(threadId: string | null, objective: string, status?: CodexGoalStatus): Promise<CodexGoal | null>
   clearCodexGoal?(threadId: string | null): Promise<boolean>
   stopTask?(taskId: string): Promise<void>
@@ -593,6 +594,7 @@ export interface Session {
   /** The goal the harness last reported; null when it has none or has not said. */
   getSessionGoal(): SessionGoal | null
   getCodexGoal(threadId: string | null): Promise<CodexGoal | null>
+  catchUpCodexPrompt(): Promise<{ ok: boolean }>
   setCodexGoal(threadId: string | null, objective: string, status?: CodexGoalStatus): Promise<CodexGoal | null>
   clearCodexGoal(threadId: string | null): Promise<boolean>
   backgroundTasks?(toolUseId?: string): Promise<boolean>

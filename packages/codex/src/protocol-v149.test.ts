@@ -26,6 +26,9 @@ describe('Codex 149 protocol helpers', () => {
     expect(readCodexErrorOverrides({ codexErrorInfo: { code: 'misalignmentPolicyViolation', httpStatus: 403 } })).toEqual({
       code: 'misalignmentPolicyViolation', httpStatus: 403,
     })
+    expect(readCodexErrorOverrides({ codexErrorInfo: 'inferenceHookDenied' })).toEqual({
+      code: 'inferenceHookDenied',
+    })
   })
 
   it('preserves managed requirements for product-level policy awareness', async () => {

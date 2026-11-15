@@ -2,22 +2,26 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import type { ChatMessage, CodexGoalStatus } from '@superone/shared/agent-types'
 import type { CodexSession } from './codex-session'
 
-const turnMocks = vi.hoisted(() => ({
-  streamTurnEvents: vi.fn(),
-  withThreadConnection: vi.fn(async (
-    session: { connectionHandle: { connection: unknown }; threadId: string | null },
-    _auth: unknown,
-    _signal: unknown,
-    _projectPath: string,
-    _cwd: string,
-    _permissionProfile: unknown,
-    fn: (context: { connection: unknown; threadId: string; markMutationStarted: () => void }) => unknown,
-  ) => fn({
-    connection: session.connectionHandle.connection,
-    threadId: session.threadId ?? 'thread-1',
-    markMutationStarted: vi.fn(),
-  })),
-}))
+const turnMocks = vi.hoisted(() => {
+  const markMutationStarted = vi.fn()
+  return {
+    markMutationStarted,
+    streamTurnEvents: vi.fn(),
+    withThreadConnection: vi.fn(async (
+      session: { connectionHandle: { connection: unknown }; threadId: string | null },
+      _auth: unknown,
+      _signal: unknown,
+      _projectPath: string,
+      _cwd: string,
+      _permissionProfile: unknown,
+      fn: (context: { connection: unknown; threadId: string; markMutationStarted: () => void }) => unknown,
+    ) => fn({
+      connection: session.connectionHandle.connection,
+      threadId: session.threadId ?? 'thread-1',
+      markMutationStarted,
+    })),
+  }
+})
 
 vi.mock('./codex-turn', () => ({
   deriveFinalResponse: (items: Array<{ type: string; text?: string }>) => items.findLast((item) => item.type === 'agent_message')?.text ?? '',
@@ -88,6 +92,7 @@ describe('CodexGoalController', () => {
   beforeEach(() => {
     turnMocks.streamTurnEvents.mockReset()
     turnMocks.withThreadConnection.mockClear()
+    turnMocks.markMutationStarted.mockClear()
   })
 
   it('sets the goal on the live session connection and consumes automatic turns until completion', async () => {
@@ -204,7 +209,11 @@ describe('CodexGoalController', () => {
     })
 
     await expect(harness.controller.get('thread-1')).resolves.toEqual(goal('complete'))
+    // The composer re-reads the goal when a turn goes idle. That read must not
+    // count as a mutation: markMutationStarted aborts an in-flight prompt sample.
+    expect(turnMocks.markMutationStarted).not.toHaveBeenCalled()
     await expect(harness.controller.clear('thread-1')).resolves.toBe(true)
+    expect(turnMocks.markMutationStarted).toHaveBeenCalledOnce()
     expect(turnMocks.streamTurnEvents).not.toHaveBeenCalled()
     expect(harness.onUserMessage).not.toHaveBeenCalled()
   })

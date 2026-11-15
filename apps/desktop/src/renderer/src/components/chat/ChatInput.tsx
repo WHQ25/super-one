@@ -415,6 +415,11 @@ export function ChatInput({
     useEffect(() => {
       if (activeProviderForResources !== 'codex' || !sessionProject || !displayedSessionId || !codexThreadId) return
       void callSession(sessionProject, displayedSessionId, 'session.getGoal', {}).catch(() => {})
+      // A thread opened already finished never emits turn/completed here. Sample
+      // that turn once the composer is idle. The server dedupes the same turn.
+      if (status === 'idle') {
+        void callSession(sessionProject, displayedSessionId, 'session.catchUpPrompt', {}).catch(() => {})
+      }
     }, [activeProviderForResources, sessionProject, displayedSessionId, codexThreadId, status])
 
     /**

@@ -1,10 +1,10 @@
 # Codex API surface
 
-Ledger version: `0.167.0` · Check: `bun scripts/harness-api-inventory.ts codex`
+Ledger version: `0.169.0` · Check: `bun scripts/harness-api-inventory.ts codex`
 
 Inventoried from the pinned npm binary, with and without `--experimental`. The
 checker covers RPC method names; field-level changes and feature flags are
-reviewed in [the upgrade record](upgrades/0.167.0.md). A notification appearing
+reviewed in [the upgrade record](upgrades/0.169.0.md). A notification appearing
 in the stable generated schema does not make its underlying feature stable.
 
 Statuses describe actual SuperOne integration, not every upstream field. `used`
@@ -34,6 +34,7 @@ voices still come from
 | `account/rateLimitResetCredit/consume` | used | Calls the app-server RPC. | `packages/codex/src/codex-admin.ts`, `apps/desktop/src/main/codex/codex-experiment-service.ts` |
 | `account/rateLimits/read` | used | Calls the app-server RPC. | `packages/codex/src/codex-admin.ts` |
 | `account/read` | used | Calls the app-server RPC. | `packages/codex/src/account-manager.ts`, `packages/codex/src/codex-admin.ts` |
+| `account/securitySetup/read` | unused | Optional account security reminder. The read does not change account state. | — |
 | `account/sendAddCreditsNudgeEmail` | unused | No client call or dedicated handler. | — |
 | `account/usage/read` | used | Preserves nativeUsageUsdMicros independently of credit estimates. Calls the app-server RPC. | `packages/codex/src/codex-admin.ts`, `apps/desktop/src/main/codex/codex-experiment-service.ts` |
 | `account/workspaceMessages/read` | unused | No client call or dedicated handler. | — |
@@ -76,8 +77,10 @@ voices still come from
 | `mcpServer/resource/read` | partial | Public MCP Apps resource reads use the originating root or child threadId through environment RPC. Saved child Views validate provider ancestry and resume the child on the current connection. Hosted connector/link target stays deferred. | `packages/codex/src/mcp-apps.ts`, `packages/codex/src/mcp-app-thread.ts`, `apps/desktop/src/main/session/backends/codex-backend.ts` |
 | `mcpServer/tool/call` | used | Bound-server App calls use the originating threadId through environment RPC; host gates visibility and approval. | `packages/codex/src/mcp-apps.ts`, `apps/desktop/src/main/session/backends/codex-backend.ts` |
 | `mcpServerStatus/list` | partial | Status panels use full inventory. MCP Apps tool discovery uses toolsAndAuthOnly; full resource inventory is a lazy fallback for missing read-content UI metadata. httpOrigin/serverCapabilities remain unused. | `packages/codex/src/mcp-apps.ts`, `apps/desktop/src/main/index.ts`, `apps/desktop/src/main/session/backends/codex-backend.ts` |
-| `model/list` | partial | Desktop and remote-node catalogs, efforts and speed tiers. The node's static slug table is only the fallback when this probe is empty. Fast stays a toggle; an extra tier such as Ultrafast is a Standard / Fast / Ultrafast choice. availableAccessPrograms is not mapped. | `apps/desktop/src/main/codex/codex-experiment-service.ts`, `apps/cli/src/session/codex-model-catalog.ts` |
+| `model/list` | partial | Desktop and remote-node catalogs, efforts and speed tiers. `modelProvider` is omitted, so the catalog stays the app-server default. The node's static slug table is only the fallback when this probe is empty. Fast stays a toggle; an extra tier such as Ultrafast is a Standard / Fast / Ultrafast choice. availableAccessPrograms is not mapped. | `apps/desktop/src/main/codex/codex-experiment-service.ts`, `apps/cli/src/session/codex-model-catalog.ts` |
 | `modelProvider/capabilities/read` | unused | No client call or dedicated handler. | — |
+| `modelProvider/config/write` | unused | No custom gateway, Bedrock, or GCP provider editor. | — |
+| `modelProvider/list` | unused | No provider browser. SuperOne owns provider configuration. | — |
 | `permissionProfile/list` | unused | No client call or dedicated handler. | — |
 | `plugin/install` | used | Local entries use marketplacePath/name; remote entries use remoteMarketplaceName/backend remotePluginId on desktop and nodes. | `packages/codex/src/codex-admin.ts`, `packages/codex/src/plugin-target.ts`, `apps/desktop/src/main/codex/codex-plugins-service.ts` |
 | `plugin/installed` | partial | Desktop reads installed ids to mark curated shelf cards. It is not the plugins page list. | `apps/desktop/src/main/codex/codex-plugins-service.ts` |
@@ -114,12 +117,12 @@ voices still come from
 | `thread/metadata/update` | unused | No client call or dedicated handler. | — |
 | `thread/name/set` | unused | No client call or dedicated handler. | — |
 | `thread/read` | used | Calls the app-server RPC. | `apps/desktop/src/main/codex/codex-turn.ts` |
-| `thread/resume` | partial | Resumes model/effort/tier; preserves the stored identity on failure instead of starting blank. Node persists the identity before turn input. New collaborationMode and disabledPluginIds response fields are unused. | `packages/codex/src/app-server-client.ts`, `apps/cli/src/session/codex-turn-runner.ts`, `apps/desktop/src/main/codex/codex-turn.ts` |
+| `thread/resume` | partial | Resumes model/effort/tier; preserves the stored identity on failure instead of starting blank. Node persists the identity before turn input. `collaborationMode` is read so a restored plan thread is not sampled. `disabledPluginIds` stays unused. | `packages/codex/src/app-server-client.ts`, `apps/cli/src/session/codex-turn-runner.ts`, `apps/desktop/src/main/codex/codex-turn.ts` |
 | `thread/revert` | used | Conversation rewind on the desktop session and the node. `beforeTurnId` is exclusive. | `apps/desktop/src/main/session/backends/codex-backend.ts`, `apps/cli/src/session/codex-turn-runner.ts`, `apps/cli/src/session/node-rewind.ts` |
 | `thread/section/move` | n/a | SuperOne owns projects, remote hosts, sidebar sections and filesystem operations. | — |
 | `thread/shellCommand` | unused | No client call or dedicated handler. | — |
 | `thread/start` | used | Calls the app-server RPC. | `packages/codex/src/app-server-client.ts`, `apps/desktop/src/main/codex/codex-turn.ts` |
-| `thread/turns/list` | partial | Legacy fork boundary lookup with itemsView:notLoaded; general native history paging remains unused. | `packages/codex/src/fork-thread.ts` |
+| `thread/turns/list` | partial | Legacy fork boundary lookup, and the newest turn for a prompt-suggestion catch-up (`sortDirection: desc`, `itemsView: notLoaded`, `limit: 1`). General native history paging remains unused. | `packages/codex/src/fork-thread.ts`, `packages/codex/src/prompt-sample.ts` |
 | `thread/unarchive` | unused | No client call or dedicated handler. | — |
 | `thread/unsubscribe` | used | Calls the app-server RPC. | `apps/desktop/src/main/codex/codex-turn.ts` |
 | `threadSection/create` | n/a | SuperOne owns projects, remote hosts, sidebar sections and filesystem operations. | — |
@@ -184,7 +187,8 @@ voices still come from
 | `thread/items/read` | unused | Experimental bounded item lookup; SuperOne owns transcript pagination. | — |
 | `thread/memory/read` | unused | Experimental memory-summary read. No client call. | — |
 | `thread/memoryMode/set` | unused | No client call or dedicated handler. | — |
-| `thread/prediction/request` | unused | Unused; last live probe on 0.165.0 rejected the placeholder method as not implemented. Not re-probed in this upgrade. | — |
+| `thread/prepareApprovedPlan` | unused | Experimental plan handoff into a fresh thread. SuperOne owns plan approval. | — |
+| `thread/prediction/request` | unused | Unused. Source through rust-v0.169.0 still returns not implemented. The last live probe was 0.165.0. Suggestions use `thread/sample`. | — |
 | `thread/queue/add` | used | Calls the app-server RPC. | `apps/desktop/src/main/session/backends/codex-backend.ts` |
 | `thread/queue/delete` | used | Calls the app-server RPC. | `apps/desktop/src/main/session/backends/codex-backend.ts` |
 | `thread/queue/list` | used | Calls the app-server RPC. | `apps/desktop/src/main/session/backends/codex-backend.ts` |
@@ -198,8 +202,8 @@ voices still come from
 | `thread/realtime/listVoices` | partial | Desktop/phone official-account voice catalog prefers v3, falls back to v1, and validates defaultV1. | `apps/desktop/src/main/codex/codex-realtime.ts` |
 | `thread/realtime/start` | partial | Desktop and paired-phone official-account WebRTC; backendReasoningStatus, voiceSessionId, and custom-provider audio are unused. | `apps/desktop/src/main/codex/codex-realtime.ts` |
 | `thread/realtime/stop` | partial | Host-owned desktop/paired-phone voice lifecycle; stop preserves delegated turns. | `apps/desktop/src/main/codex/codex-realtime.ts` |
-| `thread/sample` | unused | Experimental one-shot sample. Not the composer suggestion generator. | — |
-| `thread/sample/cancel` | unused | Cancels `thread/sample`. No client call. | — |
+| `thread/sample` | used | After a successful root turn, and when an idle composer shows a thread whose latest turn already completed, desktop and node request one prompt suggestion at `effort: low`. Plan mode, custom providers, child threads, and in-flight turns are skipped. `allowInProgressTurn` is not sent. The server keeps the parent effort when a cache-preserving change is unsupported. Unreadable text leaves the composer unchanged. | `packages/codex/src/prompt-sample.ts`, `packages/codex/src/prompt-prediction.ts` |
+| `thread/sample/cancel` | used | Abort or the 30s sample timeout cancels that request id. | `packages/codex/src/app-server-client.ts`, `apps/desktop/src/main/codex/app-server-connection.ts` |
 | `thread/search` | unused | No client call or dedicated handler. | — |
 | `thread/searchOccurrences` | unused | No client call or dedicated handler. | — |
 | `thread/settings/update` | partial | Desktop realtime/model/effort/tier synchronization; disabledPluginIds is unused. | `packages/codex/src/app-server-client.ts`, `apps/desktop/src/main/codex/codex-thread-selection.ts` |
@@ -292,7 +296,7 @@ voices still come from
 | `thread/goal/cleared` | unused | No client call or dedicated handler. | — |
 | `thread/goal/updated` | unused | No client call or dedicated handler. | — |
 | `thread/name/updated` | unused | No client call or dedicated handler. | — |
-| `thread/prediction/updated` | partial | Session-owned desktop/node receiver maps the latest successful root turn to shared `prompt_suggestion`; No generator is integrated; last provider producer check was on 0.165.0. | `packages/codex/src/prompt-prediction.ts`, `apps/desktop/src/main/codex/codex-session-dispatcher.ts`, `apps/cli/src/session/codex-turn-runner.ts` |
+| `thread/prediction/updated` | partial | Session-owned receiver still maps a completed result on the current root thread's latest successful turn to `prompt_suggestion`. The pinned server does not emit it. Suggestions are generated with `thread/sample`. | `packages/codex/src/prompt-prediction.ts`, `apps/desktop/src/main/codex/codex-session-dispatcher.ts`, `apps/cli/src/session/codex-turn-runner.ts` |
 | `thread/project/updated` | unused | No client call or dedicated handler. | — |
 | `thread/queue/changed` | used | Consumes the notification. | `apps/desktop/src/main/codex/codex-notification-dispatcher.ts` |
 | `thread/readState/changed` | unused | Generated in the stable bundle but source marks the feature experimental; host unread state remains authoritative. | — |

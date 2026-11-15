@@ -233,7 +233,7 @@ export class DesktopSessionHost extends DesktopSessionReads<DesktopSessionRow> i
   }
 
   get servedOperations(): ReadonlySet<string> {
-    return new Set(['session.authorizeMentionApps', 'session.connection.reconnect', 'session.inbox.list', 'session.inbox.cancel', 'session.inbox.update', 'session.contextUsage', 'session.mcpStatus', 'session.mcpAuthenticate', 'session.refreshResources', 'session.stopTask', 'session.backgroundTasks', 'session.startQueued', 'session.reset', 'session.rewind', 'session.previewRewind', 'session.truncateAtCheckpoint',
+    return new Set(['session.authorizeMentionApps', 'session.connection.reconnect', 'session.inbox.list', 'session.inbox.cancel', 'session.inbox.update', 'session.contextUsage', 'session.catchUpPrompt', 'session.mcpStatus', 'session.mcpAuthenticate', 'session.refreshResources', 'session.stopTask', 'session.backgroundTasks', 'session.startQueued', 'session.reset', 'session.rewind', 'session.previewRewind', 'session.truncateAtCheckpoint',
       ...(this.deps.sideChats ? ['session.sideChatStart', 'session.sideChatClose'] : []),
       ...(this.deps.scheduledSends ? ['session.scheduledSend.get', 'session.scheduledSend.set', 'session.scheduledSend.clear', 'sessionList.scheduledSends'] : []),
       'sessionList.deleteOlderThan',
@@ -363,6 +363,11 @@ export class DesktopSessionHost extends DesktopSessionReads<DesktopSessionRow> i
   async callOperation(sessionId: string, method: string, input: Record<string, unknown>): Promise<unknown> {
     if (method === 'session.scheduledSend.get') return this.deps.scheduledSends!.get(sessionId)
     if (method === 'session.contextUsage') return this.deps.sessions.getSession(sessionId)?.getContextUsage() ?? null
+    if (method === 'session.catchUpPrompt') {
+      const stored = this.row(sessionId)
+      if (!stored || stored.harnessId !== 'codex') return { ok: false }
+      return this.live(sessionId).catchUpCodexPrompt()
+    }
     if (method === 'session.mcpStatus') return this.deps.sessions.getSession(sessionId)?.getMcpServerStatus() ?? []
     if (method === 'session.connection.reconnect') return { ok: await (this.deps.sessions.getSession(sessionId)?.reconnect?.() ?? false) }
     if (method === 'session.inbox.list') return this.deps.sessions.getSession(sessionId)?.listInbox?.() ?? []

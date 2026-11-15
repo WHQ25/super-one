@@ -1,5 +1,6 @@
 import { processServerRequest } from './codex-turn'
 import log from '../logger'
+import { sampleCodexPromptSuggestion } from '@superone/codex/prompt-sample'
 import { createCodexPromptPrediction } from '@superone/codex/prompt-prediction'
 import type { AppServerConnection } from './app-server-connection'
 import { createNotificationDispatcher, type NotificationDispatcher } from './codex-notification-dispatcher'
@@ -13,6 +14,8 @@ export function createCodexSessionDispatcher(session: CodexSession, connection: 
     onSuggestion: suggestion => {
       if (session.promptPrediction === prediction) session.forkCallbacks?.onPromptSuggestion?.(suggestion)
     },
+    canSample: () => session.promptSampling !== false,
+    sample: (threadId, turnId, signal, trigger) => sampleCodexPromptSuggestion(connection, threadId, turnId, signal, trigger),
   })
   session.promptPrediction = prediction
   return createNotificationDispatcher(connection, {

@@ -95,6 +95,7 @@ export class FakeSession {
   }
   goal: { objective: string; status: string } | null = null
   async getCodexGoal() { return this.goal }
+  async catchUpCodexPrompt() { return { ok: true } }
   async setCodexGoal(_threadId: string | null, objective: string, status = 'active') { this.lease.assertMutation(); this.goal = { objective, status }; return this.goal }
   async clearCodexGoal() { this.lease.assertMutation(); this.goal = null; return true }
   setAgentPreset(value: string | null) { this.lease.assertMutation(); this.agentPreset = value }

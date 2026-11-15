@@ -3,9 +3,10 @@
 Verified on 2026-10-17 against npm Codex 0.163.0, upstream main
 `96eb400d1231f0199e96f640c740096087cf3e9b`, and the locally installed official
 app. Rechecked on 2026-10-29 against pinned npm Codex 0.165.0:
-`thread/prediction/request` still returns `-32601`. Status: client-driven
-generation is viable; SuperOne currently has the suggestion receiver/UI, but
-has not integrated the generator.
+`thread/prediction/request` still returns `-32601` on the releases checked
+through 0.169.0. SuperOne now generates the suggestion with `thread/sample`
+on the pinned 0.169.0 server. See the current status below. The rest of this
+note records the October 2026 investigation.
 
 ## Two different interfaces
 
@@ -13,7 +14,7 @@ has not integrated the generator.
 |---|---|
 | `thread/prediction/request` | Declared experimental, but the 0.163.0 and inspected main handlers unconditionally return method-not-found / not implemented. Enabling experimental API does not implement it. `rust-v0.165.0` `message_processor.rs` still returns `thread/prediction/request is not implemented yet`. |
 | `thread/prediction/updated` | Declared notification; no native generator emits it in the inspected release or in `rust-v0.165.0`. SuperOne already receives it if a future server supplies it. |
-| `thread/sample` | Experimental one-shot fork response added in 0.164.0, with `thread/sample/cancel`. SuperOne does not call it. It is not this receiver. |
+| `thread/sample` | Experimental one-shot fork response added in 0.164.0, with `thread/sample/cancel`. SuperOne calls it for prompt suggestions only. |
 | `thread/fork` with `experimentalPredictionMode: true` | Implemented. Creates an ephemeral fork from a loaded, persisted parent, inheriting effective settings, history, tools and environments for cache reuse. The client then runs a normal `turn/start` to generate a suggestion. |
 
 The unavailable dedicated RPC does **not** mean prompt prediction is impossible
@@ -65,6 +66,35 @@ Observed flow:
 
 This establishes the implementation of the installed build; it is not a
 claim that every newer app build follows exactly the same path.
+
+A later installed build (26.1029.61003, bundled Codex 0.166.0-alpha.6) prefers
+`thread/sample` when the server is at least 0.164.0-alpha.11. The fork path
+remains its fallback. SuperOne follows the sample path only.
+
+## Current status (2026-11-15)
+
+After a successful root turn, desktop and the remote node call experimental
+`thread/sample`. The prompt is SuperOne-owned and asks for JSON
+`{ "suggestion": string | null }`. A parsed string or an explicit null becomes
+the existing `prompt_suggestion` event. Unreadable text does not replace a
+suggestion already shown. `thread/sample/cancel` runs when the user sends
+again, the thread is compacted, or the connection is disposed, and when the
+30 second sample timeout fires. A `thread/goal/get` refresh is not one of
+those; the composer asks for the goal on every status change, including when
+the thread has no goal. Plan mode, custom base URLs, child threads,
+and ephemeral threads are not sampled. `allowInProgressTurn` is not sent.
+The sample sends `effort: low` so it does not inherit a parent turn at max.
+The server applies that only when the model can change effort without
+dropping the prompt cache.
+Opening an idle thread whose latest turn already finished also samples that
+turn once (`prediction_trigger: catch_up`). The desktop composer calls
+`session.catchUpPrompt` beside the goal refresh, and only while the session
+is idle. The remote node serves the same read. A turn this process is already
+sampling, a turn still running, plan mode, and a custom provider are left
+alone. `thread/turns/list` supplies the newest turn; only `status: completed`
+is sampled.
+The `thread/prediction/updated` receiver remains for a result the server
+actually emits.
 
 ## Live 0.163.0 reproduction
 

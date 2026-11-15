@@ -728,6 +728,21 @@ describe('resolveThread fallback', () => {
     }))
   })
 
+  it('keeps a resumed plan thread from sampling a prompt', async () => {
+    const session = makeSession({ model: 'gpt-5', threadId: 'valid-thread' })
+    const mockConnection = {
+      request: vi.fn().mockResolvedValueOnce({
+        thread: { id: 'valid-thread' },
+        collaborationMode: { mode: 'plan' },
+      }),
+    } as never
+
+    await resolveThread(mockConnection, session, '/project', '/project', permissionProfile as never)
+
+    expect(session.collaborationMode).toBe('plan')
+    expect(session.promptSampling).toBe(false)
+  })
+
   it('uses thread/start when no threadId exists', async () => {
     const session = makeSession({ model: 'gpt-5' })
     const mockConnection = {

@@ -1,6 +1,6 @@
 # Codex integration
 
-Pin: `@openai/codex` `0.167.0` · Ledger version: `0.167.0` · Last updated: 2026-11-06
+Pin: `@openai/codex` `0.169.0` · Ledger version: `0.169.0` · Last updated: 2026-11-15
 
 ## Upstream
 
@@ -23,15 +23,16 @@ Desktop spawns `codex app-server` and speaks JSON-RPC over stdio with
 | Shared core | `packages/codex/src` | `agent-event-mapper.ts`, per-version protocol shims (`protocol-v154.ts`, …), `fork-thread.ts` |
 | Remote node | `apps/cli/src/session/codex-turn-runner.ts` | Uses `packages/codex` |
 
-Prediction notification reception shares `packages/codex/src/prompt-prediction.ts`
-across desktop and remote node connections. Valid results use the existing shared
-`prompt_suggestion` event and composer UI: desktop ghost text / Tab-to-fill and
-mobile tappable rows. The receiver remains active after turn completion and
-filters stale or child-thread results. The dedicated prediction RPC is still
-last probed as unimplemented on 0.165.0 (not re-probed in 0.167.0), but the official app generates suggestions with an experimental
-ephemeral fork plus ordinary `turn/start`; that path is live-verified on the
-pinned binary. SuperOne has not integrated the generator and sends no extra
-prediction call yet. See [prompt-prediction.md](prompt-prediction.md) and the
+Prompt suggestions share `packages/codex/src/prompt-prediction.ts` and
+`packages/codex/src/prompt-sample.ts` across desktop and remote node connections.
+After a successful root turn, and when an idle composer opens a thread whose
+latest turn already finished, SuperOne calls experimental `thread/sample` with
+its own prompt and emits the existing `prompt_suggestion` event. Desktop ghost
+text / Tab-to-fill and mobile tappable rows are unchanged. The sample is
+cancelled when the user sends again, the thread is compacted, or the connection
+is disposed. Plan mode and custom base URLs stay on the notification receiver.
+`thread/prediction/request` is not called. See
+[prompt-prediction.md](prompt-prediction.md) and the
 [prediction contract](contracts.md#prediction-protocol-declarations-do-not-imply-a-working-suggestion-engine).
 
 Desktop and production remote-node connections declare `requiredHumanApproval`
@@ -56,7 +57,7 @@ clients without a native handler omit the capability. See the
 ## Documents
 
 - [multi-account.md](multi-account.md) — ChatGPT accounts bound per conversation
-- [prompt-prediction.md](prompt-prediction.md) — official app flow and live fork-generation proof
+- [prompt-prediction.md](prompt-prediction.md) — `thread/sample` prompt suggestions and the earlier fork-generation notes
 - [api-surface.md](api-surface.md) · [contracts.md](contracts.md) · [backlog.md](backlog.md)
 - [upgrades/](upgrades/) — `0.147/` and `0.154/` are multi-part plans written in Chinese
   before this folder existed.
@@ -65,6 +66,7 @@ clients without a native handler omit the capability. See the
 
 | Version | Date | Status | Upgrade doc | Commit |
 |---|---|---|---|---|
+| 0.169.0 | 2026-11-15 | executed | [0.169.0](upgrades/0.169.0.md) | — |
 | 0.167.0 | 2026-11-06 | executed | [0.167.0](upgrades/0.167.0.md) | — |
 | 0.165.0 | 2026-10-29 | executed | [0.165.0](upgrades/0.165.0.md) | — |
 | 0.163.0 | 2026-10-17 | executed | [0.163.0](upgrades/0.163.0.md) | — |

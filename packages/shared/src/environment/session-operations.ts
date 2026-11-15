@@ -18,6 +18,8 @@ export interface SessionOperationMethods {
   'session.sideChatStart': { input: Record<string, never>; result: SideChatStartResult }
   'session.sideChatClose': { input: Record<string, never>; result: boolean }
   'session.contextUsage': { input: Record<string, never>; result: ContextUsageInfo | null }
+  /** Sample a prompt suggestion for a thread whose latest turn already finished. */
+  'session.catchUpPrompt': { input: Record<string, never>; result: { ok: boolean } }
   'session.mcpStatus': { input: Record<string, never>; result: McpServerInfo[] }
   'session.mcpAuthenticate': { input: { serverName: string }; result: null }
   'session.refreshResources': { input: Record<string, never>; result: Partial<HarnessResourcesMap> | null }
@@ -42,13 +44,13 @@ export const SESSION_OPERATION_METHODS: ReadonlySet<string> = new Set([
   'session.forceRecover',
   'session.scheduledSend.get', 'session.scheduledSend.set', 'session.scheduledSend.clear',
   'session.sideChatStart', 'session.sideChatClose',
-  'session.contextUsage', 'session.mcpStatus', 'session.mcpAuthenticate', 'session.refreshResources',
+  'session.contextUsage', 'session.catchUpPrompt', 'session.mcpStatus', 'session.mcpAuthenticate', 'session.refreshResources',
   'session.inbox.list', 'session.inbox.cancel', 'session.inbox.update',
   'session.connection.reconnect',
   'session.stopTask', 'session.backgroundTasks', 'session.startQueued', 'session.reset',
   'session.rewind', 'session.previewRewind', 'session.truncateAtCheckpoint',
 ])
-export const SESSION_OPERATION_READS: ReadonlySet<string> = new Set(['session.scheduledSend.get', 'session.previewRewind', 'session.contextUsage', 'session.mcpStatus', 'session.inbox.list', 'session.connection.reconnect'])
+export const SESSION_OPERATION_READS: ReadonlySet<string> = new Set(['session.scheduledSend.get', 'session.previewRewind', 'session.contextUsage', 'session.catchUpPrompt', 'session.mcpStatus', 'session.inbox.list', 'session.connection.reconnect'])
 
 export interface SessionListOperationMethods {
   'sessionList.scheduledSends': { input: Record<string, never>; result: ScheduledSend[] }

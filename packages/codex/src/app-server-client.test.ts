@@ -67,6 +67,28 @@ async function pump(): Promise<void> {
 }
 
 describe('codex app-server client (Stage 4)', () => {
+  it('cancels an aborted thread/sample with that request id', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'codex-sample-'))
+    const bin = join(dir, 'codex')
+    writeFileSync(bin, '#!/bin/sh\n')
+    const child = createFakeChild()
+    const lines = collectLines(child.stdin)
+    const opening = openCodexAppServer({ binaryPath: bin, spawnFn: () => asSpawnChild(child) })
+    await pump()
+    child.stdout.write(`${JSON.stringify({ id: JSON.parse(lines[0]).id, result: {} })}\n`)
+    const client = await opening
+    try {
+      const controller = new AbortController()
+      const pending = client.request('thread/sample', { threadId: 't', expectedTurnId: 'u' }, { signal: controller.signal, timeoutMs: 30_000 })
+      const sample = JSON.parse(lines.at(-1)!)
+      expect(sample.method).toBe('thread/sample')
+      controller.abort()
+      await expect(pending).rejects.toThrow(/interrupted/)
+      const cancel = lines.map(line => JSON.parse(line)).find(line => line.method === 'thread/sample/cancel')
+      expect(cancel).toEqual({ jsonrpc: '2.0', method: 'thread/sample/cancel', params: { requestId: sample.id } })
+    } finally { await client.close(); rmSync(dir, { recursive: true, force: true }) }
+  })
+
   it.each(['close', 'stdout end'] as const)('rejects notification reads on %s instead of returning idle polls', async reason => {
     const dir = mkdtempSync(join(tmpdir(), 'codex-close-'))
     const bin = join(dir, 'codex')

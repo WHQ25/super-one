@@ -50,7 +50,7 @@ export class CodexGoalController {
 
   async get(threadId: string | null): Promise<CodexGoal | null> {
     const goal = await this.requestGoal(threadId, (connection, resolvedThreadId) =>
-      connection.request('thread/goal/get', { threadId: resolvedThreadId }))
+      connection.request('thread/goal/get', { threadId: resolvedThreadId }), { mutate: false })
     const mapped = mapCodexGoal(goal.goal)
     this.setCurrentGoal(mapped)
     if (mapped?.status === 'active') this.schedule()
@@ -141,6 +141,7 @@ export class CodexGoalController {
   private async requestGoal(
     threadId: string | null,
     request: (connection: AppServerConnection, resolvedThreadId: string) => Promise<Record<string, unknown>>,
+    options?: { mutate?: boolean },
   ): Promise<Record<string, unknown>> {
     const session = this.options.getSession()
     if (!session) throw new Error('Codex session is not initialized')
@@ -156,7 +157,9 @@ export class CodexGoalController {
       this.options.getCwd(),
       resolvePermissionProfile(session.permissionPreset),
       ({ connection, threadId: resolvedThreadId, markMutationStarted }) => {
-        markMutationStarted()
+        // A read is not a new turn. The composer re-reads the goal when a turn
+        // goes idle, and markMutationStarted aborts the sample that completion just started.
+        if (options?.mutate !== false) markMutationStarted()
         return request(connection, resolvedThreadId)
       },
     )

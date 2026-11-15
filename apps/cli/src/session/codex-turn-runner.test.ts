@@ -255,6 +255,16 @@ describe('createNodeCodexTurnRunner', () => {
     await vi.waitFor(() => expect(ambientEvents).toEqual([{ type: 'prompt_suggestion', suggestion: 'Run tests' }]))
     expect(agentEvents.some(event => event.type === 'prompt_suggestion')).toBe(false)
     expect(lines.some(line => line.includes('thread/prediction/request'))).toBe(false)
+    const sampleLine = lines.map(line => JSON.parse(line)).find(line => line.method === 'thread/sample')
+    expect(sampleLine?.params).toMatchObject({
+      threadId: 't-abc',
+      expectedTurnId: 'u1',
+      disableMcp: true,
+      effort: 'low',
+      threadSource: 'composer_predictions',
+      responsesapiClientMetadata: { prediction_trigger: 'turn_completed' },
+    })
+    expect(sampleLine?.params).not.toHaveProperty('allowInProgressTurn')
     const onIdleElicitation = vi.fn(async (_interaction, signal: AbortSignal) => {
       expect(signal.aborted).toBe(false)
       return { action: 'accept' as const, content: { name: 'idle-dial' }, _meta: null }
@@ -283,6 +293,9 @@ describe('createNodeCodexTurnRunner', () => {
     await pump()
     expect(lines.map(l => JSON.parse(l)).find(l => l.id === 'unscoped')).toMatchObject({ result: { action: 'cancel' } })
     await runner.disposeAll!()
+    expect(lines.map(line => JSON.parse(line)).some(line =>
+      line.method === 'thread/sample/cancel' && line.params?.requestId === sampleLine.id,
+    )).toBe(true)
 
     rmSync(dir, { recursive: true, force: true })
   })
@@ -1010,6 +1023,105 @@ url = "https://mcp.linear.app/mcp"
     child.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: fork.id, result: { thread: { id: 'forked' } } })}\n`)
     await expect(pending).resolves.toEqual({ canRewind: true, supportsCodeOnly: false })
     expect(onProviderResume).toHaveBeenCalledWith('thread:forked')
+    await runner.disposeAll?.()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('does not catch up while a turn is still streaming', async () => {
+    const runner = createNodeCodexTurnRunner({
+      resolveProjectPath: () => '/tmp', allowSimulatedFallback: false, binaryPath: null,
+    })
+    const host = {
+      messages: [] as ChatMessage[], assertControl() {}, onEvent() {},
+      onQuestion: async () => ({}), onPermission: async () => 'allow' as const,
+    }
+    await expect(runner.callOperation!(session({ providerResume: 'thread:t-1' }), 'session.catchUpPrompt', {}, host))
+      .resolves.toEqual({ ok: true })
+  })
+
+  it('catch-up samples a finished thread this process did not watch', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cbr-catchup-'))
+    const bin = join(dir, 'codex')
+    writeFileSync(bin, '#!/bin/sh\n')
+    chmodSync(bin, 0o755)
+    const child = createFakeChild()
+    const lines: string[] = []
+    child.stdin.on('data', (b: Buffer) => {
+      for (const line of b.toString().split('\n')) if (line.trim()) lines.push(line.trim())
+    })
+    const runner = createNodeCodexTurnRunner({
+      binaryPath: bin, resolveProjectPath: () => dir, spawnFn: () => asSpawnChild(child), allowSimulatedFallback: false,
+    })
+    const events: AgentEvent[] = []
+    const host = {
+      messages: [] as ChatMessage[], assertControl() {}, onEvent(event: AgentEvent) { events.push(event) },
+      onQuestion: async () => ({}), onPermission: async () => 'allow' as const,
+    }
+    const answered = new Set<number>()
+    const replyNext = async (method: string, result: unknown) => {
+      await pump()
+      const parsed = lines.map(line => JSON.parse(line)).find(line =>
+        line.method === method && typeof line.id === 'number' && !answered.has(line.id))
+      if (!parsed) throw new Error(`missing ${method}`)
+      answered.add(parsed.id)
+      child.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result })}\n`)
+      return parsed
+    }
+    const idle = session({ status: 'idle', providerResume: 'thread:t-1' })
+    const first = runner.callOperation!(idle, 'session.catchUpPrompt', {}, host)
+    await replyNext('initialize', {})
+    await replyNext('thread/resume', { thread: { id: 't-1' }, collaborationMode: 'default' })
+    await replyNext('thread/turns/list', { data: [{ id: 'turn-9', status: 'completed' }] })
+    await expect(first).resolves.toEqual({ ok: true })
+    await pump()
+    const sample = lines.map(line => JSON.parse(line)).find(line => line.method === 'thread/sample')
+    expect(sample?.params).toMatchObject({
+      threadId: 't-1',
+      expectedTurnId: 'turn-9',
+      effort: 'low',
+      disableMcp: true,
+      responsesapiClientMetadata: { prediction_trigger: 'catch_up' },
+    })
+    expect(sample?.params).not.toHaveProperty('allowInProgressTurn')
+    child.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: sample.id, result: { text: '{"suggestion":"Continue the tests"}' } })}\n`)
+    await vi.waitFor(() => expect(events).toContainEqual({ type: 'prompt_suggestion', suggestion: 'Continue the tests' }))
+
+    const second = runner.callOperation!(idle, 'session.catchUpPrompt', {}, host)
+    await replyNext('thread/turns/list', { data: [{ id: 'turn-9', status: 'completed' }] })
+    await expect(second).resolves.toEqual({ ok: true })
+    await pump()
+    expect(lines.map(line => JSON.parse(line)).filter(line => line.method === 'thread/sample')).toHaveLength(1)
+
+    await runner.disposeAll?.()
+    rmSync(dir, { recursive: true, force: true })
+  })
+
+  it('does not catch up a resumed plan thread', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'cbr-catchup-plan-'))
+    const bin = join(dir, 'codex')
+    writeFileSync(bin, '#!/bin/sh\n')
+    chmodSync(bin, 0o755)
+    const child = createFakeChild()
+    const lines: string[] = []
+    child.stdin.on('data', (b: Buffer) => {
+      for (const line of b.toString().split('\n')) if (line.trim()) lines.push(line.trim())
+    })
+    const runner = createNodeCodexTurnRunner({
+      binaryPath: bin, resolveProjectPath: () => dir, spawnFn: () => asSpawnChild(child), allowSimulatedFallback: false,
+    })
+    const host = {
+      messages: [] as ChatMessage[], assertControl() {}, onEvent() {},
+      onQuestion: async () => ({}), onPermission: async () => 'allow' as const,
+    }
+    const pending = runner.callOperation!(session({ status: 'idle', providerResume: 'thread:t-plan' }), 'session.catchUpPrompt', {}, host)
+    await pump()
+    const init = JSON.parse(lines.find(line => line.includes('"initialize"'))!)
+    child.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: init.id, result: {} })}\n`)
+    await pump()
+    const resume = JSON.parse(lines.find(line => line.includes('thread/resume'))!)
+    child.stdout.write(`${JSON.stringify({ jsonrpc: '2.0', id: resume.id, result: { thread: { id: 't-plan' }, collaborationMode: { mode: 'plan' } } })}\n`)
+    await expect(pending).resolves.toEqual({ ok: true })
+    expect(lines.some(line => line.includes('thread/turns/list') || line.includes('thread/sample'))).toBe(false)
     await runner.disposeAll?.()
     rmSync(dir, { recursive: true, force: true })
   })

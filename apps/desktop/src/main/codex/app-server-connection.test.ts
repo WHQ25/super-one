@@ -284,6 +284,33 @@ describe('createAppServerConnection', () => {
     expect(child.kill).toHaveBeenCalled()
   })
 
+  it('cancels an aborted thread/sample with that request id', async () => {
+    const child = createFakeChild()
+    spawnMock.mockReturnValueOnce(child)
+    const stdinLines = collectStdinLines(child)
+    const handlePromise = createAppServerConnection({ mode: 'apiKey', apiKey: 'k' })
+    await nextTick()
+    writeLineToChild(child, { id: 1, result: {} })
+    const handle = await handlePromise
+    const controller = new AbortController()
+    const pending = handle.connection.request(
+      'thread/sample',
+      { threadId: 't', expectedTurnId: 'u' },
+      { signal: controller.signal, timeoutMs: 30_000 },
+    )
+    await nextTick()
+    controller.abort()
+    await expect(pending).rejects.toThrow(/interrupted/)
+    await vi.waitFor(() => {
+      const lines = stdinLines.join('').split('\n').filter(Boolean).map(line => JSON.parse(line))
+      const sample = lines.find(line => line.method === 'thread/sample')
+      const cancel = lines.find(line => line.method === 'thread/sample/cancel')
+      expect(sample.id).toBe(2)
+      expect(cancel).toEqual({ method: 'thread/sample/cancel', params: { requestId: 2 } })
+    })
+    await handle.close()
+  })
+
   it('rejects immediately when the signal is already aborted', async () => {
     const controller = new AbortController()
     controller.abort()

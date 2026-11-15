@@ -33,6 +33,7 @@ import {
   type CodexSpawnFn,
   type CodexTurnKind,
 } from '@superone/codex'
+import { catchUpCodexPromptSuggestion, readCodexCollaborationModeName, sampleCodexPromptSuggestion } from '@superone/codex/prompt-sample'
 import {
   createNodeClaudeTurnRunner,
   type NodeClaudeRunnerOptions,
@@ -179,6 +180,10 @@ interface LiveCodexConnection {
   nativeApprovalEnabled: boolean
   nativeApprovalAbort: AbortController
   promptPrediction: CodexPromptPrediction
+  /** True after a turn whose collaboration mode is plan. An omitted mode keeps the previous value. */
+  planMode: boolean
+  /** True when the resolved provider sets a custom Codex base URL. */
+  customModelProvider: boolean
   onPromptSuggestion?: (suggestion: string) => void
   /** True while a voice call must drain every app-server notification. */
   voiceActive: boolean
@@ -191,6 +196,15 @@ export function codexVoiceConsumesNotification(
   method: string,
 ): boolean {
   return Boolean(live && (live.voiceActive || method.startsWith('thread/realtime/')))
+}
+
+function rememberCodexPlanMode(live: { planMode: boolean }, result: Record<string, unknown>): void {
+  const thread = result.thread
+  const nested = thread && typeof thread === 'object' && !Array.isArray(thread)
+    ? (thread as Record<string, unknown>).collaborationMode
+    : undefined
+  const mode = readCodexCollaborationModeName(result.collaborationMode ?? nested)
+  if (mode) live.planMode = mode === 'plan'
 }
 
 function parseTurnKind(raw: unknown): CodexTurnKind {
@@ -206,6 +220,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
   const disposeLive = async (sessionId: string) => {
     const live = liveBySession.get(sessionId)
     if (!live) return
+    live.promptPrediction.invalidate()
     liveBySession.delete(sessionId)
     cancelCodexMcpAppInvocations(live.client)
     await live.client.close().catch(() => {})
@@ -217,12 +232,14 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
     authEnv: NodeJS.ProcessEnv,
     cwd: string,
     permissionHandler?: Parameters<TurnRunner>[0]['onPermissionResponse'],
+    customModelProvider = false,
   ): Promise<LiveCodexConnection> => {
     const providerEnvKey = providerEnvKeyOf(authEnv)
     const existing = liveBySession.get(sessionId)
     if (existing && existing.cwd === cwd && existing.providerEnvKey === providerEnvKey
       && (!permissionHandler || existing.nativeApprovalEnabled)) {
       if (permissionHandler) existing.onPermissionResponse = permissionHandler
+      existing.customModelProvider = customModelProvider
       return existing
     }
     const providerPermission = permissionHandler ?? existing?.onPermissionResponse
@@ -233,6 +250,15 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
       onSuggestion: suggestion => {
         const live = liveBySession.get(sessionId)
         if (live?.promptPrediction === promptPrediction) live.onPromptSuggestion?.(suggestion)
+      },
+      canSample: () => {
+        const live = liveBySession.get(sessionId)
+        return !!live && !live.planMode && !live.customModelProvider
+      },
+      sample: (threadId, turnId, signal, trigger = 'turn_completed') => {
+        const live = liveBySession.get(sessionId)
+        if (!live) return Promise.resolve(undefined)
+        return sampleCodexPromptSuggestion(live.client, threadId, turnId, signal, trigger)
       },
     })
     const client = await openCodexAppServer({
@@ -307,6 +333,8 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
       busyCount: 0,
       lastActivityAt: Date.now(),
       promptPrediction,
+      planMode: false,
+      customModelProvider,
       voiceActive: false,
       voiceListeners: new Set(),
     }
@@ -360,7 +388,13 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
         ? { mcp_servers: merged.codexMcpServers }
         : undefined
 
-    return { cwd, authEnv, threadConfig, mcpServers: merged.codexMcpServers }
+    return {
+      cwd,
+      authEnv,
+      threadConfig,
+      mcpServers: merged.codexMcpServers,
+      customModelProvider: Boolean(providerEnv.CODEX_BASE_URL || providerEnv.OPENAI_BASE_URL),
+    }
   }
 
   const runner: TurnRunner = async (input) => {
@@ -394,7 +428,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
     if (!priorThread && !liveBySession.get(sessionId)?.threadId && hasPriorHistory) {
       throw new Error('Cannot resume Codex: the provider resume ID is missing. Saved chat history is unchanged; recover the original thread or start a new session explicitly.')
     }
-    const { cwd, authEnv, threadConfig, mcpServers } = await prepare(input)
+    const { cwd, authEnv, threadConfig, mcpServers, customModelProvider } = await prepare(input)
     let turnKind = parseTurnKind(input.turnKind)
 
     if (input.images?.length && turnKind !== 'run' && turnKind !== 'steer') {
@@ -439,7 +473,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
       }
     }
 
-    const live = await openLive(sessionId, binary, authEnv, cwd, input.onPermissionResponse)
+    const live = await openLive(sessionId, binary, authEnv, cwd, input.onPermissionResponse, customModelProvider)
 
     const fullTurn = async (): Promise<{
       finalText: string
@@ -468,6 +502,8 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
       }
 
       try {
+        const modeName = readCodexCollaborationModeName(input.collaborationMode)
+        if (modeName) conn.planMode = modeName === 'plan'
         // Always ensure the server-side thread on a fresh connection (or when
         // providerResume points at a different thread id).
         if (!conn.threadId || (priorThread && priorThread !== conn.threadId)) {
@@ -592,7 +628,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
     if (binding.account !== (session.apiProviderId ?? undefined)) throw new McpAppsError('auth_required', 'MCP App account changed')
     const prepared = await prepare({ session, apiProviderId: session.apiProviderId })
     if (binding.configFingerprint !== mcpServerConfigFingerprint(prepared.mcpServers[binding.server])) throw new McpAppsError('not_connected', 'MCP App server configuration changed')
-    const live = await openLive(session.sessionId, binary, prepared.authEnv, prepared.cwd, host?.onPermissionResponse)
+    const live = await openLive(session.sessionId, binary, prepared.authEnv, prepared.cwd, host?.onPermissionResponse, prepared.customModelProvider)
     live.approvalRootThreadId = origin.providerSessionId
     if (!live.threadId) live.threadId = await ensureCodexThread({ client: live.client, cwd: prepared.cwd, threadId: origin.providerSessionId,
       threadConfig: prepared.threadConfig, permissionPreset: session.permissionPreset, signal: new AbortController().signal })
@@ -625,7 +661,44 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
     lastActivityAt: live.lastActivityAt,
     busy: live.busyCount > 0,
   }))
+  const catchUpPrompt = async (
+    session: Parameters<NonNullable<TurnRunner['callOperation']>>[0],
+    host: Parameters<NonNullable<TurnRunner['callOperation']>>[3],
+  ): Promise<{ ok: boolean }> => {
+    if ((session.harnessId || 'codex') !== 'codex') return { ok: false }
+    if (session.status === 'streaming') return { ok: true }
+    const existing = liveBySession.get(session.sessionId)
+    if (existing?.activeTurnId || (existing && existing.busyCount > 0)) return { ok: true }
+    const storedThread = session.providerResume?.startsWith('thread:')
+      ? session.providerResume.slice('thread:'.length).trim()
+      : ''
+    const knownThreadId = existing?.threadId || storedThread
+    if (!knownThreadId) return { ok: true }
+    const binary = resolveCodexBinaryPath(opts)
+    if (!binary) return { ok: false }
+    const prepared = await prepare({ session, apiProviderId: session.apiProviderId })
+    const live = await openLive(session.sessionId, binary, prepared.authEnv, prepared.cwd, undefined, prepared.customModelProvider)
+    if (live.activeTurnId || live.busyCount > 0) return { ok: true }
+    live.onPromptSuggestion = suggestion => host.onEvent({ type: 'prompt_suggestion', suggestion })
+    live.lastActivityAt = Date.now()
+    if (!live.threadId || live.threadId !== knownThreadId) {
+      live.threadId = await ensureCodexThread({
+        client: live.client,
+        cwd: prepared.cwd,
+        threadId: knownThreadId,
+        threadConfig: prepared.threadConfig,
+        permissionPreset: session.permissionPreset,
+        onResolved: result => rememberCodexPlanMode(live, result),
+      })
+    }
+    if (live.planMode || live.customModelProvider || !live.threadId) return { ok: true }
+    await catchUpCodexPromptSuggestion(live.client, live.promptPrediction, live.threadId)
+    return { ok: true }
+  }
+
+  runner.servedOperations = new Set(['session.previewRewind', 'session.rewind', 'session.catchUpPrompt'])
   runner.callOperation = async (session, method, input, host) => {
+    if (method === 'session.catchUpPrompt') return catchUpPrompt(session, host)
     if (method !== 'session.previewRewind' && method !== 'session.rewind') {
       throw Object.assign(new Error(`Unsupported session operation: ${method}`), { code: 'unsupported' })
     }
@@ -649,7 +722,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
     if (!binary || !threadId) return { canRewind: false, error: 'No Codex thread to rewind' }
     try {
       const prepared = await prepare({ session, apiProviderId: session.apiProviderId })
-      const conn = await openLive(session.sessionId, binary, prepared.authEnv, prepared.cwd)
+      const conn = await openLive(session.sessionId, binary, prepared.authEnv, prepared.cwd, undefined, prepared.customModelProvider)
       if (!conn.threadId || conn.threadId !== threadId) {
         conn.threadId = await ensureCodexThread({
           client: conn.client,
@@ -683,7 +756,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
       const binary = resolveCodexBinaryPath(opts)
       if (!binary) throw Object.assign(new Error('Codex binary unavailable'), { code: 'failed_precondition' })
       const prepared = await prepare({ session, apiProviderId: session.apiProviderId })
-      const live = await openLive(session.sessionId, binary, prepared.authEnv, prepared.cwd, host?.onPermissionResponse)
+      const live = await openLive(session.sessionId, binary, prepared.authEnv, prepared.cwd, host?.onPermissionResponse, prepared.customModelProvider)
       if (!live.threadId) {
         const prior = session.providerResume?.startsWith('thread:') ? session.providerResume.slice('thread:'.length) : null
         live.approvalRootThreadId = prior
@@ -783,6 +856,12 @@ export function createProductionTurnRunner(opts: NodeProductionRunnerOptions): T
   }
   runner.isModHostRequestPending = (sessionId, requestId) => claude.isModHostRequestPending?.(sessionId, requestId) ?? false
   runner.callOperation = (session, method, input, host) => {
+    if (method === 'session.catchUpPrompt') {
+      if (session.harnessId !== 'codex' || !codex.callOperation) {
+        return Promise.reject(Object.assign(new Error(`Unsupported session operation: ${method}`), { code: 'unsupported' }))
+      }
+      return codex.callOperation(session, method, input, host)
+    }
     if (REWIND_METHODS.has(method)) {
       return dispatchNodeRewind({
         session,
@@ -831,6 +910,7 @@ export function createProductionTurnRunner(opts: NodeProductionRunnerOptions): T
   runner.servedOperations = new Set([
     ...(acpOpenCode.servedOperations ?? []),
     ...(claude.servedOperations ?? []),
+    ...(codex.servedOperations ?? []),
   ])
   runner.steer = acpOpenCode.steer
   runner.interruptSession = async sessionId => {

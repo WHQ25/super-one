@@ -267,6 +267,15 @@ describe('Codex AgentEvent mapper', () => {
     expect(events.filter(event => event.type === 'compact_boundary')).toHaveLength(2)
   })
 
+  it('keeps a moderated agent message as its text', () => {
+    expect(mapCodexThreadItem({
+      id: 'answer-1',
+      type: 'agentMessage',
+      text: 'Answer',
+      moderation: { moderated: true, display: { action: 'hide', blockType: 'wellbeing' } },
+    })).toEqual({ id: 'answer-1', type: 'agent_message', text: 'Answer' })
+  })
+
   it('keeps async agent delivery out of the inline final response', () => {
     const events: AgentEvent[] = []
     const mapper = createCodexAgentEventMapper({ messageId: 'm', emit: (event) => events.push(event) })

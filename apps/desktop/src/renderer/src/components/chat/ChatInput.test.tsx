@@ -629,6 +629,7 @@ describe('ChatInput', () => {
 
     await waitFor(() => {
       expect(goalState.callSession).toHaveBeenCalledWith('local', 'session-1', 'session.getGoal', {})
+      expect(goalState.callSession).toHaveBeenCalledWith('local', 'session-1', 'session.catchUpPrompt', {})
     })
     const indicator = screen.getByTestId('goal-indicator')
     expect(indicator).toHaveTextContent('Ship the goal UX')

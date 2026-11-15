@@ -1,4 +1,5 @@
 import { codexSegmentCompletionData, recordCodexSegmentActivity, recordCodexSegmentProvenance, type CodexMessageSegment } from './codex-message-data'
+import { catchUpCodexPromptSuggestion } from '@superone/codex/prompt-sample'
 import { attachCodexMcpAppTree, createCodexMcpAppsProvider, prewarmCodexMcpAppCatalog } from '@superone/codex/mcp-apps'
 import { ensureCodexMcpAppThread } from '@superone/codex/mcp-app-thread'
 import { withCodexMcpAppElicitation, cancelCodexMcpAppInvocations } from '@superone/codex/mcp-app-elicitation'
@@ -44,7 +45,7 @@ import {
   tearDownForkRuntime,
 } from '../../codex/codex-session'
 import { updateCodexPermissionMode } from './codex-backend-permissions'
-import type { AppServerConnectionHandle, CodexProjectAuth } from '../../codex/app-server-connection'
+import { resolvePermissionProfile, type AppServerConnectionHandle, type CodexProjectAuth } from '../../codex/app-server-connection'
 import { notifyCodexSkillsChanged } from '../../codex/codex-skills-watcher'
 import { createCodexSessionDispatcher } from '../../codex/codex-session-dispatcher'
 import {
@@ -56,6 +57,8 @@ import {
   prewarmCodexConnection,
   prewarmCodexSession,
   processServerRequest,
+  syncCodexPromptSampling,
+  withThreadConnection,
   resetCodexSession,
   respondToCodexPermission,
   respondToCodexQuestion,
@@ -119,6 +122,9 @@ interface WarmCodexHandle {
   model?: string
   reasoningEffort?: CodexReasoningEffort
   permissionPreset?: CodexPermissionPreset
+  /** Copied from the prewarm session. Resume will not run again after adopt. */
+  collaborationMode?: string | null
+  promptSampling?: boolean
 }
 
 interface DurableQueuedMessage {
@@ -496,6 +502,8 @@ export class CodexBackend implements SessionBackend {
         model: warmSession.model,
         reasoningEffort: warm.reasoningEffort,
         permissionPreset: warm.permissionPreset,
+        collaborationMode: warmSession.collaborationMode,
+        promptSampling: warmSession.promptSampling,
       }
     } catch (err) {
       try { await handle.close() } catch {}
@@ -544,6 +552,8 @@ export class CodexBackend implements SessionBackend {
     if (warm.model !== undefined) session.model = warm.model
     if (warm.reasoningEffort !== undefined) session.modelReasoningEffort = warm.reasoningEffort
     if (warm.permissionPreset !== undefined) session.permissionPreset = warm.permissionPreset
+    if (warm.collaborationMode !== undefined) session.collaborationMode = warm.collaborationMode
+    if (warm.promptSampling !== undefined) session.promptSampling = warm.promptSampling
     trace('codex.prewarm', 'adopted', {
       projectPath: startOpts.projectPath,
       threadId: warm.threadId,
@@ -1330,6 +1340,31 @@ export class CodexBackend implements SessionBackend {
   async getCodexGoal(threadId: string | null): Promise<CodexGoal | null> {
     this.assertStarted()
     return this.goalController.get(threadId)
+  }
+
+  /**
+   * Sample the newest finished turn when this process did not see it complete.
+   * A read: it must not mark a mutation, or the sample it just started is cancelled.
+   */
+  async catchUpCodexPrompt(): Promise<{ ok: boolean }> {
+    this.assertStarted()
+    const session = this.session
+    const projectPath = this.startOpts?.projectPath
+    if (!session?.threadId || !projectPath || this.isTurnBusy()) return { ok: true }
+    await withThreadConnection(
+      session,
+      this.service.getProjectAuth(projectPath, session.apiProviderId ?? this.startOpts?.apiProviderId),
+      undefined,
+      session.projectPath,
+      this.startOpts?.cwd || projectPath,
+      resolvePermissionProfile(session.permissionPreset),
+      async ({ connection, threadId }) => {
+        syncCodexPromptSampling(session)
+        if (session.promptSampling === false || !session.promptPrediction) return
+        await catchUpCodexPromptSuggestion(connection, session.promptPrediction, threadId)
+      },
+    )
+    return { ok: true }
   }
 
   async setCodexGoal(threadId: string | null, objective: string, status?: CodexGoalStatus): Promise<CodexGoal | null> {

@@ -240,10 +240,22 @@ items still map to Agent cards.
   handler string is still the only implementation at `rust-v0.165.0`
   (`message_processor.rs`); that release also does not construct
   `ThreadPredictionUpdated`. These facts apply to the dedicated RPC/event, not
-  to client-driven generation. The official app uses experimental ephemeral
-  `thread/fork` plus ordinary `turn/start`, which works on 0.163.0. Experimental
-  `thread/sample` (0.164.0) is a separate one-shot API and is not this receiver.
-  See [prompt-prediction.md](prompt-prediction.md).
+  to client-driven generation. The official app's older build used experimental
+  ephemeral `thread/fork` plus ordinary `turn/start`, which works on 0.163.0.
+  A later installed build prefers experimental `thread/sample` (0.164.0).
+  SuperOne calls `thread/sample` after a successful root turn, and once more
+  when an idle composer opens a thread whose latest turn already finished
+  (`session.catchUpPrompt`, `prediction_trigger: catch_up`). The request
+  carries a SuperOne-owned prompt, `effort: low`, `threadSource` / `turnTrigger`
+  `composer_predictions`, and `disableMcp: true`. Assistant `text` is parsed as
+  JSON `{ "suggestion": string | null }`. `text: null` or a null suggestion
+  clears the composer. Unreadable text does not replace a suggestion already
+  shown. Abort, the 30 second timeout, a new turn, compaction, and connection
+  disposal send `thread/sample/cancel` for that request id. Plan mode, custom
+  base URLs, child threads, and ephemeral threads are not sampled.
+  `allowInProgressTurn` is not sent. The notification receiver still accepts a
+  `thread/prediction/updated` result for the same source turn. See
+  [prompt-prediction.md](prompt-prediction.md).
   A dedicated-event completed result allows nullable `text`; a failed result
   contains no suggestion.
 - **Observed:** Exact `rust-v0.163.0` source and an isolated npm-binary RPC check
@@ -253,24 +265,31 @@ items still map to Agent cards.
   and no producer was added. An isolated 0.165.0 npm binary returned the same
   `-32601` for `thread/prediction/request` after `initialize`.
   A subsequent inspection of installed official app 26.1007.71326 and a live
-  0.163.0 inference probe verified the separate fork-based generator.
+  0.163.0 inference probe verified the separate fork-based generator. On
+  2026-11-15 the dedicated request was still unimplemented on `rust-v0.169.0`,
+  and installed app 26.1029.61003 preferred `thread/sample`. SuperOne's
+  generator is that sample call; this change does not add a new live inference
+  probe.
 - **Depends on it:** `packages/codex/src/prompt-prediction.ts` is shared by the
   desktop notification dispatcher and node client observer, both alive between
-  turns. It accepts only the current root thread's latest observed successful
-  `sourceTurnId` after `turn/completed`. Unknown, child, older, active, failed and
-  interrupted turns cannot update the composer. A new full input invalidates
+  turns. It accepts the current root thread's latest observed successful
+  `sourceTurnId` after `turn/completed`, and a catch-up of a completed turn this
+  process did not watch. Unknown, child, older, active, failed and
+  interrupted turns cannot update the composer. A catch-up of the same turn,
+  or of any turn while another turn is still running, does not sample again. A new full input invalidates
   the previous source before its submission RPC; new turn/compaction notifications
   also invalidate it. Failed, null or blank prediction results clear a shown
   suggestion through an empty `prompt_suggestion` event. Desktop reuses ghost text
   and Tab-to-fill; mobile reuses tappable rows. Neither edits a nonempty draft or
   sends input automatically. Node delivery uses the session's ambient sink after
-  the original user request settles.
-- **Guard:** `prompt-prediction.test.ts`, desktop dispatcher-to-chat-core tests,
-  node fake-process tests (including an aborted settled request), shared reducer
-  and existing composer tests. Upgrade smoke confirms the unavailable request.
-  No product generator or extra inference call has been added. Fork-based
-  suggestion generation was exercised separately; native prediction-event
-  production remains unavailable in this release.
+  the original user request settles. The sample generator emits that same event
+  and leaves the empty-draft and explicit-accept behavior unchanged.
+- **Guard:** `prompt-prediction.test.ts`, `prompt-sample.test.ts`, desktop
+  dispatcher-to-chat-core tests, the desktop and shared-client sample-cancel
+  tests, node fake-process tests (including an aborted settled request), shared
+  reducer and existing composer tests. Native prediction-event production
+  remains unavailable. Fork-based suggestion generation was exercised
+  separately and is not the path SuperOne calls.
 
 ### Model discovery depends on the app-server client version
 
@@ -638,6 +657,27 @@ items still map to Agent cards.
 - Harness API inventory and whitespace checks pass. Authenticated native subagent
   turns and a physical phone session were not exercised in this change.
 
+
+## 0.169 optional fields stay ignored
+
+Observed: `rust-v0.169.0` app-server protocol, compared with `rust-v0.167.0`.
+
+- `agentMessage.moderation` is optional. `display.action` is an open string, and
+  the protocol says unknown actions stay with the producing client. The mapper
+  keeps `text` and delivery. This tag does not define show, hide, or block.
+- `item/completed.contentTokenCount` is optional completion telemetry. It is
+  not stored on the thread item and is not read.
+- `thread/sample.allowInProgressTurn` defaults false. SuperOne does not send
+  it, so a sample still requires an idle finished source turn.
+- `model/list.modelProvider`, `thread/list.currentAccountOnly`,
+  `thread/items/list.deferOutput`, settings `environments`, and gateway
+  `deviceAuth` default off when omitted. Existing callers omit them.
+- `CodexErrorInfo.inferenceHookDenied` is a camelCase unit variant. The error
+  reader already keeps a string code.
+
+Guards: `packages/codex/src/agent-event-mapper.test.ts`,
+`packages/codex/src/protocol-v149.test.ts`, and
+`packages/codex/src/prompt-sample.test.ts`.
 
 ## Managed command checkpoints require a fresh human decision
 

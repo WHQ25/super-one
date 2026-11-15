@@ -116,7 +116,11 @@ export interface AppServerNotification {
 }
 
 export interface AppServerConnection {
-  request(method: string, params?: Record<string, unknown>): Promise<Record<string, unknown>>
+  request(
+    method: string,
+    params?: Record<string, unknown>,
+    options?: { signal?: AbortSignal, timeoutMs?: number },
+  ): Promise<Record<string, unknown>>
   respond(requestId: JsonRpcRequestId, result?: Record<string, unknown>): Promise<void>
   respondError(requestId: JsonRpcRequestId, code: number, message: string): Promise<void>
   /** Pause RPC deadlines only once a native request has a user-facing consumer. */
@@ -817,27 +821,78 @@ export async function createAppServerConnection(
     }
   })()
 
-  const waitForResponse = (id: number, label: string, timeoutMs: number): Promise<Record<string, unknown>> => {
+  const cancelThreadSample = (requestId: number): void => {
+    void sendMessage({ method: 'thread/sample/cancel', params: { requestId } }).catch(() => {})
+  }
+
+  const waitForResponse = (
+    id: number,
+    label: string,
+    timeoutMs: number,
+    signal?: AbortSignal,
+  ): Promise<Record<string, unknown>> => {
     if (readerError) return Promise.reject(readerError)
+    if (signal?.aborted) {
+      if (label === 'thread/sample') cancelThreadSample(id)
+      return Promise.reject(new Error('Codex request interrupted'))
+    }
     const key = String(id)
     return new Promise((resolve, reject) => {
-      const cancelDeadline = inputBudget.deadline(timeoutMs, () => {
+      const onAbort = () => {
+        const waiter = responseWaiters.get(key)
+        if (!waiter) return
         responseWaiters.delete(key)
-        reject(new Error(`Codex app-server ${label} timed out after ${timeoutMs}ms`))
+        waiter.cancelDeadline()
+        signal?.removeEventListener('abort', onAbort)
+        if (label === 'thread/sample') cancelThreadSample(id)
+        waiter.reject(new Error('Codex request interrupted'))
+      }
+      const cancelDeadline = inputBudget.deadline(timeoutMs, () => {
+        const waiter = responseWaiters.get(key)
+        if (!waiter) return
+        responseWaiters.delete(key)
+        waiter.cancelDeadline()
+        signal?.removeEventListener('abort', onAbort)
+        if (label === 'thread/sample') cancelThreadSample(id)
+        waiter.reject(new Error(`Codex app-server ${label} timed out after ${timeoutMs}ms`))
       })
-      responseWaiters.set(key, { resolve, reject, cancelDeadline })
+      responseWaiters.set(key, {
+        resolve: value => {
+          signal?.removeEventListener('abort', onAbort)
+          resolve(value)
+        },
+        reject: err => {
+          signal?.removeEventListener('abort', onAbort)
+          reject(err)
+        },
+        cancelDeadline,
+      })
+      if (signal) {
+        signal.addEventListener('abort', onAbort, { once: true })
+        if (signal.aborted) onAbort()
+      }
     })
   }
 
   const isDev = process.env.NODE_ENV === 'development'
 
-  const sendOnce = (method: string, params?: Record<string, unknown>): Promise<Record<string, unknown>> => diagnostics.request(method, params, async () => {
+  const sendOnce = (
+    method: string,
+    params?: Record<string, unknown>,
+    options?: { signal?: AbortSignal, timeoutMs?: number },
+  ): Promise<Record<string, unknown>> => diagnostics.request(method, params, async () => {
+    if (options?.signal?.aborted) throw new Error('Codex request interrupted')
     const requestId = nextRequestId
     nextRequestId += 1
     if (isDev) trace('codex.appserver.request', method, { requestId, params }, String(requestId))
     await sendMessage(compactRecord({ id: requestId, method, params }))
     try {
-      const result = await waitForResponse(requestId, method, appServerTimeoutForMethod(method))
+      const result = await waitForResponse(
+        requestId,
+        method,
+        options?.timeoutMs ?? appServerTimeoutForMethod(method),
+        options?.signal,
+      )
       if (isDev) trace('codex.appserver.response', method, { requestId, ok: true, result }, String(requestId))
       return result
     } catch (err) {
@@ -847,15 +902,15 @@ export async function createAppServerConnection(
   })
 
   const connection: AppServerConnection = {
-    request: async (method, params) => {
+    request: async (method, params, options) => {
       if (method === 'config/mcpServer/reload') invalidateCodexMcpAppsCatalog(connection.request)
       if (!APP_SERVER_IDEMPOTENT_METHODS.has(method)) {
-        return sendOnce(method, params)
+        return sendOnce(method, params, options)
       }
       let lastError: unknown
       for (let attempt = 0; attempt < APP_SERVER_BACKPRESSURE_MAX_ATTEMPTS; attempt += 1) {
         try {
-          return await sendOnce(method, params)
+          return await sendOnce(method, params, options)
         } catch (err) {
           lastError = err
           if (!isBackpressureError(err) || attempt === APP_SERVER_BACKPRESSURE_MAX_ATTEMPTS - 1) throw err

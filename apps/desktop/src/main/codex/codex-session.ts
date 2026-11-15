@@ -73,6 +73,10 @@ export interface CodexSession {
   apiProviderId: string | null
   notificationDispatcher: NotificationDispatcher | null
   promptPrediction: CodexPromptPrediction | null
+  /** Last collaboration mode sent on a turn. An omitted later turn keeps this value. */
+  collaborationMode: string | null
+  /** Plan mode and custom model providers do not sample a prompt suggestion. */
+  promptSampling: boolean
   queueChangedFn: ((threadId: string) => void) | null
   forkListeners: Map<string, ForkListenerHandle>
   forkCallbacks: CodexRunStreamCallbacks | null
@@ -130,6 +134,8 @@ export function createCodexSession(
     apiProviderId: apiProviderId ?? null,
     notificationDispatcher: null,
     promptPrediction: null,
+    collaborationMode: null,
+    promptSampling: true,
     queueChangedFn: null,
     forkListeners: new Map(),
     forkCallbacks: null,
@@ -146,6 +152,7 @@ export function resolveCodexSessionCwd(session: CodexSession, projectPath: strin
 }
 
 export function tearDownForkRuntime(session: CodexSession, reason: string): void {
+  session.promptPrediction?.invalidate()
   const dispatcher = session.notificationDispatcher
   const forkListeners = Array.from(session.forkListeners.values())
   session.forkListeners.clear()

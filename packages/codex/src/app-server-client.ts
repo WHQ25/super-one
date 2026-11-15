@@ -72,7 +72,11 @@ export interface CodexAppServerClientOptions {
 }
 
 export interface CodexAppServerHandle {
-  request(method: string, params?: Record<string, unknown>): Promise<Record<string, unknown>>
+  request(
+    method: string,
+    params?: Record<string, unknown>,
+    options?: { signal?: AbortSignal, timeoutMs?: number },
+  ): Promise<Record<string, unknown>>
   notify(method: string, params?: Record<string, unknown>): Promise<void>
   /** Await next server notification; null means an idle poll, connection closure rejects. */
   nextNotification(timeoutMs?: number): Promise<{ method: string; params: Record<string, unknown> } | null>
@@ -359,6 +363,7 @@ export async function openCodexAppServer(
     method: string,
     params?: Record<string, unknown>,
     timeoutMs = DEFAULT_REQUEST_TIMEOUT_MS,
+    signal?: AbortSignal,
   ) =>
     new Promise<Record<string, unknown>>((resolve, reject) => {
       if (method === 'config/mcpServer/reload') invalidateCodexMcpAppsCatalog(request)
@@ -370,23 +375,56 @@ export async function openCodexAppServer(
         reject(readLoopError)
         return
       }
-      if (opts.signal?.aborted) {
+      if (opts.signal?.aborted || signal?.aborted) {
         reject(new Error('Codex request interrupted'))
         return
       }
       const id = nextId++
-      const cancelDeadline = inputBudget.deadline(timeoutMs, () => {
-        pending.delete(id)
-        reject(new Error(`Codex app-server ${method} timed out after ${timeoutMs}ms`))
-      })
-      const waiter: PendingRequest = { resolve, reject, cancelDeadline }
-      pending.set(id, waiter)
-      try {
-        writeLine({ jsonrpc: '2.0', id, method, params: params ?? {} })
-      } catch (err) {
+      let settled = false
+      let sent = false
+      const finish = (error: Error | null, value?: Record<string, unknown>) => {
+        if (settled) return
+        settled = true
+        signal?.removeEventListener('abort', onRequestAbort)
+        if (error) reject(error)
+        else resolve(value ?? {})
+      }
+      const abandon = (error: Error) => {
+        const waiter = pending.get(id)
+        if (!waiter) return
         pending.delete(id)
         waiter.cancelDeadline()
-        reject(safePublicError('Codex app-server write failed', err))
+        if (sent && method === 'thread/sample') {
+          try {
+            writeLine({ jsonrpc: '2.0', method: 'thread/sample/cancel', params: { requestId: id } })
+          } catch { /* the sample is already being abandoned */ }
+        }
+        finish(error)
+      }
+      const onRequestAbort = () => {
+        abandon(new Error('Codex request interrupted'))
+      }
+      const cancelDeadline = inputBudget.deadline(timeoutMs, () => {
+        abandon(new Error(`Codex app-server ${method} timed out after ${timeoutMs}ms`))
+      })
+      const waiter: PendingRequest = {
+        resolve: value => finish(null, value),
+        reject: finish,
+        cancelDeadline,
+      }
+      pending.set(id, waiter)
+      if (signal) {
+        signal.addEventListener('abort', onRequestAbort, { once: true })
+        if (signal.aborted) {
+          abandon(new Error('Codex request interrupted'))
+          return
+        }
+      }
+      try {
+        writeLine({ jsonrpc: '2.0', id, method, params: params ?? {} })
+        sent = true
+      } catch (err) {
+        abandon(safePublicError('Codex app-server write failed', err))
       }
     })
 
@@ -470,13 +508,14 @@ export async function openCodexAppServer(
   }
 
   return {
-    request: (method, params) =>
+    request: (method, params, options) =>
       request(
         method,
         params,
-        method === 'thread/start' || method === 'thread/resume'
+        options?.timeoutMs ?? (method === 'thread/start' || method === 'thread/resume'
           ? THREAD_TIMEOUT_MS
-          : DEFAULT_REQUEST_TIMEOUT_MS,
+          : DEFAULT_REQUEST_TIMEOUT_MS),
+        options?.signal,
       ),
     notify,
     nextNotification,
@@ -513,6 +552,8 @@ export async function ensureCodexThread(opts: {
   /** Codex permission preset. Unset uses the desktop default (`auto-review`). */
   permissionPreset?: string | null
   signal?: AbortSignal
+  /** Start and resume results, including collaborationMode when the server sends it. */
+  onResolved?: (result: Record<string, unknown>) => void
 }): Promise<string> {
   if (opts.signal?.aborted) throw new Error('Codex turn interrupted')
   const profile = resolveCodexPermissionProfile(opts.permissionPreset)
@@ -533,6 +574,7 @@ export async function ensureCodexThread(opts: {
       sandbox: profile.sandboxMode,
       ...configPayload,
     })
+    opts.onResolved?.(resumed)
     const thread = asRecord(resumed.thread)
     threadId = readString(thread?.id) ?? readString(resumed.id) ?? threadId
   } else {
@@ -543,6 +585,7 @@ export async function ensureCodexThread(opts: {
       sandbox: profile.sandboxMode,
       ...configPayload,
     })
+    opts.onResolved?.(started)
     const thread = asRecord(started.thread)
     threadId = readString(thread?.id) ?? readString(started.id)
   }

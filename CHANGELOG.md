@@ -21,6 +21,7 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Changed
 
+- Codex runtime 0.169.0.
 - Queued messages have one Steer action, on the desktop and on the phone. Claude delivers the message at the next step and leaves the running tool in place. Codex steers the active turn. Antigravity sends a concurrent prompt and does not cancel the turn. Grok injects the message and leaves the turn running. OpenCode V2 waits for the next safe point. OpenCode V1 keeps the message queued. While a steerable turn is streaming, the first Enter on the desktop holds the send for 400ms. A second Enter in that window steers it now, including Codex.
 
 ### Fixed

@@ -53,6 +53,18 @@ describe('MessageBridge', () => {
     expect(bridge.isClosed).toBe(true)
   })
 
+  it('discards one consumed tag and leaves the others', async () => {
+    const bridge = new MessageBridge()
+    const iter = bridge[Symbol.asyncIterator]()
+    bridge.push(userMsg('a'), 'tag-a')
+    bridge.push(userMsg('b'), 'tag-b')
+    await iter.next()
+    await iter.next()
+    expect(bridge.discardConsumedTag('tag-b')).toBe(true)
+    expect(bridge.consumedTags).toEqual(['tag-a'])
+    expect(bridge.discardConsumedTag('missing')).toBe(false)
+  })
+
   it('invokes onConsumed when a tagged message is delivered', async () => {
     const bridge = new MessageBridge()
     const onConsumed = vi.fn()

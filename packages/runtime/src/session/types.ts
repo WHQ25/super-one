@@ -350,6 +350,11 @@ export type TurnRunner = ((input: {
   providerResume?: string | null
   /** Steer / mid-turn inject: do not append an assistant transcript block. */
   skipAssistantTranscript?: boolean
+  /**
+   * A steer cut the live reply in two. Place these rows and do not also write
+   * one `assistantMessage`: the catalog folds a later assistant into that id.
+   */
+  assistantSegments?: Array<{ id: string; text: string; beforeUserId?: string }>
 }>) & {
   /** Native controls on an existing runtime; reads never cold-start a harness. */
   callOperation?: (session: NodeSessionRecord, method: string, input: Record<string, unknown>, host: HarnessOperationHost) => Promise<unknown>

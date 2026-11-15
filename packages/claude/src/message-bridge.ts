@@ -26,6 +26,14 @@ export class MessageBridge {
     return this._consumedTags
   }
 
+  /** Drop one tag. A steer splits at consume time and must not be treated as still pending. */
+  discardConsumedTag(tag: string): boolean {
+    const idx = this._consumedTags.indexOf(tag)
+    if (idx === -1) return false
+    this._consumedTags.splice(idx, 1)
+    return true
+  }
+
   set onConsumed(cb: ((tag: string) => void) | null) {
     this._onConsumed = cb
   }

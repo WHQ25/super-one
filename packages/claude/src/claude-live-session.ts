@@ -4,6 +4,8 @@
  * One `query({ prompt: bridge })` stays open; each user turn is `bridge.push()`.
  * Messages arriving while a turn is in-flight are queued with `priority: 'next'`
  * and flushed when the current result arrives — same as ClaudeBackend.
+ * An explicit `next` steer is pushed immediately and closes the live assistant
+ * when the SDK consumes it, the same cut desktop uses. `now` is not that path.
  */
 
 import { existsSync } from 'node:fs'
@@ -139,6 +141,8 @@ interface ActiveTurn {
   sawResult: boolean
   resultError: string | null
   cancelled?: boolean
+  /** Set when a next-steer closed this assistant. The continuation keeps `messageId`. */
+  sealed?: { messageId: string; text: string; beforeUserId: string }
 }
 
 interface AmbientTurn {
@@ -349,6 +353,8 @@ function toUserMessage(
 
 export class ClaudeLiveSession {
   private readonly bridge = new MessageBridge()
+  /** Explicit `priority: 'next'` steers. Ordinary queued sends and `now` are not in here. */
+  private readonly steerTags = new Set<string>()
   private readonly pending: PendingTurn[] = []
   private active: ActiveTurn | null = null
   private ambient: AmbientTurn | null = null
@@ -389,6 +395,10 @@ export class ClaudeLiveSession {
     private readonly opts: ClaudeLiveSessionOptions,
     queryFn: ClaudeQueryFn,
   ) {
+    // Before the query starts: a waiting iterator consumes inside `push`.
+    this.bridge.onConsumed = (tag) => {
+      if (this.steerTags.has(tag)) this.splitAssistantForSteer(tag)
+    }
     this.sdkSessionId = opts.sessionId ?? null
     // Permission is re-bound per turn; start with deny-closed until first send.
     const options = buildLiveOptions(
@@ -526,10 +536,16 @@ export class ClaudeLiveSession {
           try {
             input.beforeInput?.()
             input.onInputAccepted?.()
+            // Only next matches desktop. now still ends the SDK turn and is not a product steer.
+            if (input.priority === 'next') this.steerTags.add(tag)
             this.bridge.push(msg, tag)
             if (input.priority === 'now' && this.active) this.active.steeredNow = true
             item.submitted = true
-          } catch (error) { reject(error); return }
+          } catch (error) {
+            this.steerTags.delete(tag)
+            reject(error)
+            return
+          }
         }
         this.pending.push(item)
         return
@@ -655,12 +671,65 @@ export class ClaudeLiveSession {
       cur.reject(new Error(cur.resultError || 'Claude turn failed'))
     } else {
       const finalText = cur.finalText || cur.streamedText
+      const assistantSegments = this.segmentsFor(cur, finalText)
       cur.resolve({
         finalText,
         sessionId: this.sdkSessionId,
+        ...(assistantSegments ? { assistantSegments } : {}),
       })
     }
     this.flushPending()
+  }
+
+  /**
+   * Close the assistant that was streaming and open the continuation. The
+   * host already appended the user and emitted `queued_message_consumed` from
+   * `onInputAccepted`, so this does not emit that event again. The active
+   * promise stays open until the continuation's result.
+   */
+  private splitAssistantForSteer(tag: string): void {
+    this.steerTags.delete(tag)
+    this.bridge.discardConsumedTag(tag)
+    const cur = this.active
+    if (!cur || cur.cancelled) return
+    const sealedId = cur.messageId
+    const nextId = randomUUID()
+    cur.sealed = { messageId: sealedId, text: cur.streamedText, beforeUserId: tag }
+    cur.streamedText = ''
+    cur.messageId = nextId
+    const mapper = (cur as ActiveTurn & { _mapper?: ReturnType<typeof createClaudeAgentEventMapper> })._mapper
+    mapper?.retarget(nextId)
+    const emit = cur.input.onAgentEvent
+    if (!emit) return
+    emit({ type: 'message_complete', messageId: sealedId, metadata: { queuedTurnCount: 1 } })
+    emit({
+      type: 'message_start',
+      message: {
+        id: nextId,
+        role: 'assistant',
+        status: 'streaming',
+        content: [],
+        createdAt: new Date().toISOString(),
+        providerId: 'claude',
+      },
+    })
+    emit({ type: 'status_change', status: 'streaming' })
+  }
+
+  /** Prefix from the snapshot; the rest is what streamed after the cut, or the result suffix. */
+  private segmentsFor(cur: ActiveTurn, finalText: string): ClaudeSdkTurnResult['assistantSegments'] {
+    const sealed = cur.sealed
+    if (!sealed) return undefined
+    let continuation = cur.streamedText
+    if (!continuation && finalText) {
+      continuation = sealed.text && finalText.startsWith(sealed.text)
+        ? finalText.slice(sealed.text.length)
+        : finalText
+    }
+    return [
+      { id: sealed.messageId, text: sealed.text, beforeUserId: sealed.beforeUserId },
+      { id: cur.messageId, text: continuation },
+    ]
   }
 
   private applyAmbientMessage(msg: SDKMessage): void {

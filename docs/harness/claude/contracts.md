@@ -678,16 +678,19 @@ module that runs inside the CLI process. Upstream docs:
 
 - **Behavior:** Ordinary composer sends during a running Claude turn stay in the
   node's FIFO as editable/removable queue cards. `session.steer` promotes one
-  card and hands it to the existing SDK input stream with priority `now` or
-  `next`, preserving the running process and its settings. The node rechecks
-  the control lease immediately before handoff. A pre-handoff refusal restores
-  the queue card. Host notifications retain their separate admission path.
+  card and hands it to the existing SDK input stream with priority `next`, the
+  same priority desktop uses. The running process and its settings stay. The
+  node rechecks the control lease immediately before handoff. A pre-handoff
+  refusal restores the queue card. Host notifications keep their own admission
+  path and do not cut the assistant. `priority: 'now'` is not the product steer.
 - **Observed:** SDK 0.3.310 declares that `user_message_uuids` includes sends folded
   into a prompt between tool rounds. An explicit `next` send may therefore
   share the active turn's result rather than receive a separate result. Resolve
-  all acknowledged sends while storing the answer once. For explicit `now`,
-  suppress the displaced turn's `aborted_tools` / `aborted_streaming` completion
-  warning; user Stop errors remain unchanged.
+  every acknowledged send. That shared result is two assistant bubbles: the
+  live reply closes when the steer is consumed, the user row sits between that
+  bubble and the continuation, and the folded steer does not write a second
+  copy. `now` still ends the SDK turn as `aborted_tools` when a caller passes
+  it; the node suppresses that completion warning, and user Stop errors stay.
 - **Depends on it:** `packages/runtime/src/session/queued-controls.ts`,
   `packages/runtime/src/session/session-runtime.ts`,
   `packages/claude/src/claude-live-session.ts`, `apps/cli/src/session/claude-turn-runner.ts`.

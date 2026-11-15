@@ -2,6 +2,7 @@
  * Node-side composer queue and explicit steering (desktop parity).
  */
 import { describe, expect, it } from 'vitest'
+import { SESSION_DURABLE_EVENT } from '@superone/shared/environment'
 import {
   SessionRuntime,
   type LeaseGuard,
@@ -234,6 +235,42 @@ describe('SessionRuntime send queue', () => {
       await waitIdle(runtime, session.sessionId)
       expect(inputs).toHaveLength(2)
     } finally { gates.splice(0).forEach(resolve => resolve()) }
+  })
+
+  it('places a steered Claude reply before the steer and the continuation after it', async () => {
+    let release!: () => void
+    const eventTypes: string[] = []
+    const runner: TurnRunner = async input => {
+      input.onInputAccepted?.()
+      if (input.steerPriority) return { finalText: '', skipAssistantTranscript: true }
+      await new Promise<void>(resolve => { release = resolve })
+      return {
+        finalText: 'beforeafter',
+        assistantSegments: [
+          { id: 'sealed', text: 'before', beforeUserId: 'second' },
+          { id: 'continuation', text: 'after' },
+        ],
+      }
+    }
+    const { store, events, leases } = memoryPorts()
+    events.appendSession = (input) => { eventTypes.push(input.eventType) }
+    const runtime = new SessionRuntime(store, events, leases, 'env-claude-split', runner)
+    const session = runtime.create({ projectId: 'p', harnessId: 'claude' })
+    const send = (text: string) => runtime.send({ sessionId: session.sessionId, text, clientMessageId: text, client, ...lease })
+    try {
+      await send('first')
+      await send('second')
+      await runtime.callOperation(session.sessionId, 'session.steer', { clientMessageId: 'second' }, () => {})
+      release()
+      const done = await waitIdle(runtime, session.sessionId)
+      expect(done.transcript.map(row => [row.role, row.id, row.text])).toEqual([
+        ['user', 'first', 'first'],
+        ['assistant', 'sealed', 'before'],
+        ['user', 'second', 'second'],
+        ['assistant', 'continuation', 'after'],
+      ])
+      expect(eventTypes).not.toContain(SESSION_DURABLE_EVENT.assistantMessage)
+    } finally { release?.(); await runtime.dispose() }
   })
 
   it('restores a refused Claude promotion without losing or failing the editable card', async () => {

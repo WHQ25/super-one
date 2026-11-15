@@ -153,4 +153,10 @@ export interface ClaudeSdkTurnResult {
   skipAssistantTranscript?: boolean
   finalText: string
   sessionId: string | null
+  /**
+   * A priority-next steer closed the live assistant. The active turn owns both
+   * bubbles; the folded steer stays `skipAssistantTranscript` and writes nothing.
+   * `beforeUserId` is the steer user row the sealed bubble sits in front of.
+   */
+  assistantSegments?: Array<{ id: string; text: string; beforeUserId?: string }>
 }

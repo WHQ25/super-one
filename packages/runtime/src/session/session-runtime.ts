@@ -1903,7 +1903,19 @@ export class SessionRuntime {
       } else {
         assistantText = result.finalText || assistantText
         session.providerResume = result.providerResume ?? session.providerResume
-        if (!result.skipAssistantTranscript) {
+        if (result.assistantSegments?.length) {
+          // Content stays on the ids the live deltas used. An assistantMessage
+          // for the sealed id would make the catalog fold the continuation into it.
+          const createdAt = Date.now()
+          for (const segment of result.assistantSegments) {
+            const row: TranscriptBlock = { id: segment.id, role: 'assistant', text: segment.text, createdAt }
+            const index = segment.beforeUserId
+              ? session.transcript.findIndex(block => block.id === segment.beforeUserId)
+              : -1
+            if (index >= 0) session.transcript.splice(index, 0, row)
+            else session.transcript.push(row)
+          }
+        } else if (!result.skipAssistantTranscript) {
           session.transcript.push({
             id: assistantId,
             role: 'assistant',

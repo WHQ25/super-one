@@ -126,7 +126,10 @@ describe('ClaudeLiveSession', () => {
       finish()
       await Promise.all([first, second])
       await live.dispose()
-      if (priority === 'now') expect(events.find(event => event.type === 'message_complete')).not.toMatchObject({ metadata: { terminalReason: 'aborted_tools' } })
+      if (priority === 'now') {
+        expect(events.find(event => event.type === 'message_complete')).not.toMatchObject({ metadata: { terminalReason: 'aborted_tools' } })
+        expect(events.some(event => event.type === 'message_complete' && event.metadata?.queuedTurnCount)).toBe(false)
+      }
     }
   })
 
@@ -151,9 +154,98 @@ describe('ClaudeLiveSession', () => {
     void results.catch(() => {})
     try {
       await vi.waitFor(() => expect(completed).toHaveLength(2), { timeout: 200 })
-      expect(completed[0]).toMatchObject({ finalText: 'combined' })
+      expect(completed[0]).toMatchObject({
+        finalText: 'combined',
+        assistantSegments: [
+          expect.objectContaining({ text: '' }),
+          expect.objectContaining({ text: 'combined' }),
+        ],
+      })
+      const segments = (completed[0] as { assistantSegments: Array<{ id: string }> }).assistantSegments
+      expect(segments[0]!.id).not.toBe(segments[1]!.id)
       expect(completed[1]).toMatchObject({ finalText: '', skipAssistantTranscript: true })
+      expect(completed[1]).not.toMatchObject({ assistantSegments: expect.anything() })
     } finally { await live.dispose(); await results.catch(() => {}) }
+  })
+
+  it('splits a priority-next steer out of the live assistant', async () => {
+    const seen: SDKUserMessage[] = []
+    let continueAfterPrefix!: () => void
+    const prefixGate = new Promise<void>(resolve => { continueAfterPrefix = resolve })
+    const queryFn: ClaudeQueryFn = ({ prompt }) => (async function* () {
+      const iterator = (prompt as AsyncIterable<SDKUserMessage>)[Symbol.asyncIterator]()
+      seen.push((await iterator.next()).value!)
+      yield {
+        type: 'stream_event',
+        session_id: 's',
+        event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'before' } },
+      } as SDKMessage
+      const secondPull = iterator.next().then(item => { seen.push(item.value!); return item.value! })
+      await prefixGate
+      await secondPull
+      yield {
+        type: 'stream_event',
+        session_id: 's',
+        event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'after' } },
+      } as SDKMessage
+      yield {
+        type: 'result',
+        subtype: 'success',
+        is_error: false,
+        session_id: 's',
+        result: 'beforeafter',
+        user_message_uuids: seen.map(item => item.uuid),
+      } as SDKMessage
+      for await (const _user of { [Symbol.asyncIterator]: () => iterator }) { /* drain on close */ }
+    })() as ReturnType<ClaudeQueryFn>
+    const live = ClaudeLiveSession.open({ cwd: tmpdir(), queryFn })
+    const events: AgentEvent[] = []
+    const first = live.sendTurn({
+      content: 'first',
+      messageId: 'assistant-before',
+      clientMessageId: 'user-1',
+      onAgentEvent: event => events.push(event),
+    })
+    await vi.waitFor(() => expect(events).toContainEqual(expect.objectContaining({
+      type: 'content_delta', messageId: 'assistant-before', delta: expect.objectContaining({ type: 'text', text: 'before' }),
+    })))
+    const second = live.sendTurn({
+      content: 'steer',
+      messageId: 'unused-steer-assistant',
+      clientMessageId: 'user-steer',
+      priority: 'next',
+      onAgentEvent: () => {},
+    })
+    await vi.waitFor(() => expect(events.some(event => event.type === 'message_complete')).toBe(true))
+    const cut = events.findIndex(event => event.type === 'message_complete')
+    const continuation = events[cut + 1]
+    const continuationId = continuation?.type === 'message_start' ? continuation.message.id : ''
+    expect(events[cut]).toMatchObject({ type: 'message_complete', messageId: 'assistant-before', metadata: { queuedTurnCount: 1 } })
+    expect(continuation).toMatchObject({
+      type: 'message_start',
+      message: { id: continuationId, role: 'assistant', status: 'streaming', providerId: 'claude' },
+    })
+    expect(continuationId).not.toBe('assistant-before')
+    expect(events[cut + 2]).toMatchObject({ type: 'status_change', status: 'streaming' })
+    expect(events.some(event => event.type === 'queued_message_consumed')).toBe(false)
+    continueAfterPrefix()
+    try {
+      const [active, steered] = await Promise.all([first, second])
+      expect(steered).toEqual({ finalText: '', sessionId: 's', skipAssistantTranscript: true })
+      expect(active).toMatchObject({
+        finalText: 'beforeafter',
+        assistantSegments: [
+          { id: 'assistant-before', text: 'before', beforeUserId: 'user-steer' },
+          { id: continuationId, text: 'after' },
+        ],
+      })
+      expect(events).toContainEqual(expect.objectContaining({
+        type: 'content_delta', messageId: continuationId, delta: expect.objectContaining({ type: 'text', text: 'after' }),
+      }))
+      expect(events.filter(event => event.type === 'content_delta' && event.messageId === 'assistant-before')).toHaveLength(1)
+      const completed = events.filter(event => event.type === 'message_complete' && event.messageId === continuationId)
+      expect(completed).toHaveLength(1)
+    } finally { await live.dispose() }
   })
 
   it('keeps an idle SDK session usable when a handoff lease check rejects', async () => {

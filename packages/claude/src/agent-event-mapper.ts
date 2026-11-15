@@ -58,6 +58,8 @@ export interface ClaudeAgentEventApplyResult {
 
 export interface ClaudeAgentEventMapper {
   apply(message: SDKMessage | Record<string, unknown>): ClaudeAgentEventApplyResult
+  /** Point later events at the continuation after a steer seals the live assistant. */
+  retarget(messageId: string): void
 }
 
 function emptyResult(sessionId: string | null): ClaudeAgentEventApplyResult {
@@ -223,7 +225,7 @@ export function createClaudeAgentEventMapper(
 ): ClaudeAgentEventMapper {
   const now = options.now ?? Date.now
   const startedAt = options.startedAt ?? now()
-  const messageId = options.messageId
+  let messageId = options.messageId
   const emit = options.emit
   const activeToolBlocks = new Map<number, string>()
   const toolIdToName = new Map<string, string>()
@@ -543,6 +545,9 @@ export function createClaudeAgentEventMapper(
   }
 
   return {
+    retarget(nextMessageId: string) {
+      messageId = nextMessageId
+    },
     apply(message): ClaudeAgentEventApplyResult {
       const raw = message as Raw
       const sessionId = sessionIdOf(raw)

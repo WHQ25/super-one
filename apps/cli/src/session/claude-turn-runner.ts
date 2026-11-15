@@ -590,7 +590,8 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
       const result = await activeEntry.live.sendTurn({
         content,
         messageId: input.messageId,
-        clientMessageId: input.messageId,
+        // User row id, so a next-steer can place the sealed assistant in front of it.
+        clientMessageId: input.clientMessageId,
         // If live is already busy, ClaudeLiveSession queues with priority next.
         priorityNext: true,
         priority: input.steerPriority,
@@ -662,6 +663,7 @@ export function createNodeClaudeTurnRunner(opts: NodeClaudeRunnerOptions): TurnR
       return {
         finalText: result.finalText,
         ...(result.skipAssistantTranscript ? { skipAssistantTranscript: true } : {}),
+        ...(result.assistantSegments?.length ? { assistantSegments: result.assistantSegments } : {}),
         providerResume: formatClaudeSessionResume(result.sessionId),
       }
     } catch (err) {

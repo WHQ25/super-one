@@ -21,11 +21,13 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Float Chat opens as the collapsed bubble. A click still expands it. An agent that asks for floating chat stays expanded.
 - Step back from a focused folder through the level menu. Hover cards list the work still running and the tabs that session opened.
 - Doubao and Gemini calls work on remote sessions.
-- Claude mods support themes, backdrops, a placed composer, and inline command output. A theme stays inside that session's panes.
+- Claude mods support themes, backdrops, a placed composer, and inline command output. A theme stays inside that session's panes and follows the window appearance.
 - Background a running Claude task.
 - Settings lists what SuperOne keeps on this computer and can reclaim caches, leftover chat snapshots, unused harness copies, and compact the node event log. (#194)
 - Add a project by cloning a repository, or pick an existing local folder with the system picker.
 - A dev desktop deploys its checkout to its own remote node (`~/.superone/dev`, port 7792) instead of the alpha node. (#195)
+- Markdown videos have a file context menu (copy path, Save As, Add to Chat, reveal in folder), file drag-out, and whole-block reply selection that quotes the video's markdown instead of the player controls.
+- Each stretch between compactions keeps its own Detail toggle, indicator, and tool statistics instead of sharing one collapse across the whole turn. (#202)
 
 ### Changed
 
@@ -55,6 +57,27 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Task stop stays hidden when that harness cannot stop a task. A compaction failure stays on one line.
 - A remote subagent opens in the full view. (#197)
 - A Grok background shell (`block_until_ms: 0`) or subagent stays in the activity row after the parent turn ends.
+- Consuming a priority-next steer during a live Claude reply (on desktop and remote nodes) closes the current assistant bubble before the steer user row and streams the continuation into a new bubble.
+
+### Performance
+
+- Streaming deltas update only the changed block and memoized segment chunk so live-turn rendering cost no longer grows with the number of tool calls. (#201)
+
+## [0.82.0-alpha.1] - 2026-11-16
+
+### Added
+
+- Markdown videos have the same file context menu (copy path, Save As, Add to Chat, reveal in folder), file drag-out, and whole-block selection that quotes the video's markdown instead of the player controls.
+- Each stretch between compactions keeps its own Detail toggle, indicator, and tool statistics instead of sharing one collapse across the whole turn. (#202)
+
+### Performance
+
+- Streaming deltas update only the changed block and memoized segment chunk so live-turn rendering cost no longer grows with the number of tool calls. (#201)
+
+### Fixed
+
+- Consuming a priority-next steer during a live Claude reply (on desktop and remote nodes) closes the current assistant bubble before the steer user row and streams the continuation into a new bubble.
+- Claude mod themes paint only when their light or dark scheme matches the window, switch window appearance on preview and apply, render their backdrop across the full chat shell including the title bar, and keep placed cards inline without dropping the backdrop.
 
 ## [0.82.0-alpha] - 2026-11-15
 

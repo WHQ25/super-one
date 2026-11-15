@@ -2,7 +2,7 @@ import { afterEach, beforeEach, expect, it, jest } from '@jest/globals'
 import { act, fireEvent } from '@testing-library/react-native'
 import { AppState, type AppStateStatus } from 'react-native'
 import { renderWithTheme } from '../test-render'
-import { QR_AUTO_SELECT_MS } from './qr-scanner-state'
+import { QR_AUTO_SELECT_MS, QR_CANDIDATE_TTL_MS } from './qr-scanner-state'
 import { QrScanner } from './qr-scanner'
 
 jest.mock('expo-camera', () => {
@@ -44,7 +44,6 @@ it('submits a lone QR once, after no neighbour appears within the settle window'
   expect(view.getByText('Reading the QR code…')).toBeTruthy()
   await advance(QR_AUTO_SELECT_MS - 1)
   expect(onSelect).not.toHaveBeenCalled()
-  await scan(detection)
   await advance(1)
   expect(onSelect).toHaveBeenCalledTimes(1)
   expect(onSelect).toHaveBeenCalledWith(detection)
@@ -71,8 +70,8 @@ it('restarts the window when several codes narrow to one', async () => {
   await scan(detection, neighbour)
   await advance(600)
   await scan(detection)
-  // The neighbour expires on the 1000 ms sweep; the window starts from there.
-  await advance(400)
+  // The neighbour expires on the TTL sweep; the window starts from there.
+  await advance(QR_CANDIDATE_TTL_MS - 600)
   expect(view.queryByLabelText('QR Code 1')).toBeNull()
   await scan(detection)
   await advance(QR_AUTO_SELECT_MS / 2)
@@ -100,7 +99,7 @@ it('does not submit a stale target even before the expiry timer paints', async (
   const now = jest.spyOn(Date, 'now').mockReturnValue(1000)
   const { view, onSelect, scan } = await setup()
   await scan(detection, neighbour)
-  now.mockReturnValue(2000)
+  now.mockReturnValue(1000 + QR_CANDIDATE_TTL_MS)
   await act(async () => { fireEvent.press(view.getByLabelText('QR Code 1')) })
   expect(onSelect).not.toHaveBeenCalled()
 })

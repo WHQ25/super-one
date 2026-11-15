@@ -1,12 +1,13 @@
 import type { BarcodeScanningResult } from 'expo-camera'
 
-// Expo can throttle identical results for 500 ms. Keep stationary targets alive
-// across that interval, then expire detections which have not been refreshed.
-export const QR_CANDIDATE_TTL_MS = 1000
-// A lone detection is only trusted after no neighbour has appeared for this
-// long. Small or distant codes in the same frame were measured on Android to go
-// up to ~730 ms between detections, so the window must exceed that gap.
+// A lone code submits once this long has passed with no other code in view.
+// Each code in a frame arrives as its own event, so the first detection cannot
+// prove there is no neighbour.
 export const QR_AUTO_SELECT_MS = 1000
+// Android ML Kit can take longer than the settle window between hits, and Expo
+// also throttles identical results for 500 ms. Expiring at the same moment as
+// the commit cancels it, so a detection stays alive for twice the settle window.
+export const QR_CANDIDATE_TTL_MS = QR_AUTO_SELECT_MS * 2
 const MAX_CANDIDATES = 24
 
 export type ScannerSize = { width: number; height: number }

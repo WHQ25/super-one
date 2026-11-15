@@ -1,5 +1,6 @@
 package expo.modules.camera.analyzers
 
+import android.util.Size
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -25,6 +26,17 @@ class BarcodeCoordinatesTest {
     assertEquals(listOf(100, 200), BarcodeCoordinates.toPreview(
       listOf(160, 160), 480, 640, 300, 600, true, false
     ))
+  }
+
+  @Test fun analysisFramesStayAtOrUnder1080p() {
+    val sizes = listOf(Size(4000, 3000), Size(1920, 1080), Size(1280, 720), Size(1440, 1080))
+    assertEquals(listOf(Size(1920, 1080), Size(1280, 720), Size(1440, 1080)), BarcodeCoordinates.analysisSizes(sizes))
+  }
+
+  @Test fun analysisFallsBackToTheSmallestFrameWhenEverySizeExceeds1080p() {
+    val sizes = listOf(Size(4000, 3000), Size(3840, 2160))
+    assertEquals(listOf(Size(3840, 2160)), BarcodeCoordinates.analysisSizes(sizes))
+    assertEquals(emptyList<Size>(), BarcodeCoordinates.analysisSizes(emptyList()))
   }
 
   @Test fun mirroredPreviewsFlipOnlyTheHorizontalCoordinate() {

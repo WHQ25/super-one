@@ -1,5 +1,5 @@
 diff --git a/android/src/main/java/expo/modules/camera/ExpoCameraView.kt b/android/src/main/java/expo/modules/camera/ExpoCameraView.kt
-index a676d64e853b96fc838ea27165cf265929df91a1..b9e38e5797d59149af906255251e7e39c0d6b687 100644
+index a676d64e853b96fc838ea27165cf265929df91a1..132de562c07bf65d130470c5c0ca604b7b551665 100644
 --- a/android/src/main/java/expo/modules/camera/ExpoCameraView.kt
 +++ b/android/src/main/java/expo/modules/camera/ExpoCameraView.kt
 @@ -52,6 +52,7 @@ import expo.modules.camera.analyzers.BarcodeAnalyzer
@@ -27,7 +27,15 @@ index a676d64e853b96fc838ea27165cf265929df91a1..b9e38e5797d59149af906255251e7e39
  import kotlin.properties.Delegates
  
  const val ANIMATION_FAST_MILLIS = 50L
-@@ -721,6 +719,10 @@ class ExpoCameraView(
+@@ -565,6 +563,7 @@ class ExpoCameraView(
+     ImageAnalysis.Builder()
+       .setResolutionSelector(
+         ResolutionSelector.Builder()
++          .setResolutionFilter { supportedSizes, _ -> BarcodeCoordinates.analysisSizes(supportedSizes) }
+           .setResolutionStrategy(ResolutionStrategy.HIGHEST_AVAILABLE_STRATEGY)
+           .build()
+       )
+@@ -721,6 +720,10 @@ class ExpoCameraView(
    }
  
    fun setShouldScanBarcodes(shouldScanBarcodes: Boolean) {
@@ -38,7 +46,7 @@ index a676d64e853b96fc838ea27165cf265929df91a1..b9e38e5797d59149af906255251e7e39
      this.shouldScanBarcodes = shouldScanBarcodes
      shouldCreateCamera = true
    }
-@@ -730,7 +732,6 @@ class ExpoCameraView(
+@@ -730,7 +733,6 @@ class ExpoCameraView(
    }
  
    private fun transformBarcodeScannerResultToViewCoordinates(barcode: BarCodeScannerResult) {
@@ -46,7 +54,7 @@ index a676d64e853b96fc838ea27165cf265929df91a1..b9e38e5797d59149af906255251e7e39
      val previewWidth = previewView.width.toFloat()
      val previewHeight = previewView.height.toFloat()
      val imageWidth = barcode.width.toFloat()
-@@ -740,59 +741,14 @@ class ExpoCameraView(
+@@ -740,59 +742,14 @@ class ExpoCameraView(
        return
      }
  
@@ -115,10 +123,18 @@ index a676d64e853b96fc838ea27165cf265929df91a1..b9e38e5797d59149af906255251e7e39
  
    private fun getCornerPointsAndBoundingBox(
 diff --git a/android/src/main/java/expo/modules/camera/analyzers/BarcodeAnalyzer.kt b/android/src/main/java/expo/modules/camera/analyzers/BarcodeAnalyzer.kt
-index bbe51c016f262dfd3ed8d115a6b6b7d1fe5ce948..3a38a1da70ba97c04747801ceeb932194d50c2a2 100644
+index bbe51c016f262dfd3ed8d115a6b6b7d1fe5ce948..c0f738af5e3fce973c232e103e8532f39c4faf8a 100644
 --- a/android/src/main/java/expo/modules/camera/analyzers/BarcodeAnalyzer.kt
 +++ b/android/src/main/java/expo/modules/camera/analyzers/BarcodeAnalyzer.kt
-@@ -12,6 +12,9 @@ import com.google.mlkit.vision.common.InputImage
+@@ -1,6 +1,7 @@
+ package expo.modules.camera.analyzers
+ 
+ import android.util.Log
++import android.util.Size
+ import androidx.annotation.OptIn
+ import androidx.camera.core.ExperimentalGetImage
+ import androidx.camera.core.ImageAnalysis
+@@ -12,6 +13,9 @@ import com.google.mlkit.vision.common.InputImage
  import expo.modules.camera.records.BarcodeType
  import expo.modules.camera.utils.BarCodeScannerResult
  import java.io.Closeable
@@ -128,7 +144,7 @@ index bbe51c016f262dfd3ed8d115a6b6b7d1fe5ce948..3a38a1da70ba97c04747801ceeb93219
  
  @OptIn(ExperimentalGetImage::class)
  class BarcodeAnalyzer(
-@@ -34,50 +37,19 @@ class BarcodeAnalyzer(
+@@ -34,50 +38,19 @@ class BarcodeAnalyzer(
        val rotationDegrees = imageProxy.imageInfo.rotationDegrees
        val image = InputImage.fromMediaImage(mediaImage, rotationDegrees)
  
@@ -187,12 +203,23 @@ index bbe51c016f262dfd3ed8d115a6b6b7d1fe5ce948..3a38a1da70ba97c04747801ceeb93219
          }
          .addOnFailureListener {
            Log.d("SCANNER", it.cause?.message ?: "Barcode scanning failed")
-@@ -110,6 +82,32 @@ fun Array<ImageProxy.PlaneProxy>.toByteArray(): ByteArray {
+@@ -110,6 +83,43 @@ fun Array<ImageProxy.PlaneProxy>.toByteArray(): ByteArray {
    return result
  }
  
 +/** ML Kit reports points in the rotation-corrected image, before preview cropping. */
 +internal object BarcodeCoordinates {
++  // Full-sensor frames make ML Kit miss a code, or return it after the JS
++  // settle window has already cancelled the commit. 1080p stays under ~2MP.
++  private const val MAX_ANALYSIS_PIXELS = 1920L * 1080L
++
++  fun analysisSizes(sizes: List<Size>): List<Size> {
++    if (sizes.isEmpty()) return sizes
++    val within = sizes.filter { it.width.toLong() * it.height <= MAX_ANALYSIS_PIXELS }
++    if (within.isNotEmpty()) return within
++    return listOf(sizes.minBy { it.width.toLong() * it.height })
++  }
++
 +  fun imageSize(width: Int, height: Int, rotation: Int): Pair<Int, Int> =
 +    if (rotation % 180 == 0) width to height else height to width
 +

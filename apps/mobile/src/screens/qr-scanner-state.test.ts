@@ -29,7 +29,7 @@ describe('QR candidates', () => {
     candidates = observeQrCandidate(candidates, qr('present', 180), size, 600)
     expect(expireQrCandidates(candidates, 600)).toHaveLength(2)
     expect(expireQrCandidates(candidates, QR_CANDIDATE_TTL_MS).map(({ result }) => result.data)).toEqual(['present'])
-    expect(expireQrCandidates(candidates, 1600)).toEqual([])
+    expect(expireQrCandidates(candidates, 600 + QR_CANDIDATE_TTL_MS)).toEqual([])
   })
 
   it('uses corner extrema regardless of iOS and Android corner ordering', () => {

@@ -66,9 +66,6 @@ function InteractiveSidebarFrame({
       >
         {divided && (
           <div className="flex flex-col pb-1">
-            <div className="px-2 py-1 text-[11px] font-medium text-sidebar-foreground/50">
-              Mini Apps
-            </div>
             <div className="flex items-center gap-2.5 rounded-md px-2 py-1.5 text-[13px]">
               <span className="inline-flex size-6 shrink-0 items-center justify-center rounded-md bg-sidebar-hover/60">
                 <Blocks className="size-3.5 text-muted-foreground" />

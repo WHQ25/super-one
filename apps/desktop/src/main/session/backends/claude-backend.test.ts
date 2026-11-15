@@ -746,36 +746,101 @@ describe('ClaudeBackend', () => {
       hoisted.captured.emit?.({ type: 'message_complete', messageId: hoisted.captured.getCurrentMessageId?.() ?? '', metadata: {} })
     })
 
+    it('splits the live assistant when a steer is consumed', async () => {
+      const backend = new ClaudeBackend()
+      const events: AgentEvent[] = []
+      backend.onEvent((e) => events.push(e))
+      await backend.start(makeStartOpts())
+      const firstSend = backend.send({ content: 'turn 1', clientMessageId: 'user_1' })
+      await new Promise((r) => setTimeout(r, 0))
+      const sealedId = hoisted.captured.getCurrentMessageId?.() ?? ''
+      await backend.send({ content: 'steer this', clientMessageId: 'user_2', priority: 'next' })
+      await backend.send({ content: 'queued', clientMessageId: 'user_3', priority: 'later' })
+      await backend.handleCommand({ kind: 'claude.steer_queued', clientMessageId: 'user_2' })
+
+      const bridge = hoisted.captured.bridge as AsyncIterable<unknown> & { consumedTags: readonly string[] }
+      const iterator = bridge[Symbol.asyncIterator]()
+      await iterator.next()
+      await iterator.next()
+
+      const continuationId = hoisted.captured.getCurrentMessageId?.() ?? ''
+      const consumeIdx = events.findIndex((e) => e.type === 'queued_message_consumed' && e.clientMessageId === 'user_2')
+      expect(consumeIdx).toBeGreaterThan(0)
+      expect(events[consumeIdx - 1]).toMatchObject({
+        type: 'message_complete',
+        messageId: sealedId,
+        metadata: { queuedTurnCount: 1 },
+      })
+      expect(events[consumeIdx + 1]).toMatchObject({
+        type: 'message_start',
+        message: { id: continuationId, role: 'assistant', status: 'streaming', providerId: 'claude', content: [] },
+      })
+      expect(events[consumeIdx + 2]).toEqual({ type: 'status_change', status: 'streaming' })
+      expect(continuationId).not.toBe(sealedId)
+      expect(bridge.consumedTags).not.toContain('user_2')
+
+      const bridgePushSpy = vi.spyOn(hoisted.captured.bridge as { push: (...args: unknown[]) => void }, 'push')
+      await new Promise((r) => setTimeout(r, 0))
+      expect(bridgePushSpy).not.toHaveBeenCalled()
+      let settled = false
+      void firstSend.then(() => { settled = true })
+      await new Promise((r) => setTimeout(r, 0))
+      expect(settled).toBe(false)
+
+      hoisted.captured.emit?.({ type: 'message_complete', messageId: continuationId, metadata: {} })
+      await firstSend
+    })
+
+    it('does not split the assistant when a task notification is consumed', async () => {
+      const backend = new ClaudeBackend()
+      const events: AgentEvent[] = []
+      backend.onEvent((e) => events.push(e))
+      await backend.start(makeStartOpts())
+      const firstSend = backend.send({ content: 'turn 1', clientMessageId: 'user_1' })
+      await new Promise((r) => setTimeout(r, 0))
+      const sealedId = hoisted.captured.getCurrentMessageId?.() ?? ''
+      await backend.injectTaskNotification('mailbox ready')
+      hoisted.captured.onStepBoundary?.()
+
+      const bridge = hoisted.captured.bridge as AsyncIterable<unknown>
+      const iterator = bridge[Symbol.asyncIterator]()
+      await iterator.next()
+      await iterator.next()
+
+      expect(events.filter((e) => e.type === 'message_complete')).toEqual([])
+      expect(hoisted.captured.getCurrentMessageId?.()).toBe(sealedId)
+      const consumed = events.filter((e) => e.type === 'queued_message_consumed')
+      expect(consumed).toHaveLength(1)
+      expect(consumed[0]).toMatchObject({ clientMessageId: expect.stringMatching(/^task-notify-/) })
+
+      hoisted.captured.emit?.({ type: 'message_complete', messageId: sealedId, metadata: {} })
+      await firstSend
+    })
+
     it('holds queued messages while a consumed steer awaits its continuation turn', async () => {
       const backend = new ClaudeBackend()
       await backend.start(makeStartOpts())
       const firstSend = backend.send({ content: 'turn 1', clientMessageId: 'user_1' })
       await new Promise((r) => setTimeout(r, 0))
+      const sealedId = hoisted.captured.getCurrentMessageId?.() ?? ''
       await backend.send({ content: 'steer this', clientMessageId: 'user_2', priority: 'next' })
       await backend.send({ content: 'queued', clientMessageId: 'user_3', priority: 'later' })
       await backend.handleCommand({ kind: 'claude.steer_queued', clientMessageId: 'user_2' })
 
-      const bridge = hoisted.captured.bridge as AsyncIterable<unknown> & { drainConsumedTag(): string | undefined }
+      const bridge = hoisted.captured.bridge as AsyncIterable<unknown>
       const iterator = bridge[Symbol.asyncIterator]()
       await iterator.next()
       await iterator.next()
 
-      const bridgePushSpy = vi.spyOn(hoisted.captured.bridge as { push: (...args: unknown[]) => void }, 'push')
-      hoisted.captured.emit?.({
-        type: 'message_complete',
-        messageId: hoisted.captured.getCurrentMessageId?.() ?? '',
-        metadata: {},
-      })
-      await firstSend
-      await new Promise((r) => setTimeout(r, 0))
-      expect(bridgePushSpy).not.toHaveBeenCalled()
+      const continuationId = hoisted.captured.getCurrentMessageId?.() ?? ''
+      expect(continuationId).not.toBe(sealedId)
 
-      bridge.drainConsumedTag()
-      hoisted.captured.onQueuedTurnStart?.('msg_continuation')
+      const bridgePushSpy = vi.spyOn(hoisted.captured.bridge as { push: (...args: unknown[]) => void }, 'push')
       await backend.send({ content: 'typed mid-steer', clientMessageId: 'user_4', priority: 'next' })
       expect(bridgePushSpy).not.toHaveBeenCalled()
 
-      hoisted.captured.emit?.({ type: 'message_complete', messageId: 'msg_continuation', metadata: {} })
+      hoisted.captured.emit?.({ type: 'message_complete', messageId: continuationId, metadata: {} })
+      await firstSend
       await new Promise((r) => setTimeout(r, 0))
       expect(bridgePushSpy).toHaveBeenCalledTimes(1)
       expect(bridgePushSpy.mock.calls[0]?.[0]).toMatchObject({ message: { content: 'queued' }, priority: undefined })

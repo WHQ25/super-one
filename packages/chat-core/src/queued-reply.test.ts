@@ -47,6 +47,25 @@ describe('queued input reply state', () => {
     expect(state.messages.filter(message => message.role === 'assistant')).toHaveLength(1)
   })
 
+  it('places a desktop Claude steer between the sealed reply and the continuation', () => {
+    const { state, emit, consume, message } = fixture('claude')
+    emit({ type: 'message_complete', messageId: 'assistant', metadata: { queuedTurnCount: 1 } })
+    consume()
+    emit({ type: 'message_start', message: message('assistant-after', 'assistant', 'streaming') })
+    emit({ type: 'status_change', status: 'streaming' })
+
+    expect(state.status).toBe('streaming')
+    expect(state.awaitingAssistantReply).toBe(false)
+    expect(state.messages.map(row => row.id)).toEqual(['assistant', 'queued', 'assistant-after'])
+    expect(state.messages.map(row => row.status)).toEqual(['complete', 'complete', 'streaming'])
+
+    emit({ type: 'content_delta', messageId: 'assistant-after', delta: { type: 'text', text: 'after the steer' } })
+    const textOf = (id: string) => state.messages.find(row => row.id === id)?.content
+      .flatMap(block => block.type === 'text' ? [block.text] : []).join('')
+    expect(textOf('assistant')).toBe('assistant')
+    expect(textOf('assistant-after')).toContain('after the steer')
+  })
+
   it('does not duplicate an observer user echo when the queued input joins an active reply', () => {
     const { state, consume } = fixture('codex', false)
     consume()

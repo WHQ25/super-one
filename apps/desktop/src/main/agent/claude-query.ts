@@ -455,11 +455,14 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
         continue
       }
 
-      if (!turnActive) {
-        const latestId = getCurrentMessageId()
-        if (latestId && latestId !== turnMessageId) {
-          turnMessageId = latestId
-          messageId = turnMessageId
+      // Follow a live id the backend moved (a steer split) without treating
+      // that as a new turn. Echo and result gates reset only after the turn ends.
+      const latestId = getCurrentMessageId()
+      if (latestId && latestId !== turnMessageId) {
+        const turnEnded = !turnActive
+        turnMessageId = latestId
+        messageId = turnMessageId
+        if (turnEnded) {
           resultSeen = false
           turnUserEchoSeen = false
         }
@@ -534,6 +537,9 @@ export async function iterateMessages(q: Query, opts: IterateMessagesOptions): P
         const isReplay = userMsg.isReplay === true ? true : undefined
         const msgContent = userMsg.message?.content
 
+        // A steer SuperOne already split discarded its tag. This remains the
+        // fallback for a queued turn whose tag is still here: the second
+        // top-level string replay, after the opening prompt echo.
         if (!parentToolUseId && typeof msgContent === 'string') {
           if (!turnUserEchoSeen) {
             turnUserEchoSeen = true

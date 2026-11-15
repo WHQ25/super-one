@@ -1693,6 +1693,47 @@ describe('createSessionQuery', () => {
     expect(streamingIdx).toBeGreaterThan(startIdx)
   })
 
+  it('follows a steer id adopted mid-turn and does not split again after that tag is discarded', async () => {
+    state.messages = [
+      { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'before' } } },
+      { type: 'user', message: { role: 'user', content: 'original message' }, parent_tool_use_id: null, isReplay: true },
+      { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'mid' } } },
+      { type: 'user', message: { role: 'user', content: 'steer replay' }, parent_tool_use_id: null, isReplay: true },
+      { type: 'stream_event', event: { type: 'content_block_delta', delta: { type: 'text_delta', text: 'after' } } },
+      { type: 'assistant', message: { content: [{ type: 'text', text: 'after' }] } },
+      { type: 'result', subtype: 'success', usage: {} },
+    ]
+
+    let currentId = 'msg-A'
+    const events: Array<Record<string, unknown>> = []
+    const onQueuedTurnStart = vi.fn()
+    const handle = createSessionQuery(
+      { consumedTags: [] as string[], drainConsumedTag: () => undefined } as unknown as MessageBridge,
+      { cwd: '/repo', permissionMode: 'default', canUseTool: vi.fn() },
+      (event) => {
+        events.push(event as unknown as Record<string, unknown>)
+        const delta = event as { type?: string; delta?: { type?: string; text?: string } }
+        if (delta.type === 'content_delta' && delta.delta?.text === 'mid') currentId = 'msg-B'
+      },
+      () => currentId,
+      () => Date.now() - 50,
+      () => false,
+      undefined,
+      onQueuedTurnStart,
+    )
+    await handle.iterationDone
+
+    expect(onQueuedTurnStart).not.toHaveBeenCalled()
+    expect(events.filter((event) => event.type === 'message_start')).toHaveLength(0)
+    const texts = events.filter((event) => event.type === 'content_delta' && (event.delta as { type?: string }).type === 'text')
+    expect(texts.map((event) => ({ id: event.messageId, text: (event.delta as { text: string }).text }))).toEqual([
+      { id: 'msg-A', text: 'before' },
+      { id: 'msg-A', text: 'mid' },
+      { id: 'msg-B', text: 'after' },
+    ])
+    expect(events.filter((event) => event.type === 'message_complete').map((event) => event.messageId)).toEqual(['msg-B'])
+  })
+
   it('emits message_timestamp once from the first top-level assistant SDK timestamp', async () => {
     state.messages = [
       {

@@ -102,6 +102,20 @@ describe('MessageBridge', () => {
     expect(consumed).toEqual(['tag-a', 'tag-c'])
   })
 
+  it('discards one consumed tag by id and leaves the others', async () => {
+    const bridge = new MessageBridge()
+    bridge.push(msg('a'), 'tag-a')
+    bridge.push(msg('b'), 'tag-b')
+    const iter = bridge[Symbol.asyncIterator]()
+    await iter.next()
+    await iter.next()
+
+    expect(bridge.discardConsumedTag('tag-b')).toBe(true)
+    expect([...bridge.consumedTags]).toEqual(['tag-a'])
+    expect(bridge.drainConsumedTag()).toBe('tag-a')
+    expect(bridge.discardConsumedTag('missing')).toBe(false)
+  })
+
   it('should call onConsumed immediately when waiter is present (fast path)', async () => {
     const bridge = new MessageBridge()
     const consumed: string[] = []

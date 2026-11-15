@@ -49,7 +49,8 @@ export function reduceLifecycle(
         ...(alreadyInTranscript ? {} : { messages: [...session.messages, consumed] }),
         queuedMessages: session.queuedMessages.filter((_, i) => i !== idx),
         // A steer can join the current reply without another message_start
-        // (remote Codex and Claude Insert Soon). Only wait if no reply is live.
+        // (Codex, and a Claude consume that does not close the assistant).
+        // Desktop Claude closes the assistant first. Only wait if no reply is live.
         awaitingAssistantReply: lastAssistant?.status !== 'streaming',
         lastEventAt: ports.now(),
       }

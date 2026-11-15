@@ -119,6 +119,8 @@ export class ClaudeBackend implements SessionBackend {
   private pendingInstruction: string | null = null
   /** User messages stay under SuperOne control until their own turn or an explicit Steer. */
   private readonly goalTracker = new ClaudeGoalTracker()
+  /** Steer tags split the live assistant at consume time. Task notifications and other tags do not. */
+  private readonly steerTags = new Set<string>()
   private readonly queuedUserMessages = new QueuedUserMessageQueue({
     isBusy: () => this.turnResolves.size > 0,
     isAlive: () => Boolean(this.bridge && this.query),
@@ -361,6 +363,10 @@ export class ClaudeBackend implements SessionBackend {
     this._proxyBaseUrl = config.proxy ? (await ensureProxy(config.proxy)).url : null
     this.bridge = new MessageBridge()
     this.bridge.onConsumed = (tag) => {
+      if (this.steerTags.has(tag)) {
+        this.splitAssistantForSteer(tag)
+        return
+      }
       this.emit({ type: 'queued_message_consumed', clientMessageId: tag })
     }
     this.providerSessionId = opts.providerSessionId ?? null
@@ -383,19 +389,7 @@ export class ClaudeBackend implements SessionBackend {
       () => this.currentStartTime,
       () => this.interrupted,
       (id) => this.stageProviderSessionId(id),
-      (messageId) => {
-        const oldId = this.currentMessageId
-        const pending = oldId ? this.turnResolves.get(oldId) : undefined
-        if (pending && oldId && oldId !== messageId) this.turnResolves.delete(oldId)
-        // A continuation turn (steer, task-notification wake) has no send()
-        // awaiting it, but it is a live SDK turn all the same: keep isBusy()
-        // true so composer sends stay host-queued instead of landing mid-turn
-        // in the SDK, where they would become SDK-steered.
-        this.turnResolves.set(messageId, pending ?? (() => {}))
-        this.currentMessageId = messageId
-        this.currentStartTime = Date.now()
-        this.interrupted = false
-      },
+      (messageId) => this.adoptLiveTurn(messageId),
       () => this.flushPendingInlineNotifications(),
     )
 
@@ -553,6 +547,55 @@ export class ClaudeBackend implements SessionBackend {
       this.bridge.push(item.msg, item.clientMessageId)
     }
     this.pendingInlineNotifications = []
+  }
+
+  /**
+   * Point the open turn at `messageId`. A continuation (echo-detected queued
+   * turn, or a steer split below) keeps the resolver of the turn it continues,
+   * so `isBusy()` stays true and composer sends stay host-queued instead of
+   * landing mid-turn in the SDK.
+   */
+  private adoptLiveTurn(messageId: string): void {
+    const oldId = this.currentMessageId
+    const pending = oldId ? this.turnResolves.get(oldId) : undefined
+    if (pending && oldId && oldId !== messageId) this.turnResolves.delete(oldId)
+    this.turnResolves.set(messageId, pending ?? (() => {}))
+    this.currentMessageId = messageId
+    this.currentStartTime = Date.now()
+    this.interrupted = false
+  }
+
+  /**
+   * Close the assistant that was streaming, then open the continuation, with
+   * the user row between them. The resolver moves first: the sealed
+   * `message_complete` must not finish the live turn or flush the host queue.
+   * A turn that has already ended only commits the user row.
+   */
+  private splitAssistantForSteer(tag: string): void {
+    this.steerTags.delete(tag)
+    const sealedId = this.currentMessageId
+    const live = Boolean(sealedId && this.turnResolves.has(sealedId))
+    this.bridge?.discardConsumedTag(tag)
+    if (!live || !sealedId) {
+      this.emit({ type: 'queued_message_consumed', clientMessageId: tag })
+      return
+    }
+    const nextId = `msg_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`
+    this.adoptLiveTurn(nextId)
+    this.emit({ type: 'message_complete', messageId: sealedId, metadata: { queuedTurnCount: 1 } })
+    this.emit({ type: 'queued_message_consumed', clientMessageId: tag })
+    this.emit({
+      type: 'message_start',
+      message: {
+        id: nextId,
+        role: 'assistant',
+        status: 'streaming',
+        content: [],
+        createdAt: new Date().toISOString(),
+        providerId: 'claude',
+      },
+    })
+    this.emit({ type: 'status_change', status: 'streaming' })
   }
 
   /**
@@ -868,14 +911,17 @@ export class ClaudeBackend implements SessionBackend {
     const taken = this.queuedUserMessages.take(cmd.clientMessageId)
     if (!taken) throw new Error(`Queued Claude message not found: ${cmd.clientMessageId}`)
 
+    this.steerTags.add(cmd.clientMessageId)
     try {
       const userMsg = buildUserMessage(
         { ...taken.request, priority: 'next' },
         this.providerSessionId ?? '',
       )
       taken.delivery?.onInputAccepted()
+      // Register before push: a waiting iterator consumes, and splits, inside push.
       this.bridge.push(userMsg, cmd.clientMessageId)
     } catch (error) {
+      this.steerTags.delete(cmd.clientMessageId)
       this.queuedUserMessages.restore(taken)
       throw error
     }
@@ -1189,9 +1235,10 @@ export class ClaudeBackend implements SessionBackend {
       }
       // Queued sends are released on the terminal event rather than from
       // send(): a continuation turn ends without any send() to flush from. A
-      // consumed-but-undrained bridge tag means a steered message is already
-      // in the SDK and its turn has not started yet (priority 'now' closes
-      // the current turn first) — releasing now would push into that turn.
+      // consumed tag that iterateMessages has not drained yet (a queued-turn
+      // echo, or a task notification) means that input is already in the SDK
+      // and its turn has not opened. A steer splits at consume time and
+      // discards its own tag; the moved resolver keeps the queue closed.
       if (this.turnResolves.size === 0 && (this.bridge?.consumedTags.length ?? 0) === 0) {
         this.queuedUserMessages.flush()
       }

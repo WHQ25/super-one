@@ -43,6 +43,45 @@ describe('mobile model selection state', () => {
     expect(effortOptionsForModel('acp-grok', info, 'grok-4')).toEqual(info.efforts)
   })
 
+  it('scopes Antigravity effort options per model on mobile', () => {
+    const info: RemoteSystemInfo = {
+      models: [
+        {
+          id: 'gemini-4-hydrogen',
+          name: 'Gemini 4 Hydrogen',
+          description: '',
+          supportsEffort: true,
+          supportedEffortLevels: ['low', 'medium', 'high', 'xhigh'],
+        },
+        {
+          id: 'gemini-4-carbon',
+          name: 'Gemini 4 Carbon',
+          description: '',
+          supportsEffort: true,
+          supportedEffortLevels: ['low', 'medium', 'high'],
+        },
+        {
+          id: 'gemini-pro-orchestrator',
+          name: 'Gemini Pro Orchestrator',
+          description: '',
+          supportsEffort: false,
+          supportedEffortLevels: [],
+        },
+      ],
+      efforts: [
+        { value: 'low', label: 'Low' },
+        { value: 'medium', label: 'Medium' },
+        { value: 'high', label: 'High' },
+        { value: 'xhigh', label: 'Extra' },
+      ],
+    }
+    expect(effortOptionsForModel('acp-antigravity', info, 'gemini-4-hydrogen').map((e) => e.value))
+      .toEqual(['low', 'medium', 'high', 'xhigh'])
+    expect(effortOptionsForModel('acp-antigravity', info, 'gemini-4-carbon').map((e) => e.value))
+      .toEqual(['low', 'medium', 'high'])
+    expect(effortOptionsForModel('acp-antigravity', info, 'gemini-pro-orchestrator')).toEqual([])
+  })
+
   const claudeCatalog: RemoteSystemInfo = {
     models: [{
       id: 'sonnet',

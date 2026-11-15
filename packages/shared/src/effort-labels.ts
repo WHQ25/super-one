@@ -69,6 +69,7 @@ export function isAcpEffortConfigOption(option: { id?: string | null; category?:
   const category = option.category?.trim().toLowerCase()
   return (
     id === 'reasoning_effort' ||
+    id === 'thought_level' ||
     id === 'thinking_level' ||
     category === 'thought_level' ||
     category === 'reasoning_effort'

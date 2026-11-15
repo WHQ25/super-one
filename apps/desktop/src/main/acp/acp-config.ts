@@ -6,6 +6,7 @@ import type {
   ModelOption,
 } from '@superone/shared/agent-types'
 import { isAcpEffortConfigOption } from '@superone/shared/effort-labels'
+import { isAcpPermissionModeValues, overlayAcpModelList } from '@superone/shared/harness/acp-mode-catalog'
 import { withoutProjectScopedWorkflows } from '@superone/shared/workflow-commands'
 import type { SessionConfigOption } from '@agentclientprotocol/sdk'
 import {
@@ -219,7 +220,11 @@ function selectToModeConfig(
   const selected =
     typeof chosen.currentValue === 'string' && ordered.some((m) => m.id === chosen.currentValue)
       ? chosen.currentValue
-      : (ordered[0]?.id ?? null)
+      : opts?.sortEffort &&
+          (chosen.currentValue === 'xhigh' || chosen.currentValue === 'max') &&
+          ordered.some((m) => m.id === 'high')
+        ? 'high'
+        : (ordered[0]?.id ?? null)
   return {
     configId: chosen.id,
     modes: ordered,
@@ -240,7 +245,6 @@ export function extractReasoningEffortConfig(
   return selectToModeConfig(chosen, { sortEffort: true })
 }
 
-/** Prefer category "mode", else option id "mode". No fallback to other selects. */
 export function extractModeConfig(
   configOptions: Array<ConfigOptionLike | SessionConfigOption> | null | undefined,
 ): AcpModeConfig | null {
@@ -250,66 +254,33 @@ export function extractModeConfig(
   const chosen = selects.find((o) => o.category === 'mode')
     ?? selects.find((o) => o.id === 'mode')
   if (!chosen) return null
-  return selectToModeConfig(chosen)
+  const parsed = selectToModeConfig(chosen)
+  if (!parsed || isAcpPermissionModeValues(parsed.modes.map((m) => m.id))) return null
+  return parsed
 }
 
-/**
- * Effort catalog when Grok advertises `reasoning_effort`, otherwise a real
- * session-mode select. Does not read x.ai/sessionConfig.
- */
 export function modesFromConfigOptions(
   configOptions: Array<ConfigOptionLike | SessionConfigOption> | null | undefined,
 ): AcpModeConfig | null {
   return extractReasoningEffortConfig(configOptions) ?? extractModeConfig(configOptions)
 }
 
-function overlayModelOption(primary: ModelOption, extra: ModelOption | undefined): ModelOption {
-  if (!extra) return primary
-  return {
-    ...primary,
-    ...(primary.contextWindow == null && extra.contextWindow != null
-      ? { contextWindow: extra.contextWindow }
-      : {}),
-    ...(primary.supportsEffort == null && extra.supportsEffort != null
-      ? { supportsEffort: extra.supportsEffort }
-      : {}),
-    ...(primary.supportedEffortLevels == null && extra.supportedEffortLevels != null
-      ? { supportedEffortLevels: extra.supportedEffortLevels }
-      : {}),
-    ...(primary.contextWindows == null && extra.contextWindows != null
-      ? { contextWindows: extra.contextWindows }
-      : {}),
-  }
-}
-
-function overlayModelList(primary: ModelOption[], extras: ModelOption[]): ModelOption[] {
-  if (extras.length === 0) return primary
-  const byId = new Map(extras.map((model) => [model.id, model]))
-  return primary.map((model) => overlayModelOption(model, byId.get(model.id)))
-}
-
-/**
- * Keep the winner's picker list / configId / selection, and fill window / effort
- * metadata from later catalogs. Grok `session/new` now ships both ACP
- * `configOptions` (no window) and `models` (`_meta.totalContextTokens`).
- */
 export function mergeModelConfig(
   primary: AcpModelConfig,
   ...sources: Array<AcpModelConfig | null | undefined>
 ): AcpModelConfig {
   let models = primary.models
   for (const source of sources) {
-    if (source?.models.length) models = overlayModelList(models, source.models)
+    if (source?.models.length) models = overlayAcpModelList(models, source.models)
   }
   return models === primary.models ? primary : { ...primary, models }
 }
 
-/** Build session-facing catalog from a persisted agent config snapshot. */
 export function deriveSessionCatalog(catalog: AcpAgentConfigCatalog): AcpSessionCatalog {
   const fromOptions = extractModelConfig(catalog.configOptions)
   const extras = catalog.extraModels ?? []
   const models = fromOptions?.models.length
-    ? overlayModelList(fromOptions.models, extras)
+    ? overlayAcpModelList(fromOptions.models, extras)
     : extras
   const selectedModelId =
     (fromOptions?.selectedModelId

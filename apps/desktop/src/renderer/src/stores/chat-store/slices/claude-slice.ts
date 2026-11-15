@@ -21,6 +21,7 @@ import {
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { patchSessionSettings, pushSettings } from '@/lib/session-client'
 import { codexModelCacheKey } from '../helpers/codex-model-cache'
+import { resolveAcpModeForModelSwitch } from '../harness/acp-handler'
 import {
   ensureCursorHarnessModelPrefsLoaded,
   persistCursorHarnessModelParams,
@@ -300,12 +301,15 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
     const provider = session.sessionProvider ?? session.preferredProvider
 
     if (isAcpProtocolHarness(provider) || provider === 'opencode' || provider === 'cursor') {
+      const acpModeSwitch = isAcpProtocolHarness(provider) && session.selectedModel !== model
+        ? resolveAcpModeForModelSwitch(session, model)
+        : null
       const patch: Partial<import('../types').PerSessionState> = {
         selectedModel: model,
         modelUserChosen: true,
         contextWindow: null,
-        // Re-selecting the same model must not drop a window the user already picked.
         ...(isAcpProtocolHarness(provider) && session.selectedModel !== model ? { selectedAcpContextWindow: null } : {}),
+        ...(acpModeSwitch?.changed ? { selectedAcpModeId: acpModeSwitch.nextModeId } : {}),
       }
       if (provider === 'cursor') {
         const cursorModels = state.harnessResources.cursor?.models ?? []
@@ -347,6 +351,7 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
       pushSettings(activeProject, sessionId, session, {
         model,
         ...(provider === 'cursor' && patch.selectedEffort ? { effort: patch.selectedEffort } : {}),
+        ...(acpModeSwitch?.changed && acpModeSwitch.nextModeId ? { mode: acpModeSwitch.nextModeId } : {}),
       })
       return
     }

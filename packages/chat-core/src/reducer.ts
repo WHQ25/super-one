@@ -4,7 +4,9 @@ import { reduceCodexMetadata } from './codex-metadata'
 function acceptsAcpCatalog(provider: string | null | undefined): boolean {
   return provider === 'acp' || isAcpProtocolHarness(provider)
 }
-import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
+import type { AgentEvent, ChatMessage, EffortLevel } from '@superone/shared/agent-types'
+import { isAcpEffortConfigId } from '@superone/shared/effort-labels'
+import { acpEffortOptionsForModel, acpModeCatalog, clampAcpEffortForModel } from '@superone/shared/harness/acp-mode-catalog'
 import { withCodexContent } from '@superone/shared/codex-content'
 import { updateMcpAppAttachments } from '@superone/shared/mcp-apps-state'
 import { applySuggestedTaskUpdate } from '@superone/shared/suggested-task'
@@ -31,7 +33,15 @@ import { reduceRealtime } from './realtime'
  * wipe `contextWindow` / `contextWindows` already stored for that id.
  * A catalog row that names `contextWindow` is authoritative and may drop the list.
  */
-function withKeptContextWindows<T extends { id: string; contextWindow?: number; contextWindows?: number[] }>(
+function withKeptContextWindows<
+  T extends {
+    id: string
+    contextWindow?: number
+    contextWindows?: number[]
+    supportsEffort?: boolean
+    supportedEffortLevels?: EffortLevel[]
+  },
+>(
   previous: readonly T[],
   incoming: readonly T[],
 ): T[] {
@@ -39,14 +49,26 @@ function withKeptContextWindows<T extends { id: string; contextWindow?: number; 
   const prevById = new Map(previous.map((model) => [model.id, model]))
   let changed = false
   const models = incoming.map((model) => {
-    if (model.contextWindow != null || model.contextWindows != null) return model
     const prior = prevById.get(model.id)
-    if (prior?.contextWindow == null && prior?.contextWindows == null) return model
+    if (!prior) return model
+    const keepWindow =
+      model.contextWindow == null &&
+      model.contextWindows == null &&
+      (prior.contextWindow != null || prior.contextWindows != null)
+    const keepEffort =
+      model.supportsEffort == null &&
+      model.supportedEffortLevels == null &&
+      (prior.supportsEffort != null || prior.supportedEffortLevels != null)
+    if (!keepWindow && !keepEffort) return model
     changed = true
     return {
       ...model,
-      ...(prior?.contextWindow != null ? { contextWindow: prior.contextWindow } : {}),
-      ...(prior?.contextWindows != null ? { contextWindows: prior.contextWindows } : {}),
+      ...(keepWindow && prior.contextWindow != null ? { contextWindow: prior.contextWindow } : {}),
+      ...(keepWindow && prior.contextWindows != null ? { contextWindows: prior.contextWindows } : {}),
+      ...(keepEffort && prior.supportsEffort != null ? { supportsEffort: prior.supportsEffort } : {}),
+      ...(keepEffort && prior.supportedEffortLevels != null
+        ? { supportedEffortLevels: prior.supportedEffortLevels }
+        : {}),
     }
   })
   return changed ? models : incoming as T[]
@@ -248,6 +270,24 @@ function reduceEvent(
           { id: currentId, name: currentId, description: 'Unavailable in current catalog' },
         ]
       }
+      const activeModel = models.find((m) => m.id === currentId)
+      if (
+        isAcpEffortConfigId(session.acpModeConfigId) &&
+        (activeModel?.supportsEffort !== undefined || activeModel?.supportedEffortLevels !== undefined)
+      ) {
+        const modeEfforts = acpModeCatalog({
+          modes: session.acpModes,
+          modeConfigId: session.acpModeConfigId,
+          selectedModeId: session.selectedAcpModeId,
+        }).efforts
+        const clamped = clampAcpEffortForModel(
+          acpEffortOptionsForModel(models, currentId, modeEfforts),
+          session.selectedAcpModeId,
+        )
+        if (clamped !== session.selectedAcpModeId) {
+          patch.selectedAcpModeId = clamped
+        }
+      }
       return patch
     }
 
@@ -267,15 +307,33 @@ function reduceEvent(
         acpModesStatus: status,
       }
       if (status === 'loading') return patch
+      let candidateModeId: string | null | undefined = session.selectedAcpModeId
       if (event.selectedModeId) {
         if (!session.selectedAcpModeId || !event.modes.some((m) => m.id === session.selectedAcpModeId)) {
-          patch.selectedAcpModeId = event.selectedModeId
+          candidateModeId = event.selectedModeId
         } else if (event.selectedModeId !== session.selectedAcpModeId) {
-          // Agent-initiated mode change (config_option_update / set_config_option response).
-          patch.selectedAcpModeId = event.selectedModeId
+          candidateModeId = event.selectedModeId
         }
       } else if (event.modes.length === 0) {
-        patch.selectedAcpModeId = null
+        candidateModeId = null
+      }
+      const activeModel = session.acpModels.find((m) => m.id === session.selectedModel)
+      if (
+        isAcpEffortConfigId(event.configId) &&
+        (activeModel?.supportsEffort !== undefined || activeModel?.supportedEffortLevels !== undefined)
+      ) {
+        const modeEfforts = acpModeCatalog({
+          modes: event.modes,
+          modeConfigId: event.configId,
+          selectedModeId: candidateModeId ?? null,
+        }).efforts
+        candidateModeId = clampAcpEffortForModel(
+          acpEffortOptionsForModel(session.acpModels, session.selectedModel, modeEfforts),
+          candidateModeId,
+        )
+      }
+      if (candidateModeId !== session.selectedAcpModeId) {
+        patch.selectedAcpModeId = candidateModeId ?? null
       }
       return patch
     }

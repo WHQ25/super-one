@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import { ChevronDown, RefreshCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
-import { acpModeCatalog } from '@superone/shared/harness/acp-mode-catalog'
+import { acpEffortOptionsForModel, acpModeCatalog } from '@superone/shared/harness/acp-mode-catalog'
 import { acpAgentIdForHarness, isAntigravityAcpAgent } from '@superone/shared/acp-brand'
 import { formatEffortOptionLabel } from '@superone/shared/effort-labels'
 import { acpAgentDefaultsFor, acpAgentPreferencePatch } from '@superone/shared/harness/session-defaults'
@@ -89,15 +89,17 @@ export function AcpDefaultModelRows({
 
   const rawModels = catalog?.models ?? []
 
+  const effectiveModelId = defaultModel || catalog?.selectedModelId || rawModels[0]?.id || null
+
   const antigravityProjection = useMemo(
     () => (isAntigravity
       ? projectAntigravityModels(
           rawModels,
-          defaultModel || catalog?.selectedModelId || rawModels[0]?.id || null,
+          effectiveModelId,
           defaultEffort || null,
         )
       : null),
-    [isAntigravity, rawModels, defaultModel, defaultEffort, catalog?.selectedModelId],
+    [isAntigravity, rawModels, effectiveModelId, defaultEffort],
   )
 
   const modelOptions = useMemo(() => {
@@ -115,17 +117,22 @@ export function AcpDefaultModelRows({
     }))
   }, [isAntigravity, antigravityProjection, rawModels])
 
-  const modeEffortOptions = useMemo(() => {
+  const rawModeEfforts = useMemo(() => {
     const modeCatalog = acpModeCatalog(catalog ? {
       modes: catalog.modes,
       modeConfigId: catalog.modeConfigId,
       selectedModeId: catalog.selectedModeId,
     } : null)
-    return modeCatalog.efforts.map((opt) => ({
+    return modeCatalog.efforts
+  }, [catalog])
+
+  const modeEffortOptions = useMemo(
+    () => acpEffortOptionsForModel(rawModels, effectiveModelId, rawModeEfforts).map((opt) => ({
       value: opt.value,
       label: localizedEffortLabels[opt.value.toLowerCase()] ?? opt.label,
-    }))
-  }, [catalog, localizedEffortLabels])
+    })),
+    [rawModels, effectiveModelId, rawModeEfforts, localizedEffortLabels],
+  )
 
   const useModelIdEfforts = Boolean(isAntigravity && antigravityProjection && antigravityProjection.effortOptions.length > 0)
 
@@ -224,12 +231,11 @@ export function AcpDefaultModelRows({
                   key={model.id}
                   onClick={() => {
                     setModelOpen(false)
-                    if (useModelIdEfforts && defaultEffort) {
-                      const nextProj = projectAntigravityModels(rawModels, model.id, defaultEffort)
-                      const supportsCurrentEffort = nextProj.effortOptions.some(
-                        (opt) => opt.value === defaultEffort,
-                      )
-                      if (!supportsCurrentEffort) {
+                    if (defaultEffort) {
+                      const nextSupported = useModelIdEfforts
+                        ? projectAntigravityModels(rawModels, model.id, defaultEffort).effortOptions
+                        : acpEffortOptionsForModel(rawModels, model.id, rawModeEfforts)
+                      if (!nextSupported.some((opt) => opt.value === defaultEffort)) {
                         void save(
                           { defaultModel: model.id, defaultEffort: '' },
                           t('settings.preferences.defaultModel.updated'),

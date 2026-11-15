@@ -262,4 +262,60 @@ describe('remote harness system info', () => {
       harnessId === 'claude' ? [1_000_000, undefined] : [200_000],
     )
   })
+
+  it('projects Antigravity per-model effort levels and clamps default effort to the active model', async () => {
+    const deps = dependencies({
+      'acp-antigravity': {
+        agents: [{ id: 'antigravity', name: 'Antigravity', installed: true, commandPreview: 'agy acp' }],
+        selectedAgentId: 'antigravity',
+        configByAgentId: {
+          antigravity: {
+            configOptions: [
+              {
+                id: 'model',
+                name: 'Model',
+                category: 'model',
+                type: 'select',
+                currentValue: 'gemini-4-carbon',
+                options: [
+                  { value: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen' },
+                  { value: 'gemini-4-carbon', name: 'Gemini 4 Carbon' },
+                  { value: 'gemini-pro-orchestrator', name: 'Gemini Pro Orchestrator' },
+                ],
+              },
+              {
+                id: 'thought_level',
+                name: 'Thinking Level',
+                category: 'thought_level',
+                type: 'select',
+                currentValue: 'xhigh',
+                options: [
+                  { value: 'low', name: 'Low' },
+                  { value: 'medium', name: 'Medium' },
+                  { value: 'high', name: 'High' },
+                ],
+              },
+            ],
+            extraModels: [
+              model('gemini-4-hydrogen-low'),
+              model('gemini-4-hydrogen-medium'),
+              model('gemini-4-hydrogen-high'),
+              model('gemini-4-hydrogen-xhigh'),
+              model('gemini-4-carbon-low'),
+              model('gemini-4-carbon-medium'),
+              model('gemini-4-carbon-high'),
+              model('gemini-pro-orchestrator'),
+            ],
+            updatedAt: '2026-11-16T00:00:00.000Z',
+          },
+        },
+      },
+    })
+
+    const info = await buildRemoteHarnessSystemInfo('/project', 'acp-antigravity', deps)
+    expect(info.efforts?.map((e) => e.value)).toEqual(['low', 'medium', 'high', 'xhigh'])
+    expect(info.defaults?.model).toBe('gemini-4-carbon')
+    expect(info.defaults?.effort).toBe('high')
+    expect(info.models.find((m) => m.id === 'gemini-pro-orchestrator')?.supportsEffort).toBe(false)
+  })
 })

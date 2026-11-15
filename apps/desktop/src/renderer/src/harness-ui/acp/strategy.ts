@@ -1,4 +1,6 @@
 import { acpAgentIdForHarness, isAntigravityAcpAgent, isGrokAcpAgent } from '@superone/shared/acp-brand'
+import { isAcpEffortConfigId } from '@superone/shared/effort-labels'
+import { acpEffortOptionsForModel, acpModeCatalog, clampAcpEffortForModel } from '@superone/shared/harness/acp-mode-catalog'
 import { acpAgentDefaultsFor } from '@superone/shared/harness/session-defaults'
 import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
 import { callSession } from '@/lib/session-client'
@@ -70,10 +72,27 @@ function createAcpStrategy(harnessId: AcpHarnessId): HarnessStrategy {
         : {}
     },
     prewarmHint: (session) => ({ model: session.selectedModel || undefined, acpAgentId: session.acpAgentId ?? undefined }),
-    draftSettings: (session) => ({
-      ...(session.selectedAcpModeId ? { mode: session.selectedAcpModeId } : {}),
-      ...(session.selectedAcpContextWindow ? { contextWindow: session.selectedAcpContextWindow } : {}),
-    }),
+    draftSettings: (session) => {
+      const hasCatalog = session.acpModels.length > 0 || session.acpModes.length > 0
+      const mode = hasCatalog && isAcpEffortConfigId(session.acpModeConfigId)
+        ? clampAcpEffortForModel(
+            acpEffortOptionsForModel(
+              session.acpModels,
+              session.selectedModel,
+              acpModeCatalog({
+                modes: session.acpModes,
+                modeConfigId: session.acpModeConfigId,
+                selectedModeId: session.selectedAcpModeId,
+              }).efforts,
+            ),
+            session.selectedAcpModeId,
+          )
+        : session.selectedAcpModeId
+      return {
+        ...(mode ? { mode } : {}),
+        ...(session.selectedAcpContextWindow ? { contextWindow: session.selectedAcpContextWindow } : {}),
+      }
+    },
     createSelections: (session) => (session.acpAgentId ? { acpAgentId: session.acpAgentId } : {}),
     resetFields: () => ({
       selectedModel: '',

@@ -60,6 +60,7 @@ export type AgentLaunchDefaults = AgentProfileRuntime
 
 /** The model fields a profile is checked against — structural, so desktop and CLI catalogs both fit. */
 export interface CatalogModel extends OptionCatalogModel {
+  supportsEffort?: boolean
   supportedReasoningEfforts?: ReadonlyArray<{ value: string }>
   defaultReasoningEffort?: string | null
 }
@@ -258,6 +259,7 @@ function findModel(catalog: AgentProfileCatalog, id: string | undefined): Catalo
 }
 
 function modelEfforts(catalog: AgentProfileCatalog, model: CatalogModel | undefined): string[] {
+  if (model?.supportsEffort === false) return []
   if (model?.supportedEffortLevels) return [...model.supportedEffortLevels]
   if (model?.supportedReasoningEfforts) return model.supportedReasoningEfforts.map((effort) => effort.value)
   return [...(catalog.efforts ?? [])]

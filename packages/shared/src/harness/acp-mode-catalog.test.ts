@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import type { ModelOption } from '../agent-types'
-import { acpModeCatalog } from './acp-mode-catalog'
+import {
+  acpEffortOptionsForModel,
+  acpModeCatalog,
+  clampAcpEffortForModel,
+  isAcpPermissionModeValues,
+  overlayAcpModelList,
+} from './acp-mode-catalog'
 
 function mode(id: string, name: string, description = ''): ModelOption {
   return { id, name, description }
@@ -73,5 +79,46 @@ describe('ACP mode catalog', () => {
 
   it('projects nothing for an agent with no modes at all', () => {
     expect(acpModeCatalog(null)).toEqual({ efforts: [], modes: [], selectedModeId: null })
+  })
+
+  it('derives per-model effort levels from suffixed extras and clamps effort across models', () => {
+    const overlaid = overlayAcpModelList(
+      [
+        mode('gemini-4-hydrogen', 'Gemini 4 Hydrogen'),
+        mode('gemini-4-carbon', 'Gemini 4 Carbon'),
+        mode('gemini-pro-orchestrator', 'Gemini Pro Orchestrator'),
+      ],
+      [
+        mode('gemini-4-hydrogen-low', 'Hydrogen Low'),
+        mode('gemini-4-hydrogen-medium', 'Hydrogen Medium'),
+        mode('gemini-4-hydrogen-high', 'Hydrogen High'),
+        mode('gemini-4-hydrogen-xhigh', 'Hydrogen Extra'),
+        mode('gemini-4-carbon-low', 'Carbon Low'),
+        mode('gemini-4-carbon-medium', 'Carbon Medium'),
+        mode('gemini-4-carbon-high', 'Carbon High'),
+        mode('gemini-pro-orchestrator', 'Gemini Pro Orchestrator'),
+      ],
+    )
+
+    expect(overlaid.map((m) => ({ id: m.id, supports: m.supportsEffort, levels: m.supportedEffortLevels }))).toEqual([
+      { id: 'gemini-4-hydrogen', supports: true, levels: ['low', 'medium', 'high', 'xhigh'] },
+      { id: 'gemini-4-carbon', supports: true, levels: ['low', 'medium', 'high'] },
+      { id: 'gemini-pro-orchestrator', supports: false, levels: [] },
+    ])
+
+    const fallback = [
+      { value: 'low', label: 'Low' },
+      { value: 'medium', label: 'Medium' },
+      { value: 'high', label: 'High' },
+      { value: 'xhigh', label: 'Extra' },
+    ]
+    const carbonEfforts = acpEffortOptionsForModel(overlaid, 'gemini-4-carbon', fallback)
+    const orchEfforts = acpEffortOptionsForModel(overlaid, 'gemini-pro-orchestrator', fallback)
+    expect(carbonEfforts.map((e) => e.value)).toEqual(['low', 'medium', 'high'])
+    expect(orchEfforts).toEqual([])
+    expect(clampAcpEffortForModel(carbonEfforts, 'xhigh')).toBe('high')
+    expect(clampAcpEffortForModel(orchEfforts, 'xhigh')).toBeNull()
+    expect(isAcpPermissionModeValues(['default', 'accept-edits', 'auto', 'plan'])).toBe(true)
+    expect(isAcpPermissionModeValues(['ask', 'code'])).toBe(false)
   })
 })

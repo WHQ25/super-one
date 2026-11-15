@@ -92,7 +92,9 @@ export function useProfileCatalog(profile: SessionAgentProfile | undefined): Mod
         description: model.description ?? '',
         ...(model.supportsFastMode ? { supportsFastMode: true } : {}),
         ...(model.serviceTiers?.length ? { serviceTiers: model.serviceTiers } : {}),
-        ...(supportedEffortLevels?.length ? { supportedEffortLevels } : {}),
+        ...(supportedEffortLevels !== undefined
+          ? { supportsEffort: supportedEffortLevels.length > 0, supportedEffortLevels }
+          : {}),
         ...(supportedReasoningEfforts?.length ? { supportedReasoningEfforts } : {}),
       }
     }) ?? EMPTY_MODELS,

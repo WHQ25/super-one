@@ -7,7 +7,14 @@ import type {
   AcpSessionCatalog,
   ModelOption,
 } from '@superone/shared/agent-types'
-import { isAcpEffortConfigOption, sortEffortsAscending } from '@superone/shared/effort-labels'
+import { isAcpEffortConfigId, isAcpEffortConfigOption, sortEffortsAscending } from '@superone/shared/effort-labels'
+import {
+  acpEffortOptionsForModel,
+  acpModeCatalog,
+  clampAcpEffortForModel,
+  isAcpPermissionModeValues,
+  overlayAcpModelList,
+} from '@superone/shared/harness/acp-mode-catalog'
 import { acpAgentDefaultsFor } from '@superone/shared/harness/session-defaults'
 import { withoutProjectScopedWorkflows } from '@superone/shared/workflow-commands'
 import { projectAntigravityModels } from '@/harness-ui/acp/model-options'
@@ -166,18 +173,21 @@ function extractReasoningEffort(
 
 function sessionCatalogFromConfig(catalog: AcpAgentConfigCatalog): AcpSessionCatalog {
   const modelFromOptions = extractSelectCategory(catalog.configOptions, 'model', 'model')
+  const extras = catalog.extraModels ?? []
   const models = modelFromOptions?.options.length
-    ? modelFromOptions.options
-    : (catalog.extraModels ?? [])
+    ? overlayAcpModelList(modelFromOptions.options, extras)
+    : extras
   const selectedModelId =
     (modelFromOptions?.selectedId
       ?? catalog.selectedModelId
       ?? models[0]?.id
       ?? null)
-  // Grok thought_level stays an effort catalog. OpenCode category=mode stays a session mode.
   const effort = extractReasoningEffort(catalog.configOptions)
-  const mode = effort ?? extractSelectCategory(catalog.configOptions, 'mode', 'mode')
-  // Prefer configOptions; else Grok-style extraModes (modeConfigId may be null).
+  const rawMode = extractSelectCategory(catalog.configOptions, 'mode', 'mode')
+  const sessionMode = rawMode && !isAcpPermissionModeValues(rawMode.options.map((o) => o.id))
+    ? rawMode
+    : null
+  const mode = effort ?? sessionMode
   const modes = mode?.options.length ? mode.options : (catalog.extraModes ?? [])
   const selectedModeId = mode?.selectedId
     ?? (catalog.selectedModeId && modes.some((m) => m.id === catalog.selectedModeId)
@@ -323,11 +333,27 @@ function resolveDefaultAcpModelAndMode(
   const configuredMode = defaults.defaultEffort && session.modes.some((m) => m.id === defaults.defaultEffort)
     ? defaults.defaultEffort
     : null
-  const selectedModeId = preferredMode ?? configuredMode ?? session.selectedModeId
+  const rawSelectedModeId = preferredMode ?? configuredMode ?? session.selectedModeId
+  const clampModeForModel = (modelId: string): string | null => {
+    if (!isAcpEffortConfigId(session.modeConfigId)) return rawSelectedModeId
+    const target = session.models.find((m) => m.id === modelId)
+    if (target?.supportsEffort === undefined && target?.supportedEffortLevels === undefined) {
+      return rawSelectedModeId
+    }
+    const modeEfforts = acpModeCatalog({
+      modes: session.modes,
+      modeConfigId: session.modeConfigId,
+      selectedModeId: rawSelectedModeId,
+    }).efforts
+    return clampAcpEffortForModel(
+      acpEffortOptionsForModel(session.models, modelId, modeEfforts),
+      preferMode ?? defaults.defaultEffort ?? session.selectedModeId,
+    )
+  }
 
   if (isAntigravityAcpAgent(agentId)) {
     if (preferredModel) {
-      return { selectedModel: preferredModel, selectedModeId }
+      return { selectedModel: preferredModel, selectedModeId: clampModeForModel(preferredModel) }
     }
     if ((defaults.defaultModel || defaults.defaultEffort) && session.models.length > 0) {
       const projected = projectAntigravityModels(
@@ -339,15 +365,19 @@ function resolveDefaultAcpModelAndMode(
         ? projected.resolveModelId(projected.selectedBaseModelId, defaults.defaultEffort || null)
         : null
       if (resolvedId && session.models.some((m) => m.id === resolvedId)) {
-        return { selectedModel: resolvedId, selectedModeId }
+        return { selectedModel: resolvedId, selectedModeId: clampModeForModel(resolvedId) }
       }
       if (defaults.defaultModel && session.models.some((m) => m.id === defaults.defaultModel)) {
-        return { selectedModel: defaults.defaultModel, selectedModeId }
+        return {
+          selectedModel: defaults.defaultModel,
+          selectedModeId: clampModeForModel(defaults.defaultModel),
+        }
       }
     }
+    const fallbackModel = session.selectedModelId ?? session.models[0]?.id ?? ''
     return {
-      selectedModel: session.selectedModelId ?? session.models[0]?.id ?? '',
-      selectedModeId,
+      selectedModel: fallbackModel,
+      selectedModeId: clampModeForModel(fallbackModel),
     }
   }
 
@@ -360,7 +390,30 @@ function resolveDefaultAcpModelAndMode(
     ?? session.models[0]?.id
     ?? ''
 
-  return { selectedModel, selectedModeId }
+  return { selectedModel, selectedModeId: clampModeForModel(selectedModel) }
+}
+
+export function resolveAcpModeForModelSwitch(
+  session: Pick<PerSessionState, 'acpModels' | 'acpModes' | 'acpModeConfigId' | 'selectedAcpModeId'>,
+  nextModelId: string,
+): { changed: boolean; nextModeId: string | null } {
+  if (!isAcpEffortConfigId(session.acpModeConfigId)) {
+    return { changed: false, nextModeId: session.selectedAcpModeId }
+  }
+  const target = session.acpModels.find((m) => m.id === nextModelId)
+  if (target?.supportsEffort === undefined && target?.supportedEffortLevels === undefined) {
+    return { changed: false, nextModeId: session.selectedAcpModeId }
+  }
+  const modeEfforts = acpModeCatalog({
+    modes: session.acpModes,
+    modeConfigId: session.acpModeConfigId,
+    selectedModeId: session.selectedAcpModeId,
+  }).efforts
+  const nextModeId = clampAcpEffortForModel(
+    acpEffortOptionsForModel(session.acpModels, nextModelId, modeEfforts),
+    session.selectedAcpModeId,
+  )
+  return { changed: nextModeId !== session.selectedAcpModeId, nextModeId }
 }
 
 export function sessionPatchFromAcpCatalog(

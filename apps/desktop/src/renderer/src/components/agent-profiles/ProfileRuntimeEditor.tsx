@@ -44,7 +44,7 @@ export function ProfileRuntimeEditor({ harnessId, acpAgentId, editor, draft, onC
       next.model = patch.model
       next.options = agentProfileOptionsForModel(harnessId, catalog, patch.model, draft.options)
     }
-    if (patch.effort) next.effort = patch.effort
+    if ('effort' in patch) next.effort = patch.effort
     if (Object.keys(next).length) onChange(next)
   }
 

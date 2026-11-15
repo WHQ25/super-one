@@ -5,7 +5,7 @@ import { useActiveSession, useChatStore, useScopedSessionActions } from '@/store
 import type { AcpAgentDescriptor } from '@superone/shared/agent-types'
 import { acpAgentDisplayName, acpAgentIdForHarness, isAcpProtocolHarness, isAntigravityAcpAgent } from '@superone/shared/acp-brand'
 import { formatEffortOptionLabel } from '@superone/shared/effort-labels'
-import { acpModeCatalog } from '@superone/shared/harness/acp-mode-catalog'
+import { acpEffortOptionsForModel, acpModeCatalog, clampAcpEffortForModel } from '@superone/shared/harness/acp-mode-catalog'
 import { acpSelectorModels, projectAntigravityModels } from '@/harness-ui/acp/model-options'
 import { GroupedModelEffortSelector, type SelectorEffortOption } from './GroupedModelEffortSelector'
 import { acpContextWindowParam } from './AcpContextWindowSelect'
@@ -63,8 +63,12 @@ export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: 
     [isAntigravity, acpModels, selectedModel],
   )
   const modeEffortOptions = useMemo<SelectorEffortOption[]>(
-    () => acpModeCatalog({ modes: acpModes, modeConfigId: acpModeConfigId, selectedModeId: selectedAcpModeId }).efforts,
-    [acpModes, acpModeConfigId, selectedAcpModeId],
+    () => acpEffortOptionsForModel(
+      acpModels,
+      selectedModel,
+      acpModeCatalog({ modes: acpModes, modeConfigId: acpModeConfigId, selectedModeId: selectedAcpModeId }).efforts,
+    ),
+    [acpModels, selectedModel, acpModes, acpModeConfigId, selectedAcpModeId],
   )
   const useModelIdEfforts = Boolean(antigravityView && antigravityView.effortOptions.length > 0)
   const effortOptions = useModelIdEfforts ? antigravityView!.effortOptions : modeEffortOptions
@@ -72,13 +76,14 @@ export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: 
   const selectedEffort = useModelIdEfforts
     ? antigravityView!.selectedEffort
     : effortIsAcpModeCatalog
-      ? (selectedAcpModeId ?? acpModes[0]?.id ?? null)
+      ? clampAcpEffortForModel(modeEffortOptions, selectedAcpModeId ?? acpModes[0]?.id ?? null)
       : null
   const selectedEffortLabel = useModelIdEfforts
     ? antigravityView!.selectedEffortLabel
     : effortIsAcpModeCatalog
       ? formatEffortOptionLabel(
-        acpModes.find((m) => m.id === selectedEffort)?.name
+        modeEffortOptions.find((e) => e.value === selectedEffort)?.label
+          ?? acpModes.find((m) => m.id === selectedEffort)?.name
           ?? selectedEffort
           ?? '',
       ) || null

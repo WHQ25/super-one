@@ -22,7 +22,8 @@ import {
 } from '@superone/shared/harness/harness-sandbox'
 import { lookupCatalogContextWindow } from '@superone/shared/platform-registry'
 import { acpAgentIdForHarness, isAntigravityAcpAgent } from '@superone/shared/acp-brand'
-import { acpModeCatalog } from '@superone/shared/harness/acp-mode-catalog'
+import { formatEffortOptionLabel, sortEffortsAscending } from '@superone/shared/effort-labels'
+import { acpEffortOptionsForModel, acpModeCatalog, clampAcpEffortForModel } from '@superone/shared/harness/acp-mode-catalog'
 import { deriveSessionCatalog } from '../acp/acp-config'
 import { deepseekModeCatalog, openCodeAgentCatalog } from './remote-selector-catalog'
 
@@ -219,12 +220,22 @@ async function harnessSystemInfo(
       // Grok effort is extraModes or config id `reasoning_effort`. A real
       // session mode (`mode`) stays out of the effort slider, and Antigravity's
       // modes are already driven by permissionModes.
-      const { efforts, modes, selectedModeId } = acpModeCatalog(sessionCatalog && {
+      const { efforts: modeEfforts, modes, selectedModeId } = acpModeCatalog(sessionCatalog && {
         modes: sessionCatalog.modes,
         modeConfigId: sessionCatalog.modeConfigId,
         selectedModeId: sessionCatalog.selectedModeId,
       })
+      const effortsByValue = new Map(modeEfforts.map((opt) => [opt.value, opt]))
+      for (const candidate of models) {
+        for (const level of candidate.supportedEffortLevels ?? []) {
+          if (!effortsByValue.has(level)) {
+            effortsByValue.set(level, { value: level, label: formatEffortOptionLabel(level) })
+          }
+        }
+      }
+      const efforts = sortEffortsAscending([...effortsByValue.values()])
       const selectedEffort = present(sessionCatalog?.selectedModeId)
+      const defaultModelEfforts = acpEffortOptionsForModel(models, model?.id ?? null, efforts)
       const permissionModes = [...HARNESS_LAUNCH_OPTIONS[harnessId].permissionModes]
       const configuredPermissionMode = sessionDefaultsForHarness(preferences, harnessId, acpAgentId).permissionMode
       const defaultPermissionMode = permissionModes.includes(configuredPermissionMode)
@@ -239,10 +250,7 @@ async function harnessSystemInfo(
         acpAgentId,
         defaults: {
           model: model?.id ?? null,
-          effort: (selectedEffort && efforts.some((option) => option.value === selectedEffort)
-            ? selectedEffort
-            : efforts.find((option) => option.value === 'medium')?.value ?? efforts[0]?.value)
-            ?? null,
+          effort: clampAcpEffortForModel(defaultModelEfforts, selectedEffort),
           permissionMode: defaultPermissionMode,
         },
       }

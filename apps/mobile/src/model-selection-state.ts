@@ -1,6 +1,7 @@
 import type { HarnessId, ModelOption, ProviderModelEnv, RemoteEffortOption, RemoteSystemInfo } from '@superone/shared/agent-types'
 import { activeClaudeModelEnv, claudeEffortLevelsForProvider } from '@superone/shared/claude-model-mapping'
 import { formatEffortLabel } from '@superone/shared/effort-labels'
+import { acpEffortOptionsForModel } from '@superone/shared/harness/acp-mode-catalog'
 
 type ProviderCatalogInfo = Pick<RemoteSystemInfo, 'providers' | 'activeProvider'>
 
@@ -45,7 +46,9 @@ export function effortOptionsForModel(
       label: formatEffortLabel(value),
     }))
   }
-  if (harnessId === 'acp-grok' || harnessId === 'acp-antigravity') return info.efforts ?? []
+  if (harnessId === 'acp-grok' || harnessId === 'acp-antigravity') {
+    return acpEffortOptionsForModel(info.models ?? [], modelId, info.efforts ?? [])
+  }
 
   const model: ModelOption | undefined = info.models?.find((candidate) => candidate.id === modelId)
   if (!model) return []

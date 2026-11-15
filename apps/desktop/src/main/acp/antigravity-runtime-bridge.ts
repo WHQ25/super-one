@@ -300,11 +300,13 @@ export async function resumeAntigravitySession(
       _meta: antigravitySessionMeta(permissionMode, systemPromptAppend),
     } as never)) as {
       configOptions?: SessionConfigOption[] | null
+      models?: unknown
       modes?: unknown
       _meta?: Record<string, unknown> | null
     } | null | undefined
     if (result && typeof result === 'object') {
       if (result.configOptions !== undefined) sessionResponse.configOptions = result.configOptions
+      if (result.models !== undefined) sessionResponse.models = result.models
       if (result.modes !== undefined) sessionResponse.modes = result.modes
       if (result._meta !== undefined) sessionResponse._meta = result._meta
     }

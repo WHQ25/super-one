@@ -2,7 +2,7 @@ import { useMemo } from 'react'
 import { acpAgentIdForHarness, isAntigravityAcpAgent } from '@superone/shared/acp-brand'
 import type { AcpHarnessId } from '@/stores/chat-store/harness/acp-slots'
 import { formatEffortOptionLabel, sortEffortsAscending } from '@superone/shared/effort-labels'
-import { acpModeCatalog } from '@superone/shared/harness/acp-mode-catalog'
+import { acpEffortOptionsForModel, acpModeCatalog, clampAcpEffortForModel } from '@superone/shared/harness/acp-mode-catalog'
 import { useChatStore } from '@/stores/chat'
 import { getCachedAcpCatalog } from '@/stores/chat-store/harness/acp-handler'
 import { GroupedModelEffortSelector } from '@/components/chat/model-selector/GroupedModelEffortSelector'
@@ -27,15 +27,21 @@ export function AcpLaunchModel({
   )
   const view = useMemo(() => acpSelectorModels(base, agentId), [base, agentId])
   const profileEfforts = profile?.efforts
-  const modeEffortOptions = useMemo(
+  const rawModeEfforts = useMemo(
     () => (live
       ? acpModeCatalog(live).efforts
       : sortEffortsAscending((profileEfforts ?? []).map((value) => ({ value, label: formatEffortOptionLabel(value) })))),
     [live, profileEfforts],
   )
+  const modeEffortOptions = useMemo(
+    () => acpEffortOptionsForModel(base, model ?? null, rawModeEfforts),
+    [base, model, rawModeEfforts],
+  )
   const useModelIdEfforts = Boolean(antigravityView && antigravityView.effortOptions.length > 0)
   const effortOptions = useModelIdEfforts ? antigravityView!.effortOptions : modeEffortOptions
-  const selectedEffort = useModelIdEfforts ? antigravityView!.selectedEffort : (effort ?? null)
+  const selectedEffort = useModelIdEfforts
+    ? antigravityView!.selectedEffort
+    : clampAcpEffortForModel(modeEffortOptions, effort)
   const selected = base.find((entry) => entry.id === model)
 
   return (
@@ -50,15 +56,25 @@ export function AcpLaunchModel({
             ? view.label(selected)
             : (model ?? null)
       }
-      onSelectModel={(id) =>
-        onChange({ model: antigravityView ? antigravityView.resolveModelId(id, effort) : id })
-      }
+      onSelectModel={(id) => {
+        if (useModelIdEfforts && antigravityView) {
+          onChange({ model: antigravityView.resolveModelId(id, effort) })
+          return
+        }
+        const resolvedId = antigravityView ? antigravityView.resolveModelId(id, effort) : id
+        const nextEfforts = acpEffortOptionsForModel(base, resolvedId, rawModeEfforts)
+        const shouldAdjustEffort = Boolean(effort && !nextEfforts.some((opt) => opt.value === effort))
+        onChange({
+          model: resolvedId,
+          ...(shouldAdjustEffort ? { effort: clampAcpEffortForModel(nextEfforts, effort) ?? undefined } : {}),
+        })
+      }}
       effortOptions={effortOptions}
       selectedEffort={selectedEffort}
       selectedEffortLabel={
         useModelIdEfforts
           ? antigravityView!.selectedEffortLabel
-          : effortLabel(effortOptions, effort)
+          : (selectedEffort ? effortLabel(effortOptions, selectedEffort) : null)
       }
       onSelectEffort={(value) => {
         if (useModelIdEfforts && antigravityView) {

@@ -1,5 +1,6 @@
 import type { AcpResources, AgentEvent } from '@superone/shared/agent-types'
 import { isAcpEffortConfigId, isAcpEffortConfigOption } from '@superone/shared/effort-labels'
+import { overlayAcpModelList } from '@superone/shared/harness/acp-mode-catalog'
 import { withoutProjectScopedWorkflows } from '@superone/shared/workflow-commands'
 import { acpResourcesFor, mapAcpResources, type AcpResourceSlots } from './acp-slots'
 
@@ -43,13 +44,16 @@ export function patchAcpResourcesFromEvent(
   let next: AcpResources
   if (event.type === 'acp_models') {
     const modelId = event.configId ?? 'model'
+    const enrichedModels = prevConfig?.extraModels?.length
+      ? overlayAcpModelList(event.models, prevConfig.extraModels)
+      : event.models
     const modelOpt = {
       id: modelId,
       name: 'Model',
       category: 'model' as const,
       type: 'select' as const,
       currentValue: event.selectedModelId,
-      options: event.models.map((model) => ({
+      options: enrichedModels.map((model) => ({
         value: model.id,
         name: model.name,
         description: model.description || null,
@@ -61,7 +65,7 @@ export function patchAcpResourcesFromEvent(
       modelsByAgentId: {
         ...(slot.modelsByAgentId ?? {}),
         [agentId]: {
-          models: event.models,
+          models: enrichedModels,
           selectedModelId: event.selectedModelId,
           configId: event.configId,
           updatedAt: now,
@@ -71,7 +75,7 @@ export function patchAcpResourcesFromEvent(
         ...(slot.configByAgentId ?? {}),
         [agentId]: {
           configOptions: event.configId ? [...withoutModel, modelOpt] : prevOptions,
-          extraModels: event.configId ? prevConfig?.extraModels : event.models,
+          extraModels: enrichedModels,
           selectedModelId: event.selectedModelId,
           modelConfigId: event.configId,
           extraModes: prevConfig?.extraModes,

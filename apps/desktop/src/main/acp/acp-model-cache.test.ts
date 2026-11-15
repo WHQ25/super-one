@@ -416,4 +416,81 @@ describe('acp-model-cache', () => {
     }])
     expect(readAcpResourcesCache().configByAgentId?.opencode?.slashCommands?.map((c) => c.name)).toEqual(['web'])
   })
+
+  it('re-probes antigravity cache missing per-model effort metadata and preserves extraModels on config update', async () => {
+    writeAcpResourcesCache({
+      agents: [{ id: 'antigravity', name: 'Antigravity', installed: true, commandPreview: 'agy acp' }],
+      selectedAgentId: 'antigravity',
+      configByAgentId: {
+        antigravity: {
+          configOptions: [{
+            id: 'model',
+            name: 'Model',
+            category: 'model',
+            type: 'select',
+            currentValue: 'gemini-4-carbon',
+            options: [{ value: 'gemini-4-carbon', name: 'Gemini 4 Carbon' }],
+          }],
+          updatedAt: new Date().toISOString(),
+        },
+      },
+    })
+    vi.mocked(createAcpRuntime).mockClear()
+    await refreshAcpModelsOnce({ agentIds: ['antigravity'] })
+    expect(createAcpRuntime).toHaveBeenCalledTimes(1)
+
+    upsertAcpAgentConfig(
+      'antigravity',
+      [{
+        id: 'model',
+        name: 'Model',
+        category: 'model',
+        type: 'select',
+        currentValue: 'gemini-4-hydrogen',
+        options: [
+          { value: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen' },
+          { value: 'gemini-4-carbon', name: 'Gemini 4 Carbon' },
+          { value: 'gemini-pro-orchestrator', name: 'Gemini Pro Orchestrator' },
+        ],
+      }],
+      {
+        configId: null,
+        selectedModelId: 'gemini-4-hydrogen-xhigh',
+        models: [
+          { id: 'gemini-4-hydrogen-low', name: 'Hydrogen Low', description: '' },
+          { id: 'gemini-4-hydrogen-medium', name: 'Hydrogen Medium', description: '' },
+          { id: 'gemini-4-hydrogen-high', name: 'Hydrogen High', description: '' },
+          { id: 'gemini-4-hydrogen-xhigh', name: 'Hydrogen Extra', description: '' },
+          { id: 'gemini-4-carbon-low', name: 'Carbon Low', description: '' },
+          { id: 'gemini-4-carbon-medium', name: 'Carbon Medium', description: '' },
+          { id: 'gemini-4-carbon-high', name: 'Carbon High', description: '' },
+          { id: 'gemini-pro-orchestrator', name: 'Orchestrator', description: '' },
+        ],
+      },
+    )
+
+    upsertAcpAgentConfig('antigravity', [{
+      id: 'model',
+      name: 'Model',
+      category: 'model',
+      type: 'select',
+      currentValue: 'gemini-4-carbon',
+      options: [
+        { value: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen' },
+        { value: 'gemini-4-carbon', name: 'Gemini 4 Carbon' },
+        { value: 'gemini-pro-orchestrator', name: 'Gemini Pro Orchestrator' },
+      ],
+    }])
+
+    const catalog = getCachedSessionCatalog('antigravity')
+    expect(catalog?.models.map((m) => ({ id: m.id, levels: m.supportedEffortLevels, supports: m.supportsEffort }))).toEqual([
+      { id: 'gemini-4-hydrogen', levels: ['low', 'medium', 'high', 'xhigh'], supports: true },
+      { id: 'gemini-4-carbon', levels: ['low', 'medium', 'high'], supports: true },
+      { id: 'gemini-pro-orchestrator', levels: [], supports: false },
+    ])
+
+    vi.mocked(createAcpRuntime).mockClear()
+    await refreshAcpModelsOnce({ agentIds: ['antigravity'] })
+    expect(createAcpRuntime).not.toHaveBeenCalled()
+  })
 })

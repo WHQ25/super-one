@@ -37,7 +37,7 @@ import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilit
 import { isDefaultSessionProvider, sessionProviderDisplayName } from '@superone/shared/session-provider-definitions'
 import { acpAgentDisplayName, acpAgentIdForHarness, isAcpProtocolHarness, isAntigravityAcpAgent, resolveHarnessBrandKey } from '@superone/shared/acp-brand'
 import { acpAgentDefaultsFor } from '@superone/shared/harness/session-defaults'
-import { acpModeCatalog } from '@superone/shared/harness/acp-mode-catalog'
+import { acpEffortOptionsForModel, acpModeCatalog, clampAcpEffortForModel } from '@superone/shared/harness/acp-mode-catalog'
 import { buildAgentMentionTargets, decodeAgentRef } from '@superone/shared/agent-mention-tags'
 import { isHarnessRunnable, sessionHarnessIdToNodeHarnessId, type NodeHarnessId } from '@superone/shared/environment'
 import { formatCodexModelName } from '@superone/shared/codex-model-label'
@@ -151,12 +151,8 @@ export function profileResources(
       ?? models.find((model) => model.id === sessionCatalog?.selectedModelId)
       ?? models.find((model) => model.isDefault)
       ?? models[0]
-    const selectedMode = sessionCatalog?.selectedModeId
-    defaultEffort = slot.defaultEffort && acpEfforts.includes(slot.defaultEffort)
-      ? slot.defaultEffort
-      : selectedMode && acpEfforts.includes(selectedMode)
-        ? selectedMode
-        : acpEfforts.includes('medium') ? 'medium' : acpEfforts[0]
+    const defaultModelEfforts = acpEffortOptionsForModel(models, defaultModel?.id ?? null, modeCatalog.efforts)
+    defaultEffort = clampAcpEffortForModel(defaultModelEfforts, slot.defaultEffort || sessionCatalog?.selectedModeId) ?? undefined
   } else {
     models = cachedHarnessModels(provider.harnessId)
     if (models.length === 0) return uncatalogued()
@@ -429,7 +425,9 @@ export function sessionAgentProfile(
     ...(model.description ? { description: model.description } : {}),
     ...(model.supportsFastMode ? { supportsFastMode: true } : {}),
     ...(model.serviceTiers?.length ? { serviceTiers: model.serviceTiers } : {}),
-    ...(model.supportedEffortLevels?.length ? { supportedEffortLevels: model.supportedEffortLevels } : {}),
+    ...((model.supportedEffortLevels?.length || model.supportsEffort === false)
+      ? { supportedEffortLevels: model.supportedEffortLevels ?? [] }
+      : {}),
     ...(model.supportedReasoningEfforts?.length ? {
       supportedReasoningEfforts: model.supportedReasoningEfforts.map((effort) => ({
         value: effort.value,

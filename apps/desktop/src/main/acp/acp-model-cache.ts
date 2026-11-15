@@ -1,267 +1,45 @@
 import { homedir } from 'os'
 import log from '../logger'
-import { getCachedHarnessResources, setCachedHarnessResources } from '../database'
 import type {
   AcpAgentConfigCatalog,
   AcpAgentModelCatalog,
-  AcpConfigOption,
   AcpResources,
   AcpSessionCatalog,
   ModelOption,
   SlashCommandInfo,
 } from '@superone/shared/agent-types'
 import { isAcpEffortConfigId, isAcpEffortConfigOption } from '@superone/shared/effort-labels'
+import { overlayAcpModelList } from '@superone/shared/harness/acp-mode-catalog'
 import { withoutProjectScopedWorkflows } from '@superone/shared/workflow-commands'
-import { isAntigravityAcpAgent } from '@superone/shared/acp-brand'
-import { listBuiltinAgentDescriptors, getBuiltinAgent } from './agent-catalog'
-import { detectBuiltinAgents } from './acp-detect'
+import { getBuiltinAgent } from './agent-catalog'
 import { createAcpRuntime } from './acp-runtime'
 import { discoverAntigravitySlashCommands } from './antigravity-slash-commands'
 import {
   deriveSessionCatalog,
-  modelCatalogFromSession,
   serializeConfigOptions,
   type AcpModeConfig,
   type AcpModelConfig,
   type ConfigOptionLike,
 } from './acp-config'
+import {
+  mergeAcpSlashCommands,
+  normalizeAcpResources,
+  readAcpHarnessResources,
+  readAcpResourcesCache,
+  refreshAcpDetectedAgents,
+  writeAcpResourcesCache,
+} from './acp-resources-storage'
 import type { SessionConfigOption } from '@agentclientprotocol/sdk'
 
-/** Agents already probed for config during this process lifetime. */
+export {
+  readAcpHarnessResources,
+  readAcpResourcesCache,
+  refreshAcpDetectedAgents,
+  writeAcpResourcesCache,
+}
+
 const probedThisLaunch = new Set<string>()
-
-function emptyResources(selectedAgentId: string | null = null): AcpResources {
-  return {
-    agents: listBuiltinAgentDescriptors(false),
-    selectedAgentId,
-    modelsByAgentId: {},
-    configByAgentId: {},
-  }
-}
-
-function deriveModelsByAgentId(
-  configByAgentId: Record<string, AcpAgentConfigCatalog>,
-): Record<string, AcpAgentModelCatalog> {
-  const out: Record<string, AcpAgentModelCatalog> = {}
-  for (const [agentId, cat] of Object.entries(configByAgentId)) {
-    const session = deriveSessionCatalog(cat)
-    const models = modelCatalogFromSession(session)
-    if (models) out[agentId] = models
-  }
-  return out
-}
-
-/** Migrate legacy modelsByAgentId entries into configByAgentId when missing. */
-function migrateModelsIntoConfig(
-  configByAgentId: Record<string, AcpAgentConfigCatalog>,
-  modelsByAgentId: Record<string, AcpAgentModelCatalog> | undefined,
-): Record<string, AcpAgentConfigCatalog> {
-  if (!modelsByAgentId) return configByAgentId
-  const next = { ...configByAgentId }
-  for (const [agentId, models] of Object.entries(modelsByAgentId)) {
-    if (next[agentId] || !models.models?.length) continue
-    const configOptions: AcpConfigOption[] = models.configId
-      ? [{
-          id: models.configId,
-          name: 'Model',
-          category: 'model',
-          type: 'select',
-          currentValue: models.selectedModelId,
-          options: models.models.map((m) => ({
-            value: m.id,
-            name: m.name,
-            description: m.description || null,
-          })),
-        }]
-      : []
-    next[agentId] = {
-      configOptions,
-      extraModels: models.configId ? undefined : models.models,
-      selectedModelId: models.selectedModelId,
-      modelConfigId: models.configId,
-      updatedAt: models.updatedAt || new Date().toISOString(),
-    }
-  }
-  return next
-}
-
-function mergeSlashCommands(
-  primary: ReadonlyArray<SlashCommandInfo> | undefined,
-  secondary: ReadonlyArray<SlashCommandInfo> | undefined,
-): SlashCommandInfo[] | undefined {
-  const list = [...(primary ?? []), ...(secondary ?? [])]
-  if (list.length === 0) return undefined
-  const seen = new Set<string>()
-  const out: SlashCommandInfo[] = []
-  for (const cmd of list) {
-    const name = cmd.name.replace(/^\//, '').trim()
-    if (!name || seen.has(name)) continue
-    seen.add(name)
-    out.push({ ...cmd, name })
-  }
-  return out
-}
-
-function normalizeResources(raw: AcpResources): AcpResources {
-  const configByAgentId = migrateModelsIntoConfig(
-    { ...(raw.configByAgentId ?? {}) },
-    raw.modelsByAgentId,
-  )
-  if (configByAgentId.antigravity) {
-    configByAgentId.antigravity = {
-      ...configByAgentId.antigravity,
-      slashCommands: mergeSlashCommands(
-        discoverAntigravitySlashCommands(),
-        configByAgentId.antigravity.slashCommands,
-      ),
-    }
-  }
-  return {
-    ...raw,
-    configByAgentId,
-    modelsByAgentId: deriveModelsByAgentId(configByAgentId),
-  }
-}
-
-type AcpProtocolHarnessId = 'acp-grok' | 'acp-antigravity'
-
-function legacyAcpSlot(): AcpResources | null {
-  return getCachedHarnessResources('acp' as 'acp-grok')
-}
-
-function slotHasPayload(resources: AcpResources | null | undefined): boolean {
-  if (!resources) return false
-  return (resources.agents?.length ?? 0) > 0
-    || Object.keys(resources.configByAgentId ?? {}).length > 0
-    || Object.keys(resources.modelsByAgentId ?? {}).length > 0
-    || Boolean(resources.selectedAgentId)
-}
-
-function builtinSelected(id: string | null | undefined): string | null {
-  return id && getBuiltinAgent(id) ? id : null
-}
-
-function filterBuiltinAgents(agents: AcpResources['agents'] | undefined): AcpResources['agents'] {
-  return (agents ?? []).filter((agent) => getBuiltinAgent(agent.id))
-}
-
-function pickConfig(
-  configByAgentId: AcpResources['configByAgentId'] | undefined,
-  antigravity: boolean,
-): NonNullable<AcpResources['configByAgentId']> {
-  const out: NonNullable<AcpResources['configByAgentId']> = {}
-  for (const [agentId, catalog] of Object.entries(configByAgentId ?? {})) {
-    if (isAntigravityAcpAgent(agentId) === antigravity) out[agentId] = catalog
-  }
-  return out
-}
-
-function mergeSlots(grok: AcpResources | null, antigravity: AcpResources | null): AcpResources | null {
-  if (!slotHasPayload(grok) && !slotHasPayload(antigravity)) return null
-  const agents = new Map<string, AcpResources['agents'][number]>()
-  for (const agent of [...filterBuiltinAgents(grok?.agents), ...filterBuiltinAgents(antigravity?.agents)]) {
-    const previous = agents.get(agent.id)
-    agents.set(agent.id, previous ? { ...previous, ...agent, installed: previous.installed || agent.installed } : agent)
-  }
-  return {
-    agents: agents.size ? [...agents.values()] : listBuiltinAgentDescriptors(false),
-    selectedAgentId: builtinSelected(grok?.selectedAgentId) ?? builtinSelected(antigravity?.selectedAgentId),
-    detecting: Boolean(grok?.detecting || antigravity?.detecting),
-    modelsByAgentId: { ...(antigravity?.modelsByAgentId ?? {}), ...(grok?.modelsByAgentId ?? {}) },
-    configByAgentId: { ...(antigravity?.configByAgentId ?? {}), ...(grok?.configByAgentId ?? {}) },
-  }
-}
-
-function storedMergedRaw(): AcpResources | null {
-  const grok = getCachedHarnessResources('acp-grok')
-  const antigravity = getCachedHarnessResources('acp-antigravity')
-  if (!slotHasPayload(grok) && !slotHasPayload(antigravity)) return legacyAcpSlot()
-  return mergeSlots(grok, antigravity)
-}
-
-export function readAcpResourcesCache(): AcpResources {
-  const stored = storedMergedRaw()
-  if (!stored) return emptyResources()
-  const agents = filterBuiltinAgents(stored.agents)
-  return normalizeResources({
-    agents: agents.length ? agents : listBuiltinAgentDescriptors(false),
-    selectedAgentId: builtinSelected(stored.selectedAgentId),
-    detecting: stored.detecting,
-    modelsByAgentId: stored.modelsByAgentId ?? {},
-    configByAgentId: stored.configByAgentId ?? {},
-  })
-}
-
-function projectSlot(resources: AcpResources, harnessId: AcpProtocolHarnessId): AcpResources {
-  const antigravity = harnessId === 'acp-antigravity'
-  const selected = builtinSelected(resources.selectedAgentId)
-  return normalizeResources({
-    agents: filterBuiltinAgents(resources.agents).filter((agent) => isAntigravityAcpAgent(agent.id) === antigravity),
-    selectedAgentId: selected && isAntigravityAcpAgent(selected) === antigravity ? selected : null,
-    detecting: resources.detecting,
-    modelsByAgentId: {},
-    configByAgentId: pickConfig(resources.configByAgentId, antigravity),
-  })
-}
-
-/** One concrete slot, including a legacy `acp` row when neither new slot is stored. */
-export function readAcpHarnessResources(harnessId: AcpProtocolHarnessId): AcpResources | null {
-  const direct = getCachedHarnessResources(harnessId)
-  if (slotHasPayload(direct)) {
-    return normalizeResources({
-      ...direct!,
-      agents: filterBuiltinAgents(direct!.agents),
-      selectedAgentId: builtinSelected(direct!.selectedAgentId),
-      modelsByAgentId: direct!.modelsByAgentId ?? {},
-      configByAgentId: direct!.configByAgentId ?? {},
-    })
-  }
-  const grok = getCachedHarnessResources('acp-grok')
-  const antigravity = getCachedHarnessResources('acp-antigravity')
-  if (slotHasPayload(grok) || slotHasPayload(antigravity)) return null
-  const legacy = legacyAcpSlot()
-  if (!legacy) return null
-  const projected = projectSlot(legacy, harnessId)
-  return slotHasPayload(projected) ? projected : null
-}
-
-export function writeAcpResourcesCache(resources: AcpResources): void {
-  const normalized = normalizeResources(resources)
-  const selected = builtinSelected(normalized.selectedAgentId)
-  const writeSlot = (harnessId: AcpProtocolHarnessId) => {
-    const antigravity = harnessId === 'acp-antigravity'
-    setCachedHarnessResources(harnessId, normalizeResources({
-      agents: filterBuiltinAgents(normalized.agents).filter((agent) => isAntigravityAcpAgent(agent.id) === antigravity),
-      selectedAgentId: selected && isAntigravityAcpAgent(selected) === antigravity ? selected : null,
-      detecting: normalized.detecting,
-      modelsByAgentId: {},
-      configByAgentId: pickConfig(normalized.configByAgentId, antigravity),
-    }))
-  }
-  writeSlot('acp-grok')
-  writeSlot('acp-antigravity')
-}
-
-export async function refreshAcpDetectedAgents(): Promise<AcpResources> {
-  const prev = readAcpResourcesCache()
-  const agents = await detectBuiltinAgents()
-  const prevSelected = prev.selectedAgentId
-  const selectedAgentId = prevSelected && getBuiltinAgent(prevSelected) ? prevSelected : null
-  const next = normalizeResources({
-    ...prev,
-    agents: agents.map((a) => ({
-      id: a.id,
-      name: a.name,
-      installed: a.installed,
-      commandPreview: a.commandPreview,
-    })),
-    selectedAgentId,
-    modelsByAgentId: prev.modelsByAgentId ?? {},
-    configByAgentId: prev.configByAgentId ?? {},
-  })
-  writeAcpResourcesCache(next)
-  return next
-}
+const ACP_CATALOG_FRESH_MS = 24 * 60 * 60 * 1000
 
 export function catalogFromModelConfig(cfg: AcpModelConfig): AcpAgentModelCatalog {
   return {
@@ -282,15 +60,12 @@ export function catalogFromConfigOptions(
   const useExtraModes = Boolean(modeFallback?.modes.length) && !hasModeInOptions
   return {
     configOptions: serialized,
-    // Keep even when configOptions already list models: Grok stamps
-    // totalContextTokens on the models field, not on the select options.
     extraModels:
       modelFallback && modelFallback.models.length > 0
         ? modelFallback.models
         : undefined,
     selectedModelId: modelFallback?.selectedModelId ?? null,
     modelConfigId: modelFallback?.configId ?? null,
-    // Grok effort options live outside configOptions (configId null).
     extraModes: useExtraModes ? modeFallback!.modes : undefined,
     selectedModeId: useExtraModes ? (modeFallback!.selectedModeId ?? null) : undefined,
     modeConfigId: useExtraModes ? (modeFallback!.configId ?? null) : undefined,
@@ -298,7 +73,6 @@ export function catalogFromConfigOptions(
   }
 }
 
-/** Merge a live full-config discovery into the persistent ACP cache. */
 export function upsertAcpAgentConfig(
   agentId: string,
   configOptions: Array<ConfigOptionLike | SessionConfigOption> | null | undefined,
@@ -307,12 +81,13 @@ export function upsertAcpAgentConfig(
 ): AcpResources {
   const current = readAcpResourcesCache()
   const catalog = catalogFromConfigOptions(configOptions, modelFallback, modeFallback)
-  // Keep previous modes/commands if new payload has empty options but we only got a model-only update.
   const prev = current.configByAgentId?.[agentId]
   if (prev && catalog.configOptions.length === 0 && catalog.extraModels?.length && !catalog.extraModes?.length) {
     const merged: AcpAgentConfigCatalog = {
       configOptions: prev.configOptions,
-      extraModels: catalog.extraModels,
+      extraModels: prev.extraModels?.length
+        ? overlayAcpModelList(catalog.extraModels, prev.extraModels)
+        : catalog.extraModels,
       selectedModelId: catalog.selectedModelId ?? prev.selectedModelId,
       modelConfigId: catalog.modelConfigId ?? prev.modelConfigId,
       extraModes: prev.extraModes,
@@ -322,21 +97,19 @@ export function upsertAcpAgentConfig(
       updatedAt: catalog.updatedAt,
     }
     const configByAgentId = { ...(current.configByAgentId ?? {}), [agentId]: merged }
-    const next = normalizeResources({ ...current, configByAgentId })
+    const next = normalizeAcpResources({ ...current, configByAgentId })
     writeAcpResourcesCache(next)
     probedThisLaunch.add(agentId)
     return next
   }
-  // Preserve slash commands (and Grok extraModes when this upsert is options-only).
   const withCommands: AcpAgentConfigCatalog = mergeAgentCatalog(catalog, prev)
   const configByAgentId = { ...(current.configByAgentId ?? {}), [agentId]: withCommands }
-  const next = normalizeResources({ ...current, configByAgentId })
+  const next = normalizeAcpResources({ ...current, configByAgentId })
   writeAcpResourcesCache(next)
   probedThisLaunch.add(agentId)
   return next
 }
 
-/** Persist session modes, or Grok effort (`reasoning_effort` / null), without wiping models. */
 export function upsertAcpAgentModes(agentId: string, mode: AcpModeConfig): AcpResources {
   const current = readAcpResourcesCache()
   const prev = current.configByAgentId?.[agentId]
@@ -351,8 +124,6 @@ export function upsertAcpAgentModes(agentId: string, mode: AcpModeConfig): AcpRe
     slashCommands: prev?.slashCommands,
     updatedAt: new Date().toISOString(),
   }
-  // Real session modes use category=mode. Grok effort must stay thought_level
-  // (or extraModes when configId is null) so the next launch still draws a slider.
   if (mode.configId && !isAcpEffortConfigId(mode.configId)) {
     const withoutMode = (prev?.configOptions ?? []).filter(
       (o) => o.category !== 'mode' && o.id !== 'mode' && o.id !== mode.configId && !isAcpEffortConfigOption(o),
@@ -399,12 +170,11 @@ export function upsertAcpAgentModes(agentId: string, mode: AcpModeConfig): AcpRe
     nextCatalog.modeConfigId = mode.configId
   }
   const configByAgentId = { ...(current.configByAgentId ?? {}), [agentId]: nextCatalog }
-  const next = normalizeResources({ ...current, configByAgentId })
+  const next = normalizeAcpResources({ ...current, configByAgentId })
   writeAcpResourcesCache(next)
   return next
 }
 
-/** @deprecated Prefer upsertAcpAgentConfig — still used for model-only Grok updates. */
 export function upsertAcpAgentModels(agentId: string, cfg: AcpModelConfig): AcpResources {
   if (cfg.configId) {
     return upsertAcpAgentConfig(agentId, [{
@@ -423,7 +193,6 @@ export function upsertAcpAgentModels(agentId: string, cfg: AcpModelConfig): AcpR
   return upsertAcpAgentConfig(agentId, [], cfg)
 }
 
-/** Merge slash commands from available_commands_update into the agent config cache. */
 export function upsertAcpAgentSlashCommands(
   agentId: string,
   commands: SlashCommandInfo[],
@@ -438,12 +207,11 @@ export function upsertAcpAgentSlashCommands(
     extraModes: prev?.extraModes,
     selectedModeId: prev?.selectedModeId,
     modeConfigId: prev?.modeConfigId,
-    // Project `.grok/workflows` ads are cwd-scoped; the cache is agent-global.
     slashCommands: withoutProjectScopedWorkflows(commands),
     updatedAt: new Date().toISOString(),
   }
   const configByAgentId = { ...(current.configByAgentId ?? {}), [agentId]: nextCatalog }
-  const next = normalizeResources({ ...current, configByAgentId })
+  const next = normalizeAcpResources({ ...current, configByAgentId })
   writeAcpResourcesCache(next)
   return next
 }
@@ -459,25 +227,22 @@ function mergeAgentCatalog(
     )
   return {
     configOptions: next.configOptions.length ? next.configOptions : prev.configOptions,
-    extraModels: next.extraModels?.length ? next.extraModels : prev.extraModels,
+    extraModels: next.extraModels?.length
+      ? (prev.extraModels?.length ? overlayAcpModelList(next.extraModels, prev.extraModels) : next.extraModels)
+      : prev.extraModels,
     selectedModelId: next.selectedModelId ?? prev.selectedModelId ?? null,
     modelConfigId: next.modelConfigId ?? prev.modelConfigId ?? null,
-    // Preserve Grok effort modes across model-only / empty probes.
     extraModes: next.extraModes?.length ? next.extraModes : prev.extraModes,
     selectedModeId: nextHasModes
       ? (next.selectedModeId ?? prev.selectedModeId ?? null)
       : (prev.selectedModeId ?? null),
-    // null is meaningful (Grok effort); only fall back when next has no mode signal.
     modeConfigId: nextHasModes
       ? (next.modeConfigId ?? null)
       : (prev.modeConfigId ?? null),
-    slashCommands: mergeSlashCommands(next.slashCommands, prev.slashCommands),
+    slashCommands: mergeAcpSlashCommands(next.slashCommands, prev.slashCommands),
     updatedAt: next.updatedAt,
   }
 }
-
-/** Skip re-spawning agents whose model/mode catalog was written recently. */
-const ACP_CATALOG_FRESH_MS = 24 * 60 * 60 * 1000
 
 function catalogHasContent(cat: AcpAgentConfigCatalog | undefined): boolean {
   if (!cat) return false
@@ -493,7 +258,10 @@ function isCatalogFresh(agentId: string, cat: AcpAgentConfigCatalog | undefined)
   if (agentId === 'antigravity') {
     const session = deriveSessionCatalog(cat)
     const hasNonGemini = session.models.some((m) => !m.id.toLowerCase().startsWith('gemini-'))
-    if (!hasNonGemini) return false
+    const hasEffortMetadata = session.models.some(
+      (m) => m.supportsEffort !== undefined || m.supportedEffortLevels !== undefined,
+    )
+    if (!hasNonGemini || !hasEffortMetadata) return false
   }
   const age = Date.now() - Date.parse(cat.updatedAt)
   return Number.isFinite(age) && age >= 0 && age < ACP_CATALOG_FRESH_MS
@@ -545,7 +313,7 @@ async function probeAgentConfig(agentId: string): Promise<AcpAgentConfigCatalog 
     )
     return catalog
   } finally {
-    try { await runtime.close() } catch { /* ignore */ }
+    try { await runtime.close() } catch { void 0 }
   }
 }
 
@@ -593,7 +361,7 @@ export async function refreshAcpModelsOnce(opts?: {
     }
   }))
 
-  const next = normalizeResources({ ...current, configByAgentId })
+  const next = normalizeAcpResources({ ...current, configByAgentId })
   writeAcpResourcesCache(next)
   return next
 }
@@ -627,7 +395,6 @@ export function getCachedSessionCatalog(agentId: string): AcpSessionCatalog | nu
   return session
 }
 
-/** Test helper. */
 export function resetAcpModelProbeStateForTests(): void {
   probedThisLaunch.clear()
 }

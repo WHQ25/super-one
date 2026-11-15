@@ -6,6 +6,7 @@ import type {
   ModelOption,
 } from '@superone/shared/agent-types'
 import { isAcpEffortConfigOption, sortEffortsAscending } from '@superone/shared/effort-labels'
+import { isAcpPermissionModeValues, overlayAcpModelList } from '@superone/shared/harness/acp-mode-catalog'
 import type { SessionConfigOption } from '@agentclientprotocol/sdk'
 
 export interface AcpModelConfig {
@@ -191,7 +192,11 @@ function selectToModeConfig(
   const selected =
     typeof chosen.currentValue === 'string' && ordered.some((m) => m.id === chosen.currentValue)
       ? chosen.currentValue
-      : (ordered[0]?.id ?? null)
+      : opts?.sortEffort &&
+          (chosen.currentValue === 'xhigh' || chosen.currentValue === 'max') &&
+          ordered.some((m) => m.id === 'high')
+        ? 'high'
+        : (ordered[0]?.id ?? null)
   return {
     configId: chosen.id,
     modes: ordered,
@@ -209,7 +214,6 @@ export function extractReasoningEffortConfig(
   return selectToModeConfig(chosen, { sortEffort: true })
 }
 
-/** Prefer category "mode", else option id "mode". No fallback to other selects. */
 export function extractModeConfig(
   configOptions: Array<ConfigOptionLike | SessionConfigOption> | null | undefined,
 ): AcpModeConfig | null {
@@ -219,7 +223,9 @@ export function extractModeConfig(
   const chosen = selects.find((o) => o.category === 'mode')
     ?? selects.find((o) => o.id === 'mode')
   if (!chosen) return null
-  return selectToModeConfig(chosen)
+  const parsed = selectToModeConfig(chosen)
+  if (!parsed || isAcpPermissionModeValues(parsed.modes.map((m) => m.id))) return null
+  return parsed
 }
 
 /** Grok reasoning effort when present, otherwise a real session-mode select. */
@@ -308,14 +314,14 @@ function parseModelEffortLevels(
 }
 
 
-/** Prefer standard config options; retain model metadata from the legacy catalog. */
 export function modelsFromSessionResult(result: unknown): AcpModelConfig | null {
   if (!result || typeof result !== 'object') return null
   const raw = result as Record<string, unknown>
   const options = extractModelConfig(raw.configOptions as ConfigOptionLike[] | undefined)
   const legacy = extractModelsFromAgentModelsField(raw.models ?? raw.modelState)
   if (!options) return legacy
-  return { ...options, models: options.models.map(model => ({
-    ...legacy?.models.find(extra => extra.id === model.id), ...model,
-  })) }
+  return {
+    ...options,
+    models: legacy?.models.length ? overlayAcpModelList(options.models, legacy.models) : options.models,
+  }
 }

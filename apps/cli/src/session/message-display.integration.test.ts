@@ -45,17 +45,18 @@ describe('remote rich user message persistence', () => {
       const contexts = [{ appId: 'mcp:part', appName: 'CAD', summary: 'Dial', content: '{"part":"dial"}' }]
       const images = [{ id: 'image-1', name: 'Drawing', mimeType: 'image/png', base64: 'bytes' }]
       const display = [{ type: 'image' as const, name: 'Drawing', id: 'image-1' }]
-      await runtime.send({ sessionId: session.sessionId, text: '{"part":"dial"}', images, contexts, userMessageContent: display, echoUserMessage: true, client: { clientSessionId: 'client' }, leaseId: lease.leaseId, generation: lease.generation })
+      const userSelections = ['why not marks?\n\n> use a Range']
+      await runtime.send({ sessionId: session.sessionId, text: '{"part":"dial"}', images, contexts, userMessageContent: display, userSelections, echoUserMessage: true, client: { clientSessionId: 'client' }, leaseId: lease.leaseId, generation: lease.generation })
       await new Promise(resolve => setTimeout(resolve, 20))
       expect(received).toEqual({ text: '{"part":"dial"}', images })
       const mapper = createNodeSessionEventMapper({ sessionId: session.sessionId, projectPath: 'remote:node:project', skipUserMessage: true })
       const userEvent = events.listAfter('0').flatMap(event => mapper.map(event)).find(event => event.type === 'user_message_appended')
-      expect(userEvent).toMatchObject({ message: { content: display, contexts, attachments: images } })
+      expect(userEvent).toMatchObject({ message: { content: display, contexts, attachments: images, userSelections } })
       await runtime.dispose()
       runtime = new SessionRuntime(db, events, leases, 'node', runner)
       const message = runtime.listMessages({ sessionId: session.sessionId }).messages[0]
-      expect(message).toMatchObject({ content: display, contexts, attachments: images })
-      expect(runtime.get(session.sessionId)?.transcript[0]).toMatchObject({ text: '{"part":"dial"}', userMessageContent: display, contexts, attachments: images })
+      expect(message).toMatchObject({ content: display, contexts, attachments: images, userSelections })
+      expect(runtime.get(session.sessionId)?.transcript[0]).toMatchObject({ text: '{"part":"dial"}', userMessageContent: display, contexts, attachments: images, userSelections })
     } finally { await runtime.dispose(); db.close(); rmSync(directory, { recursive: true, force: true }) }
   })
 })

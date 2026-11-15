@@ -469,6 +469,7 @@ export function buildSessionMessageCatalog(
       sortOrder: i,
       ...(role === 'user' && block.userMessageContent ? { content: block.userMessageContent } : orderedContent && orderedContent.length > 0 ? { content: orderedContent } : {}),
       ...(block.contexts ? { contexts: block.contexts } : {}),
+      ...(block.userSelections?.length ? { userSelections: block.userSelections } : {}),
       ...(block.attachments ? { attachments: block.attachments.map(item => ({ ...item, name: item.name ?? 'Attachment' })) } : {}),
       ...(tools && tools.length > 0 ? { tools } : {}),
       ...(metadata ? { metadata } : {}),

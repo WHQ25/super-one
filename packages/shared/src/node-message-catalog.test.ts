@@ -5,8 +5,9 @@ import { sessionMessageBlocksToChatMessages } from './node-message-catalog'
 describe('sessionMessageBlocksToChatMessages', () => {
   it('restores a chip-only user message without exposing the model payload as bubble text', () => {
     const contexts = [{ appId: 'mcp:part', appName: 'CAD', summary: 'Dial', content: '{"part":"dial"}' }]
-    const catalog = sessionMessageBlocksToChatMessages([{ id: 'u1', role: 'user', text: '{"part":"dial"}', content: [], contexts, createdAt: 1, sortOrder: 0 }])
-    expect(catalog[0]).toMatchObject({ content: [], contexts })
+    const userSelections = ['why not marks?\n\n> use a Range', 'drop this\n\n> other']
+    const catalog = sessionMessageBlocksToChatMessages([{ id: 'u1', role: 'user', text: '{"part":"dial"}', content: [], contexts, userSelections, createdAt: 1, sortOrder: 0 }])
+    expect(catalog[0]).toMatchObject({ content: [], contexts, userSelections })
   })
 
   it('prefers event-ordered content over text+tools when present', () => {

@@ -296,4 +296,17 @@ describe('message catalog', () => {
     expect(content?.map((b) => b.type)).toEqual(['tool_use', 'tool_result', 'text'])
     expect(content?.[2]).toMatchObject({ type: 'text', text: 'done' })
   })
+
+  it('keeps quote chips on a comment-only user row whose bubble text is empty', () => {
+    const userSelections = ['why not marks?\n\n> use a Range', 'drop this\n\n> other']
+    const catalog = buildSessionMessageCatalog({
+      sessionId: 's-comments',
+      transcript: [{
+        id: 'u1', role: 'user', text: '<reply_comments>\n1. comment\n</reply_comments>',
+        userMessageContent: [], userSelections, createdAt: 1,
+      }],
+      providerResume: null,
+    } as Pick<NodeSessionRecord, 'sessionId' | 'transcript' | 'providerResume'>, [])
+    expect(catalog[0]).toMatchObject({ content: [], userSelections, text: '<reply_comments>\n1. comment\n</reply_comments>' })
+  })
 })

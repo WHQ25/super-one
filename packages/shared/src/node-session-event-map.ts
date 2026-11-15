@@ -192,6 +192,7 @@ export function nodeUserMessage(ctx: NodeSessionEventMapContext, blockId: string
       ...(text ? [{ type: 'text' as const, text }] : []),
     ],
     ...(display.contexts ? { contexts: display.contexts } : {}),
+    ...(display.userSelections ? { userSelections: display.userSelections } : {}),
     ...(attachments?.length ? { attachments } : {}),
     ...(voiceUserFields(payload, blockId) || display.collaboration
       ? { metadata: {

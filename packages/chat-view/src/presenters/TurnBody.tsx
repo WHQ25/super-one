@@ -33,8 +33,8 @@ export interface TurnDetailPresenterProps {
   runs: TurnDetailRun[]
   stats?: TurnProcessStats
   workingSince?: string | number
+  /** Names the disclosure of a row cut out of a turn, so it outlives the row's unmount. */
   turnId?: string
-  showIndicator?: boolean
 }
 
 export interface TurnTextPresenterProps {
@@ -190,8 +190,8 @@ export interface TurnBodyPresenterProps {
   planApproval?: TurnPlanApproval
   /** Transcript segments opening inside this turn, by their first block (see `transcriptView`). */
   anchors?: ReadonlyMap<ContentBlock, string>
-  /** Whole-turn process statistics and disclosure identity for a sliced transcript row. */
-  compactTurn?: { grouped: GroupContentResult; following?: GroupContentResult; id: string; showIndicator: boolean }
+  /** For a row cut out of a turn: the whole turn, the rest of it after this row, and the row's disclosure id. */
+  compactTurn?: { grouped: GroupContentResult; following?: GroupContentResult; id: string }
 }
 
 interface RenderOptions {
@@ -695,19 +695,23 @@ export function TurnBodyPresenter({
     const runs = compactTurnRuns(segments, runtime.isPinnedSegment, compactTurn
       ? { source: compactTurn.grouped.segments, following: compactTurn.following?.segments }
       : undefined)
-    const processGrouped = compactTurn?.grouped ?? grouped
+    const turnGrouped = compactTurn?.grouped ?? grouped
     const processOptions = {
-      toolResultAt: (id: string) => processGrouped.toolResultMap.get(id),
+      toolResultAt: (id: string) => turnGrouped.toolResultMap.get(id),
       isHiddenTool: runtime.isHiddenTool,
-      isErrorTool: (id: string) => processGrouped.errorToolIds.has(id),
-      bashEditDiffAt: (id: string) => processGrouped.bashEditDiffMap?.get(id),
+      isErrorTool: (id: string) => turnGrouped.errorToolIds.has(id),
+      bashEditDiffAt: (id: string) => turnGrouped.bashEditDiffMap?.get(id),
     }
-    const process = collapsibleItems(compactTurn
-      ? partitionTurnForCompactMode(processGrouped.segments, runtime.isPinnedSegment) : runs)
+    // The whole turn decides whether process collapses, so a cut does not leave a
+    // short stretch of it drawn in full. Each row then discloses its own process.
+    const process = collapsibleItems(runs)
     const visibleCount = countVisibleClaudeProcessSegments(process, processOptions)
+    const turnVisibleCount = compactTurn
+      ? countVisibleClaudeProcessSegments(collapsibleItems(partitionTurnForCompactMode(turnGrouped.segments, runtime.isPinnedSegment)), processOptions)
+      : visibleCount
     const sealedOptions = { ...options, forceSealed: true }
     if (visibleCount === 0) return <>{renderSegments(segments, sealedOptions)}</>
-    if (visibleCount < MIN_PROCESS_SEGMENTS_TO_COLLAPSE) {
+    if (turnVisibleCount < MIN_PROCESS_SEGMENTS_TO_COLLAPSE) {
       return (
         <>
           {runs.map((run, index) => run.collapsible ? (
@@ -725,7 +729,6 @@ export function TurnBodyPresenter({
     return (
       <parts.TurnDetail
         turnId={compactTurn?.id}
-        showIndicator={compactTurn?.showIndicator}
         stats={runtime.summarizeProcess(process, processOptions)}
         runs={runs.map((run, index) => ({
           key: `run-${index}`,

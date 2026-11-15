@@ -18,34 +18,34 @@ function finishCollapse() {
 }
 
 describe('turn detail disclosure', () => {
-  it('shares one toggle across cut rows and restores a remounted continuation', () => {
+  it('keeps one toggle per cut row and restores a remounted row', () => {
     const view = (showContinuation: boolean, scope = 'session') => (
       <TurnDetailStateProvider scope={scope}>
         <TurnDetailSection turnId="turn" runs={[runs[0]]} />
         <p>Compacted</p>
-        {showContinuation && <TurnDetailSection turnId="turn" showIndicator={false} runs={[runs[2], runs[3]]} />}
+        {showContinuation && <TurnDetailSection turnId="turn:after:compact" runs={[runs[2], runs[3]]} />}
       </TurnDetailStateProvider>
     )
     const { rerender } = render(view(true))
-    expect(screen.getAllByRole('button')).toHaveLength(1)
-    expect(screen.queryByText('tools-2')).toBeNull()
-    fireEvent.click(screen.getByRole('button'))
-    expect(screen.getByText('tools-1')).toBeVisible()
+    const [before, after] = screen.getAllByRole('button')
+    fireEvent.click(after)
     expect(screen.getByText('tools-2')).toBeVisible()
+    expect(screen.queryByText('tools-1')).toBeNull()
+    expect(before).toHaveAttribute('aria-expanded', 'false')
     rerender(view(false))
     rerender(view(true))
     expect(screen.getByText('tools-2')).toBeVisible()
-    fireEvent.click(screen.getByRole('button'))
+    fireEvent.click(screen.getAllByRole('button')[0])
+    expect(screen.getByText('tools-1')).toBeVisible()
+    fireEvent.click(screen.getAllByRole('button')[1])
     finishCollapse()
-    expect(screen.queryByText('tools-1')).toBeNull()
+    expect(screen.getByText('tools-1')).toBeVisible()
     expect(screen.queryByText('tools-2')).toBeNull()
     expect(screen.getByText('answer')).toBeVisible()
-    fireEvent.click(screen.getByRole('button'))
     rerender(view(true, 'other-session'))
-    expect(screen.getByRole('button')).toHaveAttribute('aria-expanded', 'false')
+    screen.getAllByRole('button').forEach(button => expect(button).toHaveAttribute('aria-expanded', 'false'))
     finishCollapse()
     expect(screen.queryByText('tools-1')).toBeNull()
-    expect(screen.queryByText('tools-2')).toBeNull()
   })
 
   it('keeps collapsing runs mounted until their height transition ends', async () => {

@@ -77,7 +77,6 @@ interface ChatMessageProps {
   sourceMessage?: ChatMessageType
   followingMessage?: ChatMessageType
   segmentId?: string
-  firstSlice?: boolean
   showFooter?: boolean
   pendingTurn?: PendingTurnPhase
   apiRetry?: TurnRetryInfo | null
@@ -147,7 +146,6 @@ export const ChatMessage = memo(function ChatMessage({
   sourceMessage = message,
   followingMessage,
   segmentId = message.id,
-  firstSlice,
   showFooter = true,
   pendingTurn,
   apiRetry,
@@ -179,9 +177,9 @@ export const ChatMessage = memo(function ChatMessage({
   const turnContent = useMemo(() => isUser ? null : turnDisplayContent(message), [isUser, message.content, message.status])
   const grouped = useGroupedContent(turnContent, apps)
   const compactTurn = useMemo(() => isUser ? undefined : buildCompactTurn(
-    { source: sourceMessage, following: followingMessage, id: segmentId, first: firstSlice },
+    { source: sourceMessage, following: followingMessage, id: segmentId },
     content => groupContent(content, apps),
-  ), [isUser, sourceMessage, followingMessage, segmentId, firstSlice, apps])
+  ), [isUser, sourceMessage, followingMessage, segmentId, apps])
   const generatedImages = useMemo(
     () => grouped && turnContent ? collectGeneratedImages(turnContent, grouped.toolResultMap) : [],
     [grouped, turnContent],

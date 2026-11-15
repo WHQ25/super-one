@@ -25,14 +25,14 @@ interface TurnDetailSectionProps {
   workingSince?: string | number
   className?: string
   turnId?: string
-  showIndicator?: boolean
 }
 
 const fmt = (n: number) => n.toLocaleString()
 
 /**
- * Compact-mode process disclosure. A single indicator at the top of the turn
- * toggles every collapsible run at once; pinned runs (markdown, widgets) render
+ * Compact-mode process disclosure. A single indicator at the top of the turn, or
+ * of each row a compaction cut out of it, toggles every collapsible run of that
+ * row at once; pinned runs (markdown, widgets) render
  * in place regardless, so expanding restores the turn's original order rather
  * than re-flowing it.
  *
@@ -112,7 +112,7 @@ function TurnDetailRegion({ expanded, children }: { expanded: boolean; children:
   )
 }
 
-export function TurnDetailSection({ runs, stats, workingSince, className, turnId, showIndicator = true }: TurnDetailSectionProps) {
+export function TurnDetailSection({ runs, stats, workingSince, className, turnId }: TurnDetailSectionProps) {
   const { t, i18n } = useTranslation()
   const [expanded, setExpanded] = useTurnDetailState(turnId)
   const workingDuration = useWorkingDuration(workingSince, expanded)
@@ -181,7 +181,7 @@ export function TurnDetailSection({ runs, stats, workingSince, className, turnId
   // header for everything below rather than as a divider between two pinned runs.
   return (
     <>
-      {showIndicator && indicator}
+      {indicator}
       {runs.map((run) =>
         run.collapsible ? (
           <TurnDetailRegion key={run.key} expanded={expanded}>{run.content}</TurnDetailRegion>

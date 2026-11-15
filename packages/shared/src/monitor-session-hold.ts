@@ -1,10 +1,13 @@
 import type { AgentEvent } from './agent-types'
 
+const BACKGROUND_HOLD_TASK_TYPES = new Set(['monitor', 'bash', 'local_bash', 'local_agent'])
+
 /**
- * A Grok monitor or background bash keeps running after the turn that started
- * it. That turn's `status_change: idle` would mark the session idle. Hold
- * `background` until the last one finishes, and do not cover a turn that is
- * still streaming. Workflow and goal tasks stay on the idle path.
+ * A monitor, background bash, or Antigravity subagent keeps running after the
+ * turn that started it. That turn's `status_change: idle` would mark the
+ * session idle. Hold `background` until the last one finishes, and do not
+ * cover a turn that is still streaming. Workflow and goal tasks stay on the
+ * idle path.
  */
 export class MonitorSessionHold {
   private readonly ids = new Set<string>()
@@ -15,7 +18,7 @@ export class MonitorSessionHold {
 
   note(event: AgentEvent): void {
     if (event.type === 'task_started') {
-      if (event.taskId && (event.taskType === 'monitor' || event.taskType === 'bash')) {
+      if (event.taskId && event.taskType && BACKGROUND_HOLD_TASK_TYPES.has(event.taskType)) {
         this.ids.add(event.taskId)
       }
       return

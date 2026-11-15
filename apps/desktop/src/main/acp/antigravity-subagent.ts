@@ -32,7 +32,6 @@ export * from './antigravity-background-task'
 
 const POLL_INTERVAL_MS = 250
 const IDLE_POLL_INTERVAL_MS = 1_000
-const MAX_TRACK_DURATION_MS = 10 * 60 * 1000
 const DEFAULT_NO_WAKEUP_TIMEOUT_MS = 5_000
 const DEFAULT_WAKEUP_RESPONSE_TIMEOUT_MS = 120_000
 const DEFAULT_INTERACTION_STALL_TIMEOUT_MS = 1_500
@@ -55,6 +54,8 @@ interface SessionSubagentState {
   wakeupMessageId: string
   idleWakeupMessageId: string | null
   subagentWakeupPending: boolean
+  /** Foreground prompt already returned; keep reading the transcript until the task finishes. */
+  backgroundWatch: boolean
   parentTurnEnded: boolean
   activeWakeupMinSpawnStepIndex: number | null
   allWorkCompletedAtMs: number | null
@@ -86,8 +87,82 @@ function isEffectiveWakeupPending(state: SessionSubagentState): boolean {
   return false
 }
 
+function releaseForegroundForBackgroundWatch(state: SessionSubagentState): void {
+  const step = state.bgTasks.idleWatchStepIndex ?? state.activeWakeupMinSpawnStepIndex
+  if (typeof step === 'number' && (state.bgTasks.idleWatchStepIndex === null || step < state.bgTasks.idleWatchStepIndex)) {
+    state.bgTasks.idleWatchStepIndex = step
+  }
+  state.backgroundWatch = true
+  state.parentTurnEnded = false
+  const waiters = state.wakeupWaiters.splice(0, state.wakeupWaiters.length)
+  for (const resolve of waiters) resolve('completed')
+}
+
+function wakeupHasUnseenSteps(
+  state: SessionSubagentState,
+  wakeup: ReturnType<typeof extractParentWakeupProgress>,
+): boolean {
+  return wakeup.steps.some(
+    (step) =>
+      !state.emittedWakeupStepIndices.has(step.stepIndex) ||
+      step.toolCalls.some(
+        (call) => call.hasResult && !call.resultPending && !state.emittedWakeupToolResultIds.has(call.toolUseId),
+      ),
+  )
+}
+
+function emitBackgroundWatch(
+  state: SessionSubagentState,
+  parentRaw: string,
+  now: number,
+  anyActive: boolean,
+): void {
+  const hooks = state.idleHooks
+  if (!hooks) return
+  const afterStepIndex = state.bgTasks.idleWatchStepIndex ?? state.activeWakeupMinSpawnStepIndex ?? 0
+  const wakeup = extractParentWakeupProgress(parentRaw, afterStepIndex)
+  let stillRunning = anyActive
+  if (wakeupHasUnseenSteps(state, wakeup)) {
+    const targetMsgId = state.idleWakeupMessageId ?? hooks.ensureMessage()
+    state.idleWakeupMessageId = targetMsgId
+    if (emitWakeupProgressSteps(state, wakeup, targetMsgId, now)) stillRunning = true
+  }
+  if (!stillRunning && wakeup.awaitingToolExecution) {
+    state.unflushedWakeupReplay = true
+    state.stalledWakeupToolReplay = true
+    state.unlockedPostStallStream = false
+    // Hand the cursor to this step. The next sync drops the index once no
+    // SYSTEM_MESSAGE remains after it, so the permission tool stays on the
+    // next prompt instead of a forever idle poll.
+    const stalledStep = wakeup.steps[wakeup.steps.length - 1]
+    if (stalledStep) state.bgTasks.idleWatchStepIndex = stalledStep.stepIndex
+    if (state.idleWakeupMessageId) hooks.completeMessage()
+    state.idleWakeupMessageId = null
+    settleWakeupWaiters(state, 'completed')
+    return
+  }
+  const elapsedSinceDone = state.allWorkCompletedAtMs === null ? 0 : now - state.allWorkCompletedAtMs
+  const plannerStalled =
+    !stillRunning &&
+    wakeup.sawSystemMessage &&
+    !wakeup.completed &&
+    elapsedSinceDone >= state.wakeupResponseTimeoutMs
+  if (stillRunning || (!wakeup.completed && !plannerStalled)) return
+  const targetMsgId = state.idleWakeupMessageId
+  if (targetMsgId) {
+    state.stalledWakeupToolReplay = false
+    flushRemainingWakeupToolResults(state, wakeup, targetMsgId)
+  }
+  const lastStep = wakeup.steps[wakeup.steps.length - 1]
+  if (lastStep) state.bgTasks.idleWatchStepIndex = lastStep.stepIndex
+  state.idleWakeupMessageId = null
+  if (targetMsgId) hooks.completeMessage()
+  settleWakeupWaiters(state, 'completed')
+}
+
 function settleWakeupWaiters(state: SessionSubagentState, outcome: 'completed' | 'cancelled'): void {
   state.subagentWakeupPending = false
+  state.backgroundWatch = false
   state.parentTurnEnded = false
   state.activeWakeupMinSpawnStepIndex = null
   state.allWorkCompletedAtMs = null
@@ -116,10 +191,10 @@ function syncSessionSubagents(state: SessionSubagentState): void {
     }
   }
 
-  syncTrackedSubagentEntries(state, spawnedRefs, now, MAX_TRACK_DURATION_MS)
+  syncTrackedSubagentEntries(state, spawnedRefs, now)
 
   const bgSummary = parentRaw
-    ? syncBackgroundTasks(state.bgTasks, parentRaw, now, MAX_TRACK_DURATION_MS, state.parentTurnEnded, state.emitEvent)
+    ? syncBackgroundTasks(state.bgTasks, parentRaw, state.parentTurnEnded, state.emitEvent)
     : {
         anyActiveNonDaemon: false,
         anyWakeupRequired: isEffectiveWakeupPending(state) && !state.subagentWakeupPending,
@@ -129,8 +204,11 @@ function syncSessionSubagents(state: SessionSubagentState): void {
         hasActiveIdleWatch: state.bgTasks.idleWatchStepIndex !== null,
       }
 
-  if (bgSummary.emittedCompletionFromTranscript && state.parentTurnEnded) {
-    state.unflushedWakeupReplay = true
+  if (bgSummary.emittedCompletionFromTranscript && (state.parentTurnEnded || state.backgroundWatch)) {
+    // The bash card was already backfilled. Remember its id so a later permission
+    // stall does not treat the replayed tool_call_update as the stalled tool.
+    // unflushed stays false until the wakeup text is actually rendered.
+    if (state.parentTurnEnded) state.unflushedWakeupReplay = true
     for (const id of bgSummary.emittedCompletedToolUseIds) {
       state.replayedBackgroundToolIds.add(id)
     }
@@ -153,7 +231,19 @@ function syncSessionSubagents(state: SessionSubagentState): void {
     state.allWorkCompletedAtMs = now
   }
 
-  if (state.parentTurnEnded && !wakeupPending) {
+  if (state.parentTurnEnded && wakeupPending && anyActive && state.idleHooks) {
+    releaseForegroundForBackgroundWatch(state)
+  }
+
+  if (
+    state.backgroundWatch &&
+    !state.parentTurnEnded &&
+    state.idleHooks &&
+    !state.idleHooks.isPromptActive() &&
+    parentRaw
+  ) {
+    emitBackgroundWatch(state, parentRaw, now, anyActive)
+  } else if (state.parentTurnEnded && !wakeupPending) {
     settleWakeupWaiters(state, 'completed')
   } else if (wakeupPending && state.parentTurnEnded) {
     const afterStepIndex =
@@ -234,7 +324,7 @@ function desiredPollingIntervalMs(state: SessionSubagentState): number | null {
     (e) => Boolean(e.taskId) && e.wakeupRequired && !e.completed,
   )
   const wakeupPending = isEffectiveWakeupPending(state)
-  if (anyActiveSubagent || anyActiveBg || (wakeupPending && state.parentTurnEnded)) {
+  if (state.backgroundWatch || anyActiveSubagent || anyActiveBg || (wakeupPending && state.parentTurnEnded)) {
     return POLL_INTERVAL_MS
   }
   if (state.bgTasks.idleWatchStepIndex !== null && state.idleHooks) {
@@ -283,6 +373,7 @@ function getOrCreateSessionState(
       wakeupMessageId: messageId,
       idleWakeupMessageId: null,
       subagentWakeupPending: false,
+      backgroundWatch: false,
       parentTurnEnded: false,
       activeWakeupMinSpawnStepIndex: null,
       allWorkCompletedAtMs: null,

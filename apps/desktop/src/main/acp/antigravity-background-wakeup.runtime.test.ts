@@ -55,7 +55,7 @@ afterEach(() => {
 })
 
 describe('antigravity background wakeup in createAcpRuntime', () => {
-  it('streams post-wakeup reply in createAcpRuntime and drops pre-user_message_chunk replay on next prompt', async () => {
+  it('releases the prompt while bash stays in the background, then emits the wakeup and drops its replay', async () => {
     const brainRoot = makeTempBrainRoot()
     const prevHome = process.env.SUPERONE_HOME
     process.env.SUPERONE_HOME = brainRoot
@@ -204,6 +204,7 @@ describe('antigravity background wakeup in createAcpRuntime', () => {
     )
 
     try {
+      const wakeEvents: AgentEvent[] = []
       const runtime = await createAcpRuntime({
         launch: {
           agentId: 'antigravity',
@@ -213,30 +214,41 @@ describe('antigravity background wakeup in createAcpRuntime', () => {
         permission: {
           request: async () => ({ outcome: { outcome: 'cancelled' } }),
         },
+        onSessionEvent: (ev) => wakeEvents.push(ev),
         streamFactory: async () => makeStream(),
       })
 
       const turn1Events: AgentEvent[] = []
       await runtime.prompt('Run build', 'msg-turn-1', (ev) => turn1Events.push(ev))
 
-      expect(
-        turn1Events.some(
-          (e) =>
-            e.type === 'content_delta' &&
-            e.delta.type === 'tool_result' &&
-            e.delta.toolUseId === 'call_rt_bg_1' &&
-            e.delta.summary === 'Build succeeded in 6.2s',
-        ),
-      ).toBe(true)
-      expect(
-        turn1Events.some(
-          (e) =>
-            e.type === 'content_delta' &&
-            e.delta.type === 'text' &&
-            e.delta.text === '后台构建已完成，产物校验通过。',
-        ),
-      ).toBe(true)
       expect(turn1Events.some((e) => e.type === 'message_complete' && e.messageId === 'msg-turn-1')).toBe(true)
+      expect(
+        turn1Events.some(
+          (e) => e.type === 'content_delta' && e.delta.type === 'text' && e.delta.text === '后台构建已完成，产物校验通过。',
+        ),
+      ).toBe(false)
+      expect(turn1Events.some((e) => e.type === 'task_started' && e.taskType === 'local_bash')).toBe(true)
+
+      await vi.waitFor(() => {
+        expect(
+          wakeEvents.some(
+            (e) =>
+              e.type === 'content_delta' &&
+              e.delta.type === 'tool_result' &&
+              e.delta.toolUseId === 'call_rt_bg_1' &&
+              e.delta.summary === 'Build succeeded in 6.2s',
+          ),
+        ).toBe(true)
+        expect(
+          wakeEvents.some(
+            (e) =>
+              e.type === 'content_delta' &&
+              e.delta.type === 'text' &&
+              e.delta.text === '后台构建已完成，产物校验通过。',
+          ),
+        ).toBe(true)
+        expect(wakeEvents.some((e) => e.type === 'task_notification' && e.taskId === `${sessionId}/task-3`)).toBe(true)
+      })
 
       const turn2Events: AgentEvent[] = []
       await runtime.prompt('Next question', 'msg-turn-2', (ev) => turn2Events.push(ev))

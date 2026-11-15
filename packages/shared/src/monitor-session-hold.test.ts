@@ -92,6 +92,40 @@ describe('MonitorSessionHold', () => {
     ])
   })
 
+  it('rewrites the turn-end idle to background while an Antigravity bash or subagent is live', () => {
+    const hold = new MonitorSessionHold()
+    play(hold, { type: 'status_change', status: 'streaming' })
+    play(hold, {
+      type: 'task_started',
+      taskId: 'sess/task-3',
+      description: 'vitest',
+      taskType: 'local_bash',
+    })
+    play(hold, {
+      type: 'task_started',
+      taskId: 'child-1',
+      description: 'review',
+      taskType: 'local_agent',
+    })
+    expect(play(hold, { type: 'status_change', status: 'idle' })).toEqual([
+      { type: 'status_change', status: 'background' },
+    ])
+    expect(play(hold, {
+      type: 'task_notification',
+      taskId: 'sess/task-3',
+      taskStatus: 'completed',
+      outputFile: '',
+      summary: 'vitest',
+    }).at(-1)).not.toEqual({ type: 'status_change', status: 'idle' })
+    expect(play(hold, {
+      type: 'task_notification',
+      taskId: 'child-1',
+      taskStatus: 'completed',
+      outputFile: '',
+      summary: 'review',
+    }).at(-1)).toEqual({ type: 'status_change', status: 'idle' })
+  })
+
   it('leaves a workflow task on the idle path', () => {
     const hold = new MonitorSessionHold()
     play(hold, {

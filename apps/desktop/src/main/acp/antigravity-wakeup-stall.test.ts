@@ -318,6 +318,7 @@ describe('antigravity conditional schedule and stalled Ask-mode wakeup replay', 
     )
 
     try {
+      const wakeEvents: AgentEvent[] = []
       const runtime = await createAcpRuntime({
         launch: {
           agentId: 'antigravity',
@@ -331,6 +332,7 @@ describe('antigravity conditional schedule and stalled Ask-mode wakeup replay', 
             return { outcome: { outcome: 'selected', optionId: 'allow_once' } }
           },
         },
+        onSessionEvent: (ev) => wakeEvents.push(ev),
         streamFactory: async () => makeStream(),
       })
 
@@ -347,11 +349,21 @@ describe('antigravity conditional schedule and stalled Ask-mode wakeup replay', 
             e.delta.toolUseId === 'call_wakeup_write',
         ),
       ).toBe(false)
+      await vi.waitFor(() => {
+        expect(
+          wakeEvents.some(
+            (e) => e.type === 'content_delta' && e.delta.type === 'text' && e.delta.text === '准备写入报告文件。',
+          ),
+        ).toBe(true)
+      })
       expect(
-        turn1Events.some(
-          (e) => e.type === 'content_delta' && e.delta.type === 'text' && e.delta.text === '准备写入报告文件。',
+        wakeEvents.some(
+          (e) =>
+            e.type === 'content_delta' &&
+            e.delta.type === 'tool_use' &&
+            e.delta.toolUseId === 'call_wakeup_write',
         ),
-      ).toBe(true)
+      ).toBe(false)
 
       const turn2Events: AgentEvent[] = []
       await runtime.prompt('Continue', 'msg-stall-2', (ev) => turn2Events.push(ev))

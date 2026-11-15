@@ -58,14 +58,9 @@ export function syncTrackedSubagentEntries(
   ctx: WakeupEmitContext,
   spawnedRefs: SpawnedSubagentRef[],
   now: number,
-  maxTrackDurationMs: number,
 ): void {
   for (const entry of ctx.trackedByToolUseId.values()) {
     if (entry.completed) continue
-    if (now - entry.startedAtMs > maxTrackDurationMs) {
-      entry.completed = true
-      continue
-    }
 
     if (!entry.conversationId && spawnedRefs.length > 0) {
       const match = spawnedRefs.find(
@@ -91,6 +86,7 @@ export function syncTrackedSubagentEntries(
           type: 'task_started',
           toolUseId: entry.toolUseId,
           taskId: entry.conversationId,
+          taskType: 'local_agent',
           description: entry.description,
           ...(entry.outputFile ? { outputFile: entry.outputFile } : {}),
           isBackgrounded: true,
@@ -157,6 +153,7 @@ export function syncTrackedSubagentEntries(
 
     if (parsed.completed) {
       entry.completed = true
+      ctx.replayedBackgroundToolIds.add(entry.toolUseId)
       ctx.emitEvent({
         type: 'content_delta',
         messageId: entry.messageId,

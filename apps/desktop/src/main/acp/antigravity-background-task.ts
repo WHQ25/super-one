@@ -170,8 +170,6 @@ export function noteBackgroundTaskMappedEvents(
 export function syncBackgroundTasks(
   tracker: BackgroundTaskTrackerState,
   parentRaw: string,
-  now: number,
-  maxTrackDurationMs: number,
   parentTurnEnded: boolean,
   emitEvent: (event: AgentEvent) => void,
 ): BackgroundTaskSyncSummary {
@@ -267,14 +265,6 @@ export function syncBackgroundTasks(
 
   for (const entry of tracker.tasksByToolUseId.values()) {
     if (!entry.taskId || entry.completed) continue
-    if (now - entry.startedAtMs > maxTrackDurationMs) {
-      if (entry.watchingLog) {
-        unwatchBashOutput(entry.toolUseId)
-        entry.watchingLog = false
-      }
-      entry.completed = true
-      continue
-    }
 
     const completedResult = completedMap.get(entry.taskId)
     if (!completedResult) continue
@@ -347,7 +337,7 @@ export function syncBackgroundTasks(
   const hasActiveDaemonInTranscript = spawnedTasks.some(
     (ref) => ref.isDaemon && !ref.cancelledInTurn && !completedMap.has(ref.taskId),
   )
-  if (!hasActiveDaemonInTranscript && tracker.idleWatchStepIndex !== null) {
+  if (!hasActiveDaemonInTranscript && !anyActiveNonDaemon && tracker.idleWatchStepIndex !== null) {
     const idleCheck = extractParentWakeupProgress(parentRaw, tracker.idleWatchStepIndex)
     if (!idleCheck.sawSystemMessage) {
       tracker.idleWatchStepIndex = null

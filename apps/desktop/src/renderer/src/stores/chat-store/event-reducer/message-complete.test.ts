@@ -260,6 +260,23 @@ describe('reduceMessageComplete: uncompleted subagents', () => {
     expect(patch.status).toBeUndefined()
   })
 
+  it('keeps a background Agent incomplete after the parent turn ends', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [
+      assistant('m1', [
+        { type: 'tool_use', toolUseId: 'agent-1', toolName: 'Agent', input: JSON.stringify({ background: true, description: 'Explore' }) } as ContentBlock,
+        { type: 'tool_result', toolUseId: 'agent-1', summary: 'Subagent is running in the background.\nAgent ID: sa-9' } as ContentBlock,
+      ]),
+    ]
+    session.taskProgress = {
+      'agent-1': { description: 'Explore', taskId: 'sa-9', totalTokens: 0, toolUses: 0, durationMs: 0, toolHistory: [], completed: false },
+    }
+    const patch = reduceMessageComplete(session, {
+      type: 'message_complete', messageId: 'm1', metadata: {},
+    } as never)
+    expect(patch.taskProgress).toBeUndefined()
+  })
+
   it('omits taskProgress when there are no Agent tool uses', () => {
     const session = createDefaultPerSessionState()
     session.messages = [assistant('m1')]

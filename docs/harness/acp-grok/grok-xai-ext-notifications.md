@@ -57,7 +57,7 @@ bus and is still mapped if the agent pushes chips.
 |---|---|
 | `workflow_updated` | Workflow snapshot, phases, agents and terminal result |
 | `subagent_spawned`, `subagent_progress`, `subagent_finished` | Child/task identity, progress and completion |
-| `task_backgrounded`, `task_completed`, `monitor_event` | Background task registration, output and completion |
+| `task_backgrounded`, `task_completed`, `monitor_event`, `background_tasks` | Background task registration, output, completion, and the running-task snapshot |
 | `goal_updated` | Shared goal state |
 | `scheduled_task_created`, `scheduled_task_fired`, `scheduled_task_deleted` | Scheduled-task lifecycle |
 | `response_started`, `response_completed`, `turn_completed` | Mid-turn usage and authoritative turn usage |

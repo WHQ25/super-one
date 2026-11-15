@@ -128,6 +128,8 @@ export interface XaiCorrelationState {
   deltaToolIdByIndex: Map<number, string>
   /** task_id → bg task info */
   bgTaskById: Map<string, BgTaskInfo>
+  /** task_ids that already emitted a terminal task_notification */
+  bgTaskFinished: Set<string>
   /** goal_ids that already emitted task_started */
   goalStarted: Set<string>
   /** last applied non-workflow eventSeq high-water */
@@ -170,6 +172,7 @@ export function createXaiCorrelationState(opts?: { cwd?: string; parentSessionId
     deltaCollabInput: new Map(),
     deltaToolIdByIndex: new Map(),
     bgTaskById: new Map(),
+    bgTaskFinished: new Set(),
     goalStarted: new Set(),
     lastEventSeq: null,
     lastUsage: null,
@@ -328,6 +331,7 @@ export function parsePlainTextTaskAck(text: string): {
 } {
   const subagentId =
     text.match(/subagent_id:\s*(\S+)/i)?.[1]
+    ?? text.match(/agent id:\s*(\S+)/i)?.[1]
     ?? text.match(/task_ids?\s*=\s*\[\s*"([^"]+)"/i)?.[1]
   const taskId =
     text.match(/(?:^|\n)\s*task_id:\s*(\S+)/i)?.[1]
@@ -436,6 +440,7 @@ export function noteToolCorrelationFromAgentEvents(
     const allowPlain =
       isSpawnLaunch
       || /started in background/i.test(d.summary)
+      || /running in the background/i.test(d.summary)
     if (allowPlain && plain.subagentId) {
       bindSubagentToolId(state, plain.subagentId, toolUseId, plain.description, migrate)
     }

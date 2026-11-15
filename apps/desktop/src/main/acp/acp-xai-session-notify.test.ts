@@ -837,6 +837,7 @@ describe('mapXaiStandaloneNotification', () => {
       toolUseId: 'tc1',
       description: 'Wait',
       taskType: 'bash',
+      outputFile: '/tmp/out.log',
     }])
 
     // Dual emission dedup
@@ -908,6 +909,73 @@ describe('mapXaiStandaloneNotification', () => {
       description: '[monitor] tail -f build.log',
       taskType: 'monitor',
     }])
+  })
+
+  it('maps a background_tasks snapshot onto the launch tool and ignores a historical failure', () => {
+    const state = createXaiCorrelationState()
+    const started = mapXaiSessionUpdate({
+      sessionUpdate: 'background_tasks',
+      tasks: [{
+        task_id: 'task-9',
+        command: 'bun install',
+        description: 'Install deps',
+        kind: 'bash',
+        status: 'running',
+        output_file: '/tmp/sessions/terminal/bash-tool.log',
+      }],
+    }, state)
+    expect(started).toEqual([{
+      type: 'task_started',
+      taskId: 'task-9',
+      toolUseId: 'bash-tool',
+      description: 'Install deps',
+      taskType: 'bash',
+      outputFile: '/tmp/sessions/terminal/bash-tool.log',
+    }])
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'background_tasks',
+      tasks: [{
+        task_id: 'old-fail',
+        command: 'false',
+        kind: 'bash',
+        status: 'failed',
+        exit_code: 1,
+      }],
+    }, state)).toEqual([])
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'background_tasks',
+      tasks: [{
+        task_id: 'task-9',
+        command: 'bun install',
+        kind: 'bash',
+        status: 'completed',
+        exit_code: 0,
+        output_file: '/tmp/sessions/terminal/bash-tool.log',
+      }],
+    }, state)[0]).toMatchObject({
+      type: 'task_notification',
+      taskId: 'task-9',
+      toolUseId: 'bash-tool',
+      taskStatus: 'completed',
+    })
+  })
+
+  it('binds spawn tool_call_id onto task_started', () => {
+    const state = createXaiCorrelationState()
+    const started = mapXaiSessionUpdate({
+      sessionUpdate: 'subagent_spawned',
+      subagent_id: 'sa-9',
+      tool_call_id: 'spawn-tool',
+      description: 'Explore',
+      subagent_type: 'general-purpose',
+    }, state)
+    expect(started[0]).toMatchObject({
+      type: 'task_started',
+      taskId: 'sa-9',
+      toolUseId: 'spawn-tool',
+      taskType: 'general-purpose',
+    })
+    expect(started[0]).not.toMatchObject({ hostSpawned: true })
   })
 
   it('maps goal_updated progress and complete', () => {

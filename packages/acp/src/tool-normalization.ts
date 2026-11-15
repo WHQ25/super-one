@@ -356,6 +356,14 @@ function resolveToolName(
   return null
 }
 
+/** Grok 1.0.77 backgrounds a shell with `block_until_ms: 0` or `is_background`. */
+function bashRequestsBackground(raw: Record<string, unknown>): boolean {
+  if (raw.run_in_background === true || raw.background === true) return true
+  if (raw.is_background === true || raw.isBackground === true) return true
+  const blockUntil = raw.block_until_ms ?? raw.blockUntilMs
+  return blockUntil === 0
+}
+
 function normalizeInput(
   toolName: string,
   kind: string | null | undefined,
@@ -409,7 +417,7 @@ function normalizeInput(
       if (command) out.command = command
       const description = pickString(raw, ['description', 'desc'])
       if (description) out.description = description
-      if (raw.run_in_background === true || raw.background === true) out.run_in_background = true
+      if (bashRequestsBackground(raw)) out.run_in_background = true
       return Object.keys(out).length > 0 ? out : { ...raw }
     }
     case 'LS': {

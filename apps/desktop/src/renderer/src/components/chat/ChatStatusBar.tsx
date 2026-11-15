@@ -151,7 +151,8 @@ export function collectBackgroundActivities(
         const runInBackground = params.run_in_background === true || params.background === true || block.runInBackground === true
         const hasTaskState = !!progress
         const isStreamingTool = block.status === 'streaming'
-        const hasBackgroundSignal = runInBackground || !!result?.outputPath
+        const progressFile = typeof progress?.outputFile === 'string' ? progress.outputFile : ''
+        const hasBackgroundSignal = runInBackground || !!result?.outputPath || progressFile.length > 0
         const isRunning = hasTaskState ? progress.completed !== true : (runInBackground && isStreamingTool)
         if (!hasBackgroundSignal || !isRunning) continue
 

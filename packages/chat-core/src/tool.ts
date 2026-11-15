@@ -133,6 +133,34 @@ function resolveTaskProgressWrite(
   return { key: taskId!, prev: undefined }
 }
 
+function stampBackgroundShell(
+  messages: ChatMessage[],
+  toolUseId: string,
+  outputFile: string | undefined,
+  toolName: 'Bash' | 'Monitor',
+): ChatMessage[] {
+  let changed = false
+  const next = messages.map((message) => {
+    let contentChanged = false
+    const content = message.content.map((block) => {
+      if (block.type === 'tool_use' && block.toolUseId === toolUseId && block.toolName === toolName) {
+        if (block.runInBackground) return block
+        contentChanged = true
+        return { ...block, runInBackground: true }
+      }
+      if (outputFile && block.type === 'tool_result' && block.toolUseId === toolUseId && !block.outputPath) {
+        contentChanged = true
+        return { ...block, outputPath: outputFile }
+      }
+      return block
+    })
+    if (!contentChanged) return message
+    changed = true
+    return { ...message, content }
+  })
+  return changed ? next : messages
+}
+
 function commitTaskProgress(
   taskProgress: TaskProgressMap,
   write: { key: string; dropKey?: string; prev: TaskProgressEntry | undefined },
@@ -333,13 +361,16 @@ export function reduceTool(
       const prev = write.prev
       // A resumed subagent registers again, always in the background; a duplicated
       // foreground launch frame must not revive a finished task.
+      // message_complete can stamp completed on an Agent that has not started yet
+      // (no taskId). A later real task_started reopens that synthetic close.
       const resumed = prev?.completed === true && event.isBackgrounded === true
+      const syntheticClose = prev?.completed === true && !prev.taskId && !!event.taskId
       const next: TaskProgressEntry = {
         ...(prev ?? emptyTaskProgress()),
         description: event.description,
         taskId: event.taskId ?? prev?.taskId,
-        completed: prev?.completed === true && !resumed,
-        ...(resumed ? { status: undefined } : {}),
+        completed: prev?.completed === true && !resumed && !syntheticClose,
+        ...(resumed || syntheticClose ? { status: undefined } : {}),
         ...(event.outputFile ? { outputFile: event.outputFile } : {}),
       }
       // Task lifecycle is liveness like tool_progress: a Grok goal subagent
@@ -347,10 +378,16 @@ export function reduceTool(
       // heuristic paints the turn amber while the agent is busy.
       const launchId = write.key ?? event.toolUseId
       const marked = launchId ? applySubagentTaskStarted(session.messages, launchId, event.isBackgrounded) : session.messages
+      const shellTool = event.taskType === 'monitor'
+        ? 'Monitor'
+        : (event.taskType === 'bash' || event.taskType === 'local_bash' ? 'Bash' : null)
+      const stamped = shellTool && launchId
+        ? stampBackgroundShell(marked, launchId, event.outputFile, shellTool)
+        : marked
       const patch = {
         taskProgress: commitTaskProgress(session.taskProgress, write, next),
         lastEventAt: ports.now(),
-        ...(marked !== session.messages ? { messages: marked } : {}),
+        ...(stamped !== session.messages ? { messages: stamped } : {}),
       }
       // Slash-launched workflows emit workflow_updated only — no tool_use.
       // A correlated toolUseId means a model launch already owns the card.

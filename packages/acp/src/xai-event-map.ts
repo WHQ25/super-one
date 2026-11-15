@@ -65,6 +65,8 @@ export function mapXaiSessionUpdate(
       return mapSubagentFinished(update, state)
     case 'task_backgrounded':
       return mapTaskBackgrounded(update, state)
+    case 'background_tasks':
+      return mapBackgroundTasks(update, state)
     case 'task_completed':
       return mapTaskCompleted(update, state)
     case 'monitor_event':
@@ -416,9 +418,16 @@ function mapSubagentSpawned(u: Record<string, unknown>, state: XaiCorrelationSta
   // makes the first child's task_notification mark the whole workflow complete.
   // Their lifecycle is already mirrored on workflow_updated.agents rows.
   const workflowRunId = strField(u, 'workflow_run_id', 'workflowRunId')
+  let learnedLaunchTool = false
   if (workflowRunId) {
     state.workflowOwnedSubagents.add(id)
     state.subagentToolById.delete(id)
+  } else {
+    const toolCallId = strField(u, 'tool_call_id', 'toolCallId')
+    if (toolCallId && !state.workflowOwnedSubagents.has(id) && !state.subagentToolById.has(id)) {
+      state.subagentToolById.set(id, toolCallId)
+      learnedLaunchTool = alreadyStarted
+    }
   }
   const toolUseId = workflowRunId ? undefined : state.subagentToolById.get(id)
   const childSessionId = strField(u, 'child_session_id', 'childSessionId') ?? id
@@ -433,6 +442,15 @@ function mapSubagentSpawned(u: Record<string, unknown>, state: XaiCorrelationSta
       description,
       ...(subagentType ? { taskType: subagentType } : {}),
       ...(outputFile ? { outputFile } : {}),
+    })
+  } else if (learnedLaunchTool && toolUseId) {
+    events.push({
+      type: 'task_progress',
+      taskId: id,
+      toolUseId,
+      description,
+      ...(outputFile ? { outputFile } : {}),
+      usage: { totalTokens: 0, toolUses: 0, durationMs: 0 },
     })
   }
   events.push(...takeDeferredSubagentFinish(state, id))
@@ -531,9 +549,64 @@ function backgroundTaskType(u: Record<string, unknown>, command: string): 'monit
   return 'bash'
 }
 
+const TERMINAL_BG_STATUS = new Set([
+  'completed', 'complete', 'failed', 'killed', 'stopped', 'cancelled', 'canceled', 'error',
+])
+
+/** Grok stores the launch tool id as `…/terminal/<tool_call_id>.log`. */
+function toolUseIdFromTerminalLog(path: string | undefined): string | undefined {
+  if (!path) return undefined
+  const id = path.match(/\/terminal\/([^/]+)\.log$/)?.[1]
+  if (!id || id === 'unknown') return undefined
+  return id
+}
+
+function snapshotTaskType(task: Record<string, unknown>, command: string): 'bash' | 'monitor' | null {
+  const kind = (strField(task, 'kind') ?? '').toLowerCase()
+  if (kind === 'monitor') return 'monitor'
+  if (kind === 'bash' || kind === '') return backgroundTaskType(task, command)
+  return null
+}
+
+function snapshotIsTerminal(task: Record<string, unknown>): boolean {
+  const status = (strField(task, 'status') ?? '').toLowerCase()
+  if (status === 'running' || status === 'pending' || status === 'queued' || status === 'active' || status === '') {
+    return false
+  }
+  if (TERMINAL_BG_STATUS.has(status)) return true
+  const exitCode = numField(task, 'exit_code', 'exitCode')
+  if (exitCode != null && exitCode !== 0) return true
+  if (strField(task, 'signal')) return true
+  if (strField(task, 'ended_at', 'endedAt')) return true
+  return false
+}
+
+function snapshotTerminalStatus(task: Record<string, unknown>): 'completed' | 'failed' | 'stopped' {
+  const status = (strField(task, 'status') ?? '').toLowerCase()
+  if (status === 'failed' || status === 'error') return 'failed'
+  if (status === 'killed' || status === 'stopped' || status === 'cancelled' || status === 'canceled') return 'stopped'
+  const exitCode = numField(task, 'exit_code', 'exitCode')
+  if (exitCode != null && exitCode !== 0) return 'failed'
+  if (strField(task, 'signal')) return 'stopped'
+  return 'completed'
+}
+
+function rememberBgTask(
+  state: XaiCorrelationState,
+  taskId: string,
+  info: { toolUseId?: string; description: string; outputFile?: string },
+): void {
+  const existing = state.bgTaskById.get(taskId)
+  state.bgTaskById.set(taskId, {
+    toolUseId: info.toolUseId ?? existing?.toolUseId,
+    description: info.description || existing?.description || taskId,
+    outputFile: info.outputFile || existing?.outputFile,
+  })
+}
+
 function mapTaskBackgrounded(u: Record<string, unknown>, state: XaiCorrelationState): AgentEvent[] {
   const taskId = strField(u, 'task_id', 'taskId')
-  if (!taskId) return []
+  if (!taskId || state.bgTaskFinished.has(taskId)) return []
   const toolCallId = strField(u, 'tool_call_id', 'toolCallId')
   const command = strField(u, 'command') ?? ''
   const description =
@@ -542,27 +615,103 @@ function mapTaskBackgrounded(u: Record<string, unknown>, state: XaiCorrelationSt
     ?? command
     ?? taskId
   const outputFile = strField(u, 'output_file', 'outputFile') ?? ''
-  // Dedup dual emission (nested + standalone). Merge fields if a later payload is richer.
   const existing = state.bgTaskById.get(taskId)
-  if (existing) {
-    state.bgTaskById.set(taskId, {
-      toolUseId: toolCallId ?? existing.toolUseId,
-      description: description || existing.description,
-      outputFile: outputFile || existing.outputFile,
-    })
-    return []
-  }
-  state.bgTaskById.set(taskId, {
-    toolUseId: toolCallId,
+  const learnedTool = !!toolCallId && !!existing && !existing.toolUseId
+  rememberBgTask(state, taskId, {
+    toolUseId: toolCallId ?? existing?.toolUseId,
     description,
     outputFile,
   })
+  // A snapshot can register the task before the tool id arrives. Move the row
+  // onto the launch chip instead of dropping the correlation.
+  if (existing) {
+    if (!learnedTool || !toolCallId) return []
+    const file = outputFile || existing.outputFile
+    return [{
+      type: 'task_progress',
+      taskId,
+      toolUseId: toolCallId,
+      description: description || existing.description,
+      ...(file ? { outputFile: file } : {}),
+      usage: { totalTokens: 0, toolUses: 0, durationMs: 0 },
+    }]
+  }
   return [{
     type: 'task_started',
     taskId,
     ...(toolCallId ? { toolUseId: toolCallId } : {}),
     description,
     taskType: backgroundTaskType(u, command),
+    ...(outputFile ? { outputFile } : {}),
+  }]
+}
+
+function mapBackgroundTasks(u: Record<string, unknown>, state: XaiCorrelationState): AgentEvent[] {
+  const tasks = arrField(u, 'tasks')
+  if (!tasks || tasks.length === 0) return []
+  const events: AgentEvent[] = []
+  for (const item of tasks) {
+    const task = asRecord(item)
+    if (!task) continue
+    events.push(...mapBackgroundTaskSnapshot(task, state))
+  }
+  return events
+}
+
+function mapBackgroundTaskSnapshot(task: Record<string, unknown>, state: XaiCorrelationState): AgentEvent[] {
+  const taskId = strField(task, 'task_id', 'taskId')
+  if (!taskId) return []
+  const command = strField(task, 'command') ?? ''
+  const taskType = snapshotTaskType(task, command)
+  if (!taskType) return []
+  const description =
+    strField(task, 'description')
+    ?? strField(task, 'monitor_description', 'monitorDescription')
+    ?? command
+    ?? taskId
+  const outputFile = strField(task, 'output_file', 'outputFile') ?? ''
+  const existing = state.bgTaskById.get(taskId)
+  const toolUseId =
+    existing?.toolUseId
+    ?? strField(task, 'tool_call_id', 'toolCallId')
+    ?? toolUseIdFromTerminalLog(outputFile)
+  const learnedTool = !!toolUseId && !!existing && !existing.toolUseId
+  rememberBgTask(state, taskId, { toolUseId, description, outputFile })
+  if (snapshotIsTerminal(task)) {
+    const seenRunning = !!existing && !state.bgTaskFinished.has(taskId)
+    state.bgTaskFinished.add(taskId)
+    if (!seenRunning) return []
+    const taskStatus = snapshotTerminalStatus(task)
+    const exitCode = numField(task, 'exit_code', 'exitCode')
+    return [{
+      type: 'task_notification',
+      taskId,
+      ...(toolUseId ? { toolUseId } : {}),
+      taskStatus,
+      outputFile,
+      summary: exitCode != null ? `exit ${exitCode}` : taskStatus,
+    }]
+  }
+  if (state.bgTaskFinished.has(taskId)) return []
+  if (existing) {
+    if (!learnedTool || !toolUseId) return []
+    const file = outputFile || existing.outputFile
+    return [{
+      type: 'task_progress',
+      taskId,
+      toolUseId,
+      description: description || existing.description,
+      ...(file ? { outputFile: file } : {}),
+      usage: { totalTokens: 0, toolUses: 0, durationMs: 0 },
+    }]
+  }
+  return [{
+    type: 'task_started',
+    taskId,
+    ...(toolUseId ? { toolUseId } : {}),
+    description,
+    taskType,
+    ...(outputFile ? { outputFile } : {}),
   }]
 }
 
@@ -570,7 +719,7 @@ function mapTaskCompleted(u: Record<string, unknown>, state: XaiCorrelationState
   // Nested: { task_snapshot, will_wake }; standalone may flatten snapshot fields.
   const snapshot = asRecord(u.task_snapshot) ?? asRecord(u.taskSnapshot) ?? u
   const taskId = strField(snapshot, 'task_id', 'taskId')
-  if (!taskId) return []
+  if (!taskId || state.bgTaskFinished.has(taskId)) return []
 
   const known = state.bgTaskById.get(taskId)
   const toolUseId = known?.toolUseId ?? strField(snapshot, 'tool_call_id', 'toolCallId')
@@ -611,6 +760,7 @@ function mapTaskCompleted(u: Record<string, unknown>, state: XaiCorrelationState
     summary: exitCode != null ? `exit ${exitCode}` : taskStatus,
     ...(output ? { resultText: output.slice(0, 8000) } : {}),
   })
+  state.bgTaskFinished.add(taskId)
   return events
 }
 

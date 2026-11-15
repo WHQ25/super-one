@@ -101,6 +101,17 @@ describe('collectBackgroundActivities', () => {
       expect(bashActivities[0].title).toBe('sleep 1200 && gh workflow run build-mac.yml')
     })
 
+    it('shows bash from taskProgress outputFile while the task is running', () => {
+      const messages = [msg(
+        toolUse('t1', 'Bash', { command: 'bun install' }, 'complete'),
+        toolResult('t1', { summary: 'started' }),
+      )]
+      const progress = { t1: { description: 'install', completed: false, outputFile: '/tmp/terminal/call-1.log' } }
+      const { bashActivities } = collectBackgroundActivities(messages, progress, false)
+      expect(bashActivities).toHaveLength(1)
+      expect(bashActivities[0].title).toBe('bun install')
+    })
+
     it('shows bash with outputPath while taskProgress not completed', () => {
       const messages = [msg(
         toolUse('t1', 'Bash', { command: 'sleep 10' }, 'complete'),

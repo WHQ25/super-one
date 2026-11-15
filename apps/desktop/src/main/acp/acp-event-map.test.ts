@@ -111,6 +111,24 @@ describe('normalizeAcpTool', () => {
     })
   })
 
+  it('treats block_until_ms 0 and is_background as a background bash', () => {
+    expect(normalizeAcpTool({
+      toolCallId: 'c5b',
+      kind: 'execute',
+      rawInput: { command: 'bun install', block_until_ms: 0 },
+    })?.input).toMatchObject({ command: 'bun install', run_in_background: true })
+    expect(normalizeAcpTool({
+      toolCallId: 'c5c',
+      kind: 'execute',
+      rawInput: { command: 'sleep 2', block_until_ms: 2000 },
+    })?.input).toEqual({ command: 'sleep 2' })
+    expect(normalizeAcpTool({
+      toolCallId: 'c5d',
+      kind: 'execute',
+      rawInput: { command: 'tail -f log', is_background: true },
+    })?.input).toMatchObject({ run_in_background: true })
+  })
+
   it('maps search kind to Grep or Glob', () => {
     expect(normalizeAcpTool({
       toolCallId: 'c6',

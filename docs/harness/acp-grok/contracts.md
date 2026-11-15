@@ -74,3 +74,10 @@ Upstream behavior SuperOne depends on that the published types do not state.
 - **Observed:** grok-build pager `Effect::FetchPromptSuggestion` (`xai-grok-pager` effects + `dispatch/prompt.rs`); shell `extensions/suggest/handle_suggest_prompt` and `sanitize_suggestion`.
 - **Depends on it:** `packages/shared/src/grok-suggest-prompt.ts`, `apps/desktop/src/main/acp/acp-runtime.ts`, `packages/acp/src/run-turn.ts`.
 - **Guard:** `packages/shared/src/grok-suggest-prompt.test.ts`, `apps/desktop/src/main/acp/acp-runtime.test.ts`, `packages/acp/src/run-turn.test.ts`.
+
+## Background task snapshot
+
+- **Behavior:** Grok 1.0.77 reports a background shell with `block_until_ms: 0` (or `is_background: true`) on `run_terminal_command`, then `sessionUpdate: task_backgrounded` and repeated `sessionUpdate: background_tasks` snapshots. A snapshot task is `{ task_id, command, description, kind: "bash" \| "monitor", status, output_file, exit_code?, signal? }` and usually has no `tool_call_id`. The launch id is the `terminal/<id>.log` filename. `tasks: []` is a no-op. A task omitted from a later snapshot is still running. A terminal status on a task the host has not seen running is historical and is not shown. Spawn acks may say `Agent ID:` instead of `subagent_id:`, including `Subagent is running in the background.`
+- **Observed:** installed grok 1.0.77 (`50ca579fa996`) session logs. The public grok-build checkout does not contain this revision.
+- **Depends on it:** `packages/acp/src/xai-event-map.ts`, `apps/desktop/src/main/acp/acp-xai-session-notify.ts`, `packages/acp/src/tool-normalization.ts`, `packages/chat-core/src/tool.ts`, `packages/chat-core/src/message-complete.ts`.
+- **Guard:** `packages/acp/src/xai-event-map.test.ts`, `packages/acp/src/tool-normalization.test.ts`, `apps/desktop/src/main/acp/acp-xai-session-notify.test.ts`, `apps/desktop/src/renderer/src/stores/chat-store/event-reducer/tool.test.ts`, `apps/desktop/src/renderer/src/stores/chat-store/event-reducer/message-complete.test.ts`.

@@ -9,6 +9,21 @@ import { sealCodexMetadata, sealStreamingTools } from './shared'
 
 type MessageCompleteEvent = Extract<AgentEvent, { type: 'message_complete' }>
 
+function inputRequestsBackground(input: string | undefined): boolean {
+  if (!input) return false
+  try {
+    const parsed = JSON.parse(input) as { run_in_background?: unknown; background?: unknown }
+    return parsed?.run_in_background === true || parsed?.background === true
+  } catch {
+    return /"run_in_background"\s*:\s*true/.test(input) || /"background"\s*:\s*true/.test(input)
+  }
+}
+
+function ackSaysBackground(text: string | undefined): boolean {
+  if (!text) return false
+  return /started in background/i.test(text) || /running in the background/i.test(text)
+}
+
 export function reduceMessageComplete(
   session: ChatCoreSession,
   event: MessageCompleteEvent,
@@ -24,12 +39,18 @@ export function reduceMessageComplete(
   const codexCompletionMeta = getCodexCompletionEventMeta(event.metadata)
   const completingMsg = session.messages.find((m) => m.id === event.messageId)
   const agentToolIds = new Set<string>()
+  const agentInputs = new Map<string, { input?: string; runInBackground?: boolean }>()
+  const resultText = new Map<string, string>()
   let nextPreviews = session._streamingToolInputPreviews
   let previewsChanged = false
   if (completingMsg) {
     for (const b of completingMsg.content) {
+      if (b.type === 'tool_result' && b.summary) resultText.set(b.toolUseId, b.summary)
       if (b.type === 'tool_use') {
-        if (isSubagentToolName(b.toolName)) agentToolIds.add(b.toolUseId)
+        if (isSubagentToolName(b.toolName)) {
+          agentToolIds.add(b.toolUseId)
+          agentInputs.set(b.toolUseId, { input: b.input, runInBackground: b.runInBackground })
+        }
         // Drop any leftover partial Edit/Write buffers for tools on this message.
         ports.streaming.clear(b.toolUseId)
         if (nextPreviews[b.toolUseId]) {
@@ -41,7 +62,18 @@ export function reduceMessageComplete(
     }
   }
   const codexUsage = codexCompletionMeta?.usage ?? event.metadata?.codex?.usage ?? null
+  const agentStaysRunning = (id: string): boolean => {
+    const block = agentInputs.get(id)
+    const progress = session.taskProgress[id]
+    if (progress?.completed === true) return false
+    if (block?.runInBackground === true) return true
+    if (inputRequestsBackground(block?.input)) return true
+    if (ackSaysBackground(resultText.get(id))) return true
+    // completed === true already returned. A real task id means the agent is still live.
+    return progress != null && !!progress.taskId
+  }
   const hasUncompletedAgents = agentToolIds.size > 0 && [...agentToolIds].some((id) => !session.taskProgress[id]?.completed)
+  const agentsToClose = [...agentToolIds].filter((id) => !session.taskProgress[id]?.completed && !agentStaysRunning(id))
   // Settle a stuck 'streaming' status: a completed current turn with no
   // running subagents is no longer streaming. The backend normally also
   // emits status_change → idle, but after an interrupt + post-interrupt
@@ -134,12 +166,11 @@ export function reduceMessageComplete(
     }),
     awaitingAssistantReply: false,
     ...(isCurrentTurn ? { streamingTokens: { input: 0, output: 0 }, lastEventAt: 0 } : {}),
-    ...(hasUncompletedAgents ? {
+    ...(agentsToClose.length > 0 ? {
       taskProgress: {
         ...session.taskProgress,
         ...Object.fromEntries(
-          [...agentToolIds]
-            .filter(id => !session.taskProgress[id]?.completed)
+          agentsToClose
             .map(id => [id, {
               ...(session.taskProgress[id] ?? {
                 description: '',

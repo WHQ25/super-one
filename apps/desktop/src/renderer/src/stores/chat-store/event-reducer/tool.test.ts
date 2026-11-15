@@ -428,6 +428,35 @@ describe('reduceTool: task_started', () => {
     } as never)
     expect(patch.taskProgress?.['task-1'].completed).toBe(true)
   })
+
+  it('reopens a synthetic close when a real task id arrives', () => {
+    const session = createDefaultPerSessionState()
+    session.taskProgress = { 'task-1': { description: '', totalTokens: 0, toolUses: 0, durationMs: 0, toolHistory: [], completed: true } }
+    const patch = reduceTool(session, {
+      type: 'task_started', toolUseId: 'task-1', taskId: 'sa-1', description: 'Explore',
+    } as never)
+    expect(patch.taskProgress?.['task-1'].completed).toBe(false)
+    expect(patch.taskProgress?.['task-1'].taskId).toBe('sa-1')
+  })
+
+  it('stamps runInBackground and outputPath for a background bash launch', () => {
+    const session = createDefaultPerSessionState()
+    session.messages = [makeAssistant('m1', [
+      toolUseBlock('bash-1', 'Bash', JSON.stringify({ command: 'sleep 1' })),
+      { type: 'tool_result', toolUseId: 'bash-1', summary: 'started' } as ContentBlock,
+    ])]
+    const patch = reduceTool(session, {
+      type: 'task_started',
+      toolUseId: 'bash-1',
+      taskId: 't1',
+      description: 'sleep',
+      taskType: 'bash',
+      outputFile: '/tmp/t.log',
+    } as never)
+    const content = patch.messages?.[0].content as ContentBlock[]
+    expect(content[0]).toMatchObject({ runInBackground: true })
+    expect(content[1]).toMatchObject({ outputPath: '/tmp/t.log' })
+  })
 })
 
 /**

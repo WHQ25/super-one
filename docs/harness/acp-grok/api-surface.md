@@ -19,3 +19,10 @@ The rest of the surface has not been inventoried.
 |---|---|---|---|
 | `_x.ai/suggestPrompt` | used | Client-pull after a successful grok-build idle turn. Desktop fire-and-forgets; node awaits before dispose. Maps `suggestion` onto shared `prompt_suggestion`. Method-not-found and timeout are silent. | `packages/shared/src/grok-suggest-prompt.ts`, `apps/desktop/src/main/acp/acp-runtime.ts`, `packages/acp/src/run-turn.ts` |
 | `x.ai/follow_ups` | used | Agent-push chips, still mapped when they arrive. Generic ACP (`clientIdentifier: superone`) is not known to emit this. | `packages/acp/src/xai-event-map.ts`, `apps/desktop/src/main/acp/acp-xai-session-notify.ts` |
+
+## Background tasks
+
+| Name | Status | Usage | Code |
+|---|---|---|---|
+| `sessionUpdate: background_tasks` | used | Snapshot of running bash and monitor tasks inside `_x.ai/session/update`. A running row becomes `task_started` on the launch tool (tool id from `tool_call_id` or the `terminal/<id>.log` path). A later terminal status becomes `task_notification` only if that task was already seen running. An empty `tasks` array and a first-seen failed row do not complete or invent a row. | `packages/acp/src/xai-event-map.ts`, `apps/desktop/src/main/acp/acp-xai-session-notify.ts` |
+| `sessionUpdate: task_backgrounded` | used | Registers one background shell. `output_file` is copied onto `task_started`. If a snapshot already registered the task, a later `tool_call_id` migrates progress onto that tool. | same mappers |

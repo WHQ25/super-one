@@ -332,6 +332,7 @@ describe('ACP xAI AgentEvent mapping', () => {
       toolUseId: 'bash-tool',
       description: 'Wait for result',
       taskType: 'bash',
+      outputFile: '/tmp/task.log',
     }])
     expect(mapXaiStandaloneNotification(XAI_TASK_BACKGROUNDED, background, state)).toEqual([])
     expect(mapXaiStandaloneNotification(XAI_TASK_COMPLETED, {
@@ -382,6 +383,124 @@ describe('ACP xAI AgentEvent mapping', () => {
       description: '[monitor] tail -f build.log',
       taskType: 'monitor',
     }])
+  })
+
+  it('maps a background_tasks snapshot onto the launch tool and ignores a historical failure', () => {
+    const state = createXaiCorrelationState()
+    const started = mapXaiSessionUpdate({
+      sessionUpdate: 'background_tasks',
+      tasks: [{
+        task_id: 'task-9',
+        command: 'bun install',
+        description: 'Install deps',
+        kind: 'bash',
+        status: 'running',
+        output_file: '/tmp/sessions/terminal/bash-tool.log',
+      }],
+    }, state)
+    expect(started).toEqual([{
+      type: 'task_started',
+      taskId: 'task-9',
+      toolUseId: 'bash-tool',
+      description: 'Install deps',
+      taskType: 'bash',
+      outputFile: '/tmp/sessions/terminal/bash-tool.log',
+    }])
+
+    const moved = mapXaiStandaloneNotification(XAI_TASK_BACKGROUNDED, {
+      task_id: 'late',
+      command: 'sleep 1',
+      description: 'Wait',
+    }, state)
+    expect(moved[0]).toMatchObject({ type: 'task_started', taskId: 'late', taskType: 'bash' })
+    expect(mapXaiStandaloneNotification(XAI_TASK_BACKGROUNDED, {
+      task_id: 'late',
+      tool_call_id: 'bash-late',
+      command: 'sleep 1',
+      output_file: '/tmp/late.log',
+    }, state)).toEqual([{
+      type: 'task_progress',
+      taskId: 'late',
+      toolUseId: 'bash-late',
+      description: 'sleep 1',
+      outputFile: '/tmp/late.log',
+      usage: { totalTokens: 0, toolUses: 0, durationMs: 0 },
+    }])
+
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'background_tasks',
+      tasks: [{
+        task_id: 'old-fail',
+        command: 'false',
+        kind: 'bash',
+        status: 'failed',
+        exit_code: 1,
+        output_file: '/tmp/sessions/terminal/unknown.log',
+      }],
+    }, state)).toEqual([])
+
+    const done = mapXaiSessionUpdate({
+      sessionUpdate: 'background_tasks',
+      tasks: [{
+        task_id: 'task-9',
+        command: 'bun install',
+        kind: 'bash',
+        status: 'completed',
+        exit_code: 0,
+        output_file: '/tmp/sessions/terminal/bash-tool.log',
+      }],
+    }, state)
+    expect(done).toEqual([{
+      type: 'task_notification',
+      taskId: 'task-9',
+      toolUseId: 'bash-tool',
+      taskStatus: 'completed',
+      outputFile: '/tmp/sessions/terminal/bash-tool.log',
+      summary: 'exit 0',
+    }])
+    expect(mapXaiSessionUpdate({
+      sessionUpdate: 'background_tasks',
+      tasks: [],
+    }, state)).toEqual([])
+  })
+
+  it('binds a spawn tool_call_id and an Agent ID ack', () => {
+    const state = createXaiCorrelationState()
+    const started = mapXaiSessionUpdate({
+      sessionUpdate: 'subagent_spawned',
+      subagent_id: 'sa-9',
+      tool_call_id: 'spawn-tool',
+      description: 'Explore',
+      subagent_type: 'general-purpose',
+    }, state)
+    expect(started[0]).toMatchObject({
+      type: 'task_started',
+      taskId: 'sa-9',
+      toolUseId: 'spawn-tool',
+      taskType: 'general-purpose',
+    })
+    const ack = createXaiCorrelationState()
+    noteToolCorrelationFromAgentEvents([{
+      type: 'content_delta',
+      messageId: 'm1',
+      delta: {
+        type: 'tool_use',
+        toolName: 'Agent',
+        toolUseId: 'spawn-tool',
+        input: '{}',
+        status: 'complete',
+      },
+    }, {
+      type: 'content_delta',
+      messageId: 'm1',
+      delta: {
+        type: 'tool_result',
+        toolUseId: 'spawn-tool',
+        summary: 'Subagent is running in the background.\nAgent ID: sa-9',
+        isError: false,
+      },
+    }], ack)
+    expect(ack.subagentToolById.get('sa-9')).toBe('spawn-tool')
   })
 
   it('accumulates response_started/completed into mid-turn message_usage', () => {

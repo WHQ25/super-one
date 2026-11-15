@@ -377,11 +377,13 @@ describe('subagent progress helpers', () => {
   it('parses subagent_id from Grok plain-text ack', () => {
     expect(parseSubagentIdFromText('Subagent started in background.\nsubagent_id: abc-1\n')).toBe('abc-1')
     expect(parseSubagentIdFromText('task_ids=["xyz-9"]')).toBe('xyz-9')
+    expect(parseSubagentIdFromText('Subagent is running in the background.\nAgent ID: sa-9')).toBe('sa-9')
   })
 
   it('requires started-in-background or background+subagent_id for bg ack', () => {
     expect(looksLikeBackgroundSubagentAck('Subagent started in background.\nsubagent_id: x')).toBe(true)
     expect(looksLikeBackgroundSubagentAck('subagent_id: x\nrun in background')).toBe(true)
+    expect(looksLikeBackgroundSubagentAck('Subagent is running in the background.\nAgent ID: sa-9')).toBe(true)
     expect(looksLikeBackgroundSubagentAck('see subagent_id: x in docs')).toBe(false)
   })
 

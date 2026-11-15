@@ -297,6 +297,7 @@ export function parseSubagentOutputFileFromText(text: string | undefined | null)
 export function parseSubagentIdFromText(text: string | undefined | null): string | undefined {
   if (!text) return undefined
   const fromLabel = text.match(/subagent_id:\s*(\S+)/i)?.[1]
+    ?? text.match(/agent id:\s*(\S+)/i)?.[1]
   if (fromLabel) return fromLabel.replace(/[,;]+$/, '')
   const fromTaskIds = text.match(/task_ids?\s*=\s*\[\s*"([^"]+)"/i)?.[1]
   if (fromTaskIds) return fromTaskIds
@@ -307,8 +308,8 @@ export function parseSubagentIdFromText(text: string | undefined | null): string
 
 export function looksLikeBackgroundSubagentAck(text: string | undefined | null): boolean {
   if (!text) return false
-  if (/started in background/i.test(text) || /Created the following subagent:/i.test(text)) return true
-  return /subagent_id:\s*\S+/i.test(text) && /\bbackground\b/i.test(text)
+  if (/started in background/i.test(text) || /running in the background/i.test(text) || /Created the following subagent:/i.test(text)) return true
+  return (/subagent_id:\s*\S+/i.test(text) || /agent id:\s*\S+/i.test(text)) && /\bbackground\b/i.test(text)
 }
 
 /**

@@ -15,16 +15,27 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
+- Control the user's Chrome, and each other connected Chromium browser, through that build's unpacked extension. A mention drives only the browser that has connected. One that has not connected stays on Computer Use when that is on. Settings walks through loading the folder. Stable copies it to `~/.superone/chrome-extension` and stays unpacked until a Chrome Web Store listing exists.
 - Cursor local sessions compact with `/compact`, steer a queued message into the running turn, and accept extra workspace folders. Cloud Cursor sessions still compact on their own and do not take extra folders. A Computer Use call shows as Computer.
-- Preview, diff, and editing share one code editor. The gutter marks added, modified, and deleted lines. Hover a hunk to inspect it, revert it, or add it to chat. Edits autosave. Settings adds Vim mode and relative line numbers (`:set rnu`). Vim mode keeps a Chinese IME from taking its shortcuts.
-- Comment on a selection or a diff hunk. The comment uses the same composer chips as a transcript comment. The pin sits on the first quoted line, and the highlight scrolls with the text.
-- Focus a folder to switch to a sibling, step back to its parent, and list only the git changes under it. Search stays inside that folder.
+- Codex suggests the next prompt from the thread.
+- Float Chat opens as the collapsed bubble. A click still expands it. An agent that asks for floating chat stays expanded.
+- Step back from a focused folder through the level menu. Hover cards list the work still running and the tabs that session opened.
+- Doubao and Gemini calls work on remote sessions.
+- Claude mods support themes, backdrops, a placed composer, and inline command output. A theme stays inside that session's panes.
+- Background a running Claude task.
+- Settings lists what SuperOne keeps on this computer and can reclaim caches, leftover chat snapshots, unused harness copies, and compact the node event log. (#194)
+- Add a project by cloning a repository, or pick an existing local folder with the system picker.
+- A dev desktop deploys its checkout to its own remote node (`~/.superone/dev`, port 7792) instead of the alpha node. (#195)
 
 ### Changed
 
 - The Cursor SDK pin is 1.3.1.
 - Codex runtime 0.169.0.
-- Queued messages have one Steer action, on the desktop and on the phone. Claude delivers the message at the next step and leaves the running tool in place. Codex steers the active turn. Antigravity sends a concurrent prompt and does not cancel the turn. Grok injects the message and leaves the turn running. OpenCode V2 waits for the next safe point. OpenCode V1 keeps the message queued. Cursor delivers queued text into the running local turn. While a steerable turn is streaming, the first Enter on the desktop holds the send for 400ms. A second Enter in that window steers it now, including Codex.
+- Queued messages have one Steer action. Cursor delivers queued text into the running local turn, on the desktop and on the phone.
+- The app drawer no longer repeats a Mini Apps heading under Apps.
+- Remote node install goes through the host's npm. The tarball upload path is gone. An existing `<root>/current` install is still found and upgraded. (#195)
+- A collapsed project keeps the sessions that are waiting on you. A running turn stays inside until you open the project or it needs a person.
+- Scroll-edge fades are a mask. A folder expands after a 100ms hover and opens within 400ms.
 
 ### Removed
 
@@ -32,30 +43,65 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Fixed
 
+- A lone Android QR code still commits when the next camera frame is slow. Barcode analysis is capped at 1080p. That cap ships in the new Android binary.
 - A Cursor compact that starts on its own during another turn no longer removes that turn's reply or a queued `/compact`. A remote Cursor session does not offer `/compact` or extra folders, and `/compact` is not sent to the model as text.
 - Cursor's slash menu lists skills from project and user `.cursor/skills` and `.agents/skills`, including skill folders that are symlinks. User-level names are listed before project names.
-- A remote child uses the target harness permission mode and the Claude sandbox when the spawn leaves them unset. An explicit choice still wins. (#190)
-- Antigravity applies a switch among standard, auto, and bypass by restarting the process and resuming the session. The restart waits while a turn or a background task is still running.
-- An Antigravity scheduled wakeup settles when the agent cancels the timer without a system message. A permission request that arrives after the wakeup still streams, and the next prompt does not replay wakeup text that already rendered.
-- Alpha and stable keep separate Antigravity MCP entries, so the two desktop apps do not overwrite each other's config. SuperOne tool rows on the desktop and on the phone still use the product cards when that server is named `superone-alpha`.
+- Antigravity follows a background task until it finishes, and accepts the xhigh effort level.
+- MCP tool calls accept a JSON string for an object or array argument. (#199)
+- Reply-comment chips stay on remote user messages.
+- The packaged app starts when the electron-vite `__dirname` shim is stripped out of the main chunk.
+- The sidebar shows a spinner while a session settles.
+- The settings model list and effort follow the default provider.
+- Task stop stays hidden when that harness cannot stop a task. A compaction failure stays on one line.
+- A remote subagent opens in the full view. (#197)
+- A Grok background shell (`block_until_ms: 0`) or subagent stays in the activity row after the parent turn ends.
 
-### Performance
+## [0.82.0-alpha] - 2026-11-15
 
-- Syntax highlighting follows the lines on screen, so a large file stays responsive.
+### Added
 
-## [0.81.0-alpha.1] - 2026-11-13
+- Control the user's Chrome, and each other connected Chromium browser, through that build's unpacked extension. A mention drives only the browser that has connected. One that has not connected stays on Computer Use when that is on. Settings walks through loading the folder. Stable copies it to `~/.superone/chrome-extension` and stays unpacked until a Chrome Web Store listing exists.
+- Cursor local sessions compact with `/compact`, steer a queued message into the running turn, and accept extra workspace folders. Cloud Cursor sessions still compact on their own and do not take extra folders. A Computer Use call shows as Computer.
+- Codex suggests the next prompt from the thread.
+- Float Chat opens as the collapsed bubble. A click still expands it. An agent that asks for floating chat stays expanded.
+- Step back from a focused folder through the level menu. Hover cards list the work still running and the tabs that session opened.
+- Doubao and Gemini calls work on remote sessions.
+- Claude mods support themes, backdrops, a placed composer, and inline command output. A theme stays inside that session's panes.
+- Background a running Claude task.
+- Settings lists what SuperOne keeps on this computer and can reclaim caches, leftover chat snapshots, unused harness copies, and compact the node event log. (#194)
+- Add a project by cloning a repository, or pick an existing local folder with the system picker.
+- A dev desktop deploys its checkout to its own remote node (`~/.superone/dev`, port 7792) instead of the alpha node. (#195)
 
 ### Changed
 
-- While a steerable turn is streaming, the first Enter on the desktop holds the send for 400ms. A second Enter in that window steers it now, including Codex.
+- The Cursor SDK pin is 1.3.1.
+- Codex runtime 0.169.0.
+- Queued messages have one Steer action. Cursor delivers queued text into the running local turn, on the desktop and on the phone.
+- The app drawer no longer repeats a Mini Apps heading under Apps.
+- Remote node install goes through the host's npm. The tarball upload path is gone. An existing `<root>/current` install is still found and upgraded. (#195)
+- A collapsed project keeps the sessions that are waiting on you. A running turn stays inside until you open the project or it needs a person.
+- Scroll-edge fades are a mask. A folder expands after a 100ms hover and opens within 400ms.
+
+### Removed
+
+- Cursor local agents no longer have a `superone_session_info` tool. Session id and project directory stay with the bound SuperOne MCP and the Cursor workspace.
 
 ### Fixed
 
-- Antigravity applies a switch among standard, auto, and bypass by restarting the process and resuming the session. The restart waits while a turn or a background task is still running.
-- An Antigravity scheduled wakeup settles when the agent cancels the timer without a system message. A permission request that arrives after the wakeup still streams, and the next prompt does not replay wakeup text that already rendered.
-- Alpha and stable keep separate Antigravity MCP entries, so the two desktop apps do not overwrite each other's config. SuperOne tool rows on the desktop and on the phone still use the product cards when that server is named `superone-alpha`.
+- A lone Android QR code still commits when the next camera frame is slow. Barcode analysis is capped at 1080p. That cap ships in the new Android binary.
+- A Cursor compact that starts on its own during another turn no longer removes that turn's reply or a queued `/compact`. A remote Cursor session does not offer `/compact` or extra folders, and `/compact` is not sent to the model as text.
+- Cursor's slash menu lists skills from project and user `.cursor/skills` and `.agents/skills`, including skill folders that are symlinks. User-level names are listed before project names.
+- Antigravity follows a background task until it finishes, and accepts the xhigh effort level.
+- MCP tool calls accept a JSON string for an object or array argument. (#199)
+- Reply-comment chips stay on remote user messages.
+- The packaged app starts when the electron-vite `__dirname` shim is stripped out of the main chunk.
+- The sidebar shows a spinner while a session settles.
+- The settings model list and effort follow the default provider.
+- Task stop stays hidden when that harness cannot stop a task. A compaction failure stays on one line.
+- A remote subagent opens in the full view. (#197)
+- A Grok background shell (`block_until_ms: 0`) or subagent stays in the activity row after the parent turn ends.
 
-## [0.81.0-alpha] - 2026-11-12
+## [0.81.0] - 2026-11-13
 
 ### Added
 
@@ -65,11 +111,14 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Changed
 
-- Queued messages have one Steer action, on the desktop and on the phone. Claude delivers the message at the next step and leaves the running tool in place. Codex steers the active turn. Antigravity sends a concurrent prompt and does not cancel the turn. Grok injects the message and leaves the turn running. OpenCode V2 waits for the next safe point. OpenCode V1 keeps the message queued.
+- Queued messages have one Steer action, on the desktop and on the phone. Claude delivers the message at the next step and leaves the running tool in place. Codex steers the active turn. Antigravity sends a concurrent prompt and does not cancel the turn. Grok injects the message and leaves the turn running. OpenCode V2 waits for the next safe point. OpenCode V1 keeps the message queued. While a steerable turn is streaming, the first Enter on the desktop holds the send for 400ms. A second Enter in that window steers it now, including Codex.
 
 ### Fixed
 
 - A remote child uses the target harness permission mode and the Claude sandbox when the spawn leaves them unset. An explicit choice still wins. (#190)
+- Antigravity applies a switch among standard, auto, and bypass by restarting the process and resuming the session. The restart waits while a turn or a background task is still running.
+- An Antigravity scheduled wakeup settles when the agent cancels the timer without a system message. A permission request that arrives after the wakeup still streams, and the next prompt does not replay wakeup text that already rendered.
+- Alpha and stable keep separate Antigravity MCP entries, so the two desktop apps do not overwrite each other's config. SuperOne tool rows on the desktop and on the phone still use the product cards when that server is named `superone-alpha`.
 
 ### Performance
 

@@ -71,7 +71,7 @@ import { ContextBar } from './ContextBar'
 import { McpAppContextAttachments } from './McpAppContextAttachments'
 import { ModelSelector } from './ModelSelector'
 import { AddDirPopup, type AddDirPopupHandle } from './AddDirPopup'
-import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
+import { HARNESS_CAPABILITIES, resolveHarnessCapabilities } from '@superone/shared/harness/harness-capabilities'
 import { HARNESS_STRATEGIES, inPlanMode } from '@/harness-ui/strategies'
 import { MAX_PROJECT_EXTRA_DIRS } from '@superone/shared/project-extra-dirs'
 import { markStartup } from '@superone/shared/startup-marks'
@@ -340,7 +340,11 @@ export function ChatInput({
     const resolvedCodexProviderId = useResolvedProviderId('codex')
     // One folder set for every harness now — nothing swaps with the provider.
     const slashPolicy = HARNESS_STRATEGIES[activeProviderForResources].slash
-    const supportsAdditionalDirs = HARNESS_CAPABILITIES[activeProviderForResources]?.supportsAdditionalDirs ?? false
+    // A node can turn compact and extra roots off for a one-shot Cursor session.
+    // Desktop local sessions have no runtime override, so the static flags stay on.
+    const harnessCapabilities = resolveHarnessCapabilities(activeProviderForResources, runtimeCapabilities)
+    const supportsAdditionalDirs = harnessCapabilities.supportsAdditionalDirs
+    const supportsCompact = harnessCapabilities.supportsCompact
     const promptKeywords = HARNESS_CAPABILITIES[activeProviderForResources].promptKeywords
     // The border says what the next turn will do differently.
     const borderMode = useMemo(
@@ -587,6 +591,9 @@ export function ChatInput({
       const host: SlashCommandInfo[] = [
         { name: 'clear', description: t('chat.acpCommands.clearDesc'), argumentHint: '', isSkill: false },
         { name: 'mcp', description: t('chat.codexCommands.mcpDesc'), argumentHint: '', isSkill: false },
+        ...(supportsCompact
+          ? [{ name: 'compact', description: t('chat.codexCommands.compactDesc'), argumentHint: '', isSkill: false }]
+          : []),
       ]
       const hostNames = new Set(host.map((cmd) => cmd.name))
       const seenFs = new Set<string>()
@@ -599,7 +606,7 @@ export function ChatInput({
         return [{ ...item, name }]
       })
       return [...host, ...fromFs]
-    }, [t, cursorFsSlashItems])
+    }, [t, cursorFsSlashItems, supportsCompact])
 
     // Each harness owns an explicit catalog and can never inherit Claude entries.
     // `/add-dir` is the one exception: it is a host command over a harness-neutral
@@ -2239,7 +2246,7 @@ export function ChatInput({
                 <span>{t('chat.acpCommands.loading')}</span>
               </div>
             )}
-            <div className="min-h-0 flex-1 overflow-y-auto">
+            <div className="min-h-0 flex-1 overflow-y-auto overscroll-contain">
               <SlashCommandSuggestions
                 commands={matchingCommands}
                 selectedIndex={slashIndex}

@@ -72,8 +72,11 @@ export function reduceUsage(
           isCompacting: false,
           compactingStartedAt: null,
           compactError: event.compactError || 'Compaction failed',
-          _pendingCompactUserId: '',
-          _pendingSlashCommand: '',
+          // An automatic summary can fail while `/compact` is still parked.
+          ...(event.compactTrigger === 'auto' ? {} : {
+            _pendingCompactUserId: '',
+            _pendingSlashCommand: '',
+          }),
         }
       }
       return { isCompacting: false, compactingStartedAt: null }

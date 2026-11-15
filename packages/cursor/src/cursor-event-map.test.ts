@@ -278,19 +278,26 @@ describe('mapInteractionUpdate', () => {
     expect(events.some((e) => e.type === 'todos_updated')).toBe(true)
   })
 
-  it('emits summary text from summary payload (not only summary-completed)', () => {
-    const fromSummary = mapInteractionUpdate('m1', {
+  it('does not paste summary text into the transcript', () => {
+    expect(mapInteractionUpdate('m1', {
       type: 'summary',
       summary: 'compacted context',
-    } as never)
-    expect(fromSummary[0]).toMatchObject({
-      type: 'content_delta',
-      delta: { type: 'text', text: '\ncompacted context\n' },
-    })
-
+    } as never)).toEqual([])
     expect(mapInteractionUpdate('m1', {
       type: 'summary-completed',
     } as never)).toEqual([])
+  })
+
+  it('names a computerUse tool call Computer', () => {
+    const events = mapInteractionUpdate('m1', {
+      type: 'tool-call-started',
+      callId: 'cu1',
+      toolCall: { type: 'computerUse', args: { action: 'screenshot' } },
+    } as never)
+    expect(events[0]).toMatchObject({
+      type: 'content_delta',
+      delta: { type: 'tool_use', toolName: 'Computer' },
+    })
   })
 
   it('maps todos payloads and task-started aliases', () => {
@@ -875,6 +882,61 @@ describe('mapSdkMessageLifecycle', () => {
         input: JSON.stringify({ sessionId: 's1' }),
       },
     })
+  })
+
+  it('maps a summary message onto compact events and not transcript text', () => {
+    const running = mapSdkMessageLifecycle('m1', {
+      type: 'summary',
+      agent_id: 'a',
+      run_id: 'r',
+      status: 'running',
+    })
+    expect(running).toEqual([{ type: 'status_indicator', indicator: 'compacting' }])
+
+    const completed = mapSdkMessageLifecycle('m1', {
+      type: 'summary',
+      agent_id: 'a',
+      run_id: 'r',
+      status: 'completed',
+      fallback: true,
+    }, { compactTrigger: 'manual', preTokens: 40 })
+    expect(completed).toEqual([
+      { type: 'compact_boundary', trigger: 'manual', preTokens: 40, messageId: 'm1' },
+      { type: 'status_indicator', indicator: null, compactResult: 'success' },
+    ])
+
+    const failed = mapSdkMessageLifecycle('m1', {
+      type: 'summary',
+      agent_id: 'a',
+      run_id: 'r',
+      status: 'error',
+    })
+    expect(failed).toEqual([{
+      type: 'status_indicator',
+      indicator: null,
+      compactResult: 'failed',
+      compactTrigger: 'auto',
+    }])
+
+    const manualFailed = mapSdkMessageLifecycle('m1', {
+      type: 'summary',
+      agent_id: 'a',
+      run_id: 'r',
+      status: 'error',
+    }, { compactTrigger: 'manual' })
+    expect(manualFailed).toEqual([{ type: 'status_indicator', indicator: null, compactResult: 'failed' }])
+
+    const automatic = mapSdkMessageLifecycle('m1', {
+      type: 'summary',
+      agent_id: 'a',
+      run_id: 'r',
+      status: 'completed',
+    })
+    expect(automatic).toEqual([
+      { type: 'compact_boundary', trigger: 'auto', preTokens: 0 },
+      { type: 'status_indicator', indicator: null, compactResult: 'success' },
+    ])
+    expect(automatic[0]).not.toHaveProperty('messageId')
   })
 })
 

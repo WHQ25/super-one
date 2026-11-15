@@ -187,6 +187,23 @@ describe('reduceUsage: status_indicator', () => {
     } as never)
     expect(patch.compactError).toBe('Compaction failed')
   })
+
+  it('keeps a parked /compact when an automatic compaction fails', () => {
+    const session = {
+      ...createDefaultPerSessionState(),
+      _pendingCompactUserId: 'u-compact',
+      _pendingSlashCommand: 'compact',
+    }
+    const patch = reduceUsage(session, {
+      type: 'status_indicator',
+      indicator: null,
+      compactResult: 'failed',
+      compactTrigger: 'auto',
+    } as never)
+    expect(patch.compactError).toBe('Compaction failed')
+    expect(patch._pendingCompactUserId).toBeUndefined()
+    expect(patch._pendingSlashCommand).toBeUndefined()
+  })
 })
 
 describe('reduceUsage: rate_limit', () => {

@@ -84,6 +84,31 @@
 - **Guard:** Source-level contract; combined logout behavior has no asserted
   product guarantee here.
 
+## Local summarize, steer, and extra roots (SDK 1.3.1)
+
+- **Behavior:** `SDKAgent.summarize()` is local only. It throws `ConfigurationError`
+  on cloud agents, before a saved conversation, and while another run is active.
+  The method takes no options, so a summary run has no `onDelta`. Stream
+  `SDKSummaryMessage` is the compact UI: `error` leaves the conversation
+  unchanged, and `fallback: true` is still a boundary. Summary text is not
+  rendered as a chat bubble. `Run.steer` returns `complete_delivered` or
+  `revert_to_followup` and has no persistent queue. `LocalAgentOptions.dirs`
+  is create/resume only; `cwd` stays the shell and the store scope. Cloud
+  create options omit `dirs`.
+- **Observed:** Installed `@cursor/sdk` `1.3.1` `agent.d.ts`, `run.d.ts`,
+  `options.d.ts`, `messages.d.ts`, and the package README “Summarize the
+  conversation” section.
+- **Depends on it:** `packages/cursor/src/cursor-runtime.ts`,
+  `cursor-event-map.ts`, `cursor-local-options.ts`, and desktop
+  `cursor-backend.ts`. `/compact` is intercepted before a turn. Desktop queue
+  policy is `always`. Node one-shot turns report queued steer, compact, and
+  additional directories off, and reject a `/compact` prompt.
+  `AgentOptions.systemPrompt` is not set.
+- **Guard:** `cursor-runtime.session-controls.test.ts`,
+  `cursor-event-map.test.ts`, `cursor-workspace-prewarm.test.ts`, and desktop
+  `cursor-backend.session-controls.test.ts`. Live account and cloud runs are
+  not covered.
+
 ## Fork and context claims
 
 - **Behavior:** The adapter's weak fork creates a blank provider agent, so it

@@ -30,6 +30,7 @@ export function toolDisplayName(name: string): string {
   if (n.includes('image')) return 'GenerateImage'
   if (n.includes('plan')) return 'CreatePlan'
   if (n === 'recordscreen') return 'RecordScreen'
+  if (n === 'computeruse') return 'Computer'
   return name
 }
 
@@ -745,16 +746,8 @@ export function mapInteractionUpdate(
     case 'summary':
     case 'summary-started':
     case 'summary-completed': {
-      // SDK: text lives on `summary`; `summary-completed` is often an empty marker.
-      // Emit when we have payload text; ignore empty started/completed markers.
-      const text = strField(update, 'text') || strField(update, 'summary')
-      if (text) {
-        events.push({
-          type: 'content_delta',
-          messageId,
-          delta: { type: 'text', text: `\n${text}\n` },
-        })
-      }
+      // The summary text repeats history the chat already shows. Compact UI
+      // comes from the run stream's SDKSummaryMessage, once per compaction.
       break
     }
     case 'step-started':
@@ -897,7 +890,12 @@ export class CursorTurnCallIdBridge {
 export function mapSdkMessageLifecycle(
   messageId: string,
   message: SDKMessage,
-  options?: { includeContent?: boolean },
+  options?: {
+    includeContent?: boolean
+    /** `manual` for `agent.summarize()`; automatic compaction during a send is `auto`. */
+    compactTrigger?: 'manual' | 'auto'
+    preTokens?: number
+  },
 ): AgentEvent[] {
   const events: AgentEvent[] = []
   const includeContent = options?.includeContent === true
@@ -960,6 +958,33 @@ export function mapSdkMessageLifecycle(
     }
     case 'tool_call': {
       if (includeContent) events.push(...mapToolCallMessage(messageId, message))
+      break
+    }
+    case 'summary': {
+      const trigger = options?.compactTrigger ?? 'auto'
+      const preTokens = options?.preTokens ?? 0
+      if (message.status === 'running') {
+        events.push({ type: 'status_indicator', indicator: 'compacting' })
+      } else if (message.status === 'error') {
+        events.push({
+          type: 'status_indicator',
+          indicator: null,
+          compactResult: 'failed',
+          // A manual `/compact` failure still clears its parked bubble id.
+          ...(trigger === 'auto' ? { compactTrigger: 'auto' as const } : {}),
+        })
+      } else {
+        // `completed`, including `fallback: true` — a trimmed transcript still frees context.
+        // Auto boundaries must not carry the live assistant id: reducers delete that id
+        // only for a manual command, and the live row is the conversation.
+        events.push({
+          type: 'compact_boundary',
+          trigger,
+          preTokens,
+          ...(trigger === 'manual' ? { messageId } : {}),
+        })
+        events.push({ type: 'status_indicator', indicator: null, compactResult: 'success' })
+      }
       break
     }
     case 'task': {

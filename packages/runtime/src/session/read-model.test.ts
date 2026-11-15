@@ -106,6 +106,20 @@ describe('SessionReadModel', () => {
     } finally { release(); await node.runtime.dispose() }
   })
 
+  it('reports cursor one-shot turns without compact, steer, or extra roots', async () => {
+    const node = boot(dbPath(), async input => { input.onInputAccepted?.(); return { finalText: 'done' } })
+    const session = node.runtime.create({ projectId: 'p', harnessId: 'cursor' })
+    await node.runtime.send({ sessionId: session.sessionId, text: 'hi', clientMessageId: 'hi', client, ...lease })
+    await until(() => node.runtime.get(session.sessionId)?.status === 'idle')
+    expect(node.runtime.load({ sessionId: session.sessionId }).state.runtimeCapabilities).toMatchObject({
+      harnessId: 'cursor',
+      supportsQueuedSteer: false,
+      supportsCompact: false,
+      supportsAdditionalDirs: false,
+    })
+    await node.runtime.dispose()
+  })
+
   it('retains an idle provider warning across restart without turning it into user input', async () => {
     const path = dbPath()
     let emitAmbient: ((event: AgentEvent) => void) | undefined

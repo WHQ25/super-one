@@ -94,8 +94,8 @@ supplies resource reads and View calls through the shared MCP Apps executor;
 agent calls use the existing mini-app approval gate. Cloud and remote-node
 sessions keep their existing paths. See [MCP Apps](../../features/mcp-apps.md).
 
-Local custom tools provide session metadata and the awaiting question bridge
-(`superone_ask_user_question`). They are not exposed to cloud agents. A completed
+The local custom tool is the awaiting question bridge
+(`superone_ask_user_question`). It is not exposed to cloud agents. A completed
 `createPlan` call triggers host plan review; the backend owns the follow-up
 decision. Executor-owned tool gates still apply, including terminal command
 confirmation: the SDK does not provide a host approval hook for custom tools.
@@ -150,7 +150,12 @@ Runtime, mapper, model selection, store, network retry, platform binary and cust
 tool tests live in `packages/cursor/src`; desktop backend/interactions and IPC
 have colocated checks. UI changes require the matching production stories.
 
-`HARNESS_CAPABILITIES.cursor` remains the feature contract: MCP, plan, todos,
-subagents and streaming tool input are enabled; manual compact, queued steering,
-additional directories, true transcript fork and goal controls are not. Further
-work is in [backlog](backlog.md), not an obsolete 15-PR implementation plan.
+`HARNESS_CAPABILITIES.cursor` remains the feature contract. MCP, plan, todos,
+subagents, streaming tool input, local manual compact, desktop queued steering,
+and additional directories are enabled. Cloud agents compact on their own and
+do not take extra roots. Node one-shot turns report queued steer, compact, and
+additional directories off. A `/compact` prompt on that path is rejected and is
+not sent to the model. True transcript fork and goal controls stay off. The
+[1.3.1 ledger](api-surface.md)
+covers only the symbols that bump uses. Further work is in
+[backlog](backlog.md).

@@ -193,10 +193,13 @@ export function reduceSlash(
 
     case 'compact_boundary': {
       const compactUserId = session._pendingCompactUserId
-      const { messages: msgs, index } = compactUserId
+      // An automatic summary shares the live assistant id. Only a manual
+      // `/compact` boundary replaces that command's bubble and blank reply.
+      const manual = event.trigger === 'manual' && Boolean(compactUserId)
+      const { messages: msgs, index } = manual
         ? withoutManualCompactTurn(session.messages, compactUserId, event.messageId)
         : { messages: [...session.messages], index: compactBoundaryInsertIndex(session.messages) }
-      const source = compactUserId ? undefined : msgs[index]
+      const source = manual ? undefined : msgs[index]
       const row = buildCompactBoundaryMessage(event, event.id ?? ports.id('compact_'), new Date(ports.now()).toISOString(), source, msgs)
       // Main materialises the same row (same id) into its snapshot; a replay
       // that already delivered it must not add a second divider.
@@ -206,8 +209,11 @@ export function reduceSlash(
         compactingStartedAt: null,
         compactError: null,
         messages: msgs,
-        _pendingCompactUserId: '',
-        ...(compactUserId ? { _pendingSlashCommand: '' } : {}),
+        ...(manual
+          ? { _pendingCompactUserId: '', _pendingSlashCommand: '' }
+          : compactUserId
+            ? {}
+            : { _pendingCompactUserId: '' }),
       }
     }
 

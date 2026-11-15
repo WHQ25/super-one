@@ -26,7 +26,6 @@ vi.mock('../mcp-config-service', () => ({
 }))
 
 import { buildCursorMcpServers, stripStdioCwd, toCursorMcpConfig } from './cursor-mcp'
-import { buildCursorCustomTools } from './cursor-custom-tools'
 
 describe('toCursorMcpConfig', () => {
   it('maps stdio servers', () => {
@@ -95,14 +94,5 @@ describe('stripStdioCwd', () => {
     })
     expect(stripped.local).toEqual({ type: 'stdio', command: 'node', args: ['s.js'] })
     expect(stripped.remote).toEqual({ type: 'http', url: 'https://example.com' })
-  })
-})
-
-describe('buildCursorCustomTools', () => {
-  it('exposes superone_session_info', async () => {
-    const tools = buildCursorCustomTools({ sessionId: 's1', cwd: '/proj' })
-    expect(tools.superone_session_info).toBeDefined()
-    const result = await tools.superone_session_info.execute({}, {})
-    expect(result).toMatchObject({ sessionId: 's1', cwd: '/proj', host: 'superone' })
   })
 })

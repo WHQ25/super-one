@@ -58,6 +58,12 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
     pendingPlanApproval: null as unknown,
     awaitingAssistantReply: false,
     pluginStatus: {} as Record<string, string>,
+    runtimeCapabilities: undefined as undefined | {
+      harnessId: HarnessId
+      supportsCompact?: boolean
+      supportsAdditionalDirs?: boolean
+      supportsQueuedSteer?: boolean
+    },
   }
 
   const chatActions = {
@@ -489,6 +495,7 @@ beforeEach(() => {
   activeSessionState.projectExtraDirs = []
   activeSessionState.additionalDirsDirty = false
   activeSessionState.messages = []
+  activeSessionState.runtimeCapabilities = undefined
   useCodexRealtimeViewStore.setState({ sessions: {} })
   sessionScope.value = null
   goalState.threadId = undefined
@@ -1473,8 +1480,35 @@ describe('ChatInput slash command grouping', () => {
     expect(labels.some((label) => label.startsWith('/review'))).toBe(true)
     expect(labels.some((label) => label.startsWith('/ship'))).toBe(true)
     expect(labels.some((label) => label.startsWith('/workflows'))).toBe(false)
-    expect(labels.some((label) => label.startsWith('/compact'))).toBe(false)
+    expect(labels.some((label) => label.startsWith('/compact'))).toBe(true)
+    expect(labels.some((label) => label.startsWith('/add-dir'))).toBe(true)
     expect(labels.some((label) => label.startsWith('/tdd'))).toBe(false)
+    expect(screen.getAllByRole('button').some((button) => (button.textContent ?? '').includes('Claude compact'))).toBe(false)
+  })
+
+  it('hides Cursor /compact and /add-dir when the live session cannot compact or take extra roots', () => {
+    activeSessionState.preferredProvider = 'cursor'
+    activeSessionState.sessionProvider = 'cursor'
+    activeSessionState.runtimeCapabilities = {
+      harnessId: 'cursor',
+      supportsCompact: false,
+      supportsAdditionalDirs: false,
+      supportsQueuedSteer: false,
+    }
+
+    const { rerender } = render(<ChatInput />)
+    typeInEditor('/')
+    rerender(<ChatInput />)
+
+    const labels = screen
+      .getAllByRole('button')
+      .map((b) => b.querySelector('.font-medium')?.textContent ?? '')
+      .filter(Boolean)
+
+    expect(labels.some((label) => label.startsWith('/clear'))).toBe(true)
+    expect(labels.some((label) => label.startsWith('/mcp'))).toBe(true)
+    expect(labels.some((label) => label.startsWith('/compact'))).toBe(false)
+    expect(labels.some((label) => label.startsWith('/add-dir'))).toBe(false)
   })
 
   // The popup and a typed send share one slash policy; send-message.test.ts covers the typed side.

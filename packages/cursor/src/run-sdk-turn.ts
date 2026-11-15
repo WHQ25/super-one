@@ -40,6 +40,11 @@ export async function runCursorSdkTurn(
   if (opts.signal?.aborted) {
     throw new Error('Cursor turn interrupted')
   }
+  // Desktop local sessions intercept this before a turn. A one-shot runner
+  // has no summarize path, so the literal command must not reach the model.
+  if (opts.prompt.trim() === '/compact') {
+    throw new Error('Cursor one-shot sessions cannot compact')
+  }
 
   const messageId = opts.messageId ?? `cursor-turn-${Date.now()}`
   let finalText = ''

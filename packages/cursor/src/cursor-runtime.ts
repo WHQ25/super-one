@@ -7,6 +7,7 @@ import type {
   SDKArtifact,
   SDKUserMessage,
   SendOptions,
+  SteerAckOutcome,
 } from '@cursor/sdk'
 import { isCursorSdkError, loadCursorSdk } from './cursor-sdk'
 import type {
@@ -126,6 +127,12 @@ export interface CursorRuntimeOptions {
    * Cloud agents ignore this — they already run in an isolated VM.
    */
   sandboxEnabled?: boolean
+  /**
+   * Extra workspace roots for a local agent (`local.dirs`). The primary `cwd`
+   * stays the default shell and the store scope. Ignored for cloud agents.
+   * Applied on create and resume; a live agent picks them up by rebuilding.
+   */
+  additionalDirectories?: string[]
   model?: string
   /** Full SDK model selection (id + params). Wins over bare `model`. */
   modelSelection?: ModelSelection
@@ -173,6 +180,16 @@ export interface CursorRuntime {
   readonly isCloud: boolean
   readonly lastRunId: string | null
   send(messageId: string, text: string, options?: CursorSendOptions): Promise<CursorSendResult>
+  /**
+   * Local manual compaction. Cloud agents compact on their own and this throws
+   * before calling the SDK. Cancel or error leaves the conversation unchanged.
+   */
+  summarize(preTokens?: number): Promise<void>
+  /**
+   * Inject text into the active local run. `revert_to_followup` means the
+   * caller still owns the text and should send it as the next ordinary message.
+   */
+  steer(text: string): Promise<SteerAckOutcome>
   cancel(): Promise<void>
   close(): Promise<void>
   /** Update model id and/or params for the next send. */
@@ -256,12 +273,10 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
   const config = plan.config
   const buildMcpServers = opts.buildMcpServers ?? (() => ({}))
   const interactions = opts.interactions
-  const customTools = isCloud
+  const customTools = isCloud || !interactions
     ? undefined
     : buildCursorCustomTools({
-        sessionId: opts.sessionId,
-        cwd: opts.cwd,
-        ...(interactions ? { askUser: (request) => interactions.askQuestion(request) } : {}),
+        askUser: (request) => interactions.askQuestion(request),
       })
   // customTools are local-only, so the hint must not promise cloud agents a tool they lack.
   const hostContextExtra = !isCloud && interactions
@@ -296,6 +311,18 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
     isCloud,
   }, opts.sessionId)
 
+  const localAgentOptions = (sandbox: boolean) => ({
+    cwd: opts.cwd,
+    store: getCursorAgentStore(opts.userDataRoot, opts.cwd),
+    settingSources,
+    sandboxOptions: { enabled: sandbox },
+    // Session permission UI owns autoReview; static config must not override.
+    autoReview: perm.autoReview,
+    enableAgentRetries: plan.enableAgentRetries,
+    ...(plan.additionalDirs.length ? { dirs: plan.additionalDirs } : {}),
+    ...(customTools ? { customTools } : {}),
+  })
+
   const openAgent = (sandbox: boolean): Promise<SDKAgent> => withCursorPlatformLookup(async () => {
     if (opts.providerSessionId) {
       return Agent.resume(opts.providerSessionId, {
@@ -308,18 +335,7 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
         ...disallowedOpt,
         ...(isCloud
           ? { cloud: buildCloudOptions(config) }
-          : {
-              local: {
-                cwd: opts.cwd,
-                store: getCursorAgentStore(opts.userDataRoot, opts.cwd),
-                settingSources,
-                sandboxOptions: { enabled: sandbox },
-                // Session permission UI owns autoReview; static config must not override.
-                autoReview: perm.autoReview,
-                enableAgentRetries: plan.enableAgentRetries,
-                ...(customTools ? { customTools } : {}),
-              },
-            }),
+          : { local: localAgentOptions(sandbox) }),
       })
     }
     if (isCloud) {
@@ -340,16 +356,7 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
       mcpServers,
       ...toolsOpt,
       ...disallowedOpt,
-      local: {
-        cwd: opts.cwd,
-        store: getCursorAgentStore(opts.userDataRoot, opts.cwd),
-        settingSources,
-        sandboxOptions: { enabled: sandbox },
-        // Session permission UI owns autoReview; static config must not override.
-        autoReview: perm.autoReview,
-        enableAgentRetries: plan.enableAgentRetries,
-        ...(customTools ? { customTools } : {}),
-      },
+      local: localAgentOptions(sandbox),
     })
   })
 
@@ -461,11 +468,83 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
       return agent.downloadArtifact(path)
     },
 
+    async summarize(preTokens = 0) {
+      if (disposed) throw new Error('Cursor runtime disposed')
+      if (isCloud) throw new Error('Cursor cloud agents compact on their own')
+      if (currentRun) throw new Error('Cursor agent is busy')
+      const messageId = `cursor_compact_${Date.now()}`
+      opts.onEvent({ type: 'status_indicator', indicator: 'compacting' })
+      let run: Run
+      try {
+        run = await agent.summarize()
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        opts.onEvent({
+          type: 'status_indicator',
+          indicator: null,
+          compactResult: 'failed',
+          compactError: message,
+        })
+        throw formatCursorError(error)
+      }
+      currentRun = run
+      let settled = false
+      const note = (event: AgentEvent) => {
+        if (event.type === 'compact_boundary' || (event.type === 'status_indicator' && event.compactResult)) {
+          settled = true
+        }
+        opts.onEvent(event)
+      }
+      try {
+        if (run.supports('stream')) {
+          for await (const message of run.stream()) {
+            for (const event of mapSdkMessageLifecycle(messageId, message, {
+              includeContent: false,
+              compactTrigger: 'manual',
+              preTokens,
+            })) {
+              note(event)
+            }
+          }
+        }
+        const result = await run.wait()
+        if (result.status === 'error' || result.status === 'cancelled') {
+          if (!settled) {
+            note({
+              type: 'status_indicator',
+              indicator: null,
+              compactResult: 'failed',
+              compactError: result.error?.message ?? (
+                result.status === 'cancelled' ? 'Cursor summarize was cancelled' : 'Cursor summarize failed'
+              ),
+            })
+          }
+          throw new Error(result.error?.message ?? (
+            result.status === 'cancelled' ? 'Cursor summarize was cancelled' : 'Cursor summarize failed'
+          ))
+        }
+        if (!settled) {
+          note({ type: 'compact_boundary', trigger: 'manual', preTokens, messageId })
+          note({ type: 'status_indicator', indicator: null, compactResult: 'success' })
+        }
+      } finally {
+        currentRun = null
+      }
+    },
+
+    async steer(text) {
+      const run = currentRun
+      if (!run?.steer) return 'revert_to_followup'
+      return run.steer(text)
+    },
+
     async send(messageId, text, sendOpts) {
       if (disposed) throw new Error('Cursor runtime disposed')
       const permLocal = mapPermissionToCursorLocal(permissionMode)
-      // Cursor SDK has no system/developer instruction option. Send host context
-      // on the first regular turn of each runtime, including cold resumes.
+      // `AgentOptions.systemPrompt` replaces Cursor's built-in harness prompt,
+      // is account-gated, and is not stored on the agent. Keep SuperOne host
+      // context on the first regular user message of each runtime, including
+      // cold resumes.
       const includeHostContext = !hostContextSent && !text.trimStart().startsWith('/')
       const prompt = includeHostContext ? `${superoneHostContext(hostContextExtra)}\n\n${text}` : text
       const userMessage: string | SDKUserMessage = sendOpts?.images?.length
@@ -600,6 +679,8 @@ export async function createCursorRuntime(opts: CursorRuntimeOptions): Promise<C
             tracer.sdk(cursorSdkType(message, 'stream'), message, messageId)
             for (const event of mapSdkMessageLifecycle(messageId, message, {
               includeContent: false,
+              compactTrigger: 'auto',
+              preTokens: sendOpts?.previousContextTokens ?? 0,
             })) {
               opts.onEvent(event)
             }

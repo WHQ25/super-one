@@ -5293,7 +5293,9 @@ function registerIpcHandlers(): void {
     const knownProjects = getRecentFolders().map((f) => f.path)
     if (knownProjects.length > 0 && !isPathAtOrWithinAllowed(projectPath, knownProjects)) return []
     const { discoverCursorSkillsAndCommands } = await import('@superone/cursor')
-    return discoverCursorSkillsAndCommands(projectPath)
+    let homeDir: string | undefined
+    try { homeDir = app.getPath('home') } catch { /* os.homedir() inside discover */ }
+    return discoverCursorSkillsAndCommands(projectPath, homeDir ? { homeDir } : undefined)
   })
 
   ipcMain.handle(AgentIpcChannels.CURSOR_LIST_AGENTS, async (_e, opts?: {

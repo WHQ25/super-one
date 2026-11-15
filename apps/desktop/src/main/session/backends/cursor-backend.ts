@@ -18,6 +18,7 @@ import {
   CursorInteractionRegistry,
   cursorPlanFollowUpText,
   mapCursorContextUsageInfo,
+  readCursorConfig,
   resolveCursorContextWindow,
   type CursorPlanDecision,
   type CursorRuntimeInteractions,
@@ -32,7 +33,8 @@ import {
   setCursorRuntimeFactory,
 } from '../../cursor/cursor-runtime'
 import { getCachedHarnessResources } from '../../database'
-import type { BackendStartOptions, HarnessId, SendDelivery, SessionBackend, TaskNotificationSendOptions } from '../types'
+import { QueuedUserMessageQueue } from '../queued-user-message-queue'
+import type { BackendCommand, BackendStartOptions, HarnessId, SendDelivery, SessionBackend, TaskNotificationSendOptions } from '../types'
 
 export { setCursorRuntimeFactory }
 
@@ -102,6 +104,17 @@ export class CursorBackend implements SessionBackend {
    * request is dequeued; every queued decision keeps its own identity until then.
    */
   private planFollowUps = new Map<string, { generation: number; decision: CursorPlanDecision }>()
+  /** True while `/compact` is driving `agent.summarize()` and no assistant turn is open. */
+  private compacting = false
+  /** Set when this compaction already emitted success or failure, so a throw does not emit twice. */
+  private sawCompactResult = false
+  private readonly queued = new QueuedUserMessageQueue({
+    isBusy: () => Boolean(this.activeTurn) || this.compacting,
+    isAlive: () => this.opts !== null && !this.disposed,
+    emit: (event) => this.emit(event),
+    send: (request, delivery) => this.send(request, delivery),
+    warn: (message, err) => log.warn(`[CursorBackend] ${message}:`, err),
+  })
 
   async start(opts: BackendStartOptions): Promise<void> {
     if (this.disposed) throw new Error('CursorBackend already disposed')
@@ -155,6 +168,7 @@ export class CursorBackend implements SessionBackend {
       sandboxEnabled: opts.sandboxInfo?.enabled ?? false,
       model: this.model ?? opts.model,
       agentName: opts.agentName,
+      additionalDirectories: opts.additionalDirectories,
       systemPromptAppend: opts.systemPromptAppend,
       config: opts.config,
       onEvent: () => undefined,
@@ -198,6 +212,7 @@ export class CursorBackend implements SessionBackend {
       model: modelId,
       modelSelection,
       agentName: opts.agentName,
+      additionalDirectories: opts.additionalDirectories,
       systemPromptAppend: opts.systemPromptAppend,
       config: opts.config,
       interactions: this.runtimeInteractions(),
@@ -205,6 +220,7 @@ export class CursorBackend implements SessionBackend {
         if (event.type === 'message_usage' && typeof event.contextTokens === 'number' && event.contextTokens > 0) {
           this.lastContextTokens = event.contextTokens
         }
+        if (event.type === 'status_indicator' && event.compactResult) this.sawCompactResult = true
         this.emit(event)
       },
       onProviderSessionId: (id) => {
@@ -227,6 +243,20 @@ export class CursorBackend implements SessionBackend {
 
   async send(request: SendMessageRequest, delivery?: SendDelivery): Promise<void> {
     if (!this.started || this.disposed) throw new Error('CursorBackend not started')
+    if (this.queued.intercept(request, delivery)) return
+    // `/compact` is not a prompt. Local agents call `summarize()` and open no
+    // turn, so the model never sees the command.
+    if (request.content.trim() === '/compact') {
+      if (this.activeTurn) throw new Error('CursorBackend already has an active turn')
+      this.compacting = true
+      try {
+        await this.compactNow()
+      } finally {
+        this.compacting = false
+        this.queued.flush()
+      }
+      return
+    }
     if (this.activeTurn) throw new Error('CursorBackend already has an active turn')
 
     const messageId = request.assistantMessageId
@@ -342,6 +372,33 @@ export class CursorBackend implements SessionBackend {
       this.activeTurn = null
       this.currentMessageId = null
       if (this.activeSendOp === op) this.activeSendOp = null
+      this.queued.flush()
+    }
+  }
+
+  /**
+   * Compaction emits its own indicator. A throw before that (cloud, busy, no
+   * conversation) still needs a failure, or the composer hears nothing.
+   * No assistant turn was opened, so the session leaves streaming from here.
+   */
+  private async compactNow(): Promise<void> {
+    this.sawCompactResult = false
+    try {
+      const runtime = await this.ensureRuntime()
+      await runtime.summarize(this.lastContextTokens)
+    } catch (error) {
+      if (!this.sawCompactResult) {
+        const message = error instanceof Error ? error.message : String(error)
+        this.sawCompactResult = true
+        this.emit({
+          type: 'status_indicator',
+          indicator: null,
+          compactResult: 'failed',
+          compactError: message,
+        })
+      }
+    } finally {
+      this.emit({ type: 'status_change', status: 'idle' })
     }
   }
 
@@ -385,6 +442,7 @@ export class CursorBackend implements SessionBackend {
   async close(): Promise<void> {
     this.disposed = true
     this.started = false
+    this.queued.clear()
     if (this.activeSendOp) this.activeSendOp.cancelled = true
     if (this.currentMessageId) this.complete(this.currentMessageId, true)
     this.planGeneration += 1
@@ -676,8 +734,55 @@ export class CursorBackend implements SessionBackend {
     })
   }
 
-  dequeueMessage(_clientMessageId: string): boolean {
-    return false
+  /**
+   * Extra roots apply on the next local create/resume. A live runtime cannot
+   * grow `local.dirs`, so the session rebuilds when this returns false.
+   * Cloud agents have no extra roots; reporting applied avoids a useless rebuild.
+   */
+  async setAdditionalDirectories(dirs: string[]): Promise<boolean> {
+    if (!this.opts) return true
+    this.opts.additionalDirectories = [...dirs]
+    if (!this.localDirsApply()) return true
+    return !this.runtime && !this.runtimePromise
+  }
+
+  private localDirsApply(): boolean {
+    if (this.runtime?.isCloud) return false
+    if (!this.opts) return false
+    const config = readCursorConfig(this.opts.config)
+    return config.runtime !== 'cloud' && !this.opts.providerSessionId?.startsWith('bc-')
+  }
+
+  dequeueMessage(clientMessageId: string): boolean {
+    return this.queued.dequeue(clientMessageId)
+  }
+
+  async handleCommand(cmd: BackendCommand): Promise<void> {
+    if (cmd.kind !== 'cursor.steer_queued') return
+    // Leave the item queued when this run cannot take it. Flush sends it as
+    // the next ordinary message. Images are not text, and `steer` is text-only.
+    const runtime = this.runtime
+    if (this.compacting || !this.activeTurn || this.interrupted || this.disposed || !runtime?.steer) return
+    const taken = this.queued.take(cmd.clientMessageId)
+    if (!taken) throw new Error(`Queued Cursor message not found: ${cmd.clientMessageId}`)
+    const text = taken.request.content.trim()
+    if (!text || (taken.request.images?.length ?? 0) > 0) {
+      this.queued.restore(taken)
+      return
+    }
+    try {
+      const outcome = await runtime.steer(text)
+      if (outcome !== 'complete_delivered') {
+        this.queued.restore(taken)
+        if (!this.activeTurn && !this.compacting && !this.interrupted && !this.disposed) this.queued.flush()
+        return
+      }
+      taken.delivery?.onInputAccepted()
+      this.emit({ type: 'queued_message_consumed', clientMessageId: cmd.clientMessageId })
+    } catch (error) {
+      this.queued.restore(taken)
+      throw error
+    }
   }
 
   getPendingInteractions(): AgentEvent[] {

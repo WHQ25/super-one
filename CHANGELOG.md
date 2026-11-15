@@ -15,17 +15,25 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
+- Cursor local sessions compact with `/compact`, steer a queued message into the running turn, and accept extra workspace folders. Cloud Cursor sessions still compact on their own and do not take extra folders. A Computer Use call shows as Computer.
 - Preview, diff, and editing share one code editor. The gutter marks added, modified, and deleted lines. Hover a hunk to inspect it, revert it, or add it to chat. Edits autosave. Settings adds Vim mode and relative line numbers (`:set rnu`). Vim mode keeps a Chinese IME from taking its shortcuts.
 - Comment on a selection or a diff hunk. The comment uses the same composer chips as a transcript comment. The pin sits on the first quoted line, and the highlight scrolls with the text.
 - Focus a folder to switch to a sibling, step back to its parent, and list only the git changes under it. Search stays inside that folder.
 
 ### Changed
 
+- The Cursor SDK pin is 1.3.1.
 - Codex runtime 0.169.0.
-- Queued messages have one Steer action, on the desktop and on the phone. Claude delivers the message at the next step and leaves the running tool in place. Codex steers the active turn. Antigravity sends a concurrent prompt and does not cancel the turn. Grok injects the message and leaves the turn running. OpenCode V2 waits for the next safe point. OpenCode V1 keeps the message queued. While a steerable turn is streaming, the first Enter on the desktop holds the send for 400ms. A second Enter in that window steers it now, including Codex.
+- Queued messages have one Steer action, on the desktop and on the phone. Claude delivers the message at the next step and leaves the running tool in place. Codex steers the active turn. Antigravity sends a concurrent prompt and does not cancel the turn. Grok injects the message and leaves the turn running. OpenCode V2 waits for the next safe point. OpenCode V1 keeps the message queued. Cursor delivers queued text into the running local turn. While a steerable turn is streaming, the first Enter on the desktop holds the send for 400ms. A second Enter in that window steers it now, including Codex.
+
+### Removed
+
+- Cursor local agents no longer have a `superone_session_info` tool. Session id and project directory stay with the bound SuperOne MCP and the Cursor workspace.
 
 ### Fixed
 
+- A Cursor compact that starts on its own during another turn no longer removes that turn's reply or a queued `/compact`. A remote Cursor session does not offer `/compact` or extra folders, and `/compact` is not sent to the model as text.
+- Cursor's slash menu lists skills from project and user `.cursor/skills` and `.agents/skills`, including skill folders that are symlinks. User-level names are listed before project names.
 - A remote child uses the target harness permission mode and the Claude sandbox when the spawn leaves them unset. An explicit choice still wins. (#190)
 - Antigravity applies a switch among standard, auto, and bypass by restarting the process and resuming the session. The restart waits while a turn or a background task is still running.
 - An Antigravity scheduled wakeup settles when the agent cancels the timer without a system message. A permission request that arrives after the wakeup still streams, and the next prompt does not replay wakeup text that already rendered.

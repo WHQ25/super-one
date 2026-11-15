@@ -5,7 +5,7 @@ import { codexAsyncAnswerContent, isCodexAsyncAnswer } from '@superone/shared/co
 import { anchorAsyncAnswer } from '@superone/shared/transcript-boundary'
 import log from '../logger'
 
-const steerKinds = ['codex.steer', 'codex.steer_queued', 'claude.steer_queued', 'acp.steer_queued', 'dsh.steer_queued', 'opencode.steer_queued'] as const
+const steerKinds = ['codex.steer', 'codex.steer_queued', 'claude.steer_queued', 'acp.steer_queued', 'dsh.steer_queued', 'opencode.steer_queued', 'cursor.steer_queued'] as const
 type SteerCommand = Extract<BackendCommand, { kind: typeof steerKinds[number] }>
 
 export function isBackendSteerCommand(cmd: BackendCommand): cmd is SteerCommand {
@@ -37,6 +37,7 @@ export async function dispatchBackendSteer(cmd: SteerCommand, host: {
       'acp.steer_queued': ['acp', 'ACP'],
       'dsh.steer_queued': ['dsh', 'DeepSeek'],
       'opencode.steer_queued': ['opencode', 'OpenCode'],
+      'cursor.steer_queued': ['cursor', 'Cursor'],
     }[cmd.kind]
     const matches = harness === 'acp' ? isAcpProtocolHarness(host.harnessId) : host.harnessId === harness
     if (!matches || !host.streaming) {

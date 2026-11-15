@@ -110,7 +110,7 @@ describe('createCursorRuntime host interactions bridge', () => {
 
     const tools = createdCustomTools()
     expect(tools).toBeDefined()
-    expect(Object.keys(tools!)).toEqual(expect.arrayContaining(['superone_session_info', CURSOR_ASK_USER_QUESTION_TOOL]))
+    expect(Object.keys(tools!)).toEqual([CURSOR_ASK_USER_QUESTION_TOOL])
 
     const result = await tools![CURSOR_ASK_USER_QUESTION_TOOL]!.execute(
       { questions: [{ question: 'Which database?', options: [{ label: 'Postgres' }, { label: 'SQLite' }] }] },
@@ -132,7 +132,7 @@ describe('createCursorRuntime host interactions bridge', () => {
 
   it('omits the question tool and hint when no host resolver is wired', async () => {
     await makeRuntime(undefined)
-    expect(Object.keys(createdCustomTools() ?? {})).toEqual(['superone_session_info'])
+    expect(createdCustomTools()).toBeUndefined()
   })
 
   it('tells the model to use the host question tool in the system context', async () => {

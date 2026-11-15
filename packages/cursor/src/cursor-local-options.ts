@@ -1,7 +1,7 @@
 /**
  * Shared local-agent options for Agent.create and official workspace prewarm.
- * Executor cache keys on cwd / apiKey / settingSources / sandbox / MCP /
- * autoReview — these must match or the first send still pays the workspace cost.
+ * Executor cache keys on cwd / extra dirs / apiKey / settingSources / sandbox /
+ * MCP / autoReview — these must match or the first send still pays the workspace cost.
  */
 
 import type { AgentOptions, McpServerConfig, SettingSource } from '@cursor/sdk'
@@ -17,6 +17,19 @@ import { stripStdioCwd } from './cursor-mcp-map'
 
 export const DEFAULT_CURSOR_SETTING_SOURCES: SettingSource[] = ['project', 'user']
 
+/** Trim, drop blanks, and drop duplicates. `cwd` stays the primary root. */
+export function cursorAdditionalDirs(dirs: readonly string[] | undefined): string[] {
+  const seen = new Set<string>()
+  const out: string[] = []
+  for (const raw of dirs ?? []) {
+    const dir = raw.trim()
+    if (!dir || seen.has(dir)) continue
+    seen.add(dir)
+    out.push(dir)
+  }
+  return out
+}
+
 export interface CursorLocalSessionPlan {
   apiKey: string | undefined
   config: CursorConfig
@@ -26,6 +39,8 @@ export interface CursorLocalSessionPlan {
   sandboxRequested: boolean
   perm: { mode: 'agent' | 'plan'; autoReview: boolean }
   enableAgentRetries: boolean
+  /** Extra workspace roots. Empty for cloud agents, which have no `local.dirs`. */
+  additionalDirs: string[]
   mcpServers: Record<string, McpServerConfig>
 }
 
@@ -35,6 +50,7 @@ export function resolveCursorLocalSessionPlan(input: {
   config: unknown
   permissionMode: PermissionMode
   sandboxEnabled?: boolean
+  additionalDirectories?: readonly string[]
   providerSessionId?: string
   resolveApiKey?: (config: unknown) => string | undefined
   buildMcpServers?: (cwd: string, sessionId: string) => Record<string, McpServerConfig>
@@ -60,6 +76,7 @@ export function resolveCursorLocalSessionPlan(input: {
     sandboxRequested,
     perm,
     enableAgentRetries: config.enableAgentRetries ?? true,
+    additionalDirs: isCloud ? [] : cursorAdditionalDirs(input.additionalDirectories),
     mcpServers,
   }
 }
@@ -79,6 +96,7 @@ export function buildCursorWorkspaceAgentOptions(
       sandboxOptions: { enabled: plan.sandboxEnabled },
       autoReview: plan.perm.autoReview,
       enableAgentRetries: plan.enableAgentRetries,
+      ...(plan.additionalDirs.length ? { dirs: plan.additionalDirs } : {}),
     },
   }
 }
@@ -86,6 +104,7 @@ export function buildCursorWorkspaceAgentOptions(
 export function cursorWorkspacePrewarmKey(cwd: string, plan: CursorLocalSessionPlan): string {
   return JSON.stringify({
     cwd,
+    additionalDirs: plan.additionalDirs,
     settingSources: plan.settingSources,
     sandboxEnabled: plan.sandboxEnabled,
     autoReview: plan.perm.autoReview,

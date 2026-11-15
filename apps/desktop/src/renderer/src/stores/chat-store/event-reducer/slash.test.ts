@@ -375,6 +375,32 @@ describe('reduceSlash: compact_boundary', () => {
     expect(msgs.map((m) => m.providerId === 'system' ? 'divider' : m.id)).toEqual(['divider', 'u1'])
     expect(patch._pendingSlashCommand).toBe('')
   })
+
+  it('keeps a parked /compact and the streaming reply when an automatic boundary arrives', () => {
+    const session = createDefaultPerSessionState()
+    session._pendingCompactUserId = 'u-compact'
+    session._pendingSlashCommand = 'compact'
+    session.messages = [
+      makeMessage('u1', { role: 'user' }),
+      makeMessage('a-live', { role: 'assistant', status: 'streaming' }),
+      makeMessage('u-compact', { role: 'user' }),
+    ]
+
+    const patch = reduceSlash(session, {
+      type: 'compact_boundary',
+      trigger: 'auto',
+      preTokens: 80,
+      messageId: 'a-live',
+    } as never)
+
+    const msgs = patch.messages!
+    const compactIdx = msgs.findIndex((m) => m.providerId === 'system')
+    expect(msgs.some((m) => m.id === 'a-live')).toBe(true)
+    expect(msgs.some((m) => m.id === 'u-compact')).toBe(true)
+    expect(compactIdx).toBe(msgs.findIndex((m) => m.id === 'a-live') - 1)
+    expect(patch._pendingCompactUserId).toBeUndefined()
+    expect(patch._pendingSlashCommand).toBeUndefined()
+  })
 })
 
 describe('reduceSlash: slash_command_output', () => {

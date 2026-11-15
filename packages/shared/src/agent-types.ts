@@ -2147,7 +2147,19 @@ export type AgentEventBase =
      */
     id?: string
   }
-  | { type: 'status_indicator'; indicator: 'compacting' | null; permissionMode?: PermissionMode; compactResult?: 'success' | 'failed'; compactError?: string }
+  | {
+    type: 'status_indicator'
+    indicator: 'compacting' | null
+    permissionMode?: PermissionMode
+    compactResult?: 'success' | 'failed'
+    compactError?: string
+    /**
+     * An automatic summary can fail while a manual `/compact` is still parked.
+     * `auto` leaves that command's bubble id in place. Absent means the failure
+     * belongs to the manual command, so the bubble stays and tracking clears.
+     */
+    compactTrigger?: 'manual' | 'auto'
+  }
   | {
     type: 'task_started'
     taskId: string

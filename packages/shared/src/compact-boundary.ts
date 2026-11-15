@@ -50,10 +50,11 @@ export function isCompactSlashBubble(message: ChatMessage): boolean {
 /**
  * Harnesses whose `/compact` turn is pure command: the CLI compacts and replies
  * nothing, so the bubble and its blank reply are dropped once the boundary
- * lands. Codex answers with "Conversation compacted." and keeps its turn; ACP
- * compacts outside a turn.
+ * lands. Cursor is included: the desktop backend intercepts `/compact` before a
+ * turn and emits the boundary itself. Codex answers with "Conversation compacted."
+ * and keeps its turn; ACP compacts outside a turn.
  */
-const COMPACT_SLASH_HARNESSES = new Set<HarnessId>(['claude', 'opencode', 'dsh'])
+const COMPACT_SLASH_HARNESSES = new Set<HarnessId>(['claude', 'opencode', 'dsh', 'cursor'])
 
 export function isCompactSlashSend(harnessId: HarnessId, content: string): boolean {
   return COMPACT_SLASH_HARNESSES.has(harnessId) && content.trim() === '/compact'

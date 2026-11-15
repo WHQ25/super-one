@@ -9,7 +9,7 @@ import type { HarnessStrategy } from '../strategy'
 
 export const cursorStrategy: HarnessStrategy = {
   selection: neutralSelection,
-  queuePolicy: 'never',
+  queuePolicy: 'always',
   sendStartsStreaming: true,
   slash: { hostCommands: ['clear', 'mcp'], expandsPromptBody: true },
   seed: (session, { state }) => {

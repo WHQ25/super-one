@@ -238,6 +238,11 @@ export type BackendCommand =
       clientMessageId: string
     }
   | {
+      /** Cursor `run.steer`. `revert_to_followup` keeps the message queued. */
+      kind: 'cursor.steer_queued'
+      clientMessageId: string
+    }
+  | {
       kind: 'codex.plan_approval'
       messageId: string
       status: 'approved' | 'rejected'

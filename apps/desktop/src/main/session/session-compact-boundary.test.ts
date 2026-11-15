@@ -149,6 +149,43 @@ describe('manual /compact transcript cleanup', () => {
     expect(session.snapshot.messages).toHaveLength(5)
   })
 
+  it('keeps a parked /compact and the live reply when an automatic boundary arrives', async () => {
+    const { session, emit } = fixture([
+      msg('u1', 'user'),
+      msg('a-live', 'assistant', { status: 'streaming' }),
+    ])
+    const sending = session.send({ content: '/compact', assistantMessageId: 'a-compact' })
+    await vi.waitFor(() => expect(session.snapshot.messages.some((m) => m.id.startsWith('user_'))).toBe(true))
+
+    emit({ type: 'compact_boundary', trigger: 'auto', preTokens: 10, messageId: 'a-live' })
+    const afterAuto = session.snapshot.messages
+    const divider = systemRows(afterAuto)[0]
+    expect(afterAuto.map((m) => m.id)).toContain('a-live')
+    expect(afterAuto.some((m) => m.id.startsWith('user_'))).toBe(true)
+    expect(afterAuto.findIndex((m) => m.id === divider.id)).toBe(afterAuto.findIndex((m) => m.id === 'a-live') - 1)
+
+    emit({ ...boundary, trigger: 'manual', messageId: 'a-compact' } as AgentEvent)
+    expect(session.snapshot.messages.some((m) => m.id.startsWith('user_'))).toBe(false)
+    expect(session.snapshot.messages.map((m) => m.id)).toContain('a-live')
+    await sending
+  })
+
+  it('keeps a parked /compact when an automatic compaction fails, so the later manual boundary can drop it', async () => {
+    const { session, emit } = fixture([
+      msg('u1', 'user'),
+      msg('a-live', 'assistant', { status: 'streaming' }),
+    ])
+    const sending = session.send({ content: '/compact', assistantMessageId: 'a-compact' })
+    await vi.waitFor(() => expect(session.snapshot.messages.some((m) => m.id.startsWith('user_'))).toBe(true))
+
+    emit({ type: 'status_indicator', indicator: null, compactResult: 'failed', compactTrigger: 'auto', compactError: 'summary failed' })
+    emit({ ...boundary, trigger: 'manual', messageId: 'a-compact' } as AgentEvent)
+
+    expect(session.snapshot.messages.some((m) => m.id.startsWith('user_'))).toBe(false)
+    expect(session.snapshot.messages.map((m) => m.id)).toContain('a-live')
+    await sending
+  })
+
   it('leaves Codex alone: its "/compact" turn carries the reply', async () => {
     const { session, emit } = fixture([msg('u1', 'user')], 'codex')
     const sending = await sendCompact(session, emit)

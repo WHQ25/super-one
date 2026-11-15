@@ -2486,13 +2486,19 @@ export class Session implements SessionContract {
     }
     if (event.type === 'status_indicator') {
       this._compacting = event.indicator === 'compacting'
-      if (event.compactResult === 'failed') this._pendingCompactUserId = ''
+      // An automatic summary can fail while `/compact` is still parked.
+      if (event.compactResult === 'failed' && event.compactTrigger !== 'auto') this._pendingCompactUserId = ''
     } else if (event.type === 'compact_boundary') {
       this._compacting = false
     }
     // The divider row's id travels on the event so every reducer mints the same row,
-    // and so does a turn's completion time.
-    if (event.type === 'compact_boundary' && !event.boundary && !this._pendingCompactUserId) {
+    // and so does a turn's completion time. A manual command drops its own bubble,
+    // so that boundary is not anchored on the live reply.
+    if (
+      event.type === 'compact_boundary' &&
+      !event.boundary &&
+      !(event.trigger === 'manual' && this._pendingCompactUserId)
+    ) {
       const source = this._messages[compactBoundaryInsertIndex(this._messages)]
       if (source) event = { ...event, boundary: captureTranscriptBoundary(source, this._messages) }
     }
@@ -2679,14 +2685,15 @@ export class Session implements SessionContract {
     // a session opened after compaction (mobile, desktop reload) has no boundary.
     if (event.type === 'compact_boundary') {
       const compactUserId = this._pendingCompactUserId
-      this._pendingCompactUserId = ''
+      // Auto summaries share the live assistant id. Only a manual `/compact`
+      // boundary replaces that command's bubble and blank reply.
+      const manual = event.trigger === 'manual' && Boolean(compactUserId)
+      if (manual) this._pendingCompactUserId = ''
       if (event.id && !this._messages.some((m) => m.id === event.id)) {
-        // Manual: the "/compact" bubble and its reply are the command, not the
-        // conversation — the divider replaces them.
-        const { messages: next, index: insertIdx } = compactUserId
+        const { messages: next, index: insertIdx } = manual
           ? withoutManualCompactTurn(this._messages, compactUserId, event.messageId ?? this._currentMessageId)
           : { messages: [...this._messages], index: compactBoundaryInsertIndex(this._messages) }
-        next.splice(insertIdx, 0, buildCompactBoundaryMessage(event, event.id, new Date().toISOString(), compactUserId ? undefined : next[insertIdx], next))
+        next.splice(insertIdx, 0, buildCompactBoundaryMessage(event, event.id, new Date().toISOString(), manual ? undefined : next[insertIdx], next))
         // Incremental persistence only rewrites dirty rows; removing rows or
         // inserting mid-transcript shifts every sort_order after the change.
         this.replaceMessages(next, { fullPersist: next.length !== this._messages.length + 1 || insertIdx < this._messages.length })

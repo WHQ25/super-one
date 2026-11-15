@@ -1674,6 +1674,10 @@ export class SessionRuntime {
         capabilities: {
           harnessId: session.harnessId as HarnessId,
           supportsQueuedSteer: session.harnessId === 'claude' || session.harnessId === 'codex',
+          // One-shot Cursor turns cannot compact, steer, or take extra roots.
+          ...(session.harnessId === 'cursor'
+            ? { supportsCompact: false, supportsAdditionalDirs: false }
+            : {}),
         },
       })
       this.events.appendSession({

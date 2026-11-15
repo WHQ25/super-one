@@ -61,6 +61,15 @@ describe('prewarmCursorLocalWorkspace', () => {
     }))
   })
 
+  it('puts extra roots on the workspace options and changes the lease key', async () => {
+    await prewarmCursorLocalWorkspace(makeOpts({ additionalDirectories: [' /extra ', '/extra', ''] }))
+    expect(prewarmLocalWorkspace).toHaveBeenCalledWith(expect.objectContaining({
+      local: expect.objectContaining({ cwd: '/repo', dirs: ['/extra'] }),
+    }))
+    await prewarmCursorLocalWorkspace(makeOpts({ additionalDirectories: ['/other'] }))
+    expect(prewarmLocalWorkspace).toHaveBeenCalledTimes(2)
+  })
+
   it('does not acquire a second lease for the same workspace key', async () => {
     await prewarmCursorLocalWorkspace(makeOpts())
     await prewarmCursorLocalWorkspace(makeOpts())

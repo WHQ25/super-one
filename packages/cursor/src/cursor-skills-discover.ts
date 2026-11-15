@@ -43,26 +43,32 @@ function listDirents(dir: string): Dirent[] {
 }
 
 /**
- * Discover Cursor slash catalog entries under project + user `.cursor` dirs.
- * Project entries override the same name from the user dir.
+ * Discover Cursor slash catalog entries under project and user skill dirs.
+ * Project entries override the same name from the user dir. Within one scope,
+ * `.cursor/skills` wins over `.agents/skills`. A skill folder may be a symlink.
+ * User-only names are returned first so they stay visible above a long project list.
  */
 export function discoverCursorSkillsAndCommands(
   projectRoot: string,
   opts?: { homeDir?: string | null },
 ): SlashCommandInfo[] {
-  const items: SlashCommandInfo[] = []
+  const projectSkills: SlashCommandInfo[] = []
+  const userSkills: SlashCommandInfo[] = []
+  const commands: SlashCommandInfo[] = []
   const seenSkills = new Set<string>()
   const seenCommands = new Set<string>()
 
-  const scanSkills = (dir: string) => {
+  const scanSkills = (dir: string, into: SlashCommandInfo[]) => {
     for (const ent of listDirents(dir)) {
-      if (!ent.isDirectory()) continue
+      // `isDirectory()` is false for a symlink. Cursor skill folders are often
+      // links into `.agents/skills`, and `existsSync` follows them.
+      if (!ent.isDirectory() && !ent.isSymbolicLink()) continue
       const skillMd = join(dir, ent.name, 'SKILL.md')
       if (!existsSync(skillMd)) continue
       if (seenSkills.has(ent.name)) continue
       seenSkills.add(ent.name)
       const fm = parseSimpleFrontmatter(safeReadText(skillMd))
-      items.push({
+      into.push({
         name: ent.name,
         description: fm.description ?? '',
         argumentHint: resolveArgumentHint(fm),
@@ -79,7 +85,7 @@ export function discoverCursorSkillsAndCommands(
       seenCommands.add(name)
       const content = safeReadText(join(dir, ent.name))
       const fm = parseSimpleFrontmatter(content)
-      items.push({
+      commands.push({
         name,
         description: fm.description ?? firstMarkdownHeading(content),
         argumentHint: resolveArgumentHint(fm),
@@ -94,13 +100,15 @@ export function discoverCursorSkillsAndCommands(
       ? homedir()
       : opts.homeDir || ''
 
-  // Project first so it overrides the same user-level name.
-  scanSkills(join(projectRoot, '.cursor', 'skills'))
+  // Project first so it claims the name. User-only skills are emitted first.
+  scanSkills(join(projectRoot, '.cursor', 'skills'), projectSkills)
+  scanSkills(join(projectRoot, '.agents', 'skills'), projectSkills)
   scanCommands(join(projectRoot, '.cursor', 'commands'))
   if (home) {
-    scanSkills(join(home, '.cursor', 'skills'))
+    scanSkills(join(home, '.cursor', 'skills'), userSkills)
+    scanSkills(join(home, '.agents', 'skills'), userSkills)
     scanCommands(join(home, '.cursor', 'commands'))
   }
 
-  return items
+  return [...userSkills, ...projectSkills, ...commands]
 }

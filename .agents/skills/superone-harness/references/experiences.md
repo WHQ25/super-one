@@ -39,12 +39,12 @@ same claim, and the two drift.
 | Plan mode | ✅ host | ✅ | ✅ agent-driven | ✅ | ✅ | ❌ |
 | Todos | ✅ | ❌ | ✅ `todos_updated` | ✅ | ✅ | ✅ |
 | Subagents | ✅ | ❌ | ❌ | ✅ | ✅ | ❌ |
-| Compact | ✅ | ✅ | ✅ `/compact` → `x.ai/compact_conversation` | ✅ | ❌ | ❌ |
+| Compact | ✅ | ✅ | ✅ `/compact` → `x.ai/compact_conversation` | ✅ | ✅ desktop local `/compact`; cloud self-compacts; node one-shot off | ❌ |
 | Streaming tool input | ✅ | ❌ | ❌ | ✅ desktop V2 + paired phone | ✅ | ❌ |
 | Sandbox toggle | ✅ off/on/auto | folded into presets | ❌ | ❌ | ✅ off/on | ❌ |
-| Slash commands | ✅ | ✅ | ✅ | ✅ | host + `.cursor` FS | ❌ |
+| Slash commands | ✅ | ✅ | ✅ | ✅ | host + `.cursor` and `.agents/skills` | ❌ |
 | Session recap | ❌ | ❌ | ✅ grok only | ❌ | ❌ | ❌ |
-| Steer mid-turn | ✅ `priority: next` | ✅ `turn/steer` | ✅ `x.ai/interject` (agy: concurrent `session/prompt`) | ✅ V2 `delivery: steer` | ❌ | ❌ |
+| Steer mid-turn | ✅ `priority: next` | ✅ `turn/steer` | ✅ `x.ai/interject` (agy: concurrent `session/prompt`) | ✅ V2 `delivery: steer` | ✅ desktop local `run.steer` | ❌ |
 | Typed failure code | ✅ SDK enum | ⚠️ text + retry count | ⚠️ JSON-RPC code + status | ⚠️ SDK error name | ⚠️ text only | ⚠️ text only |
 
 ---
@@ -185,7 +185,11 @@ Set `supportsPlanMode` only when approve **and** reject both change what the age
 
 Both dispatches must be exhaustive over `ChatProvider`; do not add a `default` branch. A harness must
 **never** fall through to Claude's placeholder or project-level skills. Cursor lists host `/mcp`
-`/clear` plus scanned `.cursor/skills` and `.cursor/commands` — never Claude's catalog. A harness
+and `/clear`, plus `/compact` when the resolved session can compact (sent as text; the desktop
+backend intercepts it before a turn) and scanned project plus user `~/.cursor/skills`, `.agents/skills`, and `.cursor/commands`. Skill folders may be symlinks. A project name wins a clash; other user skills are listed first.
+`/add-dir` comes from the resolved `supportsAdditionalDirs`, not from that catalog. A node
+one-shot Cursor session reports both off, so the composer does not offer them. Cursor never
+shows Claude's catalog. A harness
 without slash support still needs an explicit empty catalog. Otherwise the UI advertises commands
 that will not run, and a new harness appears to speak Claude's vocabulary without any type error.
 

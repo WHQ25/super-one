@@ -281,11 +281,16 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsSubagents: true,
     supportsTaskStop: false,
     supportsTaskBackground: false,
-    supportsCompact: false,
+    // Local `agent.summarize()` and automatic SDKSummaryMessage on the run stream.
+    // Cloud agents compact on their own; the host does not call summarize().
+    // Node one-shot turns report this false on `session_capabilities`.
+    supportsCompact: true,
     supportsStreamingToolInput: true,
-    supportsQueuedSteer: false,
-    // Single cwd; multi-root parked in the harness design doc.
-    supportsAdditionalDirs: false,
+    // Desktop local runs: `run.steer()`. Node one-shot turns report this false.
+    supportsQueuedSteer: true,
+    // Local `local.dirs` on create/resume. Cloud agents have no extra roots.
+    // Node one-shot turns report this false.
+    supportsAdditionalDirs: true,
     // SDK has no transcript-fork API; the adapter creates a blank agent.
     supportsFork: false,
     supportsContextUsage: true,

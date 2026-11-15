@@ -6,7 +6,7 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@super
 import { cn } from '@superone/ui/lib/utils'
 import { shortenPath } from '@/lib/path-utils'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
-import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
+import { resolveHarnessCapabilities } from '@superone/shared/harness/harness-capabilities'
 
 type DirScope = 'project' | 'session'
 
@@ -21,6 +21,7 @@ export function ChatInputDirsHint() {
   const sessionScope = useSessionScope()
   const sessionId = useActiveSession((s) => sessionScope?.sessionId ?? s._activeSessionId)
   const provider = useActiveSession((s) => resolveProvider(s))
+  const runtimeCapabilities = useActiveSession((s) => s.runtimeCapabilities)
   const sessionDirs = useActiveSession((s) => s.additionalDirs)
   const projectDirs = useActiveSession((s) => s.projectExtraDirs)
   const messagesLen = useActiveSession((s) => s.messages.length)
@@ -32,7 +33,7 @@ export function ChatInputDirsHint() {
   )
 
   // A harness that reads only its cwd would show folders it silently ignores.
-  if (!HARNESS_CAPABILITIES[provider]?.supportsAdditionalDirs) return null
+  if (!resolveHarnessCapabilities(provider, runtimeCapabilities).supportsAdditionalDirs) return null
   if (hasRealtimeTimeline) return null
   if (messagesLen > 0 && !dirty) return null
 

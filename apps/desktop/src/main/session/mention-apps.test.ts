@@ -39,16 +39,29 @@ describe('mention app grants', () => {
 
   it('grants every desktop app to Computer Use when the extension is disconnected', async () => {
     const result = await authorizeMentionApps('sid', '/proj', { miniappIds: [], desktopApps: apps }, () => {})
-    expect(state.granted).toEqual(['com.apple.Notes', 'com.google.Chrome', 'company.thebrowser.Browser'])
-    expect(result).toEqual({ miniappIds: [], desktopAppsGranted: true, chromeBrowserBundleIds: [] })
+    // Computer Use grants exist only on macOS. Other hosts still record that no browser took the mention.
+    if (process.platform === 'darwin') {
+      expect(state.granted).toEqual(['com.apple.Notes', 'com.google.Chrome', 'company.thebrowser.Browser'])
+      expect(result.desktopAppsGranted).toBe(true)
+    } else {
+      expect(state.granted).toEqual([])
+      expect(result.desktopAppsGranted).toBe(false)
+    }
+    expect(result.miniappIds).toEqual([])
+    expect(result.chromeBrowserBundleIds).toEqual([])
   })
 
   it('keeps only the connected browser off the Computer Use grant', async () => {
     state.connected = true
     state.browsers = ['chrome']
     const result = await authorizeMentionApps('sid', '/proj', { miniappIds: [], desktopApps: apps }, () => {})
-    expect(state.granted).toEqual(['com.apple.Notes', 'company.thebrowser.Browser'])
+    if (process.platform === 'darwin') {
+      expect(state.granted).toEqual(['com.apple.Notes', 'company.thebrowser.Browser'])
+      expect(result.desktopAppsGranted).toBe(true)
+    } else {
+      expect(state.granted).toEqual([])
+      expect(result.desktopAppsGranted).toBe(false)
+    }
     expect(result.chromeBrowserBundleIds).toEqual(['com.google.Chrome'])
-    expect(result.desktopAppsGranted).toBe(true)
   })
 })

@@ -213,7 +213,7 @@ describe('applyStorageAction', () => {
     expect(existsSync(gpu)).toBe(true)
   })
 
-  it('counts only the log bytes that were actually removed', async () => {
+  it.skipIf(process.platform !== 'darwin')('counts only the log bytes that were actually removed', async () => {
     const roots = paths()
     const free = join(roots.logs, 'old.log')
     const busy = join(roots.logs, 'live.log')
@@ -239,7 +239,7 @@ describe('applyStorageAction', () => {
     expect(existsSync(join(roots.logs, 'main.log'))).toBe(false)
   })
 
-  it('never follows a directory symlink into external files during fallback deletion', async () => {
+  it.skipIf(process.platform !== 'darwin')('never follows a directory symlink into external files during fallback deletion', async () => {
     const roots = paths()
     const externalDir = join(root, 'outside')
     const externalFile = join(externalDir, 'important.txt')

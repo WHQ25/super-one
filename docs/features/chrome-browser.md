@@ -57,13 +57,16 @@ no native host, such as Edge Beta — stays on Computer Use when that is on.
 With Computer Use off, only the connected browsers appear in `@`.
 
 Each SuperOne variant has its own unpacked extension. Load
-`~/.superone/dev/chrome-extension` or `~/.superone/alpha/chrome-extension`
-once. The path is that variant's own home and does not follow an inherited
-`SUPERONE_HOME`. Dev and alpha link their files to the source tree and link
-the icon to that variant's app icon, so later source edits stay on the same
-loaded directory. `bun run dev` retargets the Dev links at the checkout
-that just started, including a git worktree, before Electron starts. Stable copies its files into `~/.superone/chrome-extension`
-because a packaged app has no live checkout. The directory itself is real.
+`~/.superone/dev/chrome-extension`, `~/.superone/alpha/chrome-extension`, or
+`~/.superone/chrome-extension` for stable once. The path is that variant's
+own home and does not follow an inherited `SUPERONE_HOME`. Dev and alpha
+link their files to the source tree and link the icon to that variant's app
+icon, so later source edits stay on the same loaded directory. `bun run dev`
+retargets the Dev links at the checkout that just started, including a git
+worktree, before Electron starts. The stable installer ships the same
+extension source and copies it into `~/.superone/chrome-extension`. Until
+the extension is listed on the Chrome Web Store, stable users load that
+folder the same way as alpha. The directory itself is real.
 The manifest name is the product name plus the app version, which is the text
 Chrome shows on the debugger banner. Reload the extension after an app update
 so Chrome picks up a new name.

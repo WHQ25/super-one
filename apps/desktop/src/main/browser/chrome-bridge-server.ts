@@ -116,6 +116,8 @@ export function startChromeBridge(): void {
       iconPath: extensionIconPath(),
       productName: variant().productName,
       version: app.getVersion(),
+      // Stable copies the packaged source. Users load that folder unpacked
+      // until a Chrome Web Store listing exists.
       linkSource: variantName !== 'stable',
     })
     log.info('[chrome-bridge] extension ready at %s', extensionDir)

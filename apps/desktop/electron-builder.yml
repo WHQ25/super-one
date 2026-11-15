@@ -84,6 +84,8 @@ extraResources:
     to: icons/alpha.png
   - from: build/icon-dev.png
     to: icons/dev.png
+  # Unpacked extension for every variant, including stable. Stable users load
+  # this copy until the extension is listed on the Chrome Web Store.
   - from: ../chrome-extension
     to: chrome-extension
     filter:

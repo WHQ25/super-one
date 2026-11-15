@@ -184,7 +184,7 @@ describe('HeaderSessionMenu item set', () => {
     await user.click(screen.getByRole('menuitem', { name: 'Float Chat' }))
 
     expect(useActivityPanelStore.getState()).toMatchObject({ showPanel: true, chatFloating: true, maximized: false })
-    expect(useChatStore.getState().isOpen).toBe(true)
+    expect(useChatStore.getState().isOpen).toBe(false)
 
     await user.click(trigger(container) as HTMLElement)
     await user.click(await screen.findByRole('menuitem', { name: 'Dock Chat' }))

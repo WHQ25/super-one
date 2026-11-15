@@ -52,13 +52,16 @@ export function setActivityPanelShown(show: boolean): void {
  * Float the chat over the whole activity panel — every group stays as laid out, no
  * tab is maximized — or dock it back as the column beside the panel. Docking also
  * leaves a maximized tab, since that is the other thing that floats the chat.
+ *
+ * `expanded` defaults to the open floating window. The Float Chat menu passes
+ * false so the chat lands as the collapsed bubble.
  */
-export function setChatFloating(floating: boolean): void {
+export function setChatFloating(floating: boolean, options?: { expanded?: boolean }): void {
   const ap = useActivityPanelStore.getState()
   if (floating) {
     setActivityPanelShown(true)
     ap.setChatFloating(true)
-    useChatStore.setState({ isOpen: true })
+    useChatStore.setState({ isOpen: options?.expanded !== false })
     return
   }
   if (ap.maximized) restoreActivityPanel()

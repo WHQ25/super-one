@@ -164,7 +164,10 @@ export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string
 
   if (!entry && !isLive) return null
 
-  const chatView = { floating: chatFloating, onToggle: () => setChatFloating(!chatFloating) }
+  const chatView = {
+    floating: chatFloating,
+    onToggle: () => setChatFloating(!chatFloating, chatFloating ? undefined : { expanded: false }),
+  }
   const isSettled = fetchedSettled ?? entry?.isSettled === true
 
   // Header menu acts on the session you are already reading, so it deliberately

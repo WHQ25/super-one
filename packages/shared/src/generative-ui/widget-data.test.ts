@@ -26,6 +26,20 @@ describe('readWidgetShowArgs', () => {
   it('coerces a missing title to an empty string, as the host does', () => {
     expect(readWidgetShowArgs({ widget_code: '<div/>' }).title).toBe('')
   })
+
+  it('reads data and reusable when a proxy stored them as JSON strings', () => {
+    const args = {
+      title: 'gallery',
+      widget_code: '<div/>',
+      data: '{"n":1}',
+      reusable: '{"id":"gallery","inputSchema":{"type":"object"}}',
+    }
+    expect(readWidgetShowArgs(args)).toMatchObject({
+      data: { n: 1 },
+      reusable: { id: 'gallery', inputSchema: { type: 'object' } },
+    })
+    expect(widgetDataFromInput(JSON.stringify(args))?.widget_code).toContain('"n":1')
+  })
 })
 
 describe('buildWidgetData', () => {

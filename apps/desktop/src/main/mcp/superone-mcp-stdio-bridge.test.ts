@@ -81,6 +81,29 @@ describe('superone-mcp-stdio-bridge tool registration parity', () => {
     expect(names).toContain('widget_show')
     expect(names).toContain('widget_save')
 
+    const widgetShow = listed.tools.find((tool) => tool.name === 'widget_show')
+    const showProps = widgetShow?.inputSchema.properties as Record<string, { type?: string; description?: string; properties?: Record<string, unknown> }>
+    expect(showProps.widget_code?.description).toContain('HTML or SVG')
+    expect(showProps.template?.description).toContain('@native/')
+    expect(showProps.data?.description).toContain('JSON object')
+    expect(showProps.data?.type).toBe('object')
+    expect(showProps.reusable?.properties).toHaveProperty('id')
+    expect(showProps.width?.description).toContain('800')
+    expect(showProps.height?.description).toContain('600')
+    expect(Object.keys(showProps).indexOf('layout')).toBeLessThan(Object.keys(showProps).indexOf('widget_code'))
+
+    const accepted = await client.callTool({
+      name: 'widget_show',
+      arguments: { title: 'gallery', template: '@native/image-gallery', data: '{"images":[{"path":"a.png"}]}' },
+    })
+    expect(accepted.isError).not.toBe(true)
+    const rejected = await client.callTool({
+      name: 'widget_show',
+      arguments: { title: 'gallery', data: true },
+    })
+    expect(rejected.isError).toBe(true)
+    expect((rejected.content[0] as { text: string }).text).toMatch(/expected record, received boolean/)
+
     await client.close()
     await server.close()
   })

@@ -2,6 +2,7 @@
  * Minimal JSON Schema → Zod shape converter for Host Action MCP registration.
  * Enough for desktop browser tool schemas (from getBrowserToolDescriptors).
  */
+import { coerceJsonArrayString, coerceJsonContainerString, coerceJsonObjectString } from '@superone/shared/json-object-string'
 import { z, type ZodTypeAny } from 'zod'
 
 function numberConstraint(value: unknown): number | undefined {
@@ -48,14 +49,18 @@ function schemaTypeToZod(type: string, prop: Record<string, unknown>): ZodTypeAn
       const maxItems = numberConstraint(prop.maxItems)
       if (minItems !== undefined) field = (field as z.ZodArray<ZodTypeAny>).min(minItems)
       if (maxItems !== undefined) field = (field as z.ZodArray<ZodTypeAny>).max(maxItems)
-      return field
+      return z.preprocess(coerceJsonArrayString, field)
     }
     case 'object': {
+      let field: ZodTypeAny
       if (!prop.properties || typeof prop.properties !== 'object') {
-        return z.record(z.string(), z.unknown())
+        field = z.record(z.string(), z.unknown())
+      } else {
+        const object = z.object(jsonSchemaToZodShape(prop))
+        field = prop.additionalProperties === false ? object.strict() : object.passthrough()
       }
-      const object = z.object(jsonSchemaToZodShape(prop))
-      return prop.additionalProperties === false ? object.strict() : object.passthrough()
+      // A proxy that only has an untyped arguments bag stringifies nested objects.
+      return z.preprocess(coerceJsonObjectString, field)
     }
     default:
       return z.unknown()
@@ -77,6 +82,10 @@ function jsonSchemaPropertyToZod(prop: Record<string, unknown>): ZodTypeAny {
   } else {
     const variants = types.map((type) => schemaTypeToZod(type, { ...prop, type }))
     field = z.union(variants as [ZodTypeAny, ZodTypeAny, ...ZodTypeAny[]])
+    // The string variant would otherwise accept a JSON array or object as text.
+    if (types.includes('string') && (types.includes('array') || types.includes('object'))) {
+      field = z.preprocess(coerceJsonContainerString, field)
+    }
   }
   if (prop.default !== undefined) {
     field = field.default(prop.default as never)

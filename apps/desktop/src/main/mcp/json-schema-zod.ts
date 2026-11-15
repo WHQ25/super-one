@@ -1,3 +1,4 @@
+import { coerceJsonArrayString, coerceJsonContainerString, coerceJsonObjectString } from '@superone/shared/json-object-string'
 import { z, type ZodTypeAny } from 'zod'
 
 function numberConstraint(value: unknown): number | undefined {
@@ -44,19 +45,23 @@ function schemaTypeToZod(type: string, prop: Record<string, unknown>, context: S
       if (minItems !== undefined) field = field.min(minItems)
       if (maxItems !== undefined) field = field.max(maxItems)
       if (prop.uniqueItems === true) {
-        return field.refine(
+        field = field.refine(
           (items) => new Set(items.map((item) => JSON.stringify(item))).size === items.length,
           'Array items must be unique',
         )
       }
-      return field
+      return z.preprocess(coerceJsonArrayString, field)
     }
     case 'object': {
+      let field: ZodTypeAny
       if (!prop.properties || typeof prop.properties !== 'object') {
-        return z.record(z.string(), z.unknown())
+        field = z.record(z.string(), z.unknown())
+      } else {
+        const object = z.object(schemaToZodShape(prop, context))
+        field = prop.additionalProperties === false ? object.strict() : object.passthrough()
       }
-      const object = z.object(schemaToZodShape(prop, context))
-      return prop.additionalProperties === false ? object.strict() : object.passthrough()
+      // A proxy that only has an untyped arguments bag stringifies nested objects.
+      return z.preprocess(coerceJsonObjectString, field)
     }
     default:
       return z.unknown()
@@ -98,6 +103,10 @@ function jsonSchemaPropertyToZod(prop: Record<string, unknown>, context: SchemaC
   } else {
     const variants = types.map((type) => schemaTypeToZod(type, { ...prop, type }, context))
     field = z.union(variants as [ZodTypeAny, ZodTypeAny, ...ZodTypeAny[]])
+    // The string variant would otherwise accept a JSON array or object as text.
+    if (types.includes('string') && (types.includes('array') || types.includes('object'))) {
+      field = z.preprocess(coerceJsonContainerString, field)
+    }
   }
   return desc ? field.describe(desc) : field
 }

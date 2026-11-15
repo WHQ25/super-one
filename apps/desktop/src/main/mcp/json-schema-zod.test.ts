@@ -147,4 +147,79 @@ describe('jsonSchemaToZodShape', () => {
     expect(shape.count.safeParse(2.5).success).toBe(false)
     expect(shape.count.safeParse(4).success).toBe(false)
   })
+
+  it('accepts a JSON-encoded object string and still rejects other values', () => {
+    const shape = jsonSchemaToZodShape({
+      type: 'object',
+      properties: {
+        data: { type: 'object', additionalProperties: true, description: 'Pass a JSON object, not a JSON-encoded string.' },
+        reusable: {
+          type: 'object',
+          additionalProperties: false,
+          properties: {
+            id: { type: 'string' },
+            inputSchema: { type: 'object', additionalProperties: true },
+          },
+          required: ['id'],
+        },
+      },
+      required: ['data'],
+    })
+    const schema = z.object(shape)
+    expect(schema.parse({ data: '{"images":[{"path":"a.png"}]}' })).toEqual({ data: { images: [{ path: 'a.png' }] } })
+    expect(schema.parse({ data: { images: [] }, reusable: '{"id":"card","inputSchema":{"type":"object"}}' })).toEqual({
+      data: { images: [] },
+      reusable: { id: 'card', inputSchema: { type: 'object' } },
+    })
+    expect(shape.data.safeParse(undefined).success).toBe(false)
+    expect(schema.safeParse({}).success).toBe(false)
+    expect(schema.safeParse({ data: true }).success).toBe(false)
+    expect(schema.safeParse({ data: '[1]' }).success).toBe(false)
+    expect(schema.safeParse({ data: 'not json' }).success).toBe(false)
+    expect(schema.safeParse({ data: '{"a":1}', reusable: '{"description":"x"}' }).success).toBe(false)
+    const listed = z.toJSONSchema(schema) as { properties: Record<string, { type?: string; description?: string }> }
+    expect(listed.properties.data?.type).toBe('object')
+    expect(listed.properties.data?.description).toContain('JSON object')
+  })
+
+  it('accepts a JSON-encoded array string and still rejects other values', () => {
+    const schema = z.object(jsonSchemaToZodShape({
+      type: 'object',
+      properties: {
+        actions: {
+          type: 'array',
+          minItems: 1,
+          items: { type: 'object', properties: { type: { type: 'string' } }, required: ['type'], additionalProperties: false },
+        },
+        tags: { type: 'array', items: { type: 'string' } },
+      },
+      required: ['actions'],
+    }))
+    expect(schema.parse({ actions: '[{"type":"click"}]', tags: '["a","b"]' })).toEqual({
+      actions: [{ type: 'click' }],
+      tags: ['a', 'b'],
+    })
+    expect(schema.safeParse({}).success).toBe(false)
+    expect(schema.safeParse({ actions: true }).success).toBe(false)
+    expect(schema.safeParse({ actions: '{"type":"click"}' }).success).toBe(false)
+    expect(schema.safeParse({ actions: '[}' }).success).toBe(false)
+    expect(schema.safeParse({ actions: '[{"kind":"click"}]' }).success).toBe(false)
+    const listed = z.toJSONSchema(schema) as { properties: Record<string, { type?: string }> }
+    expect(listed.properties.actions?.type).toBe('array')
+    expect(listed.properties.tags?.type).toBe('array')
+  })
+
+  it('parses a JSON array string before a string|array union keeps it as text', () => {
+    const schema = z.object(jsonSchemaToZodShape({
+      type: 'object',
+      properties: {
+        tab: { type: ['string', 'array'], items: { type: 'string' }, minItems: 1 },
+      },
+      required: ['tab'],
+    }))
+    expect(schema.parse({ tab: 'idle-1' })).toEqual({ tab: 'idle-1' })
+    expect(schema.parse({ tab: '["a","b"]' })).toEqual({ tab: ['a', 'b'] })
+    expect(schema.safeParse({ tab: '{"a":1}' }).success).toBe(false)
+    expect(schema.safeParse({ tab: '[]' }).success).toBe(false)
+  })
 })

@@ -13,6 +13,12 @@ export const WIDGET_SHOW_DESCRIPTION =
   + 'pass @native/files-previewer with data.files. '
   + 'Before the first new widget in a session, load the relevant design modules with read_manual({ domain: "widget", modules: [...] }).'
 
+/**
+ * Schemaless object arguments. An untyped MCP proxy often sends these as a
+ * JSON-encoded string; the schema says that is the wrong shape.
+ */
+export const WIDGET_JSON_OBJECT_ARGUMENT = 'Pass a JSON object, not a JSON-encoded string.'
+
 /** The `widget_show.layout` / `widget_save.layout` parameter, shared by every registration. */
 export const WIDGET_LAYOUT_DESCRIPTION =
   'How an HTML widget adapts to a narrow screen such as a phone. '

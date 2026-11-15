@@ -1,3 +1,4 @@
+import { jsonObjectRecord } from '../json-object-string'
 import { CDN_ALLOWED_HOSTS, checkCdnViolations } from './cdn-allowlist'
 import { parsePartialWidgetInput, parseWidgetLayout, parseWidgetResult, type WidgetData, type WidgetLayout, type WidgetReusableHint } from './types'
 
@@ -15,7 +16,7 @@ export interface WidgetShowArgs {
 }
 
 function asRecord(value: unknown): Record<string, unknown> | undefined {
-  return value && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : undefined
+  return jsonObjectRecord(value)
 }
 
 export function readWidgetShowArgs(args: Record<string, unknown>): WidgetShowArgs {

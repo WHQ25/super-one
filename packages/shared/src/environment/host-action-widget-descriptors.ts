@@ -1,5 +1,5 @@
 import type { HostActionSuperoneToolDescriptor } from './host-action-superone-descriptors'
-import { WIDGET_LAYOUT_DESCRIPTION, WIDGET_SAVE_DESCRIPTION, WIDGET_SHOW_DESCRIPTION } from '../generative-ui/widget-tool-descriptions'
+import { WIDGET_JSON_OBJECT_ARGUMENT, WIDGET_LAYOUT_DESCRIPTION, WIDGET_SAVE_DESCRIPTION, WIDGET_SHOW_DESCRIPTION } from '../generative-ui/widget-tool-descriptions'
 
 export const WIDGET_SAVE_DESCRIPTOR: HostActionSuperoneToolDescriptor = {
   name: 'widget_save',
@@ -26,7 +26,7 @@ export const WIDGET_SAVE_DESCRIPTOR: HostActionSuperoneToolDescriptor = {
       inputSchema: {
         type: 'object',
         additionalProperties: true,
-        description: 'JSON Schema for the data this template expects. Omit for a template that renders without data.',
+        description: 'JSON Schema for the data this template expects. Omit for a template that renders without data. ' + WIDGET_JSON_OBJECT_ARGUMENT,
       },
       layout: {
         type: 'string',
@@ -57,6 +57,9 @@ export const HOST_ACTION_WIDGET_DESCRIPTORS: HostActionSuperoneToolDescriptor[] 
   {
     "name": "widget_show",
     "description": WIDGET_SHOW_DESCRIPTION,
+    // `layout` stays ahead of `widget_code`. Registrations build their Zod shape
+    // from this property order, and the preview starts at the right scale only
+    // when layout streams first.
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -70,24 +73,46 @@ export const HOST_ACTION_WIDGET_DESCRIPTORS: HostActionSuperoneToolDescriptor[] 
           "description": WIDGET_LAYOUT_DESCRIPTION
         },
         "widget_code": {
-          "type": "string"
+          "type": "string",
+          "description": "HTML or SVG code to render. For SVG: raw SVG starting with <svg>. For HTML: raw content fragment, no DOCTYPE/<html>/<head>/<body>. Omit when reusing a saved template via the template parameter."
         },
         "template": {
-          "type": "string"
+          "type": "string",
+          "description": "Id of a saved widget template to render instead of inline code. Call widget_list_templates to discover ids. Mutually exclusive with widget_code. An id starting with @native/ renders a built-in SuperOne surface rather than HTML."
         },
         "data": {
           "type": "object",
-          "additionalProperties": true
+          "additionalProperties": true,
+          "description": "Values passed to the template, readable inside the widget as window.widget.data. For a @native/ template this is the surface's own input — see widget_list_templates for its shape. " + WIDGET_JSON_OBJECT_ARGUMENT
         },
         "reusable": {
           "type": "object",
-          "additionalProperties": true
+          "additionalProperties": false,
+          "description": "Only set this when the widget is written to be reused later: it prefills the save dialog. The widget is NOT saved by this call — saving is always the user's action. " + WIDGET_JSON_OBJECT_ARGUMENT,
+          "properties": {
+            "id": {
+              "type": "string",
+              "description": "Stable kebab-case id to suggest when the user saves this widget."
+            },
+            "description": {
+              "type": "string",
+              "description": "One line describing when to reuse this widget."
+            },
+            "inputSchema": {
+              "type": "object",
+              "additionalProperties": true,
+              "description": "JSON Schema for the data this widget expects. " + WIDGET_JSON_OBJECT_ARGUMENT
+            }
+          },
+          "required": ["id"]
         },
         "width": {
-          "type": "number"
+          "type": "number",
+          "description": "Widget width in pixels. Default: 800."
         },
         "height": {
-          "type": "number"
+          "type": "number",
+          "description": "Widget height in pixels. Default: 600."
         }
       },
       "required": [

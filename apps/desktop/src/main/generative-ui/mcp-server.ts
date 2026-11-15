@@ -1,11 +1,12 @@
 import { superoneHome } from '../superone-home'
 import { randomUUID } from 'crypto'
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { z } from 'zod'
 import { checkCdnViolations } from '@superone/shared/generative-ui/cdn-allowlist'
 import { isNativeTemplateId, nativeTypeFromTemplateId, NATIVE_WIDGET_TYPES } from '@superone/shared/generative-ui/native-widgets'
-import { WIDGET_LAYOUT_DESCRIPTION, WIDGET_SAVE_DESCRIPTION, WIDGET_SHOW_DESCRIPTION } from '@superone/shared/generative-ui/widget-tool-descriptions'
 import { readWidgetShowArgs, widgetCdnWarning, widgetShowShortContent } from '@superone/shared/generative-ui/widget-data'
+import { HOST_ACTION_WIDGET_DESCRIPTORS, WIDGET_SAVE_DESCRIPTOR } from '@superone/shared/environment/host-action-widget-descriptors'
+import { jsonObjectRecord } from '@superone/shared/json-object-string'
+import { jsonSchemaToZodShape } from '../mcp/json-schema-zod'
 import { buildWidgetPayload } from './widget-payload'
 import type { TemplateRoots } from './template-store'
 
@@ -143,10 +144,7 @@ export async function executeWidgetSaveTool(
   const title = typeof args.title === 'string' ? args.title : ''
   const code = typeof args.code === 'string' ? args.code : ''
   const description = typeof args.description === 'string' ? args.description : undefined
-  const inputSchema =
-    args.inputSchema && typeof args.inputSchema === 'object' && !Array.isArray(args.inputSchema)
-      ? (args.inputSchema as Record<string, unknown>)
-      : undefined
+  const inputSchema = jsonObjectRecord(args.inputSchema)
   const layout = args.layout === 'fluid' || args.layout === 'fixed' ? args.layout : undefined
   const scope = args.scope === 'project' || args.scope === 'user' ? args.scope : undefined
   const roots = templateRoots(opts)
@@ -171,69 +169,24 @@ export async function executeWidgetSaveTool(
   }
 }
 
+const WIDGET_TOOL_DESCRIPTORS = [...HOST_ACTION_WIDGET_DESCRIPTORS, WIDGET_SAVE_DESCRIPTOR]
+
+/** In-process registration uses the same schema the stdio bridge advertises. */
+function registerWidgetTool(
+  server: McpServer,
+  name: string,
+  handler: (args: Record<string, unknown>) => Promise<{ content: { type: 'text'; text: string }[]; isError?: boolean }>,
+): void {
+  const descriptor = WIDGET_TOOL_DESCRIPTORS.find((tool) => tool.name === name)
+  if (!descriptor) throw new Error(`Missing widget tool descriptor: ${name}`)
+  server.registerTool(name, {
+    description: descriptor.description,
+    inputSchema: jsonSchemaToZodShape(descriptor.inputSchema),
+  }, async (args) => handler(args as Record<string, unknown>))
+}
+
 export function registerWidgetTools(server: McpServer, opts?: WidgetToolsOptions): void {
-  server.tool(
-    'widget_list_templates',
-    'List reusable widget templates saved in the current project or user scope. ' +
-    'Call this when considering template reuse; pass a returned id to widget_show.template.',
-    {},
-    () => listWidgetTemplatesHandler(opts),
-  )
-
-  server.tool(
-    'widget_show',
-    WIDGET_SHOW_DESCRIPTION,
-    {
-      title: z.string().describe('Short snake_case identifier for this widget.'),
-      // Ahead of widget_code so it streams first: the preview starts at the right scale.
-      layout: z.enum(['fluid', 'fixed']).optional().describe(WIDGET_LAYOUT_DESCRIPTION),
-      widget_code: z.string().optional().describe(
-        'HTML or SVG code to render. For SVG: raw SVG starting with <svg>. ' +
-        'For HTML: raw content fragment, no DOCTYPE/<html>/<head>/<body>. ' +
-        'Omit when reusing a saved template via the template parameter.'
-      ),
-      template: z.string().optional().describe(
-        'Id of a saved widget template to render instead of inline code. ' +
-        'Call widget_list_templates to discover ids. Mutually exclusive with widget_code. ' +
-        'An id starting with @native/ renders a built-in SuperOne surface rather than HTML.'
-      ),
-      data: z.record(z.string(), z.unknown()).optional().describe(
-        'Values passed to the template, readable inside the widget as window.widget.data. ' +
-        'For a @native/ template this is the surface\'s own input — see widget_list_templates for its shape.'
-      ),
-      reusable: z.object({
-        id: z.string().describe('Stable kebab-case id to suggest when the user saves this widget.'),
-        description: z.string().optional().describe('One line describing when to reuse this widget.'),
-        inputSchema: z.record(z.string(), z.unknown()).optional().describe('JSON Schema for the data this widget expects.'),
-      }).optional().describe(
-        'Only set this when the widget is written to be reused later: it prefills the save dialog. ' +
-        'The widget is NOT saved by this call — saving is always the user\'s action.'
-      ),
-      width: z.number().optional().describe('Widget width in pixels. Default: 800.'),
-      height: z.number().optional().describe('Widget height in pixels. Default: 600.'),
-    },
-    async (args) => executeWidgetShowTool(args as Record<string, unknown>, opts),
-  )
-
-  server.tool(
-    'widget_save',
-    WIDGET_SAVE_DESCRIPTION,
-    {
-      id: z.string().describe(
-        'Existing template id to update, or a short kebab-case name for a new one ' +
-        '(a unique suffix is appended so distinct saves never collide).'
-      ),
-      title: z.string().describe('Human-readable name shown in the template list.'),
-      code: z.string().describe('The widget HTML or SVG to store, exactly as it should be re-rendered.'),
-      description: z.string().optional().describe('One line telling a future agent when to reuse this template.'),
-      inputSchema: z.record(z.string(), z.unknown()).optional().describe(
-        'JSON Schema for the data this template expects. Omit for a template that renders without data.'
-      ),
-      layout: z.enum(['fluid', 'fixed']).optional().describe(WIDGET_LAYOUT_DESCRIPTION),
-      scope: z.enum(['project', 'user']).optional().describe(
-        'project (default) stores it under the project so it can be shared through git; user makes it available everywhere.'
-      ),
-    },
-    async (args) => executeWidgetSaveTool(args as Record<string, unknown>, opts),
-  )
+  registerWidgetTool(server, 'widget_list_templates', () => listWidgetTemplatesHandler(opts))
+  registerWidgetTool(server, 'widget_show', (args) => executeWidgetShowTool(args, opts))
+  registerWidgetTool(server, 'widget_save', (args) => executeWidgetSaveTool(args, opts))
 }

@@ -1,104 +1,133 @@
-import type { ModBackdropSnapshot, ModThemeScope } from '@superone/chat-view/mod-ui'
+import { parseModBackdropProps, type ModBackdropSnapshot } from '@superone/chat-view/mod-ui'
 import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 
 /**
- * A mod theme stored at one apply scope.
- * `cleared` is an explicit opt-out: it blocks every wider scope.
- * A missing slot does not block wider scopes.
+ * The last mod theme each session and project showed, so a pane can paint it
+ * before its session's CLI attaches and answers. The theme mod owns the choice
+ * and where it applies; this only remembers what it drew. A live answer always
+ * wins over what is remembered here.
  */
-interface ThemeSlot {
-  backdrop: ModBackdropSnapshot | null
-  themeProps: Record<string, unknown> | null
-  cleared?: boolean
+
+export interface ModThemeValues {
+  backdrop: ModBackdropSnapshot
+  theme: Record<string, unknown>
 }
 
-interface ThemeCacheState {
-  session: Record<string, ThemeSlot>
-  folder: Record<string, ThemeSlot>
-  project: Record<string, ThemeSlot>
-  harness: ThemeSlot | null
-}
+export type ModThemeKind = keyof ModThemeValues
 
-export interface ModThemeQuery {
+export interface ModThemeKey {
   sessionId?: string | null
-  folderPath?: string | null
   projectPath?: string | null
 }
 
-export interface ResolvedModTheme {
+export interface RecalledModTheme {
   backdrop: ModBackdropSnapshot | null
-  themeProps: Record<string, unknown> | null
-  scope: ModThemeScope | null
+  theme: Record<string, unknown> | null
 }
 
-const STORAGE_KEY = 'superone:mod-theme-cache:v2'
-const EMPTY_RESOLVED: ResolvedModTheme = { backdrop: null, themeProps: null, scope: null }
+/**
+ * In a session row, `null` means the mod took that kind away in this session:
+ * the project's theme does not show through. A missing kind means unknown.
+ */
+interface Row {
+  backdrop?: ModBackdropSnapshot | null
+  theme?: Record<string, unknown> | null
+  at: number
+}
 
-let state: ThemeCacheState = emptyState()
+interface CacheState {
+  session: Record<string, Row>
+  project: Record<string, Row>
+}
+
+const STORAGE_KEY = 'superone:mod-theme-cache:v3'
+const LEGACY_STORAGE_KEYS = ['superone:mod-theme-cache:v2']
+const MAX_SESSIONS = 200
+const MAX_PROJECTS = 50
+const NOTHING: RecalledModTheme = { backdrop: null, theme: null }
+
+let state: CacheState = { session: {}, project: {} }
 let loaded = false
+let clock = 0
 const listeners = new Set<() => void>()
-
-function emptyState(): ThemeCacheState {
-  return { session: {}, folder: {}, project: {}, harness: null }
-}
-
-function emptySlot(): ThemeSlot {
-  return { backdrop: null, themeProps: null }
-}
 
 function normalizePath(path: string): string {
   const trimmed = path.trim().replace(/[\\/]+$/, '')
   return trimmed || path.trim()
 }
 
-function hostPrefix(projectPath: string | null | undefined): string {
-  if (!projectPath) return 'local'
-  return parseRemoteProjectKey(projectPath)?.connectionId ?? 'local'
-}
-
-/** Folder identity. A subdirectory is a different folder from its parent. */
-export function modThemeFolderKey(projectPath: string | null | undefined, folderPath: string | null | undefined): string | null {
-  if (!folderPath?.trim()) return null
-  return `${hostPrefix(projectPath)}\0${normalizePath(folderPath)}`
-}
-
+/** Project identity, per host: a remote project never shares a local one's theme. */
 export function modThemeProjectKey(projectPath: string | null | undefined): string | null {
   if (!projectPath?.trim()) return null
   const remote = parseRemoteProjectKey(projectPath)
-  const path = remote ? remote.path : projectPath
-  return `${hostPrefix(projectPath)}\0${normalizePath(path)}`
+  return `${remote?.connectionId ?? 'local'}\0${normalizePath(remote ? remote.path : projectPath)}`
 }
 
-function loadFromStorage(): void {
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return !!value && typeof value === 'object' && !Array.isArray(value)
+}
+
+function readTable(value: unknown): Record<string, Row> {
+  if (!isRecord(value)) return {}
+  const table: Record<string, Row> = {}
+  for (const [key, row] of Object.entries(value)) {
+    if (isRecord(row)) table[key] = { ...row, at: typeof row.at === 'number' ? row.at : 0 } as Row
+  }
+  return table
+}
+
+function load(): void {
   if (loaded || typeof localStorage === 'undefined') return
   loaded = true
   try {
+    for (const key of LEGACY_STORAGE_KEYS) localStorage.removeItem(key)
     const raw = localStorage.getItem(STORAGE_KEY)
     if (!raw) return
-    const parsed = JSON.parse(raw) as Partial<ThemeCacheState>
-    state = {
-      session: parsed.session && typeof parsed.session === 'object' ? parsed.session : {},
-      folder: parsed.folder && typeof parsed.folder === 'object' ? parsed.folder : {},
-      project: parsed.project && typeof parsed.project === 'object' ? parsed.project : {},
-      harness: parsed.harness && typeof parsed.harness === 'object' ? parsed.harness : null,
-    }
+    const parsed = JSON.parse(raw) as Partial<CacheState>
+    state = { session: readTable(parsed.session), project: readTable(parsed.project) }
+    clock = Math.max(0, ...Object.values(state.session).map((r) => r.at), ...Object.values(state.project).map((r) => r.at))
   } catch {
-    state = emptyState()
+    state = { session: {}, project: {} }
   }
 }
 
-function saveToStorage(): void {
+function save(): void {
   if (typeof localStorage === 'undefined') return
   try {
-    const harness = state.harness && (state.harness.backdrop || state.harness.themeProps || state.harness.cleared) ? state.harness : null
-    localStorage.setItem(STORAGE_KEY, JSON.stringify({ ...state, harness }))
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state))
   } catch {
     // A full disk must not break the live pane.
   }
 }
 
-function emit(): void {
+/** Keeps the most recently written rows. */
+function prune(table: Record<string, Row>, max: number): Record<string, Row> {
+  const keys = Object.keys(table)
+  if (keys.length <= max) return table
+  const kept = keys.sort((a, b) => table[b].at - table[a].at).slice(0, max)
+  return Object.fromEntries(kept.map((key) => [key, table[key]]))
+}
+
+/** What tells two remembered values apart without comparing whole pictures. */
+function fingerprint(kind: ModThemeKind, value: ModThemeValues[ModThemeKind] | null | undefined): string {
+  if (!value) return ''
+  try {
+    if (kind === 'theme') return JSON.stringify(value)
+    const props = parseModBackdropProps((value as ModBackdropSnapshot).result.props)
+    return JSON.stringify([props?.id, props?.colorScheme, props?.glass])
+  } catch {
+    return ''
+  }
+}
+
+function commit(next: CacheState): void {
+  state = next
+  save()
   for (const listener of listeners) listener()
+}
+
+function sessionKeyOf(key: ModThemeKey): string | null {
+  return key.sessionId?.trim() || null
 }
 
 export function subscribeModThemeCache(listener: () => void): () => void {
@@ -106,107 +135,75 @@ export function subscribeModThemeCache(listener: () => void): () => void {
   return () => { listeners.delete(listener) }
 }
 
-export function getModThemeCache(): ThemeCacheState {
-  loadFromStorage()
+export function getModThemeCache(): CacheState {
+  load()
   return state
 }
 
-function scopeKey(scope: ModThemeScope, query: ModThemeQuery): string | null {
-  if (scope === 'harness') return ''
-  if (scope === 'session') return query.sessionId?.trim() || null
-  if (scope === 'folder') return modThemeFolderKey(query.projectPath, query.folderPath)
-  return modThemeProjectKey(query.projectPath)
+/** What this session (else its project) last showed. */
+export function recallModTheme(cache: CacheState, key: ModThemeKey): RecalledModTheme {
+  const session = sessionKeyOf(key)
+  const project = modThemeProjectKey(key.projectPath)
+  const own = session ? cache.session[session] : undefined
+  const shared = project ? cache.project[project] : undefined
+  if (!own && !shared) return NOTHING
+  const pick = <K extends ModThemeKind>(kind: K): ModThemeValues[K] | null => {
+    if (own && kind in own) return (own[kind] ?? null) as ModThemeValues[K] | null
+    return (shared?.[kind] ?? null) as ModThemeValues[K] | null
+  }
+  return { backdrop: pick('backdrop'), theme: pick('theme') }
 }
 
-function readSlot(scope: ModThemeScope, key: string): ThemeSlot | null {
-  if (scope === 'harness') return state.harness
-  return state[scope][key] ?? null
-}
-
-function writeSlot(scope: ModThemeScope, key: string, slot: ThemeSlot | null): ThemeCacheState {
-  if (scope === 'harness') return { ...state, harness: slot }
-  const table = { ...state[scope] }
-  if (slot) table[key] = slot
-  else delete table[key]
-  return { ...state, [scope]: table }
-}
-
-function slotKeeps(slot: ThemeSlot): boolean {
-  return Boolean(slot.cleared || slot.backdrop || slot.themeProps)
+/** A session showed `value`: remember it for the session and its project. */
+export function rememberModTheme<K extends ModThemeKind>(key: ModThemeKey, kind: K, value: ModThemeValues[K]): void {
+  load()
+  const print = fingerprint(kind, value)
+  const session = sessionKeyOf(key)
+  const project = modThemeProjectKey(key.projectPath)
+  const sessionRow = session ? state.session[session] : undefined
+  const projectRow = project ? state.project[project] : undefined
+  const sessionFresh = !session || (!!sessionRow && kind in sessionRow && fingerprint(kind, sessionRow[kind]) === print)
+  const projectFresh = !project || fingerprint(kind, projectRow?.[kind]) === print
+  if (sessionFresh && projectFresh) return
+  clock += 1
+  const next: CacheState = { ...state }
+  if (session && !sessionFresh) next.session = prune({ ...state.session, [session]: { ...sessionRow, [kind]: value, at: clock } }, MAX_SESSIONS)
+  if (project && !projectFresh) next.project = prune({ ...state.project, [project]: { ...projectRow, [kind]: value, at: clock } }, MAX_PROJECTS)
+  commit(next)
 }
 
 /**
- * Store one payload at one scope. A payload with no scope is the caller's
- * job to pass as `session` — this function never copies it to a wider scope.
- * `clear` is an explicit opt-out of that scope and every scope wider than it.
+ * The mod took `previous` away in this session. The session shows nothing of
+ * that kind from now on; the project forgets it only if it still holds that
+ * same value, since another session may have set something newer.
  */
-export function writeModTheme(input: ModThemeQuery & {
-  scope: ModThemeScope
-  backdrop?: ModBackdropSnapshot | null
-  themeProps?: Record<string, unknown> | null
-  clear?: boolean
-}): void {
-  loadFromStorage()
-  const key = scopeKey(input.scope, input)
-  if (key === null) return
-  const prev = readSlot(input.scope, key) ?? emptySlot()
-  const slot: ThemeSlot = input.clear
-    ? { backdrop: null, themeProps: null, cleared: true }
-    : {
-        backdrop: input.backdrop !== undefined ? input.backdrop : prev.backdrop,
-        themeProps: input.themeProps !== undefined ? input.themeProps : prev.themeProps,
-      }
-  // An empty follow-up write must not erase an explicit opt-out.
-  if (!input.clear && !slot.backdrop && !slot.themeProps && prev.cleared) slot.cleared = true
-  const next = slotKeeps(slot) ? slot : null
-  const stored = readSlot(input.scope, key)
-  if (stored === next) return
-  if (stored && next && stored.backdrop === next.backdrop && stored.themeProps === next.themeProps && Boolean(stored.cleared) === Boolean(next.cleared)) return
-  state = writeSlot(input.scope, key, next)
-  saveToStorage()
-  emit()
-}
-
-/** One theme for Claude. Narrower slots are dropped so they cannot hide it. */
-export function setGlobalModTheme(backdrop: ModBackdropSnapshot | null): void {
-  loadFromStorage()
-  state = {
-    session: {},
-    folder: {},
-    project: {},
-    harness: backdrop ? { backdrop, themeProps: null } : null,
+export function forgetModTheme<K extends ModThemeKind>(key: ModThemeKey, kind: K, previous: ModThemeValues[K]): void {
+  load()
+  const session = sessionKeyOf(key)
+  const project = modThemeProjectKey(key.projectPath)
+  const sessionRow = session ? state.session[session] : undefined
+  const projectRow = project ? state.project[project] : undefined
+  const sessionDone = !session || (!!sessionRow && kind in sessionRow && sessionRow[kind] === null)
+  const projectMatches = !!projectRow?.[kind] && fingerprint(kind, projectRow[kind]) === fingerprint(kind, previous)
+  if (sessionDone && !projectMatches) return
+  clock += 1
+  const next: CacheState = { ...state }
+  if (session && !sessionDone) next.session = prune({ ...state.session, [session]: { ...sessionRow, [kind]: null, at: clock } }, MAX_SESSIONS)
+  if (project && projectMatches && projectRow) {
+    const rest: Row = { ...projectRow }
+    delete rest[kind]
+    const table = { ...state.project }
+    if (rest.backdrop || rest.theme) table[project] = rest
+    else delete table[project]
+    next.project = table
   }
-  saveToStorage()
-  emit()
-}
-
-/** session, then folder, then project, then harness. A cleared slot stops the walk. */
-export function resolveModTheme(cache: ThemeCacheState, query: ModThemeQuery): ResolvedModTheme {
-  const steps: Array<[ModThemeScope, ThemeSlot | null]> = [
-    ['session', query.sessionId?.trim() ? cache.session[query.sessionId.trim()] ?? null : null],
-    ['folder', (() => {
-      const key = modThemeFolderKey(query.projectPath, query.folderPath)
-      return key ? cache.folder[key] ?? null : null
-    })()],
-    ['project', (() => {
-      const key = modThemeProjectKey(query.projectPath)
-      return key ? cache.project[key] ?? null : null
-    })()],
-    ['harness', cache.harness],
-  ]
-  for (const [scope, slot] of steps) {
-    if (!slot) continue
-    if (slot.cleared) return EMPTY_RESOLVED
-    if (slot.backdrop || slot.themeProps) {
-      return { backdrop: slot.backdrop, themeProps: slot.themeProps, scope }
-    }
-  }
-  return EMPTY_RESOLVED
+  commit(next)
 }
 
 export function resetModThemeCacheForTests(): void {
-  state = emptyState()
+  state = { session: {}, project: {} }
   loaded = true
+  clock = 0
   if (typeof localStorage !== 'undefined') localStorage.removeItem(STORAGE_KEY)
-  emit()
+  for (const listener of listeners) listener()
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { modBackdropGlassStyle, modBackdropTint, modPaneBackground, parseModBackdropProps, parseModThemeScope, parseModThemeStyle } from './theme'
+import { modBackdropGlassStyle, modBackdropTint, modPaneBackground, parseModBackdropProps, parseModThemeStyle } from './theme'
 
 describe('mod theme & backdrop helpers', () => {
   it('maps valid theme tokens, CSS variables, palette colors and aliases while dropping unsafe values', () => {
@@ -36,17 +36,6 @@ describe('mod theme & backdrop helpers', () => {
     }
     expect((parseModThemeStyle(props, 'light') as Record<string, string>)['--background']).toBe('#ffffff')
     expect((parseModThemeStyle(props, 'dark') as Record<string, string>)['--background']).toBe('#0f111a')
-  })
-
-  it('reads an explicit theme scope and leaves an absent one unset', () => {
-    expect(parseModThemeScope({ scope: 'session' })).toBe('session')
-    expect(parseModThemeScope({ applyScope: 'folder' })).toBe('folder')
-    expect(parseModThemeScope({ themeScope: 'project' })).toBe('project')
-    expect(parseModThemeScope({ scope: 'global' })).toBe('harness')
-    expect(parseModThemeScope({ scope: 'harness' })).toBe('harness')
-    expect(parseModThemeScope({ id: 'bg' })).toBeUndefined()
-    expect(parseModThemeScope({ scope: 'window' })).toBeUndefined()
-    expect(parseModThemeScope(null)).toBeUndefined()
   })
 
   it('parses backdrop glass props and pane backgroundColor safely', () => {

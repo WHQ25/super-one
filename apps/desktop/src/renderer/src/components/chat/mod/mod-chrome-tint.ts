@@ -1,35 +1,40 @@
 /**
- * Backdrop tint of each session that is currently drawing a mod theme.
- * The shell reads the active session and recolors the sidebar and activity
- * panel. This never writes the saved appearance.
+ * What each session's mod theme asks of the window around it: the tint to mix
+ * into the sidebar and activity panel while the theme is painted, and the
+ * light or dark window it was made for. The shell reads the active session.
+ * This never writes the saved appearance.
  */
 
-interface ChromeTint {
+type Scheme = 'light' | 'dark'
+
+export interface ModChrome {
+  /** Empty while the theme is not painted. */
   tint: string
-  scheme: 'light' | 'dark' | ''
+  /** Empty when the theme names no scheme. */
+  scheme: Scheme | ''
 }
 
-const tints = new Map<string, ChromeTint>()
-let snapshot = new Map<string, ChromeTint>()
+const chromes = new Map<string, ModChrome>()
+let snapshot = new Map<string, ModChrome>()
 const listeners = new Set<() => void>()
 
 function emit(): void {
-  snapshot = new Map(tints)
+  snapshot = new Map(chromes)
   for (const listener of listeners) listener()
 }
 
-export function publishModChromeTint(sessionId: string, tint: string | null, scheme?: 'light' | 'dark'): void {
+/** Publishes one session's chrome; null or an empty chrome withdraws it. */
+export function publishModChrome(sessionId: string, chrome: ModChrome | null): void {
   const id = sessionId.trim()
   if (!id) return
-  const prev = tints.get(id)
-  if (tint) {
-    const next: ChromeTint = { tint, scheme: scheme ?? '' }
-    if (prev && prev.tint === next.tint && prev.scheme === next.scheme) return
-    tints.set(id, next)
+  const prev = chromes.get(id)
+  if (chrome && (chrome.tint || chrome.scheme)) {
+    if (prev && prev.tint === chrome.tint && prev.scheme === chrome.scheme) return
+    chromes.set(id, { tint: chrome.tint, scheme: chrome.scheme })
   } else if (prev === undefined) {
     return
   } else {
-    tints.delete(id)
+    chromes.delete(id)
   }
   emit()
 }
@@ -45,13 +50,13 @@ export function getModChromeTint(sessionId: string | null | undefined): string {
   return snapshot.get(sessionId.trim())?.tint ?? ''
 }
 
-/** Light or dark window the backdrop was made for. Empty when the backdrop did not say. */
-export function getModChromeScheme(sessionId: string | null | undefined): 'light' | 'dark' | '' {
+/** Light or dark window the session's theme was made for. Empty when it did not say. */
+export function getModChromeScheme(sessionId: string | null | undefined): Scheme | '' {
   if (!sessionId) return ''
   return snapshot.get(sessionId.trim())?.scheme ?? ''
 }
 
 export function resetModChromeTintForTests(): void {
-  tints.clear()
+  chromes.clear()
   emit()
 }

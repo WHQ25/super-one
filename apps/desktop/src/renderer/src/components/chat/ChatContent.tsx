@@ -317,7 +317,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   const activeProject = useChatStore((s) => s.activeProject)
   const {
     messages, sessionStatus, pendingPermissions, pendingQuestion, pendingAsyncQuestions, pendingPlanApproval,
-    displayedSessionId, cwd, providerSessionId, sessionProvider, preferredProvider, hostSessionOwned,
+    displayedSessionId, providerSessionId, sessionProvider, preferredProvider, hostSessionOwned,
     historyHydrated, awaitingAssistantReply, apiRetry, sideChatParentId, isRecapping,
   } = useActiveSession(useShallow((s) => ({
     messages: s.messages,
@@ -327,7 +327,6 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     pendingAsyncQuestions: s.pendingAsyncQuestions,
     pendingPlanApproval: s.pendingPlanApproval,
     displayedSessionId: scope?.sessionId ?? s._activeSessionId,
-    cwd: s.cwd,
     providerSessionId: s._providerSessionId,
     sessionProvider: s.sessionProvider,
     preferredProvider: s.preferredProvider,
@@ -491,7 +490,7 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
       <DetailScopeProvider scope={detailScope}>
       <DesktopModUi projectPath={projectPath} sessionId={displayedSessionId ?? null} enabled={drawsMods}>
       {foreground && drawsMods && projectPath && displayedSessionId ? <ModPaneDockSync projectPath={projectPath} sessionId={displayedSessionId} /> : null}
-      <ModChatThemeLayer projectPath={projectPath} folderPath={cwd || null} sessionId={displayedSessionId} enabled={drawsMods} sessionTheme={hostSessionOwned}>
+      <ModChatThemeLayer projectPath={projectPath} sessionId={displayedSessionId} enabled={drawsMods} sessionTheme={hostSessionOwned}>
       {activeOverlay ?? (
         <>
           {/* The fade belongs to arriving at a different session. Switching between

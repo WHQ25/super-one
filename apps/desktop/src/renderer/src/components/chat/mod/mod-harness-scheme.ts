@@ -1,26 +1,25 @@
 /**
- * A Claude theme can show the other appearance without writing the saved
- * theme mode. Preview still uses setTheme. Apply only holds the document
- * class, and a manual appearance change clears the hold.
+ * A Claude mod theme is made for a light or a dark window
+ * (`overrideColorScheme`). While the active session shows one, the window
+ * holds that appearance on the document class only: the saved theme mode is
+ * never written. A manual appearance change wins until the theme's scheme
+ * changes or the theme goes.
  */
 
 type Scheme = 'light' | 'dark'
 
-let hold: Scheme | null = null
-let suppress = 0
+let requested: Scheme | null = null
+let dismissed: Scheme | null = null
 const listeners = new Set<() => void>()
-
-function emit(): void {
-  for (const listener of listeners) listener()
-}
 
 export function subscribeHarnessScheme(listener: () => void): () => void {
   listeners.add(listener)
   return () => { listeners.delete(listener) }
 }
 
+/** The appearance the window holds for a mod theme, or null to follow the saved mode. */
 export function harnessSchemeHold(): Scheme | null {
-  return hold
+  return requested && requested !== dismissed ? requested : null
 }
 
 function rememberScroll(): Array<[HTMLElement, number]> {
@@ -38,28 +37,40 @@ function restoreScroll(saved: Array<[HTMLElement, number]>): void {
   for (const [el, top] of saved) el.scrollTop = top
 }
 
-export function holdHarnessScheme(scheme: Scheme | null): void {
-  hold = scheme
-  const saved = rememberScroll()
-  if (scheme) document.documentElement.classList.toggle('dark', scheme === 'dark')
-  restoreScroll(saved)
-  requestAnimationFrame(() => restoreScroll(saved))
-  emit()
+function update(next: () => void): void {
+  const before = harnessSchemeHold()
+  next()
+  const hold = harnessSchemeHold()
+  if (hold === before) return
+  if (hold && typeof document !== 'undefined') {
+    // Switching the class re-lays out the transcript; keep where the reader was.
+    const saved = rememberScroll()
+    document.documentElement.classList.toggle('dark', hold === 'dark')
+    restoreScroll(saved)
+    requestAnimationFrame(() => restoreScroll(saved))
+  }
+  for (const listener of listeners) listener()
 }
 
-/** The next theme-change event is one we caused by restoring the saved mode. */
-export function suppressNextThemeChange(): void {
-  suppress += 1
+/** The active session's mod theme asks for `scheme`; null when it shows none. */
+export function requestHarnessScheme(scheme: Scheme | null): void {
+  if (scheme === requested) return
+  update(() => {
+    requested = scheme
+    dismissed = null
+  })
 }
 
-export function takeSuppressedThemeChange(): boolean {
-  if (suppress === 0) return false
-  suppress -= 1
-  return true
+/** The person changed the appearance: stop holding until the theme asks again. */
+export function dismissHarnessScheme(): void {
+  if (!requested || dismissed === requested) return
+  update(() => {
+    dismissed = requested
+  })
 }
 
 export function resetHarnessSchemeForTests(): void {
-  hold = null
-  suppress = 0
-  emit()
+  requested = null
+  dismissed = null
+  for (const listener of listeners) listener()
 }

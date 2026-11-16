@@ -788,7 +788,8 @@ module that runs inside the CLI process. Upstream docs:
 - **Behavior:** `ui_attach` adds optional `draws` for Backdrop and mobile
   Input/Select opt-ins. Omission on first attach advertises none; it retains
   existing opt-ins on repeated attach. `ui_prompt_paint` is a new opt-in host
-  request. SuperOne advertises neither feature and keeps its previous behavior.
+  request. SuperOne advertises `draws: ['Backdrop']` on desktop and Backdrop,
+  Input and Select on the phone; it does not answer `ui_prompt_paint`.
   Existing mapped request schema keys are otherwise unchanged from 2.1.310.
 - **Observed:** both native binaries' schema text; existing recording replay;
   2.1.318 loaded Anthropic's token-weather, blast-radius and replay-theater

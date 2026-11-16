@@ -106,6 +106,19 @@ describe('ModUiClient', () => {
     expect(await client.act('press', { plugin: 'p', handle: 1, surface: 'desktop', clientId: 'test' })).toBeNull()
   })
 
+  it('reads a newly observed site as pending until it is answered, so off always means an answer', async () => {
+    const { client } = setup(() => UNHOOKED)
+    client.observe('Theme', 'theme', {}, {}, () => {})
+    expect(client.snapshot('Theme', 'theme').status).toBe('off')
+    await client.attach()
+    client.observe('Backdrop', 'backdrop', {}, {}, () => {})
+    expect(client.snapshot('Backdrop', 'backdrop').status).toBe('pending')
+    await tick()
+    expect(client.snapshot('Backdrop', 'backdrop').status).toBe('off')
+    client.observe('Backdrop', 'second', {}, {}, () => {})
+    expect(client.snapshot('Backdrop', 'second').status).toBe('off')
+  })
+
   it('drops an answer that arrives after the session stopped drawing mods', async () => {
     let answer!: (r: ModRenderResult) => void
     const { client } = setup(() => new Promise<ModRenderResult>((r) => (answer = r)) as never)

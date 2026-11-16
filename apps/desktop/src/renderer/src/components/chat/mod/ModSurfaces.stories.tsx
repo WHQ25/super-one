@@ -539,6 +539,36 @@ export const ThemeAndBackdrop: Story = {
   ),
 }
 
+/** A mod sets theme colors alone, per appearance: the pane paints them in light and in dark. */
+export const ThemeColorsOnly: Story = {
+  render: () => (
+    <Session
+      answers={{
+        Theme: {
+          tree: { type: 'engine', ref: 0 },
+          props: {
+            plugin: 'paper-theme',
+            colors: {
+              light: { background: '#f6f1e7', foreground: '#3b3226', primary: '#a0522d' },
+              dark: { background: '#1f1b16', foreground: '#e8dcc8', primary: '#e0a96d' },
+            },
+          },
+          hooked: true,
+        },
+      }}
+    >
+      <div className="flex h-40 w-[480px] max-w-full overflow-hidden rounded-xl border border-border">
+        <ModChatThemeLayer>
+          <div className="bg-background p-4 text-sm text-foreground">
+            <div className="font-medium text-primary">Colors without a backdrop</div>
+            <p className="mt-1 text-xs opacity-80">Switch the toolbar theme: the pane follows the window.</p>
+          </div>
+        </ModChatThemeLayer>
+      </div>
+    </Session>
+  ),
+}
+
 /** Sidebar and activity panel pick up the active session backdrop tint. */
 function ChromeTintFrame({ scheme, narrow = false }: { scheme: 'light' | 'dark'; narrow?: boolean }) {
   useLayoutEffect(() => {

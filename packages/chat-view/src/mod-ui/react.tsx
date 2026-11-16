@@ -4,6 +4,7 @@ import { EMPTY_MOD_PANE_ROSTER, MOD_BACKDROP_INSTANCE, MOD_THEME_INSTANCE, type 
 import type { ModSiteLayout, ModSiteSnapshot, ModUiClient, ModUiClientState } from './client'
 import { MOD_PALETTE_STYLE, measureCell } from './cells'
 import { ModTree, countEngineRefs, firstEngineRef, pressModHotkey, type ModTreeEnv, type ModUiPorts } from './ModTree'
+import { emptyModLiveMemo, modLiveSiteValue, readModSiteAnswer, stepModLiveSite, type ModLiveSite } from './live-site'
 import { modBackdropGlassStyle, parseModBackdropProps, parseModThemeStyle } from './theme'
 import { isDrawableModTree } from './validate'
 
@@ -372,80 +373,80 @@ export function ModSurfaceFrame({ component, instanceId, props, plugin, onEscape
 
 const EMPTY_PROPS: Record<string, unknown> = {}
 const EMPTY_PORTS: ModUiPorts = {}
+const EMPTY_STYLE: CSSProperties = {}
 
 export interface ModBackdropSnapshot {
   result: ModRenderResult
   props: Record<string, unknown>
 }
 
-export interface ModThemeStyleOptions {
-  fallback?: Record<string, unknown> | null
-  onThemeChange?: (props: Record<string, unknown> | null) => void
+/** Whether a backdrop (live or remembered) has a mod picture to draw. */
+export function isDrawableModBackdrop(backdrop: ModBackdropSnapshot | null | undefined): backdrop is ModBackdropSnapshot {
+  const tree = backdrop?.result?.tree
+  return !!tree && tree.type !== 'engine' && isDrawableModTree(tree)
 }
 
-/** Session-scoped CSS variable overrides from the active Claude mod theme. */
-export function useModThemeStyle(scheme: 'light' | 'dark', options?: ModThemeStyleOptions): CSSProperties {
-  const ctx = useModUi()
+function backdropOf(snapshot: ModSiteSnapshot): ModBackdropSnapshot | null {
+  const backdrop = snapshot.result ? { result: snapshot.result, props: snapshot.props } : null
+  return isDrawableModBackdrop(backdrop) ? backdrop : null
+}
+
+function themeOf(snapshot: ModSiteSnapshot): Record<string, unknown> | null {
+  const props = snapshot.result?.props
+  const colors = props?.colors
+  return props && colors && typeof colors === 'object' && !Array.isArray(colors) ? props : null
+}
+
+/** Folds each answer of one site into this view's memory (see `stepModLiveSite`). */
+function useLiveSite<T>(snapshot: ModSiteSnapshot, pick: (snapshot: ModSiteSnapshot) => T | null): ModLiveSite<T> {
+  const client = useModUi()?.client ?? null
+  const available = !!client?.isAvailable
+  const answer = useMemo(() => readModSiteAnswer(available, snapshot, pick), [available, snapshot, pick])
+  const [state, setState] = useState(() => ({ client, memo: emptyModLiveMemo<T>() }))
+  const base = state.client === client ? state.memo : emptyModLiveMemo<T>()
+  const { memo, live } = stepModLiveSite(base, answer, snapshot)
+  if (state.client !== client || state.memo !== memo) setState({ client, memo })
+  const payload = live.kind === 'active' ? live.value : live.kind === 'cleared' ? live.previous : null
+  // eslint-disable-next-line react-hooks/exhaustive-deps -- the kind and its payload are the whole value
+  return useMemo(() => live, [live.kind, payload])
+}
+
+/** The session's Theme site: its color tokens, as this view knows them. */
+export function useModThemeSite(): ModLiveSite<Record<string, unknown>> {
   const snapshot = useModSite('Theme', MOD_THEME_INSTANCE, EMPTY_PROPS)
-  const liveReady = !!ctx?.client.isAvailable && snapshot.status === 'ready' && !!snapshot.result
-  const liveOff = !!ctx?.client.isAvailable && snapshot.status === 'off'
-  const liveProps = liveReady && snapshot.result ? snapshot.result.props : null
-  const onThemeChange = options?.onThemeChange
+  return useLiveSite(snapshot, themeOf)
+}
 
-  useEffect(() => {
-    if (!onThemeChange) return
-    if (liveReady) onThemeChange(liveProps)
-    else if (liveOff) onThemeChange(null)
-  }, [liveReady, liveOff, liveProps, onThemeChange])
-
-  // Fallback covers a theme inherited from a wider scope while this session's
-  // own Theme hook is off. A live theme still wins.
-  const effectiveProps = liveProps ?? options?.fallback ?? EMPTY_PROPS
-  return useMemo(() => parseModThemeStyle(effectiveProps, scheme), [effectiveProps, scheme])
+/** CSS variable overrides from the session's live Claude mod theme. */
+export function useModThemeStyle(scheme: 'light' | 'dark'): CSSProperties {
+  const props = modLiveSiteValue(useModThemeSite(), null)
+  return useMemo(() => (props ? parseModThemeStyle(props, scheme) : EMPTY_STYLE), [props, scheme])
 }
 
 /**
- * Full-surface backdrop drawn behind the conversation when a mod sets one,
- * with an optional frosted-glass layer above it to keep text legible.
+ * The session's Backdrop site. Attach `measureRef` to the element the picture
+ * fills: the CLI draws the scene for that many cells.
  */
-export function ModBackdropLayer({
-  viewport,
-  className,
-  glassEnabled = true,
-  fallback,
-  onBackdropChange,
-  paint = true,
-  preferLive = true,
-}: {
-  viewport?: ModSiteLayout['viewport']
-  className?: string
-  glassEnabled?: boolean
-  fallback?: ModBackdropSnapshot | null
-  onBackdropChange?: (active: ModBackdropSnapshot | null) => void
-  /** False keeps the subscription and draws nothing. A hidden node still flashes on click. */
-  paint?: boolean
-  /** False keeps the fallback when a live update does not match the window. */
-  preferLive?: boolean
-}) {
-  const ctx = useModUi()
-  const layerRef = useRef<HTMLDivElement>(null)
+export function useModBackdrop(viewport?: ModSiteLayout['viewport']): {
+  live: ModLiveSite<ModBackdropSnapshot>
+  measureRef: (el: HTMLElement | null) => void
+} {
+  const [el, setEl] = useState<HTMLElement | null>(null)
   const [box, setBox] = useState({ columns: 80, bodyRows: 24 })
   const cell = typeof document === 'undefined' ? { width: 7.2, height: 18 } : measureCell()
 
   useLayoutEffect(() => {
-    const el = layerRef.current
     if (!el || typeof ResizeObserver === 'undefined') return
     const measure = () => {
-      setBox({
-        columns: Math.max(1, Math.floor(el.clientWidth / cell.width)),
-        bodyRows: Math.max(1, Math.floor(el.clientHeight / cell.height)),
-      })
+      const columns = Math.max(1, Math.floor(el.clientWidth / cell.width))
+      const bodyRows = Math.max(1, Math.floor(el.clientHeight / cell.height))
+      setBox((prev) => (prev.columns === columns && prev.bodyRows === bodyRows ? prev : { columns, bodyRows }))
     }
     measure()
     const ro = new ResizeObserver(measure)
     ro.observe(el)
     return () => ro.disconnect()
-  }, [cell.width, cell.height])
+  }, [el, cell.width, cell.height])
 
   const siteProps = useMemo(
     () => ({ bodyColumns: box.columns, scroll: { offset: 0, bodyRows: box.bodyRows } }),
@@ -453,60 +454,54 @@ export function ModBackdropLayer({
   )
   const layout = useMemo(() => ({ viewport }), [viewport])
   const snapshot = useModSite('Backdrop', MOD_BACKDROP_INSTANCE, siteProps, layout)
-  const liveAvailable = !!ctx?.client.isAvailable
-  const liveTree = snapshot.status === 'ready' ? snapshot.result?.tree : undefined
-  const liveActive = liveAvailable && !!snapshot.result && !!liveTree && liveTree.type !== 'engine' && isDrawableModTree(liveTree)
-  const liveOff = liveAvailable && (snapshot.status === 'off' || (snapshot.status === 'ready' && !liveActive))
+  return { live: useLiveSite(snapshot, backdropOf), measureRef: setEl }
+}
 
-  useEffect(() => {
-    if (!onBackdropChange) return
-    if (liveActive && snapshot.result) onBackdropChange({ result: snapshot.result, props: snapshot.props })
-    else if (liveOff) onBackdropChange(null)
-  }, [liveActive, liveOff, snapshot.result, snapshot.props, onBackdropChange])
-
-  // A live backdrop wins. Fallback is the theme inherited from a wider scope,
-  // or the last one cached before this session's client connects.
-  const effective = preferLive && liveActive && snapshot.result
-    ? { result: snapshot.result, props: snapshot.props }
-    : fallback
-      ? fallback
-      : null
-  const active = !!effective && effective.result.tree.type !== 'engine' && isDrawableModTree(effective.result.tree)
-  const backdropProps = useMemo(
-    () => (active && effective ? parseModBackdropProps(effective.result.props) : null),
-    [active, effective],
-  )
-  const glassStyle = useMemo(
-    () => (backdropProps ? modBackdropGlassStyle(backdropProps.glass) : undefined),
-    [backdropProps],
-  )
-
-  if (!paint || (!ctx && !fallback)) return null
+/**
+ * Draws one backdrop picture, with an optional frosted-glass layer above it to
+ * keep text legible. Draws an empty, measurable layer when `backdrop` is null.
+ */
+export function ModBackdropView({
+  backdrop,
+  measureRef,
+  className,
+  glassEnabled = true,
+}: {
+  backdrop: ModBackdropSnapshot | null
+  measureRef?: (el: HTMLElement | null) => void
+  className?: string
+  glassEnabled?: boolean
+}) {
+  const ctx = useModUi()
+  const cell = typeof document === 'undefined' ? { width: 7.2, height: 18 } : measureCell()
+  const drawable = isDrawableModBackdrop(backdrop) ? backdrop : null
+  const backdropProps = useMemo(() => (drawable ? parseModBackdropProps(drawable.result.props) : null), [drawable])
+  const glassStyle = useMemo(() => (backdropProps ? modBackdropGlassStyle(backdropProps.glass) : undefined), [backdropProps])
   return (
     <div
-      ref={layerRef}
+      ref={measureRef}
       data-mod-site="Backdrop"
-      data-mod-backdrop={active ? 'true' : undefined}
+      data-mod-backdrop={drawable ? 'true' : undefined}
       data-mod-color-scheme={backdropProps?.colorScheme}
       aria-hidden="true"
       className={`pointer-events-none select-none overflow-hidden ${className ?? 'absolute inset-0 z-0'}`}
       style={{ ...MOD_PALETTE_STYLE, ['--mod-row' as string]: `${cell.height}px` }}
     >
-      {active && effective ? (
+      {drawable ? (
         <>
           <div className="h-full w-full">
-            <TreeBoundary tree={effective.result.tree} fallback={null}>
+            <TreeBoundary tree={drawable.result.tree} fallback={null}>
               <ModTree
-                tree={effective.result.tree}
+                tree={drawable.result.tree}
                 env={{
                   client: ctx?.client as ModUiClient,
                   component: 'Backdrop',
                   instanceId: MOD_BACKDROP_INSTANCE,
                   ports: ctx?.ports ?? EMPTY_PORTS,
-                  rewrittenProps: effective.result.props,
-                  requestProps: effective.props,
-                  firstRef: firstEngineRef(effective.result.tree),
-                  clientModules: effective.result.clientModules,
+                  rewrittenProps: drawable.result.props,
+                  requestProps: drawable.props,
+                  firstRef: firstEngineRef(drawable.result.tree),
+                  clientModules: drawable.result.clientModules,
                 }}
               />
             </TreeBoundary>
@@ -516,6 +511,22 @@ export function ModBackdropLayer({
       ) : null}
     </div>
   )
+}
+
+/** Full-surface backdrop drawn behind the conversation while the session's mod sets one. */
+export function ModBackdropLayer({
+  viewport,
+  className,
+  glassEnabled = true,
+}: {
+  viewport?: ModSiteLayout['viewport']
+  className?: string
+  glassEnabled?: boolean
+}) {
+  const ctx = useModUi()
+  const { live, measureRef } = useModBackdrop(viewport)
+  if (!ctx) return null
+  return <ModBackdropView backdrop={modLiveSiteValue(live, null)} measureRef={measureRef} className={className} glassEnabled={glassEnabled} />
 }
 
 function ModPlacedRowSite({ row }: { row: ModPlacedRow }) {

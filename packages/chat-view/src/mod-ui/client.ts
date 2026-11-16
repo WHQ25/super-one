@@ -34,7 +34,7 @@ export interface ModSiteLayout {
 export type ModSiteStatus =
   /** Nothing to draw: the session draws no mods, no plugin hooks the site, or the ask failed. */
   | 'off'
-  /** First ask in flight. Transcript sites keep their own drawing meanwhile. */
+  /** First ask scheduled or in flight. Transcript sites keep their own drawing meanwhile. */
   | 'pending'
   | 'ready'
 
@@ -221,7 +221,9 @@ export class ModUiClient {
     const key = entryKey(component, instanceId)
     let entry = this.entries.get(key)
     if (!entry) {
-      entry = { component, instanceId, props, propsKey: '', layout, snapshot: OFF, stale: true, inflight: false, listeners: new Set() }
+      // A site that will be asked reads as pending, so `off` always means an answer (or no session).
+      const snapshot: ModSiteSnapshot = this.isAvailable && !this.unhooked.has(component) ? { status: 'pending', result: null, props } : OFF
+      entry = { component, instanceId, props, propsKey: '', layout, snapshot, stale: true, inflight: false, listeners: new Set() }
       this.entries.set(key, entry)
     }
     entry.listeners.add(listener)

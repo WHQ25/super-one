@@ -42,6 +42,32 @@ replacing `fill` on the phone. Toasts are held while a `holdToasts` pane is
 shown, as in the terminal; a hotkey draws its button pressed for a moment so
 a press whose only effect is a held toast still shows. `$.ui.ask` and the dev-folder consent use the existing question prompt.
 
+## Themes and backdrops
+
+`Theme` (color tokens) and `Backdrop` (a picture behind the chat) are
+session-wide sites. The mod that sets them owns the choice and where it
+applies: Anthropic's `theme-examples` keeps a project and a session choice in
+its own store and sets each session again at its start and at each turn. The
+CLI carries no scope, so SuperOne keeps no scope model of its own and never
+reads a mod's buttons to guess one.
+
+- **Live wins.** A pane draws what its session answers. An empty answer after
+  a drawing is the mod taking the theme away; an empty answer to a resized ask
+  keeps the picture (`packages/chat-view/src/mod-ui/live-site.ts`).
+- **First frame.** Until the session answers (a reopened session, the
+  new-session page, a CLI not yet attached), the desktop paints what the
+  session, else its project, last showed. That memory is bounded and only
+  follows live answers (`apps/desktop/src/renderer/src/components/chat/mod/mod-theme-cache.ts`).
+- **Light and dark.** A backdrop's `overrideColorScheme` (or `colorScheme`)
+  names the window it was made for. While the active session shows it, the
+  window holds that appearance on the document class only; the saved theme
+  mode is never written, and a manual appearance change wins until the theme's
+  scheme changes (`mod-harness-scheme.ts`). A pane whose theme does not match
+  the window, such as an inactive tile, stays unpainted. Colors without a
+  backdrop follow the window, using `colors.light` / `colors.dark` when given.
+- **Shell tint.** The painted backdrop's glass tint (else its background)
+  recolors the sidebar and activity panel for the active session.
+
 ## Surfaces and clients
 
 - **Desktop** attaches each Claude session it shows as surface `desktop`,
@@ -153,7 +179,8 @@ Open items are tracked in the Claude [backlog](../harness/claude/backlog.md)
 band hotkeys / empty, session mode labels and long, pane closed, footer
 spinner original and rewritten, user-message wrap / rewrite / replace / off,
 question wrapped (keyboard and touch) or refused, command output rewritten or
-wrapped), `packages/chat-view/src/bottom-dock.stories.tsx` (Chat/Mobile bottom
+wrapped, theme and backdrop, theme colors only, theme behind the title, shell
+tint light / dark / narrow), `packages/chat-view/src/bottom-dock.stories.tsx` (Chat/Mobile bottom
 dock: the phone's question and command output cards) and
 `apps/desktop/src/renderer/src/components/PluginsPage.stories.tsx` (installed
 mods, review and options, review loading and unavailable).

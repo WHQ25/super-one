@@ -5,6 +5,7 @@ import { useTranslation } from 'react-i18next'
 import { LayoutToggle } from '@/components/coding/LayoutToggle'
 import { ChatPanel } from '@/components/chat/ChatPanel'
 import { getModChromeScheme, getModChromeTint, subscribeModChromeTint } from '@/components/chat/mod/mod-chrome-tint'
+import { requestHarnessScheme } from '@/components/chat/mod/mod-harness-scheme'
 import { CodingWorkspace } from '@/components/coding/CodingWorkspace'
 import { ActivityPanel } from '@/components/activity/ActivityPanel'
 import { useActivityPanelOnScreen } from '@/hooks/useActivityPanelOnScreen'
@@ -535,8 +536,13 @@ function App(): React.JSX.Element {
   const modChromeScheme = useSyncExternalStore(
     subscribeModChromeTint,
     () => getModChromeScheme(sessionId),
-    () => '',
+    () => '' as const,
   )
+  // The active session's mod theme holds the window's appearance, never the saved mode.
+  useEffect(() => {
+    requestHarnessScheme(modChromeScheme || null)
+  }, [modChromeScheme])
+  useEffect(() => () => requestHarnessScheme(null), [])
   const isCodexSession = useActiveSession((s) => resolveProvider({
     sessionProvider: s.sessionProvider,
     preferredProvider: s.preferredProvider,
@@ -612,7 +618,7 @@ function App(): React.JSX.Element {
     <>
     <div
       data-has-mod-tint={modChromeTint ? 'true' : undefined}
-      data-mod-tint-scheme={modChromeScheme || undefined}
+      data-mod-tint-scheme={modChromeTint ? modChromeScheme || undefined : undefined}
       className={cn(
         'flex h-screen flex-col overflow-hidden text-foreground',
         compactMiniShell ? (liquidGlass ? 'bg-transparent' : 'bg-card') : 'bg-sidebar',

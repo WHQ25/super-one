@@ -114,21 +114,6 @@ export function parseModThemeStyle(props: Record<string, unknown>, scheme: 'ligh
   return style as CSSProperties
 }
 
-/** Where a mod theme is allowed to show. Narrower scopes block wider ones. */
-export type ModThemeScope = 'session' | 'folder' | 'project' | 'harness'
-
-/**
- * Scope from a theme or backdrop payload. Absent means the host must keep the
- * update on the session that received it. `global` is the harness-wide scope.
- */
-export function parseModThemeScope(props: Record<string, unknown> | null | undefined): ModThemeScope | undefined {
-  if (!isPlainRecord(props)) return undefined
-  const raw = props.scope ?? props.applyScope ?? props.themeScope
-  if (raw === 'session' || raw === 'folder' || raw === 'project' || raw === 'harness') return raw
-  if (raw === 'global') return 'harness'
-  return undefined
-}
-
 /**
  * Color the shell can mix into the sidebar and activity panel.
  * Glass tint wins. Otherwise the backdrop tree's own background is used.

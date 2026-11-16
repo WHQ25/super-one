@@ -164,6 +164,22 @@ export interface WorkspaceGitPort {
   assignBranch(projectId: string, worktreePath: string, rawName: string): Promise<unknown>
   handoffToMain(projectId: string, worktreePath: string): Promise<unknown>
   handoffPreview(projectId: string, worktreePath: string): Promise<unknown>
+  exportBundle(
+    projectId: string,
+    input: { absolutePath?: string | null; branch?: string; haves: string[]; includeWorkingTree: boolean },
+  ): Promise<unknown>
+  branchTips(projectId: string): Promise<unknown>
+  bundleHaves(projectId: string): Promise<unknown>
+  branchRelations(projectId: string, items: Array<{ localName: string; head: string }>): Promise<unknown>
+  uploadBundle(projectId: string, input: { uploadId: string; offset: number; chunk: string }): unknown
+  applyIncomingBranch(projectId: string, input: {
+    upload?: { uploadId: string; size: number } | null
+    localName: string
+    head: string
+    snapshot: string | null
+    onDiverged?: 'stop' | 'overwrite'
+    createOnly?: boolean
+  }): Promise<unknown>
   mentionRefs(
     projectId: string,
     kind: GitMentionRefKind,

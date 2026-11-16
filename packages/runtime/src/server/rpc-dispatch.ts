@@ -305,6 +305,12 @@ const HANDLERS: Readonly<Record<string, (payload: unknown, ctx: RpcContext, meth
   'git.worktreeAssignBranch': (payload, ctx) => handleGitWorktreeAssignBranch(payload, ctx),
   'git.worktreeHandoff': (payload, ctx) => handleGitWorktreeHandoff(payload, ctx),
   'git.worktreeHandoffPreview': (payload, ctx) => handleGitWorktreeHandoffPreview(payload, ctx),
+  'git.exportBundle': (payload, ctx) => handleGitExportBundle(payload, ctx),
+  'git.branchTips': (payload, ctx) => handleGitBranchTips(payload, ctx),
+  'git.bundleHaves': (payload, ctx) => handleGitBundleHaves(payload, ctx),
+  'git.branchRelations': (payload, ctx) => handleGitBranchRelations(payload, ctx),
+  'git.uploadBundle': (payload, ctx) => handleGitUploadBundle(payload, ctx),
+  'git.applyIncomingBranch': (payload, ctx) => handleGitApplyIncomingBranch(payload, ctx),
   'git.clone': (payload, ctx) => handleGitClone(payload, ctx),
   'session.create': (payload, ctx) => handleSessionCreate(payload, ctx),
   'session.setCwd': (payload, ctx) => handleSessionSetCwd(payload, ctx),
@@ -1500,6 +1506,98 @@ async function handleGitWorktreeHandoffPreview(payload: unknown, ctx: RpcContext
         String(p.projectId ?? ''),
         String(p.worktreePath ?? ''),
       ),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+/** Reads repository content only (like `git.diff`); the bundle lands in the host's temp directory. */
+async function handleGitExportBundle(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    return {
+      result: await ctx.workspaceGit.exportBundle(String(p.projectId ?? ''), {
+        absolutePath: typeof p.path === 'string' && p.path ? p.path : null,
+        ...(typeof p.branch === 'string' && p.branch ? { branch: p.branch } : {}),
+        haves: Array.isArray(p.haves) ? p.haves.filter((h): h is string => typeof h === 'string') : [],
+        includeWorkingTree: p.includeWorkingTree === true,
+      }),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+async function handleGitBranchTips(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
+  if (denied) return denied
+  try {
+    return { result: await ctx.workspaceGit.branchTips(String(asRecord(payload).projectId ?? '')) }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+async function handleGitBundleHaves(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
+  if (denied) return denied
+  try {
+    return { result: await ctx.workspaceGit.bundleHaves(String(asRecord(payload).projectId ?? '')) }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+async function handleGitBranchRelations(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const items = (Array.isArray(p.items) ? p.items : []).map((item) => {
+    const r = asRecord(item)
+    return { localName: String(r.localName ?? ''), head: String(r.head ?? '') }
+  })
+  try {
+    return { result: await ctx.workspaceGit.branchRelations(String(p.projectId ?? ''), items) }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+async function handleGitUploadBundle(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    return {
+      result: await ctx.workspaceGit.uploadBundle(String(p.projectId ?? ''), {
+        uploadId: String(p.uploadId ?? ''),
+        offset: Number(p.offset),
+        chunk: typeof p.chunk === 'string' ? p.chunk : '',
+      }),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+async function handleGitApplyIncomingBranch(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const upload = p.upload ? asRecord(p.upload) : null
+  try {
+    return {
+      result: await ctx.workspaceGit.applyIncomingBranch(String(p.projectId ?? ''), {
+        upload: upload ? { uploadId: String(upload.uploadId ?? ''), size: Number(upload.size) } : null,
+        localName: String(p.localName ?? ''),
+        head: String(p.head ?? ''),
+        snapshot: typeof p.snapshot === 'string' ? p.snapshot : null,
+        ...(p.onDiverged === 'overwrite' ? { onDiverged: 'overwrite' as const } : {}),
+        ...(p.createOnly === true ? { createOnly: true } : {}),
+      }),
     }
   } catch (err) {
     return mapThrown(err)

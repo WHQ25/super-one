@@ -17,6 +17,15 @@ import {
   assignBranch as assignBranchAt,
   handoffPreview as handoffPreviewAt,
   handoffToMain as handoffToMainAt,
+  exportBranchBundle,
+  applyIncomingBranch,
+  branchRelations,
+  checkoutHolding,
+  discardUpload,
+  readBranchTipsWithChanges,
+  readBundleHaves,
+  uploadedBundlePath,
+  writeBundleChunk,
   samePath,
   worktreeGit,
   type ActivateWorktreeInput,
@@ -28,9 +37,12 @@ import {
 } from '@superone/runtime/git'
 import type { WorkspaceProjects } from './workspace-projects'
 import type { GitMentionCapabilities, GitMentionRefKind, GitMentionRefsResult } from '@superone/shared/git-mention-query'
+import type { BranchImportConflictMode, BranchImportResult, BranchRelation, BranchTip, GitBundleExportResult } from '@superone/shared/agent-types'
 
 /** GitHub round-trips for `@gh`; a popup must never wait longer than this. */
 const GH_TIMEOUT_MS = 15_000
+/** Incoming tips one `git.branchRelations` call classifies. */
+const MAX_RELATION_ITEMS = 200
 
 export { parseShortstat } from '@superone/runtime/git'
 export type { ActivateWorktreeInput, ActivateWorktreeResult, AssignBranchResult, HandoffPreview, HandoffResult }
@@ -417,6 +429,80 @@ export class WorkspaceGitService {
       return await handoffToMainAt(this.git, await this.assertRepoWorktreePath(projectId, worktreePath))
     } catch (err) {
       return { ok: false, reason: 'error', error: gitErrorMessage(err) }
+    }
+  }
+
+  /**
+   * Bundle a branch for another machine; `haves` are commits the receiver
+   * already has. A named branch is read from the checkout that has it, so its
+   * uncommitted work can ride along; otherwise the checkout's current branch.
+   */
+  async exportBundle(
+    projectId: string,
+    input: { absolutePath?: string | null; branch?: string; haves: string[]; includeWorkingTree: boolean },
+  ): Promise<GitBundleExportResult> {
+    const root = this.root(projectId)
+    const cwd = input.absolutePath
+      ? await this.assertRepoWorktreePath(projectId, input.absolutePath)
+      : input.branch ? await checkoutHolding(this.git, root, input.branch) : root
+    return exportBranchBundle(this.git, cwd, {
+      haves: input.haves,
+      includeWorkingTree: input.includeWorkingTree,
+      ...(input.branch ? { branch: input.branch } : {}),
+    })
+  }
+
+  /** Recent local branches, with the uncommitted work of the checkouts that have them. */
+  async branchTips(projectId: string): Promise<{ branches: BranchTip[] }> {
+    return { branches: await readBranchTipsWithChanges(this.git, this.root(projectId)) }
+  }
+
+  /** Commits this repository already has, for a sender to bundle against. */
+  async bundleHaves(projectId: string): Promise<{ haves: string[] }> {
+    return { haves: await readBundleHaves(this.git, this.root(projectId)) }
+  }
+
+  /** Where incoming tips stand against this repository's branches. */
+  async branchRelations(
+    projectId: string,
+    items: Array<{ localName: string; head: string }>,
+  ): Promise<{ relations: Array<{ relation: BranchRelation; behind?: number }> }> {
+    const root = this.root(projectId)
+    const valid = items.slice(0, MAX_RELATION_ITEMS)
+      .filter((item) => typeof item.localName === 'string' && item.localName && typeof item.head === 'string')
+    return { relations: await branchRelations(this.git, root, valid) }
+  }
+
+  /** One chunk of a bundle a controller sends for {@link applyIncomingBranch}. */
+  uploadBundle(projectId: string, input: { uploadId: string; offset: number; chunk: string }): { size: number } {
+    this.root(projectId)
+    return writeBundleChunk(input.uploadId, input.offset, Buffer.from(input.chunk, 'base64'))
+  }
+
+  /** Land an uploaded bundle (or commits already here) as a branch of the project. */
+  async applyIncomingBranch(projectId: string, input: {
+    upload?: { uploadId: string; size: number } | null
+    localName: string
+    head: string
+    snapshot: string | null
+    onDiverged?: BranchImportConflictMode
+    createOnly?: boolean
+  }): Promise<BranchImportResult> {
+    const root = this.root(projectId)
+    try {
+      const bundlePath = input.upload ? uploadedBundlePath(input.upload.uploadId, input.upload.size) : null
+      const result = await applyIncomingBranch(this.git, root, {
+        bundlePath,
+        localName: input.localName,
+        head: input.head,
+        snapshot: input.snapshot,
+        ...(input.onDiverged ? { onDiverged: input.onDiverged } : {}),
+        ...(input.createOnly ? { createOnly: true } : {}),
+      })
+      if (result.ok) this.projects.touch(projectId)
+      return result
+    } finally {
+      if (input.upload) discardUpload(input.upload.uploadId)
     }
   }
 

@@ -2015,6 +2015,130 @@ export type WorktreeHandoffResult =
   | { ok: true }
   | { ok: false; reason: 'not-worktree' | 'no-changes' | 'local-dirty' | 'conflict' | 'error'; error?: string }
 
+/**
+ * `git.exportBundle`: the checkout's branch as a git bundle in the host's temp
+ * directory, read back with `fs.readTempFile`. `bundlePath` is null when the
+ * caller already has every commit. `snapshot` is a WIP commit on top of `head`
+ * holding the uncommitted work; the checkout itself is left untouched.
+ */
+export type GitBundleExportResult =
+  | { ok: true; branch: string; head: string; snapshot: string | null; bundlePath: string | null; size: number }
+  | { ok: false; reason: 'detached' | 'no-commits' | 'error'; error?: string }
+
+/** How an import treats a local branch that has diverged from the incoming one. */
+export type BranchImportConflictMode = 'stop' | 'overwrite'
+
+export type BranchImportResult =
+  | {
+      ok: true
+      branch: string
+      head: string
+      status: 'created' | 'updated' | 'unchanged'
+      /** Old local tip kept here when the import overwrote a diverged branch. */
+      backupBranch?: string
+      snapshot: boolean
+    }
+  | {
+      ok: false
+      reason: 'unsupported' | 'detached' | 'no-commits' | 'diverged' | 'exists' | 'conflict' | 'cancelled' | 'error'
+      branch?: string
+      error?: string
+    }
+
+/** `git.branchTips`: a host's most recent local branches. */
+export interface BranchTip {
+  name: string
+  head: string
+  worktreePath?: string
+  /** Uncommitted work in `worktreePath`. */
+  dirty?: GitDirtyStatus
+}
+
+/**
+ * Where a branch on a checkout source stands against the local branch it lands on.
+ * `update`: the local repository does not have the tip yet.
+ */
+export type BranchRelation = 'new' | 'same' | 'behind' | 'ahead' | 'diverged' | 'update'
+
+/**
+ * Somewhere a branch can be checked out from. Environments are both sources
+ * and targets; git remotes and pull requests only feed this computer's checkouts.
+ */
+export type CheckoutSource =
+  /**
+   * An environment's checkout of the same repository: `folderPath` is its
+   * project key (`remote:<conn>:<path>`), or a local path for connection `local`.
+   */
+  | { kind: 'node'; connectionId: string; folderPath: string }
+  /** A git remote of the local repository. */
+  | { kind: 'remote'; remote: string }
+  /** A GitHub pull request of the local repository's origin. */
+  | { kind: 'pr' }
+
+export interface CheckoutSourceBranch {
+  /** Node/remote branch name, or the pull request number. */
+  ref: string
+  title: string
+  detail?: string
+  head: string
+  /** Default local branch name. */
+  localName: string
+  relation: BranchRelation
+  behind?: number
+  /** Node only: uncommitted work in the checkout that has the branch. */
+  dirty?: GitDirtyStatus
+  /** Pull request from a fork. */
+  fork?: boolean
+  /** Last commit (branches) or update (pull requests), ms since epoch. */
+  updatedAt?: number
+  /** Node only: the branch is checked out there. */
+  checkedOut?: boolean
+}
+
+export type CheckoutSourceBranchesResult =
+  /** `fetchedAt`: when a git remote was last fetched (its branches are as of then). */
+  | { ok: true; branches: CheckoutSourceBranch[]; fetchedAt?: number }
+  | { ok: false; reason: 'unsupported' | 'unavailable' | 'error'; error?: string }
+
+export interface CheckoutFromSourceRequest {
+  /** The repository that receives the branch: a local root or a node project key. */
+  folderPath: string
+  /** Names this run for progress events and cancellation. */
+  operationId?: string
+  source: CheckoutSource
+  branch: Pick<CheckoutSourceBranch, 'ref' | 'head'>
+  localName: string
+  /** Node only: carry the checkout's uncommitted work as a WIP commit. */
+  includeWorkingTree?: boolean
+  onDiverged?: BranchImportConflictMode
+  /** "Save as": refuse a local name that already exists. */
+  createOnly?: boolean
+}
+
+export type CheckoutProgressPhase = 'bundling' | 'downloading' | 'uploading' | 'fetching' | 'applying'
+
+/** One step of a running checkout; `done`/`total` are bytes while transferring. */
+export interface CheckoutProgress {
+  operationId: string
+  phase: CheckoutProgressPhase
+  done?: number
+  total?: number
+}
+
+/** A local branch's recorded checkout source and where it stands against it. */
+export interface LocalBranchSource {
+  source: CheckoutSource
+  ref: string
+  head?: string
+  relation?: BranchRelation
+  behind?: number
+}
+
+export interface CheckoutSourcesInfo {
+  remotes: Array<{ name: string; url: string }>
+  github: boolean
+}
+
 export type WorktreeAssignResult =
   | { ok: true; branch: string }
   | { ok: false; reason: 'name-required' | 'not-detached' | 'exists' | 'checked-out' | 'error'; error?: string }
@@ -4673,6 +4797,12 @@ export const AgentIpcChannels = {
   GIT_CHECKED_OUT_BRANCHES: 'app:git-checked-out-branches',
   GIT_HANDOFF_TO_LOCAL: 'app:git-handoff-to-local',
   GIT_HANDOFF_PREVIEW: 'app:git-handoff-preview',
+  GIT_CHECKOUT_SOURCES: 'app:git-checkout-sources',
+  GIT_CHECKOUT_SOURCE_BRANCHES: 'app:git-checkout-source-branches',
+  GIT_CHECKOUT_FROM_SOURCE: 'app:git-checkout-from-source',
+  GIT_CHECKOUT_PROGRESS: 'app:git-checkout-progress',
+  GIT_CHECKOUT_CANCEL: 'app:git-checkout-cancel',
+  GIT_LOCAL_BRANCH_SOURCES: 'app:git-local-branch-sources',
   GIT_ASSIGN_BRANCH: 'app:git-assign-branch',
   GIT_STATUS_FILES: 'app:git-status-files',
   GIT_LOG: 'app:git-log',

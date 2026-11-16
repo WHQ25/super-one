@@ -27,6 +27,18 @@ export {
   type HandoffResult,
   type HandoffPreview,
 } from './worktree-ops'
+export {
+  applyIncomingBranch,
+  branchRelations,
+  checkoutHolding,
+  exportBranchBundle,
+  readBranchTips,
+  readBranchTipsWithChanges,
+  readBundleHaves,
+  validObjectIds,
+  type IncomingBranchInput,
+} from './branch-bundle'
+export { discardUpload, uploadedBundlePath, writeBundleChunk, MAX_BUNDLE_UPLOAD_BYTES } from './bundle-upload'
 export { fetchRemoteCommands, isGitRemoteName } from './fetch'
 export { checkoutExistingBranch, localBranchList, localBranchNames, readLocalBranchNames } from './branch-refs'
 export type { LocalBranchList } from './branch-refs'

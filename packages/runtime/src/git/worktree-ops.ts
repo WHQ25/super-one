@@ -162,7 +162,7 @@ export async function rollbackUnusedWorktree(git: WorktreeGit, sourceDir: string
  * object. Only a temporary index is written, so it runs as a timed read: a
  * killed run leaves the repository as it was.
  */
-async function writeWorkingTree(git: WorktreeGit, worktreePath: string): Promise<string> {
+export async function writeWorkingTree(git: WorktreeGit, worktreePath: string): Promise<string> {
   const tmpIndex = join(tmpdir(), `s1-handoff-${randomUUID()}.index`)
   const env = { GIT_INDEX_FILE: tmpIndex }
   try {

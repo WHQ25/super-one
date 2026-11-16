@@ -600,3 +600,111 @@ describe('worktree creation picker', () => {
     expect(useAppStore.getState()._worktrees[PROJECT]).toMatchObject({ pendingBaseBranch: 'develop', pendingMode: 'detach' })
   })
 })
+
+describe('checkout sources', () => {
+  const origin = 'git:https://github.com/acme/app.git'
+  const checkout = (environmentId: string, connectionId: string, projectId: string, pathKey: string) => ({
+    ref: projectRef(environmentId, projectId),
+    environmentId, connectionId, projectId, name: 'proj', pathKey, hostPath: pathKey,
+    repoIdentity: origin, addedAt: 1, lastOpened: 2,
+  })
+  const NODE = { kind: 'node' as const, connectionId: 'office', folderPath: 'remote:office:/srv/proj' }
+  const HEAD_X = 'b'.repeat(40)
+  let checkoutFromSource: ReturnType<typeof vi.fn>
+  let switchGitBranch: ReturnType<typeof vi.fn>
+
+  beforeEach(() => {
+    window.localStorage.clear()
+    getGitInfo.mockResolvedValue({ branch: 'main' })
+    getWorktreeInfo.mockResolvedValue(worktreeInfo('feat/existing'))
+    checkoutFromSource = vi.fn(async (request: { localName: string }) => ({
+      ok: true, branch: request.localName, head: HEAD_X, status: 'created', snapshot: false,
+    }))
+    switchGitBranch = vi.fn(async () => ({ ok: true }))
+    Object.assign(window.app, {
+      getGitBranches: vi.fn(async () => ({ local: ['main', 'develop'] })),
+      getCheckedOutBranches: vi.fn(async () => ['main']),
+      getCheckoutSources: vi.fn(async () => ({ remotes: [{ name: 'origin', url: 'https://github.com/acme/app.git' }], github: true })),
+      getLocalBranchSources: vi.fn(async () => ({
+        develop: { source: NODE, ref: 'develop', head: HEAD_X, relation: 'behind', behind: 3 },
+      })),
+      listCheckoutSourceBranches: vi.fn(async () => ({
+        ok: true,
+        branches: [{ ref: 'feat/x', title: 'feat/x', head: HEAD_X, localName: 'feat/x', relation: 'new', checkedOut: true }],
+      })),
+      checkoutFromSource,
+      switchGitBranch,
+      cancelCheckout: vi.fn(async () => {}),
+      onCheckoutProgress: () => () => {},
+    })
+    useAppStore.setState({
+      _worktrees: {
+        [PROJECT]: { pendingBaseBranch: null, pendingMode: 'branch', pendingBranchName: '', pendingCarryLocalChanges: false, activePath: null },
+      },
+    })
+    useMultiHostSidebarStore.setState({
+      environments: [
+        { environmentId: 'local-env', connectionId: 'local', label: 'This PC', kind: 'local', connection: 'connected',
+          projectsStatus: 'ready', projectsError: null, checkouts: [checkout('local-env', 'local', 'p1', PROJECT)] },
+        { environmentId: 'office', connectionId: 'office', label: 'Office', kind: 'cli-node', connection: 'connected',
+          projectsStatus: 'ready', projectsError: null, checkouts: [checkout('office', 'office', 'p2', NODE.folderPath)] },
+      ],
+    })
+  })
+
+  async function openPopover() {
+    const user = userEvent.setup()
+    render(<WorkDirIndicator isGitRepo />)
+    await user.click(screen.getByRole('button'))
+    return user
+  }
+
+  it('offers the node as a source and syncs a branch that is behind it from its badge', async () => {
+    const user = await openPopover()
+    expect(await screen.findByText(/Check Out Branch from/)).toBeTruthy()
+    await user.click(await screen.findByRole('button', { name: 'Sync from Office' }))
+    expect(checkoutFromSource).toHaveBeenCalledWith({
+      folderPath: PROJECT, source: NODE, branch: { ref: 'develop', head: HEAD_X }, localName: 'develop',
+    })
+    expect(switchGitBranch).not.toHaveBeenCalled()
+  })
+
+  it('creates a node branch locally and switches the checkout to it', async () => {
+    const user = await openPopover()
+    await user.click(await screen.findByText(/Check Out Branch from/))
+    await user.click(await screen.findByRole('button', { name: /feat\/x/ }))
+    await user.click(screen.getByRole('button', { name: 'Create and Check Out' }))
+    await waitFor(() => expect(switchGitBranch).toHaveBeenCalledWith(PROJECT, 'feat/x'))
+    expect(checkoutFromSource).toHaveBeenCalledWith(expect.objectContaining({ source: NODE, localName: 'feat/x' }))
+  })
+
+  it('lists every source in the menu, pull requests included', async () => {
+    const user = await openPopover()
+    await user.click(await screen.findByRole('button', { name: /Office/, expanded: false }))
+    const menu = screen.getByRole('menu')
+    expect(within(menu).getByRole('menuitem', { name: /Office/ })).toBeTruthy()
+    expect(within(menu).getByRole('menuitem', { name: /origin/ })).toBeTruthy()
+    expect(within(menu).getByRole('menuitem', { name: /Pull Requests/ })).toBeTruthy()
+  })
+
+  it('offers this computer as the source of a node checkout, without remotes or badges', async () => {
+    const REMOTE = NODE.folderPath
+    useChatStore.getState().ensureSession(REMOTE)
+    useChatStore.setState({ activeProject: REMOTE })
+    useAppStore.setState({
+      currentFolder: REMOTE,
+      _worktrees: {
+        [REMOTE]: { pendingBaseBranch: null, pendingMode: 'branch', pendingBranchName: '', pendingCarryLocalChanges: false, activePath: null },
+      },
+    })
+    const listCheckoutSourceBranches = vi.mocked(window.app.listCheckoutSourceBranches)
+    const user = await openPopover()
+    await user.click(await screen.findByText(/Check Out Branch from/))
+    await waitFor(() => expect(listCheckoutSourceBranches).toHaveBeenCalledWith(
+      REMOTE, { kind: 'node', connectionId: 'local', folderPath: PROJECT }, undefined,
+    ))
+    expect(window.app.getCheckoutSources).not.toHaveBeenCalled()
+    expect(window.app.getLocalBranchSources).not.toHaveBeenCalled()
+  })
+})
+

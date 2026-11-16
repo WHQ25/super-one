@@ -2,7 +2,7 @@ import { useEffect, useState, useCallback, useMemo, useId, type ComponentType, t
 import { motion, useReducedMotion } from 'motion/react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { GitBranch, GitCommit, GitFork, ChevronDown, ChevronRight, Check, Circle, Plus } from 'lucide-react'
+import { GitBranch, GitCommit, GitFork, ChevronDown, ChevronRight, Check, Circle, Loader2, Plus } from 'lucide-react'
 import { Popover, PopoverContent, PopoverTrigger } from '@superone/ui/components/ui/popover'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import {
@@ -19,7 +19,7 @@ import { useScrollEdgeFade } from '@superone/ui/lib/use-scroll-edge-fade'
 import { useActiveSession, useChatStore, useSessionScope } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { useOnTurnCompleted } from '@/hooks/useOnTurnCompleted'
-import type { GitDirtyStatus, GitInfoResult, WorktreeEntry, WorktreeInfo, WorktreeMode } from '@superone/shared/agent-types'
+import type { CheckoutSourcesInfo, GitDirtyStatus, GitInfoResult, LocalBranchSource, WorktreeEntry, WorktreeInfo, WorktreeMode } from '@superone/shared/agent-types'
 import { parseRemoteProjectKey, remoteActiveFileRoot } from '@/lib/remote-project-key'
 import { WorktreeHandoffSection } from './WorktreeHandoffSection'
 import { WorktreeAssignBranchSection } from './WorktreeAssignBranchSection'
@@ -45,7 +45,16 @@ import {
 } from './work-dir-environment'
 import { selectionForNewSession } from '@superone/shared/session-location'
 import { EMPTY_BRANCH_LISTS, readBranchLists, type GitBranchLists } from './git-branch-lists'
-import { GitBranchMenu } from './GitBranchMenu'
+import { GitBranchMenu, type GitBranchMenuProps } from './GitBranchMenu'
+import { CheckoutSourceFooter, CheckoutSourcePanel, RelationPill, runCheckoutFromSource } from './CheckoutSourcePanel'
+import {
+  checkoutSourceId,
+  checkoutSourceOptions,
+  preferredCheckoutSource,
+  rememberCheckoutSource,
+  sourceBadgeLabel,
+  type CheckoutSourceOption,
+} from './checkout-sources'
 import { WorkDirIndicatorClassic } from './WorkDirIndicatorClassic'
 import { workDirTitle, type WorkDirState } from './work-dir-label'
 
@@ -148,6 +157,8 @@ function CheckoutPanel({
   onInit,
   onSelect,
   onCreate,
+  badge,
+  footer,
 }: {
   isGitRepo?: boolean | null
   environment: string
@@ -160,6 +171,8 @@ function CheckoutPanel({
   onInit: () => void
   onSelect: (branch: string) => void
   onCreate: (name: string) => void
+  badge?: GitBranchMenuProps['badge']
+  footer?: ReactNode
 }) {
   const { t } = useTranslation()
   if (isGitRepo === false) {
@@ -187,6 +200,8 @@ function CheckoutPanel({
       emptyLabel={emptyLabel}
       onSelect={onSelect}
       onCreate={onCreate}
+      badge={badge}
+      footer={footer}
     />
   )
 }
@@ -462,6 +477,11 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
   const [activeDirty, setActiveDirty] = useState<GitDirtyStatus | undefined>()
   const [initing, setIniting] = useState(false)
   const [failedCheckout, setFailedCheckout] = useState<FailedCheckout | null>(null)
+  const [sourceInfo, setSourceInfo] = useState<CheckoutSourcesInfo | null>(null)
+  const [branchSources, setBranchSources] = useState<Record<string, LocalBranchSource>>({})
+  /** The checkout tab shows one source's branches instead of the local ones. */
+  const [sourceView, setSourceView] = useState<{ option: CheckoutSourceOption; initialRef?: string } | null>(null)
+  const [quickSyncing, setQuickSyncing] = useState<string | null>(null)
 
   const activePath = location.selection.kind === 'existing' ? location.selection.path : null
   const activeGitPath = currentFolder && activePath ? remoteActiveFileRoot(currentFolder, activePath) : null
@@ -587,6 +607,27 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
     }
   }, [currentFolder, isGitRepo])
 
+  // Git remotes, pull requests and source badges apply to this computer's
+  // checkouts; a node checkout takes branches from other environments only.
+  const loadCheckoutSources = useCallback(async () => {
+    if (!currentFolder || isGitRepo === false) return
+    if (isRemoteProject) {
+      setSourceInfo(null)
+      setBranchSources({})
+      return
+    }
+    try {
+      const [info, sources] = await Promise.all([
+        window.app.getCheckoutSources(currentFolder).catch(() => null),
+        window.app.getLocalBranchSources(currentFolder).catch(() => ({})),
+      ])
+      setSourceInfo(info ?? null)
+      setBranchSources(sources ?? {})
+    } catch {
+      // Sources are optional; the branch list works without them.
+    }
+  }, [currentFolder, isGitRepo, isRemoteProject])
+
   const openPopover = useCallback((open: boolean) => {
     if (!open && currentFolder && location.selection.kind === 'create'
       && location.selection.mode === 'branch' && !location.selection.branchName.trim()) {
@@ -602,10 +643,12 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
       setEnvironmentError(null)
       setSearch('')
       setBranchesOpen(false)
+      setSourceView(null)
       setMode(isGitRepo !== false && location.selection.kind !== 'local' ? 'worktree' : 'checkout')
       void loadPopoverData()
+      void loadCheckoutSources()
     }
-  }, [loadPopoverData, currentFolder, location.selection, location.environmentId, isGitRepo])
+  }, [loadPopoverData, loadCheckoutSources, currentFolder, location.selection, location.environmentId, isGitRepo])
 
   const resetToCheckout = useCallback(() => {
     if (!currentFolder || location.selection.kind === 'local') return
@@ -620,6 +663,7 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
   const selectMode = useCallback((next: string) => {
     setSearch('')
     setBranchesOpen(false)
+    setSourceView(null)
     if (next === 'worktree') {
       if (isGitRepo === false) return
       setMode('worktree')
@@ -896,6 +940,79 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
     />
   )
 
+  const currentConnectionId = (currentFolder && parseRemoteProjectKey(currentFolder)?.connectionId) || 'local'
+  const sourceOptions = useMemo(() => checkoutSourceOptions({
+    buckets: environmentMenu.buckets,
+    currentConnectionId,
+    repoIdentity: environmentMenu.repoIdentity,
+    info: isRemoteProject ? null : sourceInfo,
+    pullRequestsLabel: t('chat.git.sourcePullRequests'),
+  }), [isRemoteProject, currentConnectionId, environmentMenu.buckets, environmentMenu.repoIdentity, sourceInfo, t])
+  const preferredSource = currentFolder ? preferredCheckoutSource(currentFolder, sourceOptions) : null
+
+  const openSource = (option: CheckoutSourceOption, initialRef?: string) => {
+    if (!currentFolder || option.disabled) return
+    rememberCheckoutSource(currentFolder, option.id)
+    setSearch('')
+    setSourceView({ option, ...(initialRef ? { initialRef } : {}) })
+  }
+  const openSourceFor = (entry: LocalBranchSource) => {
+    const option = sourceOptions.find((item) => item.id === checkoutSourceId(entry.source))
+    if (option) openSource(option, entry.ref)
+  }
+  const refreshAfterLanding = () => {
+    void loadPopoverData()
+    void loadCheckoutSources()
+  }
+  const handleLanded = ({ branch, checkout }: { branch: string; checkout: boolean }) => {
+    if (!checkout) { refreshAfterLanding(); return }
+    setSourceView(null)
+    if (branch === mainBranch) { setPopoverOpen(false); return }
+    void handleBranchSelect(branch)
+  }
+  const quickSync = async (branch: string, entry: LocalBranchSource) => {
+    if (!currentFolder || !entry.head || quickSyncing) return
+    setQuickSyncing(branch)
+    try {
+      const outcome = await runCheckoutFromSource({
+        folderPath: currentFolder,
+        source: entry.source,
+        branch: { ref: entry.ref, head: entry.head },
+        localName: branch,
+      }, sourceBadgeLabel(entry.source, entry.ref, sourceOptions), t, false)
+      if (outcome.ok) refreshAfterLanding()
+      else if (outcome.diverged) openSourceFor(entry)
+    } finally {
+      setQuickSyncing(null)
+    }
+  }
+  const branchBadge = (branch: string): ReactNode => {
+    const entry = branchSources[branch]
+    if (!entry) return null
+    if (quickSyncing === branch) return <Loader2 className="size-3 animate-spin text-muted-foreground" />
+    const label = sourceBadgeLabel(entry.source, entry.ref, sourceOptions)
+    const named = <span className="truncate">{label}</span>
+    if (entry.head && (entry.relation === 'behind' || entry.relation === 'update')) {
+      return (
+        <button type="button" title={t('chat.git.sourceQuickSync', { source: label })} aria-label={t('chat.git.sourceQuickSync', { source: label })}
+          onClick={() => { void quickSync(branch, entry) }}>
+          <RelationPill relation={entry.relation} behind={entry.behind}>{named}</RelationPill>
+        </button>
+      )
+    }
+    if (entry.relation === 'diverged') {
+      return (
+        <button type="button" onClick={() => openSourceFor(entry)}>
+          <RelationPill relation="diverged">{named}</RelationPill>
+        </button>
+      )
+    }
+    return <span className="max-w-24 truncate rounded-full border px-1.5 text-[11px] text-muted-foreground">{label}</span>
+  }
+  const sourceFooter = preferredSource
+    ? <CheckoutSourceFooter options={sourceOptions} selected={preferredSource} onOpen={(option) => openSource(option)} />
+    : null
+
   return (
     <>
       <Popover open={popoverOpen} onOpenChange={openPopover}>
@@ -972,6 +1089,19 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
                   </TabsList>
                 </div>
                 <PanelHeight open={modeValue === 'checkout'}>
+                  {sourceView && currentFolder ? (
+                    <CheckoutSourcePanel
+                      key={sourceView.option.id}
+                      folderPath={currentFolder}
+                      options={sourceOptions}
+                      selected={sourceView.option}
+                      initialRef={sourceView.initialRef}
+                      onSelectSource={(option) => openSource(option)}
+                      onBack={() => setSourceView(null)}
+                      localDirty={mainDirty}
+                      onLanded={handleLanded}
+                    />
+                  ) : (<>
                   <form className="border-b px-3 py-2" onSubmit={submitSearch}>
                     <input
                       type="text"
@@ -1006,8 +1136,11 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
                       onInit={() => { void handleGitInit() }}
                       onSelect={(branch) => { void handleBranchSelect(branch) }}
                       onCreate={(name) => { void handleCreateBranch(name) }}
+                      badge={branchBadge}
+                      footer={sourceFooter}
                     />
                   </TabsContent>
+                  </>)}
                 </PanelHeight>
                 <PanelHeight open={modeValue === 'worktree'}>
                   {/* A started session's worktree tab only forks. Searching worktrees does nothing there. */}

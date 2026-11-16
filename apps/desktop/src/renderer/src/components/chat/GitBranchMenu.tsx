@@ -11,6 +11,10 @@ export interface GitBranchMenuProps {
   emptyLabel?: string
   onSelect: (branch: string) => void
   onCreate: (name: string) => void
+  /** Trailing status for a branch row (e.g. its checkout source). */
+  badge?: (branch: string) => ReactNode
+  /** Rows under New Branch. */
+  footer?: ReactNode
 }
 
 const rowClass = 'flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-accent'
@@ -23,6 +27,8 @@ export function GitBranchMenu({
   emptyLabel,
   onSelect,
   onCreate,
+  badge,
+  footer = null,
 }: GitBranchMenuProps) {
   const { t } = useTranslation()
   const [draft, setDraft] = useState('')
@@ -51,16 +57,23 @@ export function GitBranchMenu({
         {empty && (
           <div className="px-3 py-2 text-xs text-muted-foreground">{emptyLabel ?? t('chat.git.noBranches')}</div>
         )}
-        {localRows.map((branch) => (
-          <button key={branch} type="button" className={rowClass} onClick={() => onSelect(branch)}>
-            <GitBranch className="size-3 shrink-0 text-muted-foreground" />
-            <span className="flex min-w-0 flex-1 flex-col text-left">
-              <span className="truncate">{branch}</span>
-              {branch === current && currentDetail}
-            </span>
-            {branch === current && <Check className="size-3 shrink-0 text-primary" />}
-          </button>
-        ))}
+        {localRows.map((branch) => {
+          // A badge may be its own control, so it sits beside the row button, not inside it.
+          const trailing = badge?.(branch)
+          return (
+            <div key={branch} className="flex items-center hover:bg-accent">
+              <button type="button" className={`${rowClass} min-w-0 flex-1 hover:bg-transparent`} onClick={() => onSelect(branch)}>
+                <GitBranch className="size-3 shrink-0 text-muted-foreground" />
+                <span className="flex min-w-0 flex-1 flex-col text-left">
+                  <span className="truncate">{branch}</span>
+                  {branch === current && currentDetail}
+                </span>
+                {branch === current && <Check className="size-3 shrink-0 text-primary" />}
+              </button>
+              {trailing && <span className="flex shrink-0 items-center pr-3">{trailing}</span>}
+            </div>
+          )
+        })}
       </div>
       <div className="border-t">
         {naming ? (
@@ -80,6 +93,7 @@ export function GitBranchMenu({
             <span>{t('chat.git.newBranch')}</span>
           </button>
         )}
+        {footer}
       </div>
     </div>
   )

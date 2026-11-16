@@ -2627,6 +2627,65 @@ export type Messages = {
       createBranch: string
       localBranches: string
       newBranch: string
+      sourceCheckoutFrom: string
+      sourceHeader: string
+      sourceGroupNodes: string
+      sourceGroupRemotes: string
+      sourceGroupGitHub: string
+      sourcePullRequests: string
+      sourceOffline: string
+      sourceNeedsUpgrade: string
+      sourceGhUnavailable: string
+      sourceSearchBranches: string
+      sourceSearchPulls: string
+      sourceLoading: string
+      sourceFetching: string
+      sourceEmpty: string
+      sourceEmptyPulls: string
+      sourceUnsupported: string
+      sourceUnavailable: string
+      sourceListFailed: string
+      sourceRetry: string
+      relationNew: string
+      relationSame: string
+      relationBehind: string
+      relationUpdate: string
+      relationAhead: string
+      relationDiverged: string
+      sourceCheckedOut: string
+      sourceFork: string
+      sourceLocalName: string
+      sourceCarry: string
+      sourceLocalDirtyHint: string
+      sourceCreateAndCheckOut: string
+      sourceSyncAndCheckOut: string
+      sourceCheckOut: string
+      sourceSyncOnly: string
+      sourceCreateOnly: string
+      sourceRunning: string
+      sourceDiverged: string
+      sourceOverwrite: string
+      sourceSaveAs: string
+      sourceSynced: string
+      sourceUnchanged: string
+      sourceCheckedOutToast: string
+      sourceBackup: string
+      sourceQuickSync: string
+      sourceErrorExists: string
+      sourceErrorConflict: string
+      sourceErrorDetached: string
+      sourceErrorNoCommits: string
+      sourceErrorGeneric: string
+      progressBundling: string
+      progressDownloading: string
+      progressUploading: string
+      progressFetching: string
+      progressApplying: string
+      sourceCancelled: string
+      sourceFetchedAt: string
+      sourceFetchedNow: string
+      sourceRefresh: string
+      sourceFetchFailed: string
       remoteRef: string
       uninitialized: string
       initOn: string
@@ -7950,6 +8009,65 @@ export const en: Messages = {
       createBranch: 'Create branch: {{name}}',
       localBranches: '{{environment}} · Local Branches',
       newBranch: 'New Branch…',
+      sourceCheckoutFrom: 'Check Out Branch from <source></source>',
+      sourceHeader: 'Check Out from <source></source>',
+      sourceGroupNodes: 'Environments',
+      sourceGroupRemotes: 'Git Remotes',
+      sourceGroupGitHub: 'GitHub',
+      sourcePullRequests: 'Pull Requests',
+      sourceOffline: 'Offline',
+      sourceNeedsUpgrade: 'Update this environment to check out from it',
+      sourceGhUnavailable: 'Run gh auth login to list pull requests',
+      sourceSearchBranches: 'Search branches on {{source}}…',
+      sourceSearchPulls: 'Search pull requests…',
+      sourceLoading: 'Loading branches…',
+      sourceFetching: 'Fetching {{source}}…',
+      sourceEmpty: 'No branches',
+      sourceEmptyPulls: 'No open pull requests',
+      sourceUnsupported: 'This environment is too old to check out from. Update it first.',
+      sourceUnavailable: '{{source}} is not reachable',
+      sourceListFailed: 'Could not list branches',
+      sourceRetry: 'Retry',
+      relationNew: 'New',
+      relationSame: 'Up to Date',
+      relationBehind: '↓{{count}}',
+      relationUpdate: 'Update',
+      relationAhead: 'Local Ahead',
+      relationDiverged: 'Diverged',
+      sourceCheckedOut: 'checked out',
+      sourceFork: 'fork',
+      sourceLocalName: 'Local branch name',
+      sourceCarry: 'Include uncommitted changes as a WIP commit',
+      sourceLocalDirtyHint: 'This checkout has uncommitted changes. They move with the checkout; on a conflict it does not switch.',
+      sourceCreateAndCheckOut: 'Create and Check Out',
+      sourceSyncAndCheckOut: 'Sync and Check Out',
+      sourceCheckOut: 'Check Out',
+      sourceSyncOnly: 'Sync Only',
+      sourceCreateOnly: 'Create Only',
+      sourceRunning: 'Checking out {{branch}} from {{source}}…',
+      sourceDiverged: 'Local {{branch}} has commits {{source}} does not.',
+      sourceOverwrite: 'Overwrite and Keep Backup',
+      sourceSaveAs: 'Save As',
+      sourceSynced: 'Synced {{branch}} from {{source}}',
+      sourceUnchanged: '{{branch}} is already up to date',
+      sourceCheckedOutToast: 'Checked out {{branch}} from {{source}}',
+      sourceBackup: 'The previous tip is kept as {{branch}}',
+      sourceQuickSync: 'Sync from {{source}}',
+      sourceErrorExists: 'Branch {{branch}} already exists',
+      sourceErrorConflict: 'Uncommitted changes in the checked-out {{branch}} would be overwritten',
+      sourceErrorDetached: 'The source checkout is not on a branch',
+      sourceErrorNoCommits: 'The source branch has no commits yet',
+      sourceErrorGeneric: 'Check out failed',
+      progressBundling: 'Packing the branch…',
+      progressDownloading: 'Downloading {{done}} / {{total}}',
+      progressUploading: 'Uploading {{done}} / {{total}}',
+      progressFetching: 'Fetching…',
+      progressApplying: 'Applying…',
+      sourceCancelled: 'Cancelled. Nothing was changed.',
+      sourceFetchedAt: 'Fetched {{age}} ago',
+      sourceFetchedNow: 'Fetched just now',
+      sourceRefresh: 'Fetch Again',
+      sourceFetchFailed: 'Could not fetch {{source}}',
       remoteRef: 'Remote',
       uninitialized: 'Git Not Initialized',
       initOn: 'Initialize Git on {{environment}}',

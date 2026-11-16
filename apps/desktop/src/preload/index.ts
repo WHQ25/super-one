@@ -6,7 +6,7 @@ import { collaborationMailbox } from './collaboration-mailbox'
 import { mediaComposerAPI } from './media-composer-api'
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { AgentIpcChannels, type AgentEvent, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexExternalAgentItem, type CodexMcpOauthLoginOptions, type ProviderEndpointTestResponse, type DiscoverModelsResult, type RemoteDeviceConfig, type SendMessageRequest, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserAudioState, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest, type SpeechSpeakRequest, type SpeechSpeakClip, type SpeechSpeakResult, type SpeechSavedResult, type SpeechVoiceCatalogResult, type SpeechVoicePreviewResult, type ThemeMode, type ComputerUseDisplayInfo, type ComputerUseViewfinderClaim, type ComputerUseViewfinderFrame, type RealtimeVoiceStartRequest, type RealtimeTimelineResult, type CodexRealtimeVoiceCatalog } from '@superone/shared/agent-types'
+import { AgentIpcChannels, type AgentEvent, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexExternalAgentItem, type CodexMcpOauthLoginOptions, type ProviderEndpointTestResponse, type DiscoverModelsResult, type RemoteDeviceConfig, type SendMessageRequest, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type BranchImportResult, type CheckoutFromSourceRequest, type CheckoutProgress, type CheckoutSource, type CheckoutSourceBranchesResult, type CheckoutSourcesInfo, type LocalBranchSource, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserAudioState, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest, type SpeechSpeakRequest, type SpeechSpeakClip, type SpeechSpeakResult, type SpeechSavedResult, type SpeechVoiceCatalogResult, type SpeechVoicePreviewResult, type ThemeMode, type ComputerUseDisplayInfo, type ComputerUseViewfinderClaim, type ComputerUseViewfinderFrame, type RealtimeVoiceStartRequest, type RealtimeTimelineResult, type CodexRealtimeVoiceCatalog } from '@superone/shared/agent-types'
 import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
 import type { MobileAppDownloads } from '@superone/shared/mobile-updates'
 import type { TerminalCommandRule } from '@superone/shared/terminal-command-rules'
@@ -2335,6 +2335,21 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.GIT_HANDOFF_TO_LOCAL, worktreePath, folderPath) as Promise<WorktreeHandoffResult>,
   getHandoffPreview: (worktreePath: string, folderPath?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.GIT_HANDOFF_PREVIEW, worktreePath, folderPath) as Promise<GitDirtyStatus | null>,
+  getCheckoutSources: (folderPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.GIT_CHECKOUT_SOURCES, folderPath) as Promise<CheckoutSourcesInfo>,
+  listCheckoutSourceBranches: (folderPath: string, source: CheckoutSource, options?: { fetch?: boolean }) =>
+    ipcRenderer.invoke(AgentIpcChannels.GIT_CHECKOUT_SOURCE_BRANCHES, folderPath, source, options) as Promise<CheckoutSourceBranchesResult>,
+  getLocalBranchSources: (folderPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.GIT_LOCAL_BRANCH_SOURCES, folderPath) as Promise<Record<string, LocalBranchSource>>,
+  checkoutFromSource: (request: CheckoutFromSourceRequest) =>
+    ipcRenderer.invoke(AgentIpcChannels.GIT_CHECKOUT_FROM_SOURCE, request) as Promise<BranchImportResult>,
+  cancelCheckout: (operationId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.GIT_CHECKOUT_CANCEL, operationId) as Promise<void>,
+  onCheckoutProgress: (callback: (progress: CheckoutProgress) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, progress: CheckoutProgress) => callback(progress)
+    ipcRenderer.on(AgentIpcChannels.GIT_CHECKOUT_PROGRESS, handler)
+    return () => { ipcRenderer.removeListener(AgentIpcChannels.GIT_CHECKOUT_PROGRESS, handler) }
+  },
   assignBranch: (folderPath: string, worktreePath: string, name: string) =>
     ipcRenderer.invoke(AgentIpcChannels.GIT_ASSIGN_BRANCH, folderPath, worktreePath, name) as Promise<WorktreeAssignResult>,
 

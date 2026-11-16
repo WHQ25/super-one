@@ -14,6 +14,16 @@ export interface RemoteTempFileSource {
   read(input: TempFileReadRequest): Promise<TempFileReadResult>
 }
 
+/** A long copy (a git bundle) reports its bytes and stops between chunks when aborted. */
+export interface RemoteTempFileCopyOptions {
+  signal?: AbortSignal
+  onProgress?: (done: number, total: number) => void
+}
+
+export function transferCancelledError(): Error {
+  return Object.assign(new Error('transfer cancelled'), { code: 'cancelled' })
+}
+
 let cacheRoot: string | undefined
 const pending = new Map<string, Promise<RemoteTempFileResolution>>()
 const stamps = new Map<string, { size: number; mtimeMs: number }>()
@@ -23,16 +33,17 @@ export function materializeRemoteTempFile(
   connectionId: string,
   path: string,
   source: RemoteTempFileSource,
+  options: RemoteTempFileCopyOptions = {},
 ): Promise<RemoteTempFileResolution> {
   const key = createHash('sha256').update(`${connectionId}\0${path}`).digest('hex')
   const running = pending.get(key)
   if (running) return running
-  const promise = copy(key, path, source).finally(() => pending.delete(key))
+  const promise = copy(key, path, source, options).finally(() => pending.delete(key))
   pending.set(key, promise)
   return promise
 }
 
-async function copy(key: string, path: string, source: RemoteTempFileSource): Promise<RemoteTempFileResolution> {
+async function copy(key: string, path: string, source: RemoteTempFileSource, options: RemoteTempFileCopyOptions): Promise<RemoteTempFileResolution> {
   let remote: TempFileStatResult
   try {
     remote = await source.stat(path)
@@ -75,7 +86,9 @@ async function copy(key: string, path: string, source: RemoteTempFileSource): Pr
       let written = 0
       while (written < bytes.length) written += writeSync(fd, bytes, written, bytes.length - written)
       offset += bytes.length
+      options.onProgress?.(offset, remote.size)
       if (chunk.eof) break
+      if (options.signal?.aborted) throw transferCancelledError()
     } while (offset < remote.size)
     const final = await source.stat(path)
     if (!final.exists || final.size !== remote.size || final.mtimeMs !== remote.mtimeMs) {

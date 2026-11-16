@@ -1051,7 +1051,11 @@ export class EnvironmentHost {
   }
 
   /** Read-only node temp files, materialized for the existing desktop/phone viewers. */
-  async resolveRemoteTempFile(connectionId: string, path: string): Promise<import('./remote-temp-files').RemoteTempFileResolution> {
+  async resolveRemoteTempFile(
+    connectionId: string,
+    path: string,
+    options?: import('./remote-temp-files').RemoteTempFileCopyOptions,
+  ): Promise<import('./remote-temp-files').RemoteTempFileResolution> {
     const { gateway } = this.resolveRemote(connectionId)
     const descriptor = await gateway.getDescriptor()
     if (!servesMethod(descriptor.capabilities, TEMP_FILE_RPC_METHODS.stat) ||
@@ -1060,7 +1064,7 @@ export class EnvironmentHost {
     return materializeRemoteTempFile(connectionId, path, {
       stat: path => gateway.statTempFile(path),
       read: input => gateway.readTempFile(input),
-    })
+    }, options)
   }
 
   /** `artifact.stat` / `artifact.get` — controller binding only, no lease. */

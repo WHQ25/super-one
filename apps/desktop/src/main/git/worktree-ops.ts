@@ -31,6 +31,8 @@ import type {
  * `git.*` RPCs B serves to phones and controllers.
  */
 const git = worktreeGit(gitRun)
+/** The same runner (and per-repo lock) for other window-side git flows. */
+export { git as localWorktreeGit }
 
 export interface ActivateWorktreeRequest {
   baseBranch: string

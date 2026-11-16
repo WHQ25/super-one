@@ -262,7 +262,7 @@ import { getInstallId } from './install-id'
 import { reportMainException, reportProcessGone } from './crash-telemetry'
 import { systemDownloadDir } from './agent/browser-download-store'
 import type { DetailTarget } from '@superone/shared/environment/detail'
-import type { AppSettings, AppSettingsPatch, TerminalEvent, GitInfoResult, ThemeMode, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
+import type { AppSettings, CheckoutFromSourceRequest, CheckoutSource, AppSettingsPatch, TerminalEvent, GitInfoResult, ThemeMode, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
 import type { ModUiOp, ModUiRequest } from '@superone/shared/mod-ui'
 import { windowControlIpc } from './session/control-context'
 import type { SessionCallMethod, SessionCallMethods, SessionCreateRequest, SessionForkRequestInput, SessionPermissionAnswer, SessionPlanAnswer, SessionQuestionAnswer, SessionSendRequest, SessionSettingsPatch } from '@superone/shared/environment/session-requests'
@@ -3404,6 +3404,51 @@ function registerIpcHandlers(): void {
       return remoteHandoffPreview(getEnvironmentHost(), worktreePath, worktreePath)
     }
     return getHandoffPreview(worktreePath)
+  })
+
+  // Checkout sources: other environments' checkouts, git remotes, pull requests.
+  const checkoutSources = async () => {
+    const [mod, { desktopCheckoutSourceDeps }] = await Promise.all([
+      import('./git/checkout-sources'),
+      import('./git/checkout-source-deps'),
+    ])
+    return { mod, deps: desktopCheckoutSourceDeps() }
+  }
+  ipcMain.handle(AgentIpcChannels.GIT_CHECKOUT_SOURCES, async (_event, folderPath: string) => {
+    const { mod, deps } = await checkoutSources()
+    return mod.checkoutSourcesInfo(deps, folderPath)
+  })
+  ipcMain.handle(AgentIpcChannels.GIT_CHECKOUT_SOURCE_BRANCHES, async (_event, folderPath: string, source: CheckoutSource, options?: { fetch?: boolean }) => {
+    const { mod, deps } = await checkoutSources()
+    return mod.listSourceBranches(deps, folderPath, source, { fetch: options?.fetch === true })
+  })
+  ipcMain.handle(AgentIpcChannels.GIT_LOCAL_BRANCH_SOURCES, async (_event, folderPath: string) => {
+    const { mod, deps } = await checkoutSources()
+    return mod.localBranchSources(deps, folderPath).catch(() => ({}))
+  })
+  const runningCheckouts = new Map<string, AbortController>()
+  ipcMain.handle(AgentIpcChannels.GIT_CHECKOUT_FROM_SOURCE, async (event, request: CheckoutFromSourceRequest) => {
+    const { mod, deps } = await checkoutSources()
+    const operationId = typeof request.operationId === 'string' ? request.operationId : null
+    const abort = new AbortController()
+    if (operationId) runningCheckouts.set(operationId, abort)
+    try {
+      const result = await mod.checkoutFromSource(deps, request, {
+        signal: abort.signal,
+        onProgress: (phase, done, total) => {
+          if (!operationId || event.sender.isDestroyed()) return
+          event.sender.send(AgentIpcChannels.GIT_CHECKOUT_PROGRESS, { operationId, phase, done, total })
+        },
+      })
+      if (result.ok) invalidateGitReads(request.folderPath)
+      else if (result.reason === 'error') log.warn('[checkout-source] failed:', result.error)
+      return result
+    } finally {
+      if (operationId) runningCheckouts.delete(operationId)
+    }
+  })
+  ipcMain.handle(AgentIpcChannels.GIT_CHECKOUT_CANCEL, (_event, operationId: string) => {
+    runningCheckouts.get(operationId)?.abort()
   })
 
   ipcMain.handle(AgentIpcChannels.GIT_ASSIGN_BRANCH, async (_event, folderPath: string, worktreePath: string, name: string) => {

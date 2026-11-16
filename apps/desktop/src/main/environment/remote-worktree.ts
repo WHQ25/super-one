@@ -3,17 +3,25 @@
  * Paths on the node are host-absolute; UI may store remote:<conn>:<hostPath>.
  */
 
+import { closeSync, openSync, readSync, rmSync, statSync } from 'node:fs'
+import { randomUUID } from 'node:crypto'
 import type {
   WorktreeActivateRequest,
   WorktreeAssignResult,
   WorktreeHandoffResult,
   GitDirtyStatus,
+  BranchImportResult,
+  BranchRelation,
+  BranchTip,
+  CheckoutProgressPhase,
 } from '@superone/shared/agent-types'
+import { servesMethod, TEMP_FILE_CHUNK_BYTES } from '@superone/shared/environment'
 import { parseRemoteProjectKey, remoteProjectKey } from '@superone/shared/remote-resource-key'
 import { sanitizeGitRef } from '../path-security'
 import type { EnvironmentHost } from './environment-host'
 import { RemoteEnvironmentGateway } from './remote-environment-gateway'
 import { resolveRemoteProjectContext } from './remote-file-tree'
+import { transferCancelledError } from './remote-temp-files'
 
 function asRemoteGw(host: EnvironmentHost, environmentId: string): RemoteEnvironmentGateway | null {
   const gw = host.getGateway(environmentId)
@@ -191,4 +199,167 @@ export async function remoteSwitchBranch(
   } catch (err) {
     return { ok: false, error: (err as Error).message || 'branch operation failed' }
   }
+}
+
+type NodeGitFailure = { ok: false; reason: 'unsupported' | 'unavailable' | 'error'; error?: string }
+
+/** The project's node gateway when it serves `method`. */
+async function nodeGit(
+  host: EnvironmentHost,
+  folderPath: string,
+  method: string,
+): Promise<{ ok: true; gw: RemoteEnvironmentGateway; projectId: string; connectionId: string } | NodeGitFailure> {
+  const ctx = await resolveRemoteProjectContext(host, folderPath, { registerIfMissing: false }).catch(() => null)
+  if (!ctx) return { ok: false, reason: 'unavailable' }
+  const gw = asRemoteGw(host, ctx.environmentId)
+  if (!gw) return { ok: false, reason: 'unavailable' }
+  if (!servesMethod((await gw.getDescriptor()).capabilities, method)) return { ok: false, reason: 'unsupported' }
+  return { ok: true, gw, projectId: ctx.projectId, connectionId: ctx.connectionId }
+}
+
+/** Recent branches of a node checkout (`git.branchTips`). */
+export async function remoteBranchTips(
+  host: EnvironmentHost,
+  folderPath: string,
+): Promise<{ ok: true; branches: BranchTip[] } | NodeGitFailure> {
+  try {
+    const node = await nodeGit(host, folderPath, 'git.branchTips')
+    if (!node.ok) return node
+    return { ok: true, branches: (await node.gw.gitBranchTips(node.projectId)).branches }
+  } catch (err) {
+    return { ok: false, reason: 'error', error: (err as Error).message }
+  }
+}
+
+export interface NodeBranchBundle {
+  /** Local copy of the bundle; null when the receiver already had every commit. */
+  bundlePath: string | null
+  branch: string
+  head: string
+  snapshot: string | null
+}
+
+/** Progress and cancellation for one checkout; cancelling stops between chunks and before landing. */
+export interface TransferControl {
+  signal?: AbortSignal
+  onProgress?: (phase: CheckoutProgressPhase, done?: number, total?: number) => void
+}
+
+function unsupportedError(): Error {
+  return Object.assign(new Error('environment does not support this'), { code: 'unsupported' })
+}
+
+/** The node gateway for `method`, or a thrown error naming why not. */
+async function requireNodeGit(host: EnvironmentHost, folderPath: string, method: string) {
+  const node = await nodeGit(host, folderPath, method)
+  if (node.ok) return node
+  if (node.reason === 'unsupported') throw unsupportedError()
+  throw Object.assign(new Error(node.error ?? 'environment is not connected'), { code: 'unavailable' })
+}
+
+/**
+ * Have the node bundle `branch` against the receiver's `haves`, copy the bundle
+ * over the node's temp-file reads, and hand it to `use`. No shared git remote
+ * is involved; the local copy is removed afterwards.
+ */
+export async function withRemoteBranchBundle(
+  host: EnvironmentHost,
+  input: { folderPath: string; branch: string; haves: string[]; includeWorkingTree: boolean },
+  use: (bundle: NodeBranchBundle) => Promise<BranchImportResult>,
+  control: TransferControl = {},
+): Promise<BranchImportResult> {
+  const node = await requireNodeGit(host, input.folderPath, 'git.exportBundle')
+  control.onProgress?.('bundling')
+  const exported = await node.gw.gitExportBundle({
+    projectId: node.projectId,
+    branch: input.branch,
+    haves: input.haves,
+    includeWorkingTree: input.includeWorkingTree,
+  })
+  if (!exported.ok) return { ok: false, reason: exported.reason, error: exported.error }
+  if (control.signal?.aborted) throw transferCancelledError()
+
+  let bundlePath: string | null = null
+  if (exported.bundlePath) {
+    control.onProgress?.('downloading', 0, exported.size)
+    const copy = await host.resolveRemoteTempFile(node.connectionId, exported.bundlePath, {
+      signal: control.signal,
+      onProgress: (done, total) => control.onProgress?.('downloading', done, total),
+    })
+    if (copy.kind !== 'local') return { ok: false, reason: 'unsupported', error: `bundle transfer: ${copy.kind}` }
+    bundlePath = copy.path
+  }
+  try {
+    return await use({ bundlePath, branch: exported.branch, head: exported.head, snapshot: exported.snapshot })
+  } finally {
+    if (bundlePath) rmSync(bundlePath, { force: true })
+  }
+}
+
+/** Commits a node checkout already has, so a sender bundles only the rest. */
+export async function remoteBundleHaves(host: EnvironmentHost, folderPath: string): Promise<string[]> {
+  const node = await requireNodeGit(host, folderPath, 'git.bundleHaves')
+  return (await node.gw.gitBundleHaves(node.projectId)).haves
+}
+
+/** Where incoming tips stand against a node checkout's branches. */
+export async function remoteBranchRelations(
+  host: EnvironmentHost,
+  folderPath: string,
+  items: Array<{ localName: string; head: string }>,
+): Promise<Array<{ relation: BranchRelation; behind?: number }>> {
+  const node = await requireNodeGit(host, folderPath, 'git.branchRelations')
+  return (await node.gw.gitBranchRelations(node.projectId, items)).relations
+}
+
+/**
+ * Send a local bundle to a node checkout in temp-file-sized chunks, then have
+ * the node land it. An upload cancelled half way expires on the node.
+ */
+export async function landOnRemote(
+  host: EnvironmentHost,
+  folderPath: string,
+  incoming: {
+    bundlePath: string | null
+    localName: string
+    head: string
+    snapshot: string | null
+    onDiverged?: 'stop' | 'overwrite'
+    createOnly?: boolean
+  },
+  control: TransferControl = {},
+): Promise<BranchImportResult> {
+  const node = await requireNodeGit(host, folderPath, 'git.applyIncomingBranch')
+  let upload: { uploadId: string; size: number } | null = null
+  if (incoming.bundlePath) {
+    const size = statSync(incoming.bundlePath).size
+    const uploadId = randomUUID()
+    const fd = openSync(incoming.bundlePath, 'r')
+    try {
+      const buffer = Buffer.alloc(TEMP_FILE_CHUNK_BYTES)
+      control.onProgress?.('uploading', 0, size)
+      for (let offset = 0; offset < size;) {
+        if (control.signal?.aborted) throw transferCancelledError()
+        const read = readSync(fd, buffer, 0, Math.min(buffer.length, size - offset), offset)
+        if (read <= 0) throw new Error('bundle changed during upload')
+        await node.gw.gitUploadBundle({ projectId: node.projectId, uploadId, offset, chunk: buffer.subarray(0, read).toString('base64') })
+        offset += read
+        control.onProgress?.('uploading', offset, size)
+      }
+    } finally {
+      closeSync(fd)
+    }
+    upload = { uploadId, size }
+  }
+  if (control.signal?.aborted) throw transferCancelledError()
+  control.onProgress?.('applying')
+  return node.gw.gitApplyIncomingBranch({
+    projectId: node.projectId,
+    upload,
+    localName: incoming.localName,
+    head: incoming.head,
+    snapshot: incoming.snapshot,
+    ...(incoming.onDiverged ? { onDiverged: incoming.onDiverged } : {}),
+    ...(incoming.createOnly ? { createOnly: true } : {}),
+  })
 }

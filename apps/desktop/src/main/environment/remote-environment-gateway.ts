@@ -62,7 +62,7 @@ import type {
 } from '@superone/shared/environment'
 import type { ProjectExtraDirsPatch } from '@superone/shared/project-extra-dirs'
 import type { EnvironmentRpcClient, TopicStream } from './environment-rpc-client'
-import type { CodexMcpOauthLoginOptions, CodexMcpOauthLoginResult, CodexMcpOauthLoginStart } from '@superone/shared/agent-types'
+import type { CodexMcpOauthLoginOptions, CodexMcpOauthLoginResult, CodexMcpOauthLoginStart, BranchImportResult, BranchRelation, BranchTip, GitBundleExportResult } from '@superone/shared/agent-types'
 import type { GitMentionRefKind } from '@superone/shared/git-mention-query'
 
 export interface ArtifactGateway {
@@ -825,6 +825,47 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
 
   async gitWorktreeHandoffPreview(projectId: string, worktreePath: string): Promise<unknown> {
     return this.client.rpc('git.worktreeHandoffPreview', { projectId, worktreePath })
+  }
+
+  gitBranchTips(projectId: string): Promise<{ branches: BranchTip[] }> {
+    return this.client.rpc('git.branchTips', { projectId })
+  }
+
+  gitBundleHaves(projectId: string): Promise<{ haves: string[] }> {
+    return this.client.rpc('git.bundleHaves', { projectId })
+  }
+
+  gitBranchRelations(
+    projectId: string,
+    items: Array<{ localName: string; head: string }>,
+  ): Promise<{ relations: Array<{ relation: BranchRelation; behind?: number }> }> {
+    return this.client.rpc('git.branchRelations', { projectId, items })
+  }
+
+  gitUploadBundle(input: { projectId: string; uploadId: string; offset: number; chunk: string }): Promise<{ size: number }> {
+    return this.client.rpc('git.uploadBundle', input)
+  }
+
+  gitApplyIncomingBranch(input: {
+    projectId: string
+    upload: { uploadId: string; size: number } | null
+    localName: string
+    head: string
+    snapshot: string | null
+    onDiverged?: 'stop' | 'overwrite'
+    createOnly?: boolean
+  }): Promise<BranchImportResult> {
+    return this.client.rpc('git.applyIncomingBranch', input)
+  }
+
+  gitExportBundle(input: {
+    projectId: string
+    path?: string
+    branch?: string
+    haves: string[]
+    includeWorkingTree: boolean
+  }): Promise<GitBundleExportResult> {
+    return this.client.rpc('git.exportBundle', input)
   }
 
   async sessionSetCwd(input: {

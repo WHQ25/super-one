@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { dispatchRpc, type RpcContext } from '@superone/runtime/server'
-import { TEMP_FILE_RPC_METHODS, type TempFileReadResult, type TempFileStatResult } from '@superone/shared/environment'
+import { TEMP_FILE_CHUNK_BYTES, TEMP_FILE_RPC_METHODS, type TempFileReadResult, type TempFileStatResult } from '@superone/shared/environment'
 import { materializeRemoteTempFile, type RemoteTempFileSource } from './remote-temp-files'
 import { resolveRemotePreviewerFile, type RemotePreviewerContext } from './files-previewer-remote'
 import { resolveSessionFile, type SessionFileResolverDeps } from './session-file-resolver'
@@ -125,4 +125,23 @@ describe('temporary file delivery from node RPC to desktop', () => {
     src.stat = async () => ({ exists: false, size: 0, mtimeMs: 0 })
     expect(await materializeRemoteTempFile('node-a', path, src)).toEqual({ kind: 'missing' })
   })
+
+  it('reports bytes per chunk and stops between chunks when aborted, publishing nothing', async () => {
+    const dir = directory()
+    const path = join(dir, 'branch.bundle')
+    writeFileSync(path, Buffer.alloc(TEMP_FILE_CHUNK_BYTES * 2 + 10, 7))
+    const progress: Array<[number, number]> = []
+    const copied = await materializeRemoteTempFile('node-progress', path, source(), { onProgress: (done, total) => progress.push([done, total]) })
+    expect(copied.kind).toBe('local')
+    const total = TEMP_FILE_CHUNK_BYTES * 2 + 10
+    expect(progress).toEqual([[TEMP_FILE_CHUNK_BYTES, total], [TEMP_FILE_CHUNK_BYTES * 2, total], [total, total]])
+
+    const abort = new AbortController()
+    writeFileSync(path, Buffer.alloc(total, 8))
+    await expect(materializeRemoteTempFile('node-abort', path, source(), {
+      signal: abort.signal,
+      onProgress: () => abort.abort(),
+    })).rejects.toMatchObject({ code: 'cancelled' })
+  })
 })
+

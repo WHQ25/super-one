@@ -53,6 +53,10 @@ describe('mod chrome tint', () => {
       expect(view.container.querySelector('[data-main-area] > [data-mod-site="Backdrop"]')).not.toBeNull()
     })
     expect(view.container.querySelector('[data-mod-theme-layer] > [data-mod-site="Backdrop"]')).toBeNull()
+    const shell = view.container.querySelector<HTMLElement>('[data-main-area]')!
+    expect(shell.dataset.modTintSurface).toBe('dark')
+    expect(shell.style.getPropertyValue('--mod-backdrop-tint')).toBe('#112233')
+    expect(view.container.querySelector('[data-mod-theme-layer]')?.getAttribute('data-mod-tint-surface')).toBe('dark')
 
     view.rerender(
       <div data-main-area="">
@@ -63,6 +67,8 @@ describe('mod chrome tint', () => {
     )
     await waitFor(() => expect(getModChromeTint('s1')).toBe(''))
     expect(getModChromeScheme('s1')).toBe('')
+    expect(shell.dataset.modTintSurface).toBeUndefined()
+    expect(shell.style.getPropertyValue('--mod-backdrop-tint')).toBe('')
     expect(setTheme).not.toHaveBeenCalled()
   })
 

@@ -813,18 +813,49 @@ div:has(> [data-mod-edge-fade]):has([data-layout-single]:not(.hidden) [data-mod-
 div:has(> [data-mod-edge-fade]):has([data-mod-backdrop="true"]) > [data-mod-edge-fade] {
   display: none;
 }
-html.liquid-glass :is([data-main-area], [data-tile-id], [data-mod-theme-layer]).dark,
-html.liquid-glass :is([data-main-area], [data-tile-id]).dark :is(.brand-scope, [data-mod-theme-layer]) {
+html.liquid-glass :is([data-main-area], [data-tile-id], [data-mod-theme-layer]).dark:not([data-mod-tint-surface]),
+html.liquid-glass :is([data-main-area], [data-tile-id]).dark :is(.brand-scope, [data-mod-theme-layer]):not([data-mod-tint-surface]) {
   --border: oklch(1 0 0 / 0.15);
 }
-/* Non-glass theme panes keep a neutral hairline. The scheme class would
-   otherwise put the flat app border on the composer, which reads wrong on
-   the backdrop. Light and dark follow the theme, not the saved appearance. */
-html:not(.liquid-glass) [data-mod-theme-layer].light {
+/* A non-glass theme pane without a tint keeps a neutral hairline. The scheme
+   class would otherwise put the flat app border on the composer, which reads
+   wrong on the backdrop. Light and dark follow the theme, not the saved
+   appearance. */
+html:not(.liquid-glass) [data-mod-theme-layer].light:not([data-mod-tint-surface]) {
   --border: oklch(0 0 0 / 0.14);
 }
-html:not(.liquid-glass) [data-mod-theme-layer].dark {
+html:not(.liquid-glass) [data-mod-theme-layer].dark:not([data-mod-tint-surface]) {
   --border: oklch(1 0 0 / 0.12);
+}
+/* Surfaces under a tinted mod theme take the tint: cards, popovers, inputs
+   and borders in the themed chat shell (its composer, panels and bottom
+   terminal) and in the activity panel read as one theme, opaque, instead of
+   the app's own palette. A mod's own Theme colors, inline on the layer, win. */
+[data-mod-tint-surface="light"],
+html:not(.liquid-glass) [data-has-mod-tint="true"][data-mod-tint-scheme="light"] [data-activity-outer] {
+  --card: color-mix(in oklch, var(--mod-backdrop-tint) 92%, #ffffff);
+  --popover: var(--card);
+  --background: var(--card);
+  --border: color-mix(in oklch, var(--mod-backdrop-tint), #000000 16%);
+  --input: var(--border);
+  --muted: oklch(0 0 0 / 0.06);
+  --accent: oklch(0 0 0 / 0.08);
+  --secondary: oklch(0 0 0 / 0.07);
+}
+[data-mod-tint-surface="dark"],
+html:not(.liquid-glass) [data-has-mod-tint="true"][data-mod-tint-scheme="dark"] [data-activity-outer] {
+  --card: color-mix(in oklch, var(--mod-backdrop-tint) 82%, #161618);
+  --popover: var(--card);
+  --background: var(--card);
+  --border: color-mix(in oklch, var(--mod-backdrop-tint), #ffffff 14%);
+  --input: var(--border);
+  --muted: oklch(1 0 0 / 0.06);
+  --accent: oklch(1 0 0 / 0.08);
+  --secondary: oklch(1 0 0 / 0.07);
+}
+/* Dark glass drops the bottom terminal to vibrancy; under a theme it stays on the tinted card. */
+.liquid-glass.dark [data-mod-tint-surface] .coding-terminal-surface {
+  background-color: var(--card);
 }
 /* Active session backdrop tint on the sidebar and activity panel.
    The mix follows the theme's own light/dark, so a light theme does not wash
@@ -850,27 +881,12 @@ html.liquid-glass [data-has-mod-tint="true"][data-mod-tint-scheme="dark"] {
 html.liquid-glass [data-has-mod-tint="true"][data-mod-tint-scheme="dark"] [data-sidebar-inner] > * {
   background-color: transparent;
 }
-html:not(.liquid-glass) [data-has-mod-tint="true"][data-mod-tint-scheme="light"] [data-activity-outer] {
-  --card: color-mix(in oklch, var(--mod-backdrop-tint) 92%, #ffffff);
-  --background: var(--card);
-  --border: oklch(0 0 0 / 0.14);
-  --muted: oklch(0 0 0 / 0.06);
-  --accent: oklch(0 0 0 / 0.08);
-  --secondary: oklch(0 0 0 / 0.07);
+html:not(.liquid-glass) [data-has-mod-tint="true"] [data-activity-outer] {
   background-color: var(--card);
 }
 html.liquid-glass [data-has-mod-tint="true"][data-mod-tint-scheme="light"] [data-activity-outer] {
   --card: var(--mod-backdrop-tint);
   --background: var(--card);
-  background-color: var(--card);
-}
-html:not(.liquid-glass) [data-has-mod-tint="true"][data-mod-tint-scheme="dark"] [data-activity-outer] {
-  --card: color-mix(in oklch, var(--mod-backdrop-tint) 82%, #161618);
-  --background: var(--card);
-  --border: oklch(1 0 0 / 0.12);
-  --muted: oklch(1 0 0 / 0.06);
-  --accent: oklch(1 0 0 / 0.08);
-  --secondary: oklch(1 0 0 / 0.07);
   background-color: var(--card);
 }
 html.liquid-glass [data-has-mod-tint="true"][data-mod-tint-scheme="dark"] [data-activity-outer] {

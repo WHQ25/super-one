@@ -214,6 +214,17 @@ export function ModChatThemeLayer({
     // backdrop has to paint the whole chat shell, behind that title.
     setBackdropHost(layerRef.current?.closest<HTMLElement>('[data-tile-id], [data-main-area]') ?? null)
   }, [])
+  // Surfaces around the chat in that shell (the bottom terminal, the title)
+  // take their colors from the tint too. See `[data-mod-tint-surface]` in index.css.
+  useEffect(() => {
+    if (!backdropHost || !tint) return
+    backdropHost.dataset.modTintSurface = scheme
+    backdropHost.style.setProperty('--mod-backdrop-tint', tint)
+    return () => {
+      delete backdropHost.dataset.modTintSurface
+      backdropHost.style.removeProperty('--mod-backdrop-tint')
+    }
+  }, [backdropHost, tint, scheme])
   const backdropView = painted && backdrop ? (
     <ModBackdropView backdrop={backdrop} measureRef={backdropSite.measureRef} glassEnabled={false} />
   ) : null
@@ -221,8 +232,9 @@ export function ModChatThemeLayer({
     <div
       ref={layerRef}
       data-mod-theme-layer={painted ? '' : undefined}
+      data-mod-tint-surface={tint ? scheme : undefined}
       className={cn('relative flex min-h-0 w-full min-w-0 flex-1 flex-col', painted && themeScheme)}
-      style={painted ? { ...themeStyle, ...(themeScheme ? { colorScheme: themeScheme } : {}) } : undefined}
+      style={painted ? { ...(tint ? { '--mod-backdrop-tint': tint } : {}), ...themeStyle, ...(themeScheme ? { colorScheme: themeScheme } : {}) } as CSSProperties : undefined}
     >
       <PaneColorSchemeContext.Provider value={painted ? themeScheme ?? null : null}>
         {backdropView && backdropHost ? createPortal(backdropView, backdropHost) : backdropView}

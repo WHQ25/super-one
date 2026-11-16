@@ -11,6 +11,7 @@ import { DesktopUserBubblePorts } from '../user-bubble-ports'
 import { DurationFooter } from '../ChatMessageFooter'
 import { ModAbovePrompt, ModChatThemeLayer, ModPaneBody } from './ModSurfaces'
 import { ModSessionMode } from './ModStatusSites'
+import { cn } from '@superone/ui/lib/utils'
 
 /**
  * What SuperOne draws for Claude Code mods, against a fake session: each story
@@ -625,6 +626,41 @@ export const ThemeBehindTitle: Story = {
     </Session>
   ),
 }
+
+/** Panels, the composer border and the bottom terminal under a tinted theme take the tint, opaque. Shown when the toolbar theme matches the story scheme. */
+function TintedSurfaces({ tint, scheme }: { tint: string; scheme: 'light' | 'dark' }) {
+  return (
+    <Session
+      answers={{
+        Backdrop: drawn(
+          {
+            type: 'Svg',
+            props: {
+              alt: 'Gradient backdrop',
+              source: `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 240"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0%" stop-color="${tint}"/><stop offset="100%" stop-color="${scheme === 'dark' ? '#000000' : '#ffffff'}" stop-opacity="0.6"/></linearGradient></defs><rect width="400" height="240" fill="url(#g)"/></svg>`,
+            },
+          },
+          { id: `tinted-${scheme}`, plugin: 'tint-theme', colorScheme: scheme, glass: { blur: 8, opacity: 0.35, tint } },
+        ),
+      }}
+    >
+      <div data-main-area="" className={cn('relative flex h-80 w-[480px] max-w-full flex-col overflow-hidden rounded-xl border border-border bg-card', scheme)}>
+        <ModChatThemeLayer>
+          <div className="flex flex-1 flex-col gap-3 p-4 text-sm text-foreground">
+            <div className="rounded-lg border border-border bg-card p-3">A tool card on the tinted card color</div>
+            <div className="flex-1" />
+            <div className="rounded-xl border border-border px-3 py-2 text-muted-foreground">Composer border follows the tint</div>
+          </div>
+        </ModChatThemeLayer>
+        <div className="coding-terminal-surface relative z-10 h-20 shrink-0 border-t border-border bg-card px-3 py-2 font-mono text-xs text-card-foreground">$ bun run dev</div>
+      </div>
+    </Session>
+  )
+}
+
+export const ThemeTintedSurfacesLight: Story = { render: () => <TintedSurfaces tint="#e9dcc3" scheme="light" /> }
+
+export const ThemeTintedSurfacesDark: Story = { render: () => <TintedSurfaces tint="#1a1b26" scheme="dark" /> }
 
 export const ThemeChromeTintLight: Story = { render: () => <ChromeTintFrame scheme="light" /> }
 

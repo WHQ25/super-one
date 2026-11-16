@@ -55,6 +55,7 @@ the same commit.
 - [mcp-apps.md](features/mcp-apps.md) — hosting third-party MCP Apps Views (Codex, Claude; desktop, phone, remote)
 - [claude-mods.md](features/claude-mods.md) — drawing Claude Code mods (panes, band, transcript sites, `Client`; desktop, phone, remote)
 - [composer.md](features/composer.md) — desktop composer slot, decision queue, and focus and draft rules
+- [checkout-sources.md](features/checkout-sources.md) — checking out local branches from other environments, git remotes and pull requests
 - [session-links.md](features/session-links.md) — session Markdown chips, source ownership and environment-scoped archive discovery
 - [session-continuation.md](features/session-continuation.md) — continuing a cache-expired long session in a new one that takes over its collaboration channels
 - [mobile-codex-realtime-voice.md](features/mobile-codex-realtime-voice.md) — foreground native voice, endpoint ownership and media lifecycle

@@ -48,7 +48,7 @@ Every alpha release keeps its own notes on its GitHub Release.
 - A lone Android QR code still commits when the next camera frame is slow. Barcode analysis is capped at 1080p. That cap ships in the new Android binary.
 - A Cursor compact that starts on its own during another turn no longer removes that turn's reply or a queued `/compact`. A remote Cursor session does not offer `/compact` or extra folders, and `/compact` is not sent to the model as text.
 - Cursor's slash menu lists skills from project and user `.cursor/skills` and `.agents/skills`, including skill folders that are symlinks. User-level names are listed before project names.
-- Antigravity follows a background task until it finishes, and accepts the xhigh effort level.
+- Antigravity follows a background task through its tool calls and later waves. Effort levels follow the model, including xhigh where that model has it, and a model with no effort control hides the choice.
 - MCP tool calls accept a JSON string for an object or array argument. (#199)
 - Reply-comment chips stay on remote user messages.
 - The packaged app starts when the electron-vite `__dirname` shim is stripped out of the main chunk.
@@ -58,10 +58,21 @@ Every alpha release keeps its own notes on its GitHub Release.
 - A remote subagent opens in the full view. (#197)
 - A Grok background shell (`block_until_ms: 0`) or subagent stays in the activity row after the parent turn ends.
 - Consuming a priority-next steer during a live Claude reply (on desktop and remote nodes) closes the current assistant bubble before the steer user row and streams the continuation into a new bubble.
+- A remote session replaces its feed after the node reconnects, so a dropped stream no longer blocks open and send.
+- The new-session harness list uses the saved order on the first paint, and stays on the loading row until that order is known.
 
 ### Performance
 
 - Streaming deltas update only the changed block and memoized segment chunk so live-turn rendering cost no longer grows with the number of tool calls. (#201)
+
+## [0.82.0-alpha.2] - 2026-11-16
+
+### Fixed
+
+- A remote session replaces its feed after the node reconnects, so a dropped stream no longer blocks open and send.
+- The new-session harness list uses the saved order on the first paint, and stays on the loading row until that order is known.
+- Antigravity effort choices follow each model. Hydrogen keeps four levels, other reasoning models keep three, and orchestrator and gpt-oss hide the control. Desktop, profiles, remote info, and the phone share that list.
+- An Antigravity wakeup keeps watching through its tool calls and later waves, including background tasks the wakeup started.
 
 ## [0.82.0-alpha.1] - 2026-11-16
 

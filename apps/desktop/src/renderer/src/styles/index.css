@@ -830,24 +830,29 @@ html:not(.liquid-glass) [data-mod-theme-layer].dark:not([data-mod-tint-surface])
 /* Surfaces under a tinted mod theme take the tint: cards, popovers, inputs
    and borders in the themed chat shell (its composer, panels and bottom
    terminal) and in the activity panel read as one theme, opaque, instead of
-   the app's own palette. A mod's own Theme colors, inline on the layer, win. */
-[data-mod-tint-surface="light"],
+   the app's own palette. A mod's own Theme colors, inline on the layer, win.
+   The mod picks its glass tint from its scene, so the card is that tint (a
+   light one a shade deeper, nearer the paper it is drawn on). Borders sit a
+   fixed lightness step from the tint so they read on any tint.
+   `html … [attr][attr]` outranks the theme layer's own `.dark:not(.light)` /
+   `.light` token sets (packages/ui theme.css) on the same element. */
+html [data-mod-tint-surface="light"][data-mod-tint-surface],
 html:not(.liquid-glass) [data-has-mod-tint="true"][data-mod-tint-scheme="light"] [data-activity-outer] {
-  --card: color-mix(in oklch, var(--mod-backdrop-tint) 92%, #ffffff);
+  --card: oklch(from var(--mod-backdrop-tint) calc(l - 0.025) c h);
   --popover: var(--card);
   --background: var(--card);
-  --border: color-mix(in oklch, var(--mod-backdrop-tint), #000000 16%);
+  --border: oklch(from var(--mod-backdrop-tint) calc(l - 0.16) c h);
   --input: var(--border);
   --muted: oklch(0 0 0 / 0.06);
   --accent: oklch(0 0 0 / 0.08);
   --secondary: oklch(0 0 0 / 0.07);
 }
-[data-mod-tint-surface="dark"],
+html [data-mod-tint-surface="dark"][data-mod-tint-surface],
 html:not(.liquid-glass) [data-has-mod-tint="true"][data-mod-tint-scheme="dark"] [data-activity-outer] {
-  --card: color-mix(in oklch, var(--mod-backdrop-tint) 82%, #161618);
+  --card: var(--mod-backdrop-tint);
   --popover: var(--card);
   --background: var(--card);
-  --border: color-mix(in oklch, var(--mod-backdrop-tint), #ffffff 14%);
+  --border: oklch(from var(--mod-backdrop-tint) calc(l + 0.16) c h);
   --input: var(--border);
   --muted: oklch(1 0 0 / 0.06);
   --accent: oklch(1 0 0 / 0.08);

@@ -328,13 +328,15 @@ describe('RemoteSessionFeed', () => {
 
   it('ends every follower when the stream fails, and refuses new follows', async () => {
     const source = pushSource()
-    const feed = new RemoteSessionFeed(source, 'env')
-    const a = { event: vi.fn(), end: vi.fn() }
+    const order: string[] = []
+    const feed = new RemoteSessionFeed(source, 'env', () => order.push('failed'))
+    const a = { event: vi.fn(), end: () => order.push('end') }
     await feed.follow('a', a, async () => 7)
-    source.fail(new Error('blocked'))
+    source.fail(new Error('not connected'))
     await flush()
-    expect(a.end).toHaveBeenCalledWith(expect.objectContaining({ message: 'blocked' }))
-    await expect(feed.follow('a', a, async () => 7)).rejects.toThrow('blocked')
+    expect(order).toEqual(['end', 'failed'])
+    expect(feed.hasFailed()).toBe(true)
+    await expect(feed.follow('a', { event: vi.fn(), end: vi.fn() }, async () => 7)).rejects.toThrow('not connected')
   })
 
   it('retries the head read on the next follow after it fails', async () => {

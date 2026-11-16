@@ -1654,6 +1654,12 @@ export class EnvironmentHost {
   /** One pushed event stream per connected node, shared by every follower there. */
   private readonly sessionFeeds = new Map<string, RemoteSessionFeed>()
   /**
+   * Connected generation that already replaced a failed feed. A stream that
+   * dies again on that same generation is left failed until the next send or
+   * a new connected transition, so a permanent subscribe error cannot loop.
+   */
+  private readonly rebuiltFeedGeneration = new Map<string, number>()
+  /**
    * Remote sessions this desktop follows, keyed `connectionId:sessionId`: once
    * opened or sent to, every event of the session reaches the chat, including
    * turns another client starts while it sits idle here.
@@ -1672,10 +1678,13 @@ export class EnvironmentHost {
   }
 
   private feedFor(connectionId: string): RemoteSessionFeed {
-    let feed = this.sessionFeeds.get(connectionId)
-    if (feed) return feed
+    const existing = this.sessionFeeds.get(connectionId)
+    // While the supervisor still says this connection will not come back, keep
+    // the failed feed so follow/send reject without opening another stream.
+    if (existing && (!existing.hasFailed() || this.remoteDrainBlock(connectionId) !== null)) return existing
+    if (existing?.hasFailed()) this.replaceFailedSessionFeed(connectionId)
     const { gateway, environmentId } = this.resolveRemote(connectionId)
-    feed = new RemoteSessionFeed({
+    const feed = new RemoteSessionFeed({
       head: () => gateway.eventHeadSequence(),
       subscribe: (afterSequence, signal, { interest, onResnapshot, onRealign, onFrame, onTerminal, onDraft, onTopic, onUpdateQueued }) => gateway.subscribeEvents({
         environmentId,
@@ -1688,9 +1697,38 @@ export class EnvironmentHost {
         onRealign,
         onFrame, onTerminal, onDraft, onTopic, onUpdateQueued,
       }),
-    }, environmentId)
+    }, environmentId, () => this.onSessionFeedFailed(connectionId))
     this.sessionFeeds.set(connectionId, feed)
     return feed
+  }
+
+  /**
+   * Forget a stream that stopped with an error. The next follow builds another.
+   * A healthy socket must not keep returning that error.
+   */
+  private replaceFailedSessionFeed(connectionId: string): void {
+    const feed = this.sessionFeeds.get(connectionId)
+    if (!feed?.hasFailed()) return
+    feed.close()
+    this.sessionFeeds.delete(connectionId)
+    this.watchedSessionLists.delete(connectionId)
+  }
+
+  /** The shared stream died. Follow again once, if this generation is already connected. */
+  private onSessionFeedFailed(connectionId: string): void {
+    this.watchedSessionLists.delete(connectionId)
+    const status = this.lastStatus.get(connectionId)
+    if (!status || status.state !== 'connected' || this.remoteDrainBlock(connectionId) !== null) return
+    if (this.rebuiltFeedGeneration.get(connectionId) === status.generation) return
+    this.rebuiltFeedGeneration.set(connectionId, status.generation)
+    this.restoreSessionFeed(connectionId)
+  }
+
+  /** Drop a dead stream, watch the list again, and ask open chats to read what they missed. */
+  private restoreSessionFeed(connectionId: string): void {
+    this.replaceFailedSessionFeed(connectionId)
+    this.watchSessionList(connectionId)
+    this.resyncLostSessions(connectionId)
   }
 
   /** Why following a node's events can no longer recover, or null while it still can. */
@@ -2037,7 +2075,11 @@ export class EnvironmentHost {
             this.agentEventSink?.(agentEvent)
           }
         },
-        end: () => this.dropFollowed(key, followed),
+        end: () => {
+          // Record before the failure callback resyncs. A microtask would miss it.
+          this.lostSessions(connectionId).set(input.sessionId, input)
+          this.dropFollowed(key, followed)
+        },
         resync: () => this.resync(connectionId, input),
       }, barrier ?? (async () => (await gateway.sessions.load!({ session: { environmentId, sessionId: input.sessionId }, limit: 1 })).cursor.version))
       return session
@@ -3788,13 +3830,17 @@ export class EnvironmentHost {
       this.startHostActionConsumer(snapshot.connectionId)
       // The host may have been upgraded while away: probe the window method again.
       this.transcriptWindowUnsupported.delete(snapshot.connectionId)
-      this.watchSessionList(snapshot.connectionId)
-      this.resyncLostSessions(snapshot.connectionId)
+      // The stream may have stopped while the supervisor was offline. A new
+      // connected generation gets one fresh feed; staying connected does not
+      // clear that, so a later death can rebuild once for this generation.
+      if (previous?.state !== 'connected') this.rebuiltFeedGeneration.delete(snapshot.connectionId)
+      this.restoreSessionFeed(snapshot.connectionId)
       void this.loadRemoteProjects(snapshot.connectionId, snapshot.generation).catch(() => {})
       // Drain drafts queued while this node was unreachable. Upserts are
       // idempotent by draft id, so a partially-applied earlier flush is safe.
       void this.flushPendingDrafts(snapshot.connectionId).catch(() => {})
     } else {
+      this.rebuiltFeedGeneration.delete(snapshot.connectionId)
       this.advertisedHarnessKeys.delete(snapshot.connectionId)
       this.remoteProjectCache.delete(snapshot.connectionId)
       this.remoteProjectLoads.delete(snapshot.connectionId)

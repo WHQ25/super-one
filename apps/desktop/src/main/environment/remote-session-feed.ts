@@ -93,7 +93,14 @@ export class RemoteSessionFeed {
     private readonly source: RemoteSessionFeedSource,
     /** The node's environment id, which its topics are scoped to. */
     private readonly environmentId: string,
+    /** Once, after every follower has been ended. The host builds a new feed when the node is reachable again. */
+    private readonly onFailed?: (error: Error) => void,
   ) {}
+
+  /** The stream has stopped. Later follows throw `failure` until the host drops this feed. */
+  hasFailed(): boolean {
+    return this.failure !== null
+  }
 
   /** A native downstream joins this same upstream, with a one-shot cursor cut rather than another socket stream. */
   followTopics(input: Omit<TopicSubscribeInput, 'subscriptionId'>, handlers: RpcStreamHandlers,
@@ -270,6 +277,7 @@ export class RemoteSessionFeed {
       this.observers.clear()
       this.native.close(this.failure)
       for (const follower of followers) follower.listener.end(this.failure)
+      this.onFailed?.(this.failure)
     }
   }
 }

@@ -185,9 +185,9 @@ describe('ProviderSelector harness catalog', () => {
 })
 
 describe('ChatSuggestions harness order on first paint', () => {
-  const catalog = [
-    { id: 'claude', enabled: true, state: 'ready' },
-    { id: 'codex', enabled: true, state: 'ready' },
+  const catalog: HarnessInstallationStatus[] = [
+    { id: 'claude', enabled: true, state: 'ready', runtimeSource: 'managed', requiresAuth: true },
+    { id: 'codex', enabled: true, state: 'ready', runtimeSource: 'managed', requiresAuth: true },
   ]
 
   beforeEach(() => {
@@ -224,7 +224,7 @@ describe('ChatSuggestions harness order on first paint', () => {
       harnessOrder: ['codex', 'claude'],
       suggestionHarness: { provider: 'codex', acpAgentId: null },
     })
-    window.app.getAppSettings = vi.fn(() => new Promise(() => {}))
+    window.app.getAppSettings = vi.fn(() => new Promise(() => {}) as never)
 
     render(<ProviderSelector />)
 
@@ -238,7 +238,7 @@ describe('ChatSuggestions harness order on first paint', () => {
 
   it('does not flash Claude Code while the saved order is still unknown', async () => {
     let resolveSettings: (settings: unknown) => void = () => {}
-    window.app.getAppSettings = vi.fn(() => new Promise((resolve) => { resolveSettings = resolve }))
+    window.app.getAppSettings = vi.fn(() => new Promise((resolve) => { resolveSettings = resolve }) as never)
 
     render(<ProviderSelector />)
 

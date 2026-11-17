@@ -414,17 +414,27 @@ describe('project focus checkout boundaries', () => {
 })
 
 describe('parent session focus', () => {
-  it('shows a session icon and opens the focused parent without leaving focus', () => {
+  it('shows a session icon, opens the focused parent, and steps back to the project', () => {
     const { container, props } = renderProject({ folderSessions: {
       [focusLocal.pathKey]: [focusSessionEntry('parent', 'Parent workflow')],
     } })
     act(() => focusSession(focusLocal.pathKey, 'parent', focusLocal.environmentId))
     const title = container.querySelector('[data-sidebar-focus-title]')!
     expect(title.querySelector('.lucide-message-square')).toBeTruthy()
-    expect(screen.getByRole('button', { name: 'Focus Levels' })).toBeTruthy()
-    expect(screen.queryByTestId('file-tree-parent-back')).toBeNull()
-    expect(document.querySelector('[data-focus-level-back]')).toBeNull()
+    const back = screen.getByRole('button', { name: 'Back to super-one' })
+    expect(back).toHaveAttribute('data-testid', 'file-tree-parent-back')
+    expect(back.querySelector('.lucide-list')).toHaveClass('size-4', 'group-hover/levels:hidden', 'group-focus-within/levels:hidden')
+    expect(back.querySelector('.lucide-circle-chevron-left')).toHaveClass('hidden', 'size-4', 'group-hover/levels:block', 'group-focus-within/levels:block')
+    const levelIds = [...document.querySelectorAll('[data-focus-level]')].map((node) => node.getAttribute('data-focus-level'))
+    expect(levelIds).toEqual(['project', 'environment', 'root'])
+    expect(document.querySelector('[data-focus-level="project"] [data-focus-level-back]')).toBeTruthy()
+    expect(document.querySelector('[data-focus-level="environment"] [data-focus-level-back]')).toBeNull()
+    expect(document.querySelector('[data-focus-level="root"] [data-focus-level-back]')).toBeNull()
     fireEvent.click(title)
     expect(props.onSwitchSession).toHaveBeenCalledWith(focusLocal.pathKey, 'parent', { revealProject: false })
+    fireEvent.click(back)
+    expect(useSidebarFocusStore.getState().target).toEqual({
+      kind: 'project', folderPath: focusLocal.pathKey, environmentId: focusLocal.environmentId,
+    })
   })
 })

@@ -60,14 +60,16 @@ function barModel(target: SidebarFocus): {
     project: projectLabel,
     session: 'Opening workflow',
   })
-  const levels = crumbs
-    .filter((crumb) => !crumb.current)
-    .map((crumb) => ({
-      id: crumb.id,
-      label: crumb.label,
-      icon: focusLevelIcon({ id: crumb.id }),
-      onSelect: () => applySidebarFocus(crumb.target),
-    }))
+  const levelCrumbs = [
+    ...crumbs.filter((crumb) => !crumb.current && crumb.id !== 'root').reverse(),
+    ...crumbs.filter((crumb) => !crumb.current && crumb.id === 'root'),
+  ]
+  const levels = levelCrumbs.map((crumb) => ({
+    id: crumb.id,
+    label: crumb.label,
+    icon: focusLevelIcon({ id: crumb.id }),
+    onSelect: () => applySidebarFocus(crumb.target),
+  }))
   const siblings = target.kind === 'environment'
     ? [
         { id: 'env-build', label: ENVIRONMENT, current: target.environmentId === 'env-build', icon: focusLevelIcon({ id: 'environment', environment: { kind: 'local', connection: 'connected' } }), onSelect: () => focusEnvironment('env-build') },
@@ -82,7 +84,7 @@ function barModel(target: SidebarFocus): {
           { id: 'parent', label: 'Opening workflow', current: target.sessionId === 'parent', onSelect: () => {} },
           { id: 'notes', label: 'Release notes', current: target.sessionId === 'notes', onSelect: () => {} },
         ]
-  const parent = target.kind === 'session' ? undefined : crumbs[crumbs.length - 2]
+  const parent = crumbs[crumbs.length - 2]
   return {
     title: crumbs.find((crumb) => crumb.current)?.label ?? '',
     levels,
@@ -237,8 +239,14 @@ export const Drill: Story = {
     await expect(canvasElement.querySelector('[data-sidebar-focus-title]')).toHaveTextContent(PROJECT)
     await userEvent.dblClick(canvas.getByText('Opening workflow'))
     await expect(canvasElement.querySelector('[data-sidebar-focus-title]')).toHaveTextContent('Opening workflow')
-    canvas.getByRole('button', { name: 'Focus Levels' }).focus()
-    await expect(canvas.getByRole('button', { name: PROJECT })).toBeVisible()
+    const back = canvas.getByRole('button', { name: `Back to ${PROJECT}` })
+    await expect(back.querySelector('.lucide-list')).toHaveClass('group-hover/levels:hidden')
+    await expect(back.querySelector('.lucide-circle-chevron-left')).toHaveClass('hidden', 'group-hover/levels:block')
+    back.focus()
+    const projectLevel = canvas.getByRole('button', { name: PROJECT })
+    await expect(projectLevel).toBeVisible()
+    await expect(projectLevel.querySelector('[data-focus-level-back]')).toBeTruthy()
+    await expect(canvas.getByRole('button', { name: ENVIRONMENT }).querySelector('[data-focus-level-back]')).toBeNull()
     await expect(canvas.getByText('Children of parent')).toBeInTheDocument()
   },
 }
@@ -555,6 +563,11 @@ export const ParentSession: Story = {
     const canvas = within(canvasElement)
     const title = canvasElement.querySelector('[data-sidebar-focus-title]')!
     await expect(title.querySelector('.lucide-message-square')).toBeTruthy()
+    const back = canvas.getByRole('button', { name: 'Back to super-one' })
+    await expect(back.querySelector('.lucide-circle-chevron-left')).toHaveClass('hidden', 'group-hover/levels:block')
+    back.focus()
+    await expect(canvasElement.querySelector('[data-focus-level="project"] [data-focus-level-back]')).toBeTruthy()
+    await expect(canvasElement.querySelector('[data-focus-level="environment"] [data-focus-level-back]')).toBeNull()
     await userEvent.click(title)
     await expect(parentFocusOpened).toHaveBeenCalledWith(focusLocal.pathKey, 'parent', { revealProject: false })
     await expect(canvas.getByRole('button', { name: /This computer/ })).toBeVisible()

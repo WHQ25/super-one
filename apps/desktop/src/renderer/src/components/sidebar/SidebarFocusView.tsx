@@ -146,7 +146,7 @@ export function SidebarFocusBar({
   actions?: ReactNode
   /** Heading on the sibling menu. Project focus uses the chat project picker title. */
   menuLabel?: string
-  /** One step up, or out of focus when there is no parent. Session focus keeps the level menu only. */
+  /** One step up, or out of focus when there is no parent. */
   onBack?: () => void
   /** Accessible name for `onBack`. Also the tooltip when the level menu is empty. */
   backLabel?: string
@@ -550,22 +550,26 @@ export function SidebarFocusView(props: SidebarFocusViewProps) {
     session: sessionTitle,
   })
   const title = crumbs.find((crumb) => crumb.current)?.label ?? ''
-  const levels: FocusSwitchItem[] = crumbs
-    .filter((crumb) => !crumb.current)
-    .map((crumb) => ({
+  // Nearest parent first, then older ancestors, then Exit. The back click opens
+  // the first row, so that row is the one that shows the return mark.
+  const levelCrumbs = [
+    ...crumbs.filter((crumb) => !crumb.current && crumb.id !== 'root').reverse(),
+    ...crumbs.filter((crumb) => !crumb.current && crumb.id === 'root'),
+  ]
+  const levels: FocusSwitchItem[] = levelCrumbs.map((crumb) => ({
+    id: crumb.id,
+    label: crumb.label,
+    icon: focusLevelIcon({
       id: crumb.id,
-      label: crumb.label,
-      icon: focusLevelIcon({
-        id: crumb.id,
-        environment: bucket,
-        projectMissing: folder?.missing,
-        upgradingLabel: crumb.id === 'environment' ? props.upgradingLabels?.[bucket?.connectionId ?? ''] : undefined,
-      }),
-      onSelect: () => applySidebarFocus(crumb.target),
-    }))
-  // The crumb above the focused object. Environment focus steps out; project focus
-  // steps to that environment, or out when the project has none.
-  const parentCrumb = target.kind === 'session' ? undefined : crumbs[crumbs.length - 2]
+      environment: bucket,
+      projectMissing: folder?.missing,
+      upgradingLabel: crumb.id === 'environment' ? props.upgradingLabels?.[bucket?.connectionId ?? ''] : undefined,
+    }),
+    onSelect: () => applySidebarFocus(crumb.target),
+  }))
+  // The crumb one step up. A session steps to its project. A project steps to
+  // its environment, or out when the project has none. An environment steps out.
+  const parentCrumb = crumbs[crumbs.length - 2]
   const siblings = focusSiblingItems({
     target,
     environments,

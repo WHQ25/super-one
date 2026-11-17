@@ -319,9 +319,19 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
     }
 
     switch (eventType) {
+      case SESSION_DURABLE_EVENT.created:
       case SESSION_DURABLE_EVENT.settingsChanged: {
         const claudeFastMode = asBool(payload.claudeFastMode)
-        if (claudeFastMode !== undefined) push({ type: 'agent_setting_change', patch: { claudeFastMode } })
+        const serviceTier = payload.serviceTier === null ? null : asString(payload.serviceTier)
+        if (claudeFastMode !== undefined || serviceTier !== undefined) {
+          push({
+            type: 'agent_setting_change',
+            patch: {
+              ...(claudeFastMode !== undefined ? { claudeFastMode } : {}),
+              ...(serviceTier !== undefined ? { selectedCodexServiceTier: serviceTier } : {}),
+            },
+          })
+        }
         break
       }
       case SESSION_DURABLE_EVENT.userMessage: {
@@ -710,7 +720,6 @@ export function createNodeSessionEventMapper(ctx: NodeSessionEventMapContext): N
         break
       }
 
-      case SESSION_DURABLE_EVENT.created:
       case SESSION_DURABLE_EVENT.reconciled:
       case SESSION_DURABLE_EVENT.uiFlags:
       case SESSION_DURABLE_EVENT.tagsChanged:

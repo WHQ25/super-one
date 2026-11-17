@@ -64,6 +64,38 @@ const textOf = (message: { content: Array<{ type: string; text?: string }> }) =>
   message.content.filter((b) => b.type === 'text').map((b) => b.text).join('')
 
 describe('SessionReadModel', () => {
+  it('publishes Codex speed settings and preserves the speed of an accepted queued turn', async () => {
+    let release!: () => void
+    const hold = new Promise<void>(resolve => { release = resolve })
+    const tiers: Array<string | null | undefined> = []
+    const { runtime, db } = boot(dbPath(), async input => {
+      tiers.push(input.serviceTier)
+      input.onInputAccepted?.()
+      await hold
+      return { finalText: 'done' }
+    })
+    const { sessionId } = runtime.create({ projectId: 'p', harnessId: 'codex' })
+    const send = (text: string, serviceTier?: string | null) =>
+      runtime.send({ sessionId, text, clientMessageId: text, serviceTier, client, ...lease })
+    try {
+      runtime.patchSettings(sessionId, { serviceTier: 'priority' })
+      expect(runtime.load({ sessionId }).state.selectedCodexServiceTier).toBe('priority')
+      await send('first')
+      await send('queued', 'ultrafast')
+      runtime.patchSettings(sessionId, { serviceTier: null })
+      expect(runtime.load({ sessionId }).state.selectedCodexServiceTier).toBeNull()
+      expect(createSqliteSessionStore(db).loadAll()[0]?.serviceTier).toBeNull()
+      release()
+      await until(() => tiers.length === 2 && runtime.get(sessionId)?.status === 'idle')
+      await send('standard')
+      await until(() => tiers.length === 3 && runtime.get(sessionId)?.status === 'idle')
+      expect(tiers).toEqual(['priority', 'ultrafast', null])
+    } finally {
+      release()
+      await runtime.dispose()
+    }
+  })
+
   it('consumes an optimistic queue card when its active turn ended before admission', async () => {
     const node = boot(dbPath(), async input => { input.onInputAccepted?.(); return { finalText: 'done' } })
     const session = node.runtime.create({ projectId: 'p', harnessId: 'codex' })

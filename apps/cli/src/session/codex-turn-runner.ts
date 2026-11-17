@@ -533,6 +533,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
             permissionPreset: input.session.permissionPreset,
             model: input.model && input.model.trim() ? input.model.trim() : undefined,
             reasoningEffort,
+            serviceTier: input.serviceTier,
             collaborationMode: input.collaborationMode,
             messageId: input.messageId,
             clientMessageId: input.clientMessageId,

@@ -178,6 +178,7 @@ describe('createNodeCodexTurnRunner', () => {
 
     await pump()
     const turn = JSON.parse(lines.find((l) => l.includes('turn/start'))!)
+    expect(turn.params).not.toHaveProperty('serviceTierForTurn')
     expect(turn.params.input).toEqual([
       { type: 'text', text: expect.stringContaining('notes.pdf'), text_elements: [] },
       { type: 'localImage', path: expect.stringContaining('-shot.png') },
@@ -395,8 +396,10 @@ describe('createNodeCodexTurnRunner', () => {
     let sessionId: string | undefined
     try {
       sessionId = runtime.create({ projectId: 'p1', harnessId: 'codex' }).sessionId
-      await runtime.send({ sessionId, text: 'original task', client, leaseId: 'l', generation: '1' })
+      runtime.patchSettings(sessionId, { serviceTier: 'priority' })
+      await runtime.send({ sessionId, text: 'original task', serviceTier: 'ultrafast', client, leaseId: 'l', generation: '1' })
       await vi.waitFor(() => expect(requests.some(r => r.method === 'turn/start')).toBe(true))
+      expect(requests.find(r => r.method === 'turn/start')?.params?.serviceTierForTurn).toBe('ultrafast')
       // The update arrives while the first turn is still streaming, with no result.
       expect(runtime.get(sessionId)?.status).toBe('streaming')
       expect(createSqliteSessionStore(db).loadAll()[0]?.providerResume).toBe('thread:original-thread')
@@ -410,13 +413,19 @@ describe('createNodeCodexTurnRunner', () => {
       runtime = new SessionRuntime(createSqliteSessionStore(db), events, leases, 'env', restartedRunner)
       expect(runtime.get(sessionId)?.status).toBe('interrupted')
       expect(runtime.get(sessionId)?.transcript[0]?.text).toBe('original task')
+      expect(runtime.get(sessionId)?.serviceTier).toBe('priority')
       requests.length = 0
       await runtime.send({ sessionId, text: 'continue', client, leaseId: 'l', generation: '1' })
       await vi.waitFor(() => expect(requests.some(r => r.method === 'turn/start')).toBe(true))
       expect(requests.find(r => r.method === 'thread/resume')?.params?.threadId).toBe('original-thread')
       expect(requests.some(r => r.method === 'thread/start')).toBe(false)
+      expect(requests.find(r => r.method === 'turn/start')?.params?.serviceTierForTurn).toBe('priority')
       children.at(-1)!.stdout.write(`${JSON.stringify({ method: 'turn/completed', params: { turn: { id: 'turn-1', status: 'completed' } } })}\n`)
       await vi.waitFor(() => expect(runtime.get(sessionId!)?.status).toBe('idle'))
+      requests.length = 0
+      await runtime.send({ sessionId, text: 'use standard', serviceTier: null, client, leaseId: 'l', generation: '1' })
+      await vi.waitFor(() => expect(requests.find(r => r.method === 'turn/start')?.params?.serviceTierForTurn).toBe('default'))
+      expect(runtime.get(sessionId)?.serviceTier).toBe('priority')
     } finally {
       if (sessionId) runtime.interrupt(sessionId, client, 'l', '1')
       await runner.disposeAll!()

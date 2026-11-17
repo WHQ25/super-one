@@ -69,6 +69,7 @@ export interface NodeSessionRecord {
   model?: string | null
   effort?: string | null
   agent?: string | null
+  serviceTier?: string | null
   apiProviderId?: string | null
   mode?: string | null
   agentPreset?: string | null
@@ -256,6 +257,8 @@ export type TurnRunner = ((input: {
   model?: string | null
   /** Reasoning / thinking effort (Claude effort or Codex reasoningEffort). */
   effort?: string | null
+  /** Effective Codex speed for this turn. Null explicitly selects Standard. */
+  serviceTier?: string | null
   /** OpenCode agent captured when this turn was accepted, including queued turns. */
   agent?: string | null
   /** Inline images/docs for this turn (host already validated size). */

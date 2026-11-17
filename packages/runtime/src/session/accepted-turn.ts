@@ -13,6 +13,7 @@ export interface TurnOpts extends MessageDisplayFields {
   requestId?: string
   model?: string | null
   effort?: string | null
+  serviceTier?: string | null
   agent?: string | null
   images?: TurnImageAttachment[]
   permissionMode?: string | null

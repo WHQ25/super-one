@@ -77,6 +77,7 @@ export async function openTurnAndStream(opts: {
   parentTurnId?: string
   rootTurnId?: string
   model?: string
+  serviceTier?: string | null
   /** Codex permission preset. Unset uses the desktop default (`auto-review`). */
   permissionPreset?: string | null
   reasoningEffort?: 'minimal' | 'low' | 'medium' | 'high' | 'xhigh' | 'max' | 'ultra'
@@ -120,6 +121,7 @@ export async function openTurnAndStream(opts: {
       ...(opts.rootTurnId ? { rootTurnId: opts.rootTurnId } : {}),
       input: opts.input ?? [{ type: 'text', text: opts.prompt, text_elements: [] }],
       ...(opts.model ? { model: opts.model } : {}),
+      serviceTierForTurn: opts.serviceTier === null ? 'default' : opts.serviceTier,
       ...(opts.reasoningEffort
         ? {
             effort: opts.reasoningEffort,

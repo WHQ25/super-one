@@ -763,7 +763,7 @@ export class SessionRuntime {
     if (session.harnessId === 'codex' && 'apiProviderId' in patch) {
       assertCodexAccountSwitchAllowed(session.apiProviderId, patch.apiProviderId, session.transcript.length > 0 || session.status === 'streaming')
     }
-    const apply = (key: 'permissionMode' | 'sandboxMode' | 'model' | 'effort' | 'apiProviderId' | 'agent'): void => {
+    const apply = (key: 'permissionMode' | 'sandboxMode' | 'model' | 'effort' | 'apiProviderId' | 'agent' | 'serviceTier'): void => {
       if (!(key in patch)) return
       const next = normalizeSettingValue(patch[key])
       if (next === undefined) return
@@ -774,6 +774,7 @@ export class SessionRuntime {
     apply('model')
     apply('effort')
     if (session.harnessId === 'opencode') apply('agent')
+    if (session.harnessId === 'codex') apply('serviceTier')
     apply('apiProviderId')
 
     if (patch.claudeFastMode !== undefined && session.harnessId === 'claude') session.claudeFastMode = patch.claudeFastMode
@@ -793,6 +794,7 @@ export class SessionRuntime {
         effort: session.effort ?? null,
         ...(session.harnessId === 'opencode' ? { agent: session.agent ?? null } : {}),
         ...(session.harnessId === 'codex' ? { permissionPreset: session.permissionPreset ?? null } : {}),
+        ...(session.serviceTier !== undefined ? { serviceTier: session.serviceTier } : {}),
         apiProviderId: session.apiProviderId ?? null,
       },
     })
@@ -803,7 +805,8 @@ export class SessionRuntime {
     const codexPreset = patch.permissionPreset !== undefined && harnessId === 'codex'
       && (patch.permissionPreset === null || isCodexPermissionPreset(patch.permissionPreset))
     if (patch.mode !== undefined || patch.agentPreset !== undefined || patch.additionalDirectories !== undefined
-      || patch.ultracode !== undefined || patch.contextWindow !== undefined || patch.serviceTier !== undefined
+      || patch.ultracode !== undefined || patch.contextWindow !== undefined
+      || (patch.serviceTier !== undefined && harnessId !== 'codex')
       || (patch.permissionPreset !== undefined && !codexPreset) || patch.collaborationMode !== undefined || (patch.agent !== undefined && harnessId !== 'opencode')) {
       throw Object.assign(new Error('This node does not support desktop harness settings'), { code: 'unsupported' })
     }
@@ -879,6 +882,7 @@ export class SessionRuntime {
       permissionMode: source.permissionMode ?? null,
       sandboxMode: source.sandboxMode ?? null,
       ...(source.permissionPreset ? { permissionPreset: source.permissionPreset } : {}),
+      ...(source.serviceTier !== undefined ? { serviceTier: source.serviceTier } : {}),
       model: source.model ?? null,
       effort: source.effort ?? null,
       agent: source.agent ?? null,
@@ -910,6 +914,7 @@ export class SessionRuntime {
         providerId: session.providerId,
         forkedFromSessionId: source.sessionId,
         cwd: session.cwd,
+        ...(session.serviceTier !== undefined ? { serviceTier: session.serviceTier } : {}),
       },
     })
     const sourceMessages = this.readModel?.messages(source.sessionId)
@@ -1205,7 +1210,7 @@ export class SessionRuntime {
       && !(key === 'priority' && queuePriority)
       && !(session.harnessId === 'opencode' && (key === 'agent' || key === 'priority' || key === 'steer'))
       && !(session.harnessId === 'claude' && (key === 'priority' || key === 'steer'))
-      && !(session.harnessId === 'codex' && (key === 'permissionPreset' || key === 'steer')))) {
+      && !(session.harnessId === 'codex' && (key === 'permissionPreset' || key === 'serviceTier' || key === 'steer')))) {
       throw Object.assign(new Error('This node does not support desktop composer send selections'), { code: 'unsupported' })
     }
     if (session.harnessId === 'codex' && input.permissionPreset !== undefined) {
@@ -1253,6 +1258,7 @@ export class SessionRuntime {
       requestId: input.requestId,
       model: pick(input.model, session.model),
       effort: pick(input.effort, session.effort),
+      serviceTier: input.serviceTier === undefined ? session.serviceTier : normalizeSettingValue(input.serviceTier),
       ...(session.harnessId === 'opencode' ? { agent: session.agent } : {}),
       images: input.images,
       permissionMode: pick(input.permissionMode, session.permissionMode),
@@ -1366,6 +1372,7 @@ export class SessionRuntime {
       requestId: input.requestId,
       model: pick(input.model, session.model),
       effort: pick(input.effort, session.effort),
+      serviceTier: session.serviceTier,
       permissionMode: pick(input.permissionMode, session.permissionMode),
       sandboxMode: pick(input.sandboxMode, session.sandboxMode),
       apiProviderId: session.harnessId === 'codex' ? input.apiProviderId ?? session.apiProviderId : pick(input.apiProviderId, session.apiProviderId),
@@ -1529,7 +1536,7 @@ export class SessionRuntime {
         })
         this.beginTurn(session, { text, userBlockId: message.id, inputAdmission: admission,
           // The Codex runner steers a live turn and starts normally when it has ended.
-          turnKind: 'run', model: session.model, effort: session.effort, apiProviderId: session.apiProviderId,
+          turnKind: 'run', model: session.model, effort: session.effort, serviceTier: session.serviceTier, apiProviderId: session.apiProviderId,
           permissionMode: session.permissionMode, sandboxMode: session.sandboxMode })
         await admission.promise
       })
@@ -1825,6 +1832,7 @@ export class SessionRuntime {
         text: modelInput.text,
         model: opts.model && opts.model.trim() ? opts.model.trim() : undefined,
         effort: opts.effort && opts.effort.trim() ? opts.effort.trim() : undefined,
+        serviceTier: opts.serviceTier,
         images: modelInput.images?.length ? modelInput.images : undefined,
         permissionMode,
         sandboxMode,

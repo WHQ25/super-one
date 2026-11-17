@@ -12,6 +12,7 @@ function parseSettingsJson(raw: string | null | undefined): {
   agent: string | null
   apiProviderId: string | null
   permissionPreset: string | null
+  serviceTier?: string | null
   externalParent: { sessionId: string } | null
 } {
   const empty = {
@@ -43,6 +44,7 @@ function parseSettingsJson(raw: string | null | undefined): {
       agent: str('agent'),
       apiProviderId: str('apiProviderId'),
       permissionPreset: str('permissionPreset'),
+      serviceTier: Object.hasOwn(obj, 'serviceTier') ? str('serviceTier') : undefined,
       externalParent: externalParentOf(obj.externalParent),
     }
   } catch {
@@ -65,6 +67,7 @@ function serializeSettingsJson(session: NodeSessionRecord): string {
     ...(session.harnessId === 'opencode' ? { agent: session.agent ?? null } : {}),
     apiProviderId: session.apiProviderId ?? null,
     ...(session.harnessId === 'codex' && session.permissionPreset ? { permissionPreset: session.permissionPreset } : {}),
+    ...(session.harnessId === 'codex' ? { serviceTier: session.serviceTier } : {}),
     ...(session.externalParent ? { externalParent: session.externalParent } : {}),
   })
 }
@@ -151,6 +154,7 @@ export function createSqliteSessionStore(db: SqliteDatabase): SessionStore {
           ...(r.harness_id === 'opencode' ? { agent: settings.agent } : {}),
           apiProviderId: settings.apiProviderId,
           ...(settings.permissionPreset ? { permissionPreset: settings.permissionPreset } : {}),
+          ...(r.harness_id === 'codex' && settings.serviceTier !== undefined ? { serviceTier: settings.serviceTier } : {}),
           ...(r.spawn_parent_session_id ? { parentSessionId: r.spawn_parent_session_id } : {}),
           ...(settings.externalParent ? { externalParent: settings.externalParent } : {}),
           createdAt: r.created_at,

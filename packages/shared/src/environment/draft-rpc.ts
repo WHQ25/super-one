@@ -140,6 +140,8 @@ export interface DraftUpsertResult {
 export type DraftListEntry = DraftRecord & { pendingSync?: true; controllerDeviceId?: string | null }
 
 export interface DraftListRequest {
+  /** List attachment metadata only. Opening the draft retrieves its full contents. */
+  omitAttachmentData?: boolean
   /** Optional filter; omit for every draft in the environment. */
   projectPath?: string
 }

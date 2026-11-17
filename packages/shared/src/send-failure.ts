@@ -1,5 +1,18 @@
 import type { AgentEvent, ChatMessage, ChatMessageContext, ContentBlock, ImageAttachment } from './agent-types'
 import { parseInputRequestError } from './input-request'
+import type { DraftSessionSettings } from './environment/draft-rpc'
+
+/** Desktop recovery for a remote first turn that the node may never have seen. */
+export interface FailedRemoteSend {
+  projectPath: string
+  sessionId: string
+  hostSessionOwned: boolean
+  firstSendDraft?: { projectPath: string; sessionId: string; draftId?: string }
+  message: ChatMessage
+  settings: DraftSessionSettings
+  cwd: string
+  title: string | null
+}
 
 /** Transport / connectivity failures from remote node RPC, relay, or environment host. */
 const TRANSPORT_ERROR_RE =

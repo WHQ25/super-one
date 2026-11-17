@@ -7,6 +7,8 @@ import { PROJECT_SETTLED_COLLAPSE_KEY, settledPanelId } from './sidebar-section-
 import { useAppStore } from '@/stores/app'
 import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
 import { useScheduledSendsStore } from '@/stores/scheduled-sends'
+import { DraftsSection } from './DraftsSection'
+import { useDraftsStore } from '@/stores/drafts'
 import { ProjectSidebarRow } from './ProjectSidebarRow'
 import type { SessionActivity } from '@superone/shared/session-activity'
 
@@ -156,40 +158,65 @@ export const NarrowCollapsedRemoteChildActivity: Story = {
   },
 }
 
+const DRAFT_HOSTS = ['storybook-node']
+const savedDraft = {
+  id: 'saved', originSessionId: 'draft', projectPath: '/work/app', text: 'Fix the remote sidebar', title: 'Fix the remote sidebar',
+  docJson: null, attachments: [], settings: {}, harness: null, model: null, permissionMode: null, createdAt: '', updatedAt: '',
+}
+
 /** Hold each network boundary so the formerly transient duplicate is reproducible. */
 function RemoteFirstSendPreview({ width = 280, fill = false }: { width?: number; fill?: boolean }) {
   const [stage, setStage] = useState(0)
-  const title = 'Fix the remote sidebar'
+  const failed = stage === -1
+  const [switched, setSwitched] = useState(false)
+  const title = savedDraft.title
   useLayoutEffect(() => {
     const previous = useChatStore.getState()
-    return () => { useChatStore.setState(previous) }
+    const previousDrafts = useDraftsStore.getState()
+    const environment = window.environment
+    window.environment = { ...environment, listDrafts: async () => [savedDraft] }
+    return () => {
+      useChatStore.setState(previous)
+      useDraftsStore.setState(previousDrafts)
+      window.environment = environment
+    }
   }, [])
   useLayoutEffect(() => {
     const project = createDefaultProjectState()
     const sid = stage < 2 ? 'draft' : 'host'
-    project._activeSessionId = sid
+    project._activeSessionId = switched ? 'sibling' : sid
+    project._sessions.sibling = createDefaultPerSessionState()
+    useDraftsStore.setState({
+      byConnection: { 'storybook-node': [savedDraft] },
+      discardedIds: stage >= 2 ? { [savedDraft.id]: true } : {},
+    })
     project._sessions[sid] = {
       ...createDefaultPerSessionState(), preferredProvider: 'claude',
-      _historyHydrated: stage >= 2, awaitingAssistantReply: stage < 3,
+      firstSendDraft: stage < 2 ? { projectPath: REMOTE_FOLDER, sessionId: 'draft', draftId: savedDraft.id } : undefined,
+      _historyHydrated: stage >= 2, awaitingAssistantReply: stage >= 0 && stage < 3,
       status: stage === 3 ? 'streaming' : 'idle',
       messages: [{ id: 'user', providerId: stage < 3 ? 'local' : 'claude', role: 'user',
+        ...(failed ? { metadata: { sendFailure: { error: 'Node offline' } } } : {}),
         status: 'complete', createdAt: '', content: [{ type: 'text', text: title }] }],
     }
     useChatStore.setState({ activeProject: REMOTE_FOLDER, projectSessions: { [REMOTE_FOLDER]: project }, agentTitles: {} })
-  }, [stage])
+  }, [stage, switched, failed])
   return (
     <div style={{ width }}>
       <div className="mb-3 flex flex-wrap gap-2 text-xs">
+        <button className="rounded border px-2 py-1" onClick={() => setSwitched(true)}>Switch session</button>
+        <button className="rounded border px-2 py-1" onClick={() => setStage(-1)}>Refuse session creation</button>
         <button className="rounded border px-2 py-1" onClick={() => setStage(1)}>Publish empty host row</button>
         <button className="rounded border px-2 py-1" onClick={() => setStage(2)}>Finish session creation</button>
         <button className="rounded border px-2 py-1" onClick={() => setStage(3)}>Start reply</button>
       </div>
       <div className="bg-sidebar p-1.5 text-sidebar-foreground" data-sidebar-inner>
+        <DraftsSection connectionIds={DRAFT_HOSTS} />
         <ProjectSidebarRow {...callbacks}
           folder={{ id: 'remote', name: 'Remote project', path: REMOTE_FOLDER, addedAt: '', lastOpened: '' }}
-          sessions={stage === 0 ? [] : [{ sessionId: 'host', title: stage < 3 ? 'New session' : title,
+          sessions={stage <= 0 ? [] : [{ sessionId: 'host', title: stage < 3 ? 'New session' : title,
             messageCount: stage < 3 ? 0 : 1, lastActiveAt: '', provider: 'claude' }]}
-          isExpanded sessionListLayout={fill ? 'fill' : 'cap'} />
+          isExpanded offline={failed} sessionListLayout={fill ? 'fill' : 'cap'} />
       </div>
     </div>
   )
@@ -199,11 +226,12 @@ export const RemoteFirstSend: Story = {
   render: () => <RemoteFirstSendPreview />,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
-    for (const action of ['Publish empty host row', 'Finish session creation', 'Start reply']) {
+    for (const action of ['Switch session', 'Refuse session creation', 'Publish empty host row', 'Finish session creation', 'Start reply']) {
       await userEvent.click(canvas.getByRole('button', { name: action }))
       await expect(canvas.queryByText('New session')).not.toBeInTheDocument()
       await expect(canvas.getByText('Fix the remote sidebar')).toBeInTheDocument()
       await expect(canvasElement.querySelectorAll('.group\\/session')).toHaveLength(1)
+      await expect(canvasElement.querySelector('.group\\/draft')).toBeNull()
     }
   },
 }

@@ -246,6 +246,8 @@ export interface PerSessionState extends ChatCoreSession {
    * When set, the pane is a draft surface — not a fresh ChatSuggestions landing.
    */
   draftId: string | null
+  /** The draft backing a staged first message, until its host is ready or the user edits it. */
+  firstSendDraft?: { projectPath: string; sessionId: string; draftId?: string }
   /**
    * The session this unsent one continues. Its host creates it on first send
    * and hands it that session's collaboration channels.

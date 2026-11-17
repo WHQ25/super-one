@@ -90,6 +90,25 @@ describe('shared ContentBlock harness virtualization', () => {
   })
 })
 
+it('shows a remote transport failure and puts its message back in the composer on Edit', async () => {
+  const path = 'remote:node:/work/app'
+  const error = 'WebSocket closed before the session was created'
+  const message: ChatMessageType = {
+    id: 'first', role: 'user', status: 'complete', providerId: 'local', createdAt: '',
+    content: [{ type: 'text', text: 'Recover this turn' }], metadata: { sendFailure: { error } },
+  }
+  const project = createDefaultProjectState()
+  project._activeSessionId = 'origin'
+  project._sessions.origin = { ...createDefaultPerSessionState(), messages: [message] }
+  useChatStore.setState({ activeProject: path, projectSessions: { [path]: project } })
+  render(<ChatMessage message={message} sessionStatus="idle" isLastAssistant={false} />)
+  fireEvent.focus(screen.getByRole('button', { name: 'Resend' }))
+  await act(async () => { await vi.advanceTimersByTimeAsync(0) })
+  expect(screen.getByRole('tooltip')).toHaveTextContent(error)
+  fireEvent.click(screen.getByRole('button', { name: 'Edit' }))
+  expect(useChatStore.getState().projectSessions[path]._sessions.origin.draftText).toBe('Recover this turn')
+})
+
 describe('OpenCode patch Detail statistics', () => {
   const patchText = '*** Begin Patch\n*** Update File: /test/a.ts\n@@\n-old\n+new\n+extra\n*** Update File: /test/a.ts\n@@\n-old2\n+new2\n*** Add File: /test/b.ts\n+one\n+two\n*** End Patch'
 

@@ -5104,6 +5104,10 @@ export const AgentIpcChannels = {
   ENVIRONMENT_SEARCH_SESSIONS: 'environment:searchSessionsByTitle',
   /** Unsent composer drafts, stored in the environment that owns the project. */
   ENVIRONMENT_LIST_DRAFTS: 'environment:listDrafts',
+  ENVIRONMENT_LIST_FAILED_REMOTE_SENDS: 'environment:listFailedRemoteSends',
+  ENVIRONMENT_SAVE_FAILED_REMOTE_SEND: 'environment:saveFailedRemoteSend',
+  ENVIRONMENT_RESOLVE_FAILED_REMOTE_SEND: 'environment:resolveFailedRemoteSend',
+  ENVIRONMENT_FAILED_REMOTE_SEND_RESOLVED: 'environment:failedRemoteSendResolved',
   ENVIRONMENT_UPSERT_DRAFT: 'environment:upsertDraft',
   ENVIRONMENT_DELETE_DRAFT: 'environment:deleteDraft',
   ENVIRONMENT_OPEN_DRAFT: 'environment:openDraft',

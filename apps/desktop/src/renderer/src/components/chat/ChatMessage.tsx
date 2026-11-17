@@ -25,6 +25,7 @@ import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { getActiveSessionView, useActiveSession, useChatStore, useSessionScope } from '@/stores/chat'
 import { codexAsyncAnswerCopyText, codexAsyncAnswerQuestions, codexAsyncReplyText, isCodexAsyncAnswer, isDismissedCodexAsyncAnswer } from '@superone/shared/codex-async-question'
 import { useAppStore } from '@/stores/app'
+import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { getAssistantCopyText } from './chat-message/getAssistantCopyText'
 import { resolveMarkdownFileLinks } from './chat-shared'
 import { RewindButton } from './RewindButton'
@@ -326,6 +327,7 @@ export const ChatMessage = memo(function ChatMessage({
           ? (
             <SendFailureResendButton
               error={sendFailure.error}
+              showTransportError={!!projectPath && !!parseRemoteProjectKey(projectPath)}
               onResend={() => { void useChatStore.getState().resendFailedMessage(message.id, scope ?? undefined) }}
             />
           )

@@ -24,7 +24,8 @@ import { isUnsentSession, sessionDirectoryHint } from './session-liveness'
 import { logWorktreeWrite } from '@superone/shared/session-worktree-log'
 import { deliverUserSend, type UserSendDelivery } from './send-replay'
 import type { SendWriteScope } from './send-write-scope'
-import { rekeyDraftForSession } from './draft-promote'
+import { consumeDraftForSession, rekeyDraftForSession } from './draft-promote'
+import { resolveFailedRemoteSend } from '@/lib/failed-remote-sends'
 import { getProject, getScopedPerSession, mergeCallerScopedDirs } from './store-helpers'
 import { environmentIdForProjectKey } from '@superone/shared/session-location'
 import type { SessionEnvironmentSelection } from '@superone/shared/session-location'
@@ -410,6 +411,7 @@ export async function deliverSessionTurn(
     patchSession: writeScope.patch,
     deliver: () => window.environment.sendSessionMessage(connectionIdForProjectKey(projectPath), request),
     onDelivered: async (result) => {
+      await resolveFailedRemoteSend(projectPath, request.clientMessageId)
       applyRecord(result as NodeSessionSnapshot | null)
       await turn.onDelivered?.(result)
     },
@@ -422,7 +424,8 @@ export async function deliverSessionTurn(
 
 /**
  * Resend a failed row from what its transcript kept, under the same id, the
- * way a composer send goes. The row came from the host, so its session exists.
+ * way a composer send goes. A locally recovered first turn may still need a
+ * session on its host.
  */
 export async function resendSessionMessage(
   set: ChatStoreSet,
@@ -439,11 +442,12 @@ export async function resendSessionMessage(
     messages: s.messages.map((m) => (m.id === resend.clientMessageId ? withoutSendFailure(m) : m)),
     awaitingAssistantReply: true,
   }))
-  await deliverSessionTurn(set, writeScope, {
+  const send = (hostId: string) => deliverSessionTurn(set, writeScope, {
     projectPath,
     request: {
-      ...sessionTurnRequest(get(), projectPath, sid, {
+      ...sessionTurnRequest(get(), projectPath, hostId, {
         text: resend.content,
+        firstTurn: !!session.firstSendDraft,
         clientMessageId: resend.clientMessageId,
         images: resend.images,
         userMessageContent: resend.userMessageContent,
@@ -458,5 +462,22 @@ export async function resendSessionMessage(
     },
     retryState: () => ({ awaitingAssistantReply: true }),
     failureState: () => ({ status: session.status === 'streaming' ? 'streaming' : 'idle' }),
+  })
+  if (!session.firstSendDraft) {
+    await send(sid)
+    return
+  }
+  await deliverUserSend({
+    messageId: resend.clientMessageId,
+    patchSession: writeScope.patch,
+    retryState: () => ({ awaitingAssistantReply: true }),
+    deliver: async () => {
+      await applyPendingWorktree(projectPath, writeScope, { stagedMessageId: resend.clientMessageId })
+      const hostId = await ensureHostSession(set, get, projectPath, writeScope)
+      void consumeDraftForSession(projectPath, hostId)
+      writeScope.patch(() => ({ firstSendDraft: undefined }))
+      return hostId
+    },
+    onDelivered: send,
   })
 }

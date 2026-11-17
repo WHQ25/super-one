@@ -7,19 +7,19 @@ import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@super
 export interface SendFailureResendButtonProps {
   error: string
   onResend: () => void
+  showTransportError?: boolean
 }
 
 /**
- * Marks a user bubble the host never took; clicking resends it. A dropped
- * connection needs no explanation, so only a refusal's reason is surfaced —
- * and only on hover, where it cannot crowd the transcript.
+ * Marks a user bubble the host never took. Its tooltip explains refusals
+ * and, for remote desktop conversations, connection failures.
  */
-export function SendFailureResendButton({ error, onResend }: SendFailureResendButtonProps) {
+export function SendFailureResendButton({ error, onResend, showTransportError }: SendFailureResendButtonProps) {
   const { t } = useTranslation()
   const label = t('chat.sendFailure.resend')
   const formError = parseInputRequestError(error)
   const retryable = !formError
-  const reason = isTransportSendError(error) ? null : formError?.message ?? error
+  const reason = !showTransportError && isTransportSendError(error) ? null : formError?.message ?? error
   return (
     <TooltipProvider>
       <Tooltip>

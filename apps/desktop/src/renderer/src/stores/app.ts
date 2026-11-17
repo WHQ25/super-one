@@ -128,6 +128,14 @@ function normalizeRemoteDeviceConfig(config: RemoteDeviceConfig): RemoteDeviceCo
   }
 }
 
+interface ProjectSelectionOptions {
+  connectionId?: string
+  projectId?: string
+  carryOpenDraft?: boolean
+  /** Open a conversation already held by this window even if its node is unavailable. */
+  useCachedProject?: boolean
+}
+
 interface AppState extends HarnessThemeState {
   view: AppView
   currentFolder: string | null
@@ -207,7 +215,7 @@ interface AppState extends HarnessThemeState {
   // `connectionId` defaults to selectedHostConnectionId; remote skips local openFolder.
   selectProject: (
     folderPath?: string,
-    options?: { connectionId?: string; projectId?: string; carryOpenDraft?: boolean },
+    options?: ProjectSelectionOptions,
   ) => Promise<void>
   openTmpFolder: () => Promise<void>
   removeRecentFolder: (folderPath: string) => Promise<void>
@@ -479,7 +487,7 @@ async function prewarmActiveSessionHarness(): Promise<void> {
 async function applyProjectSelection(
   folderPath: string,
   set: (partial: Partial<AppState>) => void,
-  options?: { connectionId?: string; projectId?: string; carryOpenDraft?: boolean },
+  options?: ProjectSelectionOptions,
 ): Promise<boolean> {
   const connectionId =
     options?.connectionId ?? useAppStore.getState().selectedHostConnectionId ?? 'local'
@@ -490,7 +498,9 @@ async function applyProjectSelection(
     try {
       const parsed = parseRemoteProjectKey(folderPath)
       const hostPath = parsed?.path ?? folderPath
-      const project = await window.environment.openProject(connectionId, hostPath)
+      const project = options?.useCachedProject
+        ? { path: hostPath, projectId: options.projectId ?? null }
+        : await window.environment.openProject(connectionId, hostPath)
       const { useChatStore } = await import('./chat')
       const { useSettingsStore } = await import('./settings')
       // Chat suggestions + model selector read settings.credentials for "powered by".
@@ -751,7 +761,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ recentFolders: folders })
   },
 
-  selectProject: async (folderPath?: string, options?: { connectionId?: string; projectId?: string }) => {
+  selectProject: async (folderPath, options) => {
     const connectionId = options?.connectionId ?? get().selectedHostConnectionId ?? 'local'
     // System folder picker is local-only.
     if (!folderPath && connectionId !== 'local') return

@@ -42,7 +42,7 @@ import log from './logger'
  * every launch); it decides when a pre-migration snapshot is taken and lets a
  * build recognise a database written by a newer build.
  */
-export const SCHEMA_VERSION = 19
+export const SCHEMA_VERSION = 20
 
 /**
  * The oldest schema revision that can still read this database.
@@ -401,6 +401,13 @@ function applyMigrations(db: Database.Database): void {
       last_error TEXT
     );
     CREATE INDEX IF NOT EXISTS idx_pending_drafts_connection ON pending_drafts(connection_id);
+
+    CREATE TABLE IF NOT EXISTS failed_remote_sends (
+      project_path TEXT NOT NULL,
+      message_id TEXT NOT NULL,
+      payload_json TEXT NOT NULL,
+      PRIMARY KEY (project_path, message_id)
+    );
   `)
 
   if (!cols.some((c) => c.name === 'is_automation')) {

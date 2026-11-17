@@ -1,6 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { motion } from 'motion/react'
-import { Clock, PencilLine, Trash2, Unplug } from 'lucide-react'
+import { useShallow } from 'zustand/react/shallow'
+import { Clock, CloudUpload, PencilLine, Trash2, Unplug } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { DraftListEntry } from '@superone/shared/environment'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
@@ -111,7 +112,7 @@ const DraftRow = memo(function DraftRow({
       </span>
       {draft.pendingSync && (
         <span title={t('sidebar.drafts.pendingSyncHint')} className="shrink-0 text-warning">
-          <Clock className="size-3" aria-label={t('sidebar.drafts.pendingSync')} />
+          <CloudUpload className="size-3" aria-label={t('sidebar.drafts.pendingSync')} />
         </span>
       )}
       <IconButton
@@ -157,6 +158,16 @@ export const DraftsSection = memo(function DraftsSection({
     else onToggleCollapsed?.()
   }
   const byConnection = useDraftsStore((s) => s.byConnection)
+  const sendingDrafts = useChatStore(useShallow((s) => {
+    const staged = []
+    for (const project of Object.values(s.projectSessions)) {
+      for (const session of Object.values(project._sessions)) {
+        if (session.firstSendDraft) staged.push(session.firstSendDraft)
+      }
+    }
+    return staged
+  }))
+  const discardedIds = useDraftsStore((s) => s.discardedIds)
   // Draft ids are unique across environments, so one id → owner map routes resume and delete.
   const { drafts, ownerOf } = useMemo(() => {
     const allowedProjects = projectKeys ? new Set(projectKeys) : projectKey ? new Set([projectKey]) : null
@@ -165,13 +176,16 @@ export const DraftsSection = memo(function DraftsSection({
     for (const connectionId of connectionIds) {
       for (const draft of byConnection[connectionId] ?? []) {
         const key = draftProjectKey(connectionId, draft.projectPath)
+        if (discardedIds[draft.id] || sendingDrafts.some(send =>
+          send.draftId === draft.id || (send.projectPath === key && send.sessionId === draft.originSessionId),
+        )) continue
         if (allowedProjects && (!key || !allowedProjects.has(key))) continue
         owner.set(draft.id, connectionId)
         rows.push(draft)
       }
     }
     return { drafts: rows, ownerOf: owner }
-  }, [byConnection, connectionIds, projectKey, projectKeys])
+  }, [byConnection, connectionIds, projectKey, projectKeys, sendingDrafts, discardedIds])
   const loadDrafts = useDraftsStore((s) => s.loadDrafts)
   const resumingDraftId = useDraftsStore((s) => s.resumingDraftId)
   const activeProject = useChatStore((s) => s.activeProject)

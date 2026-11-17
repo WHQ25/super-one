@@ -11,6 +11,7 @@ import {
   nodeHarnessToProviderId,
   type NodeSessionSnapshot,
 } from '@/lib/remote-session-messages'
+import { mergeWindowMessages } from '@/stores/chat-store/helpers/window-messages'
 import { createDefaultPerSessionState } from '@/stores/chat-store/defaults'
 import type { ChatProvider, PerSessionState } from '@/stores/chat-store/types'
 
@@ -254,9 +255,13 @@ export function keepRendererOwnedState(
       acpAgentId: current.acpAgentId,
       harnessUserChosen: true,
     } : {}),
+    // A switched-away send may still be pending or may have failed locally.
+    // Keep its bubble until the host window contains the matching message.
+    messages: mergeWindowMessages(current.messages, hydrated.messages),
     draftText: current.draftText,
     draftJson: current.draftJson,
     draftId: current.draftId,
+    firstSendDraft: current.firstSendDraft,
     attachments: current.attachments,
     mentions: current.mentions,
     browserAnnotations: current.browserAnnotations,

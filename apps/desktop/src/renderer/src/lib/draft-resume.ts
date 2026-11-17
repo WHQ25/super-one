@@ -155,7 +155,6 @@ export async function resumeDraft(
       draftTrace('resume_already_active', { projectKey, sessionId: draft.originSessionId }, draft.id)
       return { ok: true }
     }
-    chat.ensureSession(projectKey)
     // Hide the clicked row for the whole resume — promoting the outgoing draft
     // below lands its row before the awaited project switch drops this one.
     useDraftsStore.getState().setResumingDraft(draft.id)
@@ -164,18 +163,19 @@ export async function resumeDraft(
       useAppStore.setState({ selectedHostConnectionId: connectionId })
     }
 
-    const leaving = chat.activeProject
-    if (leaving) {
-      const leavingSid = chat.projectSessions[leaving]?._activeSessionId ?? null
-      const openId = leavingSid ? getDraftIdForSession(leavingSid) : undefined
-      draftTrace('resume_leaving', { leaving, leavingSid, openId, draftId: draft.id }, draft.id)
-      if (leavingSid && openId !== draft.id) {
-        await promoteDraftIfUnsent(useChatStore.getState(), leaving, leavingSid)
-      }
-    }
-
+    // A project switch parks its outgoing composer in focusProject. Within
+    // one project, park it here while the node opens the incoming draft.
+    const leavingSid = chat.activeProject === projectKey ? chat.projectSessions[projectKey]?._activeSessionId : null
+    const leavingDraftId = leavingSid
+      ? chat.projectSessions[projectKey]?._sessions[leavingSid]?.draftId ?? getDraftIdForSession(leavingSid)
+      : null
+    const [source] = await Promise.all([
+      connectionId === 'local' ? draft : useDraftsStore.getState().openDraft(connectionId, draft.id),
+      leavingSid && leavingDraftId !== draft.id
+        ? promoteDraftIfUnsent(chat, projectKey, leavingSid)
+        : undefined,
+    ])
     const parked = getParkedDraft(draft.id)
-    const source = connectionId === 'local' ? draft : await useDraftsStore.getState().openDraft(connectionId, draft.id)
     const settings = resolvedSettings(source)
 
     // Open the draft's project first. Sidebar hops no longer carry the draft,
@@ -185,8 +185,8 @@ export async function resumeDraft(
         connectionId,
         carryOpenDraft: false,
       })
+      if (useChatStore.getState().activeProject !== projectKey) throw new Error('Could not open the draft project')
     }
-    useChatStore.getState().ensureSession(projectKey)
 
     draftTrace('resume_resolve', {
       hasParked: !!parked,
@@ -200,7 +200,8 @@ export async function resumeDraft(
     })
 
     let sid = ''
-    let targetProject = projectKey
+    const targetProject = parked?.projectPath ?? projectKey
+    if (!useChatStore.getState().projectSessions[targetProject]) chat.ensureSession(targetProject)
     if (parked) {
       const restored = applyPersistedFields(parked.session, source)
       draftTrace('resume_path_parked', {
@@ -209,7 +210,6 @@ export async function resumeDraft(
         restoredCodex: restored.selectedCodexModel,
         restoredPermission: restored.permissionMode,
       })
-      chat.ensureSession(parked.projectPath)
       activateSession(
         parked.projectPath,
         parked.sessionId,
@@ -217,7 +217,6 @@ export async function resumeDraft(
         parked.sandboxInfo ?? projectSandboxFromSettings(settings),
       )
       sid = parked.sessionId
-      targetProject = parked.projectPath
       claimDraftForSession(parked.sessionId, source.id)
       const mosaic = useMosaicStore.getState().focusOrReplaceFocused(parked.projectPath, parked.sessionId)
       draftTrace('resume_after_parked', {

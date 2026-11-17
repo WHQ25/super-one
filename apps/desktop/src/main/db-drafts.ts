@@ -14,6 +14,8 @@ import { createDraftStore, deriveDraftTitle } from '@superone/runtime/drafts'
 import type { DraftListEntry, DraftRecord, DraftUpsertRequest } from '@superone/shared/environment'
 import { getDb } from './database'
 import { DraftControl } from '@superone/runtime/drafts'
+import type { FailedRemoteSend } from '@superone/shared/send-failure'
+import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 
 let store: DraftControl | null = null
 
@@ -91,6 +93,28 @@ export function listFlushablePendingDrafts(connectionId: string): PendingDraft[]
 
 export function deletePendingDraft(draftId: string): void {
   getDb().prepare('DELETE FROM pending_drafts WHERE id = ?').run(draftId)
+}
+
+export function saveFailedRemoteSend(record: FailedRemoteSend): void {
+  getDb().prepare(`INSERT INTO failed_remote_sends (project_path, message_id, payload_json) VALUES (?, ?, ?)
+    ON CONFLICT(project_path, message_id) DO UPDATE SET payload_json = excluded.payload_json`)
+    .run(record.projectPath, record.message.id, JSON.stringify(record))
+}
+
+export function listFailedRemoteSends(): FailedRemoteSend[] {
+  const rows = getDb().prepare('SELECT payload_json FROM failed_remote_sends ORDER BY rowid').all() as { payload_json: string }[]
+  return rows.map(row => JSON.parse(row.payload_json) as FailedRemoteSend)
+}
+
+/** Editing trades the failed bubble for a durable composer in one local transaction. */
+export function resolveFailedRemoteSend(projectPath: string, messageId: string, draft?: DraftUpsertRequest): void {
+  const remote = parseRemoteProjectKey(projectPath)
+  if (!remote) throw new Error('Expected a remote project')
+  const db = getDb()
+  db.transaction(() => {
+    const removed = db.prepare('DELETE FROM failed_remote_sends WHERE project_path = ? AND message_id = ?').run(projectPath, messageId)
+    if (removed.changes && draft) enqueuePendingDraft(remote.connectionId, draft)
+  })()
 }
 
 /** True while a draft id is still in the outbox (flush re-checks around upserts). */

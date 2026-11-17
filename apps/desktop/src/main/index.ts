@@ -119,7 +119,7 @@ import { RemoteChildWatcher } from './session/collaboration-remote-watch'
 import { remoteChildLabel } from './session/collaboration-remote'
 import { watchProjectList, watchSessionDeletes } from './session-list-watch'
 import { bindSessionListNotifications } from './session-list-notifications'
-import { localDraftStore } from './db-drafts'
+import { listFailedRemoteSends, localDraftStore, resolveFailedRemoteSend, saveFailedRemoteSend } from './db-drafts'
 import { withoutDraftAttachmentBytes } from '@superone/shared/environment/draft-content'
 import { installDraftOpenFlush } from './remote/draft-open-flush'
 import { createPhoneSessionHost } from './remote/phone-session-host'
@@ -2154,6 +2154,12 @@ function registerIpcHandlers(): void {
       return getEnvironmentHost().searchSessionsByTitle(connectionId, query, limit, projectPaths)
     },
   )
+  ipcMain.handle(AgentIpcChannels.ENVIRONMENT_LIST_FAILED_REMOTE_SENDS, () => listFailedRemoteSends())
+  ipcMain.handle(AgentIpcChannels.ENVIRONMENT_SAVE_FAILED_REMOTE_SEND, (_e, record) => saveFailedRemoteSend(record))
+  ipcMain.handle(AgentIpcChannels.ENVIRONMENT_RESOLVE_FAILED_REMOTE_SEND, (_e, projectPath, messageId, draft) => {
+    resolveFailedRemoteSend(projectPath, messageId, draft)
+    safeSend(AgentIpcChannels.ENVIRONMENT_FAILED_REMOTE_SEND_RESOLVED, projectPath, messageId)
+  })
   ipcMain.handle(
     AgentIpcChannels.ENVIRONMENT_LIST_DRAFTS,
     async (_e, connectionId: string, projectPath?: string) => {

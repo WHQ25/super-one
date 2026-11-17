@@ -1,10 +1,12 @@
+import { claimFirstSendDraft, consumeDraftForSession } from './draft-promote'
 import { createSendWriteScope } from './send-write-scope'
 import { HARNESS_STRATEGIES } from '@/harness-ui/strategies'
 import { codexAccountId, isCodexAccountProvider } from '@superone/shared/codex-accounts'
 import { isCompactSlashSend } from '@superone/shared/compact-boundary'
 import { isRecapSlashSend } from '@superone/shared/recap-row'
 import type { ChatMessage, ContentBlock, ImageAttachment } from '@superone/shared/agent-types'
-import { pendingSlashCommandFrom, reduceUserMessageSendFailed } from '@superone/chat-core'
+import { pendingSlashCommandFrom } from '@superone/chat-core'
+import { deliverUserSend } from './send-replay'
 import { newMessageId } from '@superone/shared/message-id'
 import { buildBrowserAnnotationText } from './browser-annotation'
 import { buildReplyCommentsText, replyCommentSelection } from './reply-comments'
@@ -534,6 +536,10 @@ export async function sendMessageImpl(
   const isCompactSlash = isCompactSlashSend(effectiveProvider, finalContent)
   const isRecapSlash = !isQueuedSend && isRecapSlashSend(effectiveProvider, finalContent)
   const awaitsReply = !isQueuedSend && !isCompactSlash && !isRecapSlash
+  const sendingSid = resolveWriteSid()
+  const firstSendDraft = stageBeforeWorktree && sendingSid
+    ? claimFirstSendDraft(projectPath, sendingSid, session.draftId)
+    : undefined
   set((s) => ({
     ...commitPerSession(s, writeScope.target, (sess) => ({
       ...(!isQueuedSend ? { messages: [...sess.messages, userMessage] } : {}),
@@ -549,6 +555,7 @@ export async function sendMessageImpl(
       codexPlanRejectHintActive: false,
       additionalDirsDirty: false,
       draftId: null,
+      ...(firstSendDraft ? { firstSendDraft } : {}),
       ...(isCompactSlash ? { _pendingCompactUserId: userMessageId } : {}),
       ...(isRecapSlash ? { isRecapping: true } : {}),
       ...(awaitsReply ? { awaitingAssistantReply: true } : {}),
@@ -558,15 +565,19 @@ export async function sendMessageImpl(
   }))
   // A first turn paints before worktree or host round trips. Keep that row
   // when worktree activation resets the transcript, and write to this pane.
-  let turnChoices = getScopedPerSession(get(), writeScope.target)
-  try {
+  const retryState = () => ({
+    ...(awaitsReply ? { awaitingAssistantReply: true } : {}),
+    ...(startsStreaming ? { status: 'streaming' as const } : {}),
+  })
+  const prepareSession = async () => {
     if (stageBeforeWorktree) {
       await applyPendingWorktree(projectPath, writeScope, { stagedMessageId: userMessageId })
     }
     // Activation can replay an older host selection. Keep this turn's choices,
     // including the worktree it just prepared, before activating the host.
-    turnChoices = getScopedPerSession(get(), writeScope.target)
+    const turnChoices = getScopedPerSession(get(), writeScope.target)
     const mcpResourceSuffix = await readMcpResources()
+    const hostSid = await ensureHostSession(set, get, projectPath, writeScope)
     if (mcpResourceSuffix) {
       finalContent += mcpResourceSuffix
       userContent = [...userContent, { type: 'text', text: mcpResourceSuffix.trim() }]
@@ -575,174 +586,167 @@ export async function sendMessageImpl(
         queuedMessages: s.queuedMessages.map(message => message.id === userMessageId ? { ...message, content: userContent } : message),
       }))
     }
-    await ensureHostSession(set, get, projectPath, writeScope)
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error)
-    patchSession((s) => ({
-      _pendingSlashCommand: '',
-      ...reduceUserMessageSendFailed(s, { type: 'user_message_send_failed', clientMessageId: userMessageId, error: message }),
-      ...(startsStreaming ? { status: 'idle' as const } : {}),
-    }))
-    return
+    void consumeDraftForSession(projectPath, hostSid)
+    if (firstSendDraft) patchSession(() => ({ firstSendDraft: undefined }))
+    return turnChoices
   }
-  // First send consumes any visibility/leave-promoted draft for this origin.
-  {
-    const consumeSid = resolveWriteSid()
-    if (consumeSid) {
-      void import('./draft-promote').then(({ consumeDraftForSession }) => {
-        void consumeDraftForSession(projectPath, consumeSid)
-      })
+
+  const sendPreparedTurn = async (turnChoices: typeof session) => {
+    if (activeContexts.length > 0) {
+      const consumedAppIds = activeContexts.map((c) => c.appId)
+      window.dispatchEvent(new CustomEvent('miniapp-context-consumed', { detail: { appIds: consumedAppIds } }))
     }
-  }
 
-  if (activeContexts.length > 0) {
-    const consumedAppIds = activeContexts.map((c) => c.appId)
-    window.dispatchEvent(new CustomEvent('miniapp-context-consumed', { detail: { appIds: consumedAppIds } }))
-  }
+    if (resetLock.current) await resetLock.current
 
-  if (resetLock.current) await resetLock.current
+    // Follow any draft-to-host or Codex id rotation before authorizing tools.
+    const resolvedSessionId = writeScope.target?.sessionId
+      ?? getProject(get(), projectPath)._activeSessionId
+      ?? undefined
 
-  // Follow any draft-to-host or Codex id rotation before authorizing tools.
-  const resolvedSessionId = writeScope.target?.sessionId
-    ?? getProject(get(), projectPath)._activeSessionId
-    ?? undefined
-
-  // Authorize @-mentioned mini-app tools for this session BEFORE dispatching the turn.
-  const desktopAppGrants = mentions
-    .filter((m) => m.kind === 'desktop-app' && m.value)
-    .map((m) => ({ app: m.displayName || m.value, bundleId: m.value }))
-  const remoteMentionApps = !hostTakesDesktopChoices(projectPath)
-  let hostAppGrants: { miniappIds: string[]; desktopAppsGranted: boolean; chromeBrowserBundleIds?: string[] } | null = null
-  if (remoteMentionApps && resolvedSessionId && (miniAppMentions.length || desktopAppGrants.length)) {
-    try {
-      hostAppGrants = await callSession(projectPath, resolvedSessionId, 'session.authorizeMentionApps', {
-        miniappIds: miniAppMentions.map(m => m.value), desktopApps: desktopAppGrants,
-      })
-    } catch (error) {
-      console.warn('[sendMessage] host mention app grants unavailable:', error)
-    }
-  }
-  const chromeBundleIds = new Set<string>()
-  if (remoteMentionApps) {
-    for (const bundleId of hostAppGrants?.chromeBrowserBundleIds ?? []) chromeBundleIds.add(bundleId)
-  } else if (desktopAppGrants.some((app) => isChromiumBrowserBundle(app.bundleId))) {
-    try {
-      const status = await window.app?.getChromeBridgeStatus?.()
-      const connected = new Set(status?.browsers ?? [])
-      for (const app of desktopAppGrants) {
-        const browser = extensionBrowserForBundle(app.bundleId)
-        if (browser && connected.has(browser)) chromeBundleIds.add(app.bundleId)
+    // Authorize @-mentioned mini-app tools for this session BEFORE dispatching the turn.
+    const desktopAppGrants = mentions
+      .filter((m) => m.kind === 'desktop-app' && m.value)
+      .map((m) => ({ app: m.displayName || m.value, bundleId: m.value }))
+    const remoteMentionApps = !hostTakesDesktopChoices(projectPath)
+    let hostAppGrants: { miniappIds: string[]; desktopAppsGranted: boolean; chromeBrowserBundleIds?: string[] } | null = null
+    if (remoteMentionApps && resolvedSessionId && (miniAppMentions.length || desktopAppGrants.length)) {
+      try {
+        hostAppGrants = await callSession(projectPath, resolvedSessionId, 'session.authorizeMentionApps', {
+          miniappIds: miniAppMentions.map(m => m.value), desktopApps: desktopAppGrants,
+        })
+      } catch (error) {
+        console.warn('[sendMessage] host mention app grants unavailable:', error)
       }
-    } catch (error) {
-      console.warn('[sendMessage] chrome bridge status unavailable:', error)
     }
-  }
-  const computerAppGrants = desktopAppGrants.filter((app) => !chromeBundleIds.has(app.bundleId))
-  const miniAppAuthorizations = miniAppMentions.map((m) => m.value)
-  if (miniAppAuthorizations.length > 0 && resolvedSessionId) {
-    try {
-      const granted = new Set(remoteMentionApps ? hostAppGrants?.miniappIds ?? [] : await window.miniapp.authorize(miniAppAuthorizations, projectPath, resolvedSessionId))
-      if (granted.size > 0) {
-        const { useMiniAppStore } = await import('../../miniapp')
-        const apps = remoteMentionApps ? [] : useMiniAppStore.getState().apps
-        const lines: string[] = [
-          'User mentioned these mini-app(s); their MCP tools are authorized — prefer them when relevant:',
-        ]
-        for (const m of miniAppMentions.filter((mention) => granted.has(mention.value))) {
-          const app = apps.find((a) => a.id === m.value)
-          const manifest = app?.manifest
-          const name = manifest?.name ?? m.displayName
-          const appId = app?.id ?? m.value
-          const tools = manifest?.tools ?? []
-          // Fixed surface: miniapp_list / miniapp_call. Agents discover tools via miniapp_list.
-          if (getScopedPerSession(get(), writeScope.target).sessionProvider === 'codex') {
-            const toolNames = tools.map((t) => t.name).join(', ')
-            lines.push(
-              `- "${name}" (appId="${appId}"): call mcp__superone.miniapp_call ${toolNames ? `with tool in [${toolNames}]` : 'after miniapp_list discovers its tools'} (use miniapp_list first if unsure)`,
-            )
-          } else {
-            lines.push(
-              `- "${name}" (appId="${appId}"): use mcp__superone__miniapp_call with this appId; call miniapp_list for tool names/schemas`,
-            )
-          }
+    const chromeBundleIds = new Set<string>()
+    if (remoteMentionApps) {
+      for (const bundleId of hostAppGrants?.chromeBrowserBundleIds ?? []) chromeBundleIds.add(bundleId)
+    } else if (desktopAppGrants.some((app) => isChromiumBrowserBundle(app.bundleId))) {
+      try {
+        const status = await window.app?.getChromeBridgeStatus?.()
+        const connected = new Set(status?.browsers ?? [])
+        for (const app of desktopAppGrants) {
+          const browser = extensionBrowserForBundle(app.bundleId)
+          if (browser && connected.has(browser)) chromeBundleIds.add(app.bundleId)
         }
-        finalContent += `\n\n<superone-miniapp-reminder>\n${lines.join('\n')}\n</superone-miniapp-reminder>`
+      } catch (error) {
+        console.warn('[sendMessage] chrome bridge status unavailable:', error)
       }
-    } catch (err) {
-      console.error('[sendMessage] miniapp authorize failed:', err)
     }
-  }
-
-  const appendModelReminder = (reminder: string) => {
-    if (!reminder) return
-    finalContent += reminder
-    if (effectiveProvider === 'codex' && resolvedCodexCommand?.kind === 'run') {
-      resolvedCodexCommand = { kind: 'run', prompt: finalContent }
-    }
-  }
-  if (chromeBundleIds.size > 0) {
-    appendModelReminder(formatChromiumBrowserMentionReminder(
-      desktopAppMentions
-        .filter((mention) => mention.value && chromeBundleIds.has(mention.value))
-        .map((mention) => ({ name: mention.displayName || mention.value, bundleId: mention.value })),
-      effectiveProvider,
-    ))
-  }
-  // Temporary Computer Use grants from @ desktop-app mentions (session-scoped, no HITL).
-  // A connected browser extension keeps Chromium browsers on browser tools instead.
-  if (computerAppGrants.length > 0 && resolvedSessionId && (remoteMentionApps || window.app?.grantComputerUseSessionApps)) {
-    try {
-      const ok = remoteMentionApps ? hostAppGrants?.desktopAppsGranted : await window.app.grantComputerUseSessionApps(
-        resolvedSessionId,
-        computerAppGrants,
-      )
-      if (ok) {
-        appendModelReminder(desktopAppReminder(
-          desktopAppMentions.filter((mention) => mention.value && computerAppGrants.some((app) => app.bundleId === mention.value)),
-        ))
+    const computerAppGrants = desktopAppGrants.filter((app) => !chromeBundleIds.has(app.bundleId))
+    const miniAppAuthorizations = miniAppMentions.map((m) => m.value)
+    if (miniAppAuthorizations.length > 0 && resolvedSessionId) {
+      try {
+        const granted = new Set(remoteMentionApps ? hostAppGrants?.miniappIds ?? [] : await window.miniapp.authorize(miniAppAuthorizations, projectPath, resolvedSessionId))
+        if (granted.size > 0) {
+          const { useMiniAppStore } = await import('../../miniapp')
+          const apps = remoteMentionApps ? [] : useMiniAppStore.getState().apps
+          const lines: string[] = [
+            'User mentioned these mini-app(s); their MCP tools are authorized — prefer them when relevant:',
+          ]
+          for (const m of miniAppMentions.filter((mention) => granted.has(mention.value))) {
+            const app = apps.find((a) => a.id === m.value)
+            const manifest = app?.manifest
+            const name = manifest?.name ?? m.displayName
+            const appId = app?.id ?? m.value
+            const tools = manifest?.tools ?? []
+            // Fixed surface: miniapp_list / miniapp_call. Agents discover tools via miniapp_list.
+            if (getScopedPerSession(get(), writeScope.target).sessionProvider === 'codex') {
+              const toolNames = tools.map((t) => t.name).join(', ')
+              lines.push(
+                `- "${name}" (appId="${appId}"): call mcp__superone.miniapp_call ${toolNames ? `with tool in [${toolNames}]` : 'after miniapp_list discovers its tools'} (use miniapp_list first if unsure)`,
+              )
+            } else {
+              lines.push(
+                `- "${name}" (appId="${appId}"): use mcp__superone__miniapp_call with this appId; call miniapp_list for tool names/schemas`,
+              )
+            }
+          }
+          finalContent += `\n\n<superone-miniapp-reminder>\n${lines.join('\n')}\n</superone-miniapp-reminder>`
+        }
+      } catch (err) {
+        console.error('[sendMessage] miniapp authorize failed:', err)
       }
-    } catch (err) {
-      console.error('[sendMessage] computer-use session grant failed:', err)
     }
-  }
 
-
-  if (!resolvedSessionId) return
-  if (!isCompactSlash && !isRecapSlash && (!resolvedCodexCommand || resolvedCodexCommand.kind === 'run')) {
-    const { mcpAppToolsContentForModel } = await import('../../../components/mcp-apps/mention-content')
-    const appToolsSuffix = await mcpAppToolsContentForModel(projectPath, resolvedSessionId)
-    if (appToolsSuffix) {
-      finalContent += appToolsSuffix
-      if (resolvedCodexCommand?.kind === 'run') {
+    const appendModelReminder = (reminder: string) => {
+      if (!reminder) return
+      finalContent += reminder
+      if (effectiveProvider === 'codex' && resolvedCodexCommand?.kind === 'run') {
         resolvedCodexCommand = { kind: 'run', prompt: finalContent }
       }
     }
-  }
-  // A Codex review or compact names its turn kind; everything else is a run.
-  const codexTurn = resolvedCodexCommand?.kind === 'review'
-    ? { turnKind: 'review' as const, reviewTarget: resolvedCodexCommand.target }
-    : resolvedCodexCommand?.kind === 'compact' ? { turnKind: 'compact' as const } : {}
-  await deliverSessionTurn(set, writeScope, {
-    projectPath,
-    request: {
-      ...sessionTurnRequest(get(), projectPath, resolvedSessionId, {
-        text: finalContent,
+    if (chromeBundleIds.size > 0) {
+      appendModelReminder(formatChromiumBrowserMentionReminder(
+        desktopAppMentions
+          .filter((mention) => mention.value && chromeBundleIds.has(mention.value))
+          .map((mention) => ({ name: mention.displayName || mention.value, bundleId: mention.value })),
+        effectiveProvider,
+      ))
+    }
+    // Temporary Computer Use grants from @ desktop-app mentions (session-scoped, no HITL).
+    // A connected browser extension keeps Chromium browsers on browser tools instead.
+    if (computerAppGrants.length > 0 && resolvedSessionId && (remoteMentionApps || window.app?.grantComputerUseSessionApps)) {
+      try {
+        const ok = remoteMentionApps ? hostAppGrants?.desktopAppsGranted : await window.app.grantComputerUseSessionApps(
+          resolvedSessionId,
+          computerAppGrants,
+        )
+        if (ok) {
+          appendModelReminder(desktopAppReminder(
+            desktopAppMentions.filter((mention) => mention.value && computerAppGrants.some((app) => app.bundleId === mention.value)),
+          ))
+        }
+      } catch (err) {
+        console.error('[sendMessage] computer-use session grant failed:', err)
+      }
+    }
+
+
+    if (!resolvedSessionId) return
+    if (!isCompactSlash && !isRecapSlash && (!resolvedCodexCommand || resolvedCodexCommand.kind === 'run')) {
+      const { mcpAppToolsContentForModel } = await import('../../../components/mcp-apps/mention-content')
+      const appToolsSuffix = await mcpAppToolsContentForModel(projectPath, resolvedSessionId)
+      if (appToolsSuffix) {
+        finalContent += appToolsSuffix
+        if (resolvedCodexCommand?.kind === 'run') {
+          resolvedCodexCommand = { kind: 'run', prompt: finalContent }
+        }
+      }
+    }
+    // A Codex review or compact names its turn kind; everything else is a run.
+    const codexTurn = resolvedCodexCommand?.kind === 'review'
+      ? { turnKind: 'review' as const, reviewTarget: resolvedCodexCommand.target }
+      : resolvedCodexCommand?.kind === 'compact' ? { turnKind: 'compact' as const } : {}
+    await deliverSessionTurn(set, writeScope, {
+      projectPath,
+      request: {
+        ...sessionTurnRequest(get(), projectPath, resolvedSessionId, {
+          text: finalContent,
+          clientMessageId: userMessageId,
+          images: attachments,
+          userMessageContent: userContent,
+          contexts: messageContexts,
+          userSelections: displaySelections.length > 0 ? displaySelections : undefined,
+          queued: isQueuedSend,
+          steer: options?.steer,
+          firstTurn: session.messages.length === 0,
+          ...codexTurn,
+        }, turnChoices),
         clientMessageId: userMessageId,
-        images: attachments,
-        userMessageContent: userContent,
-        contexts: messageContexts,
-        userSelections: displaySelections.length > 0 ? displaySelections : undefined,
-        queued: isQueuedSend,
-        steer: options?.steer,
-        firstTurn: session.messages.length === 0,
-        ...codexTurn,
-      }, turnChoices),
-      clientMessageId: userMessageId,
-    },
-    titleText: rawContent || finalContent,
-    retryState: () => ({
-      ...(awaitsReply ? { awaitingAssistantReply: true } : {}),
-      ...(startsStreaming ? { status: 'streaming' as const } : {}),
-    }),
+      },
+      titleText: rawContent || finalContent,
+      retryState,
+    })
+  }
+
+  await deliverUserSend({
+    messageId: userMessageId,
+    patchSession,
+    retryState,
+    failureState: () => ({ _pendingSlashCommand: '', ...(startsStreaming ? { status: 'idle' as const } : {}) }),
+    deliver: prepareSession,
+    onDelivered: sendPreparedTurn,
   })
 }

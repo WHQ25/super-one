@@ -139,7 +139,7 @@ function foldDeltas(envelopes: EnvironmentEventEnvelope[]): EnvironmentEventEnve
 export function subscribeDetail(
   delivery: ConnectionDelivery,
   sessions: Messages,
-  input: { sessionId: string; detailRef: string; subscriptionId: string },
+  input: { sessionId: string; detailRef: string; subscriptionId: string; chunkedSnapshot?: boolean },
 ): DetailUpdate {
   let messageId: string
   try {
@@ -152,7 +152,7 @@ export function subscribeDetail(
     : detailMessages(sessions, input.sessionId).find((candidate) => candidate.id === messageId)
   if (!message) throw Object.assign(new Error('Detail not found'), { code: 'not_found' })
   try {
-    return delivery.views.subscribe(input.sessionId, input.subscriptionId, input.detailRef, message)
+    return delivery.views.subscribe(input.sessionId, input.subscriptionId, input.detailRef, message, input.chunkedSnapshot)
   } catch (err) {
     throw Object.assign(err as Error, { code: 'failed_precondition' })
   }

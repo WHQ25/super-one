@@ -70,7 +70,7 @@ export class InProcessRpcClient extends EnvironmentRpcClient {
     }
   }
 
-  async subscribeDetail(input: { sessionId: string; detailRef: string; subscriptionId: string }, onUpdate: (update: DetailUpdate) => void): Promise<DetailUpdate> {
+  async subscribeDetail(input: { sessionId: string; detailRef: string; subscriptionId: string; chunkedSnapshot?: boolean }, onUpdate: (update: DetailUpdate) => void): Promise<DetailUpdate> {
     this.connection.watchDetail(input.subscriptionId, onUpdate)
     try { return await this.rpc('session.subscribeDetail', input) }
     catch (error) { this.connection.unwatchDetail(input.subscriptionId); throw error }

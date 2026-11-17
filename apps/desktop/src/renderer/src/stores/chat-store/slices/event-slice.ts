@@ -24,6 +24,7 @@ import { applySessionActivity } from '../helpers/session-activity'
 import { applyControlHolder, applyRemoteControlChange, externalHolder } from '../helpers/remote-control'
 import { applyWindowRows, todoUpdatesFromWindow } from '../helpers/window-messages'
 import { inferProviderFromHarnessId } from '../helpers/provider-routing'
+import { remoteToolBodies } from '@/lib/tool-body-cache'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { logWorktreeWrite } from '@superone/shared/session-worktree-log'
 import { isUnsentSession } from '../helpers/session-liveness'
@@ -239,11 +240,17 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
     const projectPath = event.projectPath
     const eventSessionId = event.sessionId
     if (!projectPath) return
+    if (event.type === 'content_delta' && eventSessionId && 'toolUseId' in event.delta) {
+      const remote = parseRemoteProjectKey(projectPath)
+      if (remote) remoteToolBodies.receiveBlock(remote.connectionId, eventSessionId, event.messageId, event.delta)
+    }
     // A remote window is the transcript. Its rows replace what content events
     // would have accumulated; an unsent local bubble stays put.
     if (event.type === 'transcript_window') {
       if (!eventSessionId || !event.rows) return
-      const rows = withCodexContents(event.rows)
+      const remote = parseRemoteProjectKey(projectPath)
+      const received = withCodexContents(event.rows)
+      const rows = remote ? received.map(row => remoteToolBodies.reuseReceived(remote.connectionId, eventSessionId, row)) : received
       const edges = event.edges
       set((s) => {
         const project = s.projectSessions[projectPath]

@@ -90,4 +90,40 @@ describe('detail round trip', () => {
     const row = await expand(shell.remoteDetail!, true)
     expect(JSON.parse(row.state.text).item).toMatchObject({ type: 'file_change', changes: [{ path: '/p/a.ts', diff: expect.stringContaining('+after') }] })
   })
+
+  it('offers a bounded revision-zero snapshot when a desktop opens a large tool result', () => {
+    const summary = '界'.repeat(40000)
+    const message: ChatMessage = { id: 'm', role: 'assistant', status: 'complete', createdAt: '', providerId: 'claude', content: [
+      { type: 'tool_use', toolName: 'Bash', toolUseId: 't', input: '{"command":"example"}' },
+      { type: 'tool_result', toolUseId: 't', summary },
+    ] }
+    const { host } = link(() => [message])
+    const shell = host.messages([message], 's')[0].content[0]
+    const snapshot = host.views.subscribe('s', 'sub', shell.remoteDetail!, message, true)
+    expect(Buffer.byteLength(JSON.stringify(snapshot))).toBeLessThan(32 * 1024)
+    expect(snapshot.body).toMatchObject({ type: 'tool_result', length: summary.length })
+  })
+
+  it('pages the complete JSON for a large Codex file change and releases it on collapse', () => {
+    const diff = '@@ hunk @@\n+added line\n'.repeat(4000)
+    const item = { id: 'patch', type: 'file_change', status: 'completed', changes: [{ path: '/a', kind: 'update', diff }] }
+    const message = { id: 'm', role: 'assistant', status: 'complete', createdAt: '', providerId: 'codex', content: [],
+      metadata: { codex: { items: [item] } } } as unknown as ChatMessage
+    const { host } = link(() => [message])
+    const ref = JSON.stringify(['m', 'item', 'patch'])
+    const legacy = host.views.subscribe('s', 'legacy', ref, message)
+    const paged = host.views.subscribe('s', 'desktop', ref, message, true)
+    expect(JSON.parse(legacy.text).item.changes[0].diff).toBe(diff)
+    expect(paged).toMatchObject({ text: '', body: { type: 'detail', length: legacy.text.length } })
+    const body = paged.body!
+    let text = ''
+    while (text.length < body.length) {
+      const chunk = host.views.initialChunk('s', 'desktop', body, text.length)
+      expect(chunk?.length).toBeGreaterThan(0)
+      text += chunk
+    }
+    expect(text).toBe(legacy.text)
+    host.views.unsubscribe('s', 'desktop')
+    expect(host.views.initialChunk('s', 'desktop', body, 0)).toBeUndefined()
+  })
 })

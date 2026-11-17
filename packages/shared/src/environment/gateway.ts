@@ -134,6 +134,7 @@ export interface SessionGateway {
    * older than the method, or without the read port, reject it as unserved.
    */
   transcriptWindow?(input: { session: SessionRef; holder: string } & Omit<TranscriptWindowRequest, 'sessionId'>): Promise<TranscriptWindowResult>
+  toolChunk?(input: { session: SessionRef } & Omit<import('../transcript-window/tool-body').ToolChunkRequest, 'sessionId'>): Promise<string>
   /** The next page behind a window's fold (`session.transcriptFold`); served wherever folds are. */
   transcriptFold?(input: { session: SessionRef } & Omit<TranscriptFoldRequest, 'sessionId'>): Promise<TranscriptFoldResult>
   /**
@@ -145,6 +146,7 @@ export interface SessionGateway {
   subscribeDetail?(input: {
     session: SessionRef
     detailRef: string
+    chunkedSnapshot?: boolean
     subscriptionId: string
     onUpdate: (update: import('./detail').DetailUpdate) => void
   }): Promise<import('./detail').DetailUpdate>

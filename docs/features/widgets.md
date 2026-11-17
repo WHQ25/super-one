@@ -66,6 +66,15 @@ while its input streamed. Codex MCP items reach the same branch as `tool_use`
 / `tool_result` blocks translated by `codex-content.ts`: their `arguments`
 become the input (a string is kept as it is) and `result.isError` the error.
 
+For a remote desktop session, a widget input or result over the 32 KiB
+transcript fragment limit carries the tool call ID, body length and digest.
+When a live widget call and its window reference arrive together, the desktop
+matches the body length and digest and inserts the received body into the row
+before rendering. Later reads use memory or IndexedDB, scoped to the node,
+session, message, call and digest. On a miss it reads consecutive
+`session.toolChunk` pages and verifies the complete body before rendering.
+The node derives these references when reading history, including older stored turns.
+
 A drawn widget is framed like an MCP App View (`EmbeddedToolView`): a pinned
 header with the widget glyph before the title, the save actions, and a trailing
 chevron. The title or the chevron folds the widget into a tool row and back;

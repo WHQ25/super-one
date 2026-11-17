@@ -8,6 +8,9 @@ export interface DetailUpdate {
   revision: number
   offset: number
   text: string
+  /** On an opted-in initial snapshot only. A tool result fills the JSON result field;
+   * a detail body supplies the entire snapshot text. Live offsets refer to the reassembled text. */
+  body?: import('../transcript-window/tool-body').ToolBodyAddress
 }
 
 /** One summarized row's detail: its session's environment and session, and the opaque reference. */

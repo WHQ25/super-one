@@ -298,7 +298,7 @@ type ContentBlockData =
   | { type: 'insight'; title: string; content: string; parentToolUseId?: string | null; codeBlockTokens?: Array<{ language: string; tokens: DiffTokenLine[] | null }> }
   | { type: 'tool_use' } & ToolUseBase & ToolMeta & AgentTaskData & WorkflowData
   | { type: RemoteToolType } & ToolUseBase & ToolMeta & AgentTaskData & WorkflowData
-  | { type: 'tool_result'; toolUseId: string; app?: ToolAppAttachment; summary: string; outputPath?: string; isTimedOut?: boolean; isError?: boolean; /** Process exit code of a command; non-zero is an outcome, not a tool error. */ exitCode?: number; parentToolUseId?: string | null; outputTokens?: DiffTokenLine[]; todoToolName?: string; toolTodos?: TodoToolItem[]; bashEditDiff?: BashEditDiff; /** Title of the page an Artifact call names, from the structured result the model never sees. */ resultTitle?: string; /** Files an MCP tool returned by reference. */ resourceLinks?: McpResourceLink[] }
+  | { type: 'tool_result'; toolUseId: string; app?: ToolAppAttachment; summary: string; remoteBody?: import('./transcript-window/tool-body').BodyVersion; outputPath?: string; isTimedOut?: boolean; isError?: boolean; /** Process exit code of a command; non-zero is an outcome, not a tool error. */ exitCode?: number; parentToolUseId?: string | null; outputTokens?: DiffTokenLine[]; todoToolName?: string; toolTodos?: TodoToolItem[]; bashEditDiff?: BashEditDiff; /** Title of the page an Artifact call names, from the structured result the model never sees. */ resultTitle?: string; /** Files an MCP tool returned by reference. */ resourceLinks?: McpResourceLink[] }
   | { type: 'bash_result'; toolUseId: string; summary: string; isError?: boolean; isTimedOut?: boolean; exitCode?: number; parentToolUseId?: string | null; outputTokens?: DiffTokenLine[]; bashEditDiff?: BashEditDiff }
   | { type: 'todo_result'; toolUseId: string; summary: string; parentToolUseId?: string | null; todoToolName?: string; toolTodos?: TodoToolItem[] }
   /** A proposed plan the agent wrote in plan mode; approval is the harness's own decision flow. */
@@ -306,7 +306,7 @@ type ContentBlockData =
   /** Review mode entered or exited; `text` is the review target or the findings. */
   | { type: 'review'; id: string; phase: 'entered' | 'exited'; text: string; parentToolUseId?: string | null }
   /** A non-terminal turn notice: an error the turn continued past, or a compaction marker. */
-  | { type: 'notice'; id: string; level: 'error' | 'info'; /** `omitted`: a transcript window left out a block too large for it. `fold`: process it has not loaded. */ kind?: 'compaction' | 'omitted' | 'fold'; text: string; parentToolUseId?: string | null; fold?: ProcessFold }
+  | { type: 'notice'; id: string; level: 'error' | 'info'; /** `omitted`: a transcript window left out a block too large for it. `fold`: process it has not loaded. */ kind?: 'compaction' | 'omitted' | 'fold'; text: string; parentToolUseId?: string | null; fold?: ProcessFold; toolBody?: import('./transcript-window/tool-body').ToolBodyRef }
   | { type: 'image'; name: string; id?: string }
   | { type: 'document'; name: string; id?: string }
 
@@ -5261,6 +5261,7 @@ export const AgentIpcChannels = {
   ENVIRONMENT_SEND_SESSION_MESSAGE: 'environment:sendSessionMessage',
   /** Open a remote session in the chat at a node snapshot (`session.load`) and follow it. */
   ENVIRONMENT_OPEN_REMOTE_SESSION: 'environment:openRemoteSession',
+  ENVIRONMENT_READ_TOOL_CHUNK: 'environment:readToolChunk',
   ENVIRONMENT_LOAD_TRANSCRIPT_FOLD: 'environment:loadTranscriptFold',
   ENVIRONMENT_SUBSCRIBE_DETAIL: 'environment:subscribeDetail',
   ENVIRONMENT_UNSUBSCRIBE_DETAIL: 'environment:unsubscribeDetail',

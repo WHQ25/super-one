@@ -198,8 +198,20 @@ media, questions, todos, plans and report-findings retain their required input.
 The shared `createDetailClient` buffers packets before the snapshot, ignores
 stale revisions and applies common-prefix replacement. A gap shows Retry.
 Collapse/unmount calls `session.unsubscribeDetail`; connection disposal clears
-interests. Completed text has a 1,000,000 UTF-16-unit LRU keyed by environment,
+interests. Small completed details have a 1,000,000 UTF-16-unit LRU keyed by environment,
 session and detail ref.
+
+Desktop detail subscriptions opt into paged snapshots. For a tool detail over
+32 KiB the opening reply supplies its length and digest. If the result alone
+accounts for the size, the reply keeps the small JSON envelope so a complete
+result seen on the live feed can satisfy the same read. Otherwise the address
+covers the complete detail JSON, including diffs and legacy Codex items.
+Inline tool results carry their address in the transcript window and load when
+shown. Expandable details load when opened. The desktop checks memory and then
+IndexedDB, keyed by node, session, message, call, body type and digest. On a
+miss, it reads `session.toolChunk` pages of up to 5,000 UTF-16 units and checks
+the reassembled result. Each detail subscription holds its opening version
+until it closes, so updates received during a read apply to the same baseline.
 
 `DetailScopeProvider` supplies the session's client to the rows. The phone
 uses `document-detail.ts` through RN's native bridge; the desktop uses its IPC

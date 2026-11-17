@@ -2019,6 +2019,13 @@ export class EnvironmentHost {
     return { ...loaded, messages: loaded.messages.map((message) => mirrorWindowMessageAttachments(message, zone, sessionId)) }
   }
 
+  readToolChunk(connectionId: string, input: import('@superone/shared/transcript-window/tool-body').ToolChunkRequest): Promise<string> {
+    const { gateway, environmentId } = this.resolveRemote(connectionId)
+    if (!gateway.sessions.toolChunk) throw new Error('This node does not serve tool bodies')
+    const { sessionId, ...request } = input
+    return gateway.sessions.toolChunk({ session: { environmentId, sessionId }, ...request })
+  }
+
   /**
    * The next page behind a fold of a remote session's held window, joined
    * into it. Returns the row with the page in place, for the chat to swap in.
@@ -2273,7 +2280,7 @@ export class EnvironmentHost {
   async subscribeSessionDetail(target: DetailTarget, subscriptionId: string, onUpdate: (update: DetailUpdate) => void): Promise<DetailUpdate> {
     const { gateway, environmentId } = this.resolveSession(target.environmentId)
     if (!gateway.sessions.subscribeDetail) throw new Error('This machine sends full rows; there is no detail to load')
-    return gateway.sessions.subscribeDetail({ session: { environmentId, sessionId: target.sessionId }, detailRef: target.detailRef, subscriptionId, onUpdate })
+    return gateway.sessions.subscribeDetail({ session: { environmentId, sessionId: target.sessionId }, detailRef: target.detailRef, subscriptionId, chunkedSnapshot: true, onUpdate })
   }
 
   async unsubscribeSessionDetail(target: DetailTarget, subscriptionId: string): Promise<void> {

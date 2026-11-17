@@ -2245,6 +2245,10 @@ function registerIpcHandlers(): void {
       return getEnvironmentHost().openRemoteSession(connectionId, input)
     },
   )
+  sessionIpc.handle(AgentIpcChannels.ENVIRONMENT_READ_TOOL_CHUNK, async (_e, connectionId: string, input: import('@superone/shared/transcript-window/tool-body').ToolChunkRequest) => {
+    const { getEnvironmentHost } = await import('./environment')
+    return getEnvironmentHost().readToolChunk(connectionId, input)
+  })
   sessionIpc.handle(
     AgentIpcChannels.ENVIRONMENT_LOAD_TRANSCRIPT_FOLD,
     async (_e, connectionId: string, input: { sessionId: string; messageId: string; fold: string }) => {

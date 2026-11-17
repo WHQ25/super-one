@@ -10,6 +10,7 @@ import { useSettingsStore } from '@/stores/settings'
 import { useShallow } from 'zustand/react/shallow'
 import { findLastAssistantMessageId } from './ChatMessage'
 import { selectClaudeModels } from '@/stores/chat-store/selectors'
+import { useRemoteToolMessages } from './use-remote-tool-messages'
 import { mergeCodexThreadMessages } from './codex-realtime-messages'
 import { CodexRealtimeTranscript } from './CodexRealtimeTranscript'
 import { useCodexConversationActivation } from './use-codex-conversation-activation'
@@ -78,7 +79,7 @@ function ChatTranscript({
   // Model ids arrive raw on the wire; display names live in the harness catalogs.
   const claudeModels = useChatStore(selectClaudeModels)
   const {
-    messages, isCompacting, compactingStartedAt, isRecapping, compactError, apiRetry,
+    messages: rawMessages, isCompacting, compactingStartedAt, isRecapping, compactError, apiRetry,
     displayedSessionId, historyHydrated,
     sessionStatus, lastAssistantMessageId, queuedMessages, awaitingAssistantReply, acpModels,
     sessionProvider, preferredProvider, runtimeCapabilities,
@@ -105,6 +106,7 @@ function ChatTranscript({
     preferredProvider: s.preferredProvider,
   })))
 
+  const messages = useRemoteToolMessages(rawMessages, parseRemoteProjectKey(scope?.projectPath ?? activeProject ?? '')?.connectionId, displayedSessionId)
   const { editQueuedMessage, deleteQueuedMessage, steerQueuedMessage, startQueuedMessages, dismissCompactError } = useChatStore(useShallow((s) => ({
     editQueuedMessage: s.editQueuedMessage,
     deleteQueuedMessage: s.deleteQueuedMessage,

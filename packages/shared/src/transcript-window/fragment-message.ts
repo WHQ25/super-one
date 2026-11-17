@@ -1,5 +1,7 @@
 import type { ChatMessage, ContentBlock, ImageAttachment, MessageMetadata } from '../agent-types'
 import { readableContent } from '../codex-content'
+import { jsonObjectRecord } from '../json-object-string'
+import { MAX_FRAGMENT_BYTES, bodyVersion, toolBodyText, withToolBody, type ToolBodyBlock } from './tool-body'
 import { contentKeys } from '../transcript-boundary'
 import type {
   TextFragmentContext,
@@ -12,7 +14,7 @@ import { contentDigest, utf8Length } from './content-digest'
 import { textCuts, textSlices, type TextCuts } from './text-cuts'
 
 /** Serialized ceiling of one fragment body; an atomic block above it is sent as `omitted`. */
-export const MAX_FRAGMENT_BYTES = 32 * 1024
+export { MAX_FRAGMENT_BYTES } from './tool-body'
 
 /**
  * An attachment whose bytes do not fit in one fragment. The name, id and zone
@@ -145,7 +147,18 @@ export function entry(key: string, body: TranscriptFragmentBody, chars: number):
 }
 
 function atomicEntry(key: string, block: ContentBlock): FragmentEntry {
-  return boundedEntry(key, { kind: 'block', block }, block.type)
+  const full = boundedEntry(key, { kind: 'block', block }, block.type)
+  if (full.body.kind !== 'omitted' || !('toolUseId' in block)) return full
+  const text = toolBodyText(block)
+  if ('input' in block && block.status !== 'complete' && !jsonObjectRecord(text)) return full
+  const ref = { head: withToolBody(block, ''), ...bodyVersion(text) }
+  const address = entry(key, { ...full.body, toolBody: ref }, BLOCK_CHARS)
+  if (address.bytes <= MAX_FRAGMENT_BYTES) return address
+  const head: ToolBodyBlock = 'input' in block
+    ? { type: block.type, toolUseId: block.toolUseId, toolName: block.toolName, input: '' }
+    : { type: block.type, toolUseId: block.toolUseId, summary: '' }
+  const reference = entry(key, { ...full.body, toolBody: { head, wholeBlock: true, ...bodyVersion(JSON.stringify(block)) } }, BLOCK_CHARS)
+  return reference.bytes <= MAX_FRAGMENT_BYTES ? reference : full
 }
 
 function packAttachment(key: string, attachment: ImageAttachment): FragmentEntry | null {

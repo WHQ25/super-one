@@ -1509,6 +1509,10 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
         const { session, ...request } = input
         return this.client.rpc<TranscriptWindowResult>('session.transcriptWindow', { sessionId: session.sessionId, ...request })
       },
+      toolChunk: ({ session, ...input }) => {
+        this.assertEnv(session.environmentId)
+        return this.client.rpc<string>('session.toolChunk', { sessionId: session.sessionId, ...input })
+      },
       transcriptFold: (input) => {
         this.assertEnv(input.session.environmentId)
         const { session, ...request } = input
@@ -1516,7 +1520,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
       },
       subscribeDetail: (input) => {
         this.assertEnv(input.session.environmentId)
-        return this.client.subscribeDetail({ sessionId: input.session.sessionId, detailRef: input.detailRef, subscriptionId: input.subscriptionId }, input.onUpdate)
+        return this.client.subscribeDetail({ sessionId: input.session.sessionId, detailRef: input.detailRef, subscriptionId: input.subscriptionId, chunkedSnapshot: input.chunkedSnapshot }, input.onUpdate)
       },
       unsubscribeDetail: async (input) => {
         this.assertEnv(input.session.environmentId)

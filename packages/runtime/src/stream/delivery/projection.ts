@@ -1,4 +1,6 @@
 import { compactToolHeader } from './tool-header'
+import { detailSnapshotBody, TOOL_CHUNK_CHARS, type ToolBodyAddress } from '@superone/shared/transcript-window/tool-body'
+import type { DetailUpdate } from '@superone/shared/environment/detail'
 import { compactMediaToolResult, revealTodoResults } from './remote-content'
 import { codexToolDetail, nestedCodexItem, deferTool, isFileMutationChild, projectCodexTool, projectTool, taskFileChanges, toolDetail } from './progressive-tools'
 import type { AgentEvent, BashEditDiff, ChatMessage, ContentBlock } from '@superone/shared/agent-types'
@@ -94,7 +96,10 @@ function detailText(message: ChatMessage, ref: string): string {
   }
   throw new Error('Detail not found')
 }
-type DetailSubscription = { ref: string; text: string; revision: number }
+type DetailSubscription = {
+  ref: string; text: string; revision: number; packetChars: number
+  initial?: { address: ToolBodyAddress; text: string }
+}
 
 /** Live detail packets are split so one never outgrows a relay frame. */
 const DETAIL_PACKET_CHARS = 64_000
@@ -112,7 +117,7 @@ export class DetailViews {
   /** Summarize `sessionId` for this connection; without `preserve` it is the only one. */
   open(sessionId: string, preserve = false): void {
     if (!preserve) this.sessions.clear()
-    this.sessions.set(sessionId, { details: new Map() })
+    if (!this.sessions.has(sessionId)) this.sessions.set(sessionId, { details: new Map() })
   }
 
   /** Stop summarizing one session, or all. */
@@ -126,13 +131,26 @@ export class DetailViews {
   }
   hasDetails(sessionId: string): boolean { return (this.sessions.get(sessionId)?.details.size ?? 0) > 0 }
 
-  subscribe(sessionId: string, subscriptionId: string, ref: string, message: ChatMessage) {
+  subscribe(sessionId: string, subscriptionId: string, ref: string, message: ChatMessage, chunkedSnapshot = false): DetailUpdate {
     const view = this.sessions.get(sessionId)
     if (!view) throw new Error('Session subscription expired')
     if (view.details.size >= MAX_DETAILS && !view.details.has(subscriptionId)) throw new Error('Too many expanded details')
     const text = detailText(message, ref)
-    view.details.set(subscriptionId, { ref, text, revision: 0 })
-    return { subscriptionId, revision: 0, offset: 0, text }
+    const initial = chunkedSnapshot ? detailSnapshotBody(ref, text) : undefined
+    view.details.set(subscriptionId, { ref, text, revision: 0, initial, packetChars: chunkedSnapshot ? TOOL_CHUNK_CHARS : DETAIL_PACKET_CHARS })
+    return initial
+      ? { subscriptionId, revision: 0, offset: 0, text: initial.envelope, body: initial.address }
+      : { subscriptionId, revision: 0, offset: 0, text }
+  }
+
+  /** Read the immutable opening revision while subsequent updates advance the live text. */
+  initialChunk(sessionId: string, subscriptionId: string, address: Pick<ToolBodyAddress, 'messageId' | 'toolUseId' | 'type' | 'digest'>, offset: number): string | undefined {
+    const initial = this.sessions.get(sessionId)?.details.get(subscriptionId)?.initial
+    if (initial && initial.address.messageId === address.messageId && initial.address.toolUseId === address.toolUseId
+      && initial.address.type === address.type && initial.address.digest === address.digest && offset < initial.text.length) {
+      return initial.text.slice(offset, offset + TOOL_CHUNK_CHARS)
+    }
+    return undefined
   }
 
   unsubscribe(sessionId: string, subscriptionId: string): void {
@@ -157,7 +175,7 @@ export class DetailViews {
       while (offset < shared && text.charCodeAt(offset) === detail.text.charCodeAt(offset)) offset++
       detail.text = text
       do {
-        const chunk = text.slice(offset, offset + DETAIL_PACKET_CHARS)
+        const chunk = text.slice(offset, offset + detail.packetChars)
         updates.push({ type: 'remote_detail', sessionId, subscriptionId, revision: ++detail.revision, offset, text: chunk })
         offset += chunk.length
       } while (offset < text.length)

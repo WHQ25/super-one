@@ -1,3 +1,4 @@
+import { bodyVersion, largeBody } from '@superone/shared/transcript-window/tool-body'
 import { diffLines } from 'diff'
 import { computeLineDelta, countContentLines as countLines, countEditDelta, ensureTrailingNewline, splitContentLines } from '@superone/chat-core/turn-process/line-delta'
 import { humanizePageToolName } from '@superone/shared/page-tool-name'
@@ -733,7 +734,7 @@ function appendRemoteErrorText(msg: ChatMessage): ChatMessage {
  * `splitText: false` keeps text blocks whole and unhighlighted, as live text
  * deltas arrive: transcript windows cut the text themselves.
  */
-export function stripMessagesForRemote(messages: ChatMessage[], projectPath?: string, options: { splitText?: boolean; windowHeaders?: boolean } = {}): ChatMessage[] {
+export function stripMessagesForRemote(messages: ChatMessage[], projectPath?: string, options: { splitText?: boolean; windowHeaders?: boolean; linkLargeResults?: boolean } = {}): ChatMessage[] {
   const splitText = options.splitText ?? true
   // A picture rides along as a thumbnail; the phone asks for the bytes when it
   // is opened (`get_attachment`). Before the Codex early return: user messages
@@ -745,10 +746,12 @@ export function stripMessagesForRemote(messages: ChatMessage[], projectPath?: st
     const bashCmds = new Map<string, string>()
     const todoInputs = new Map<string, { toolName: string; input: string }>()
     const widgetIds = new Set<string>()
+    const detailIds = new Set<string>()
     const agentIds = new Set<string>()
     const workflowIds = new Set<string>()
     const resultSummaries = new Map<string, string>()
     for (const block of msg.content) {
+      if (options.linkLargeResults && 'toolName' in block && block.remoteDetail) detailIds.add(block.toolUseId)
       if (block.type === 'tool_use' && block.toolName === 'Bash') {
         try { const p = JSON.parse(block.input); bashCmds.set(block.toolUseId, String(p.command ?? '')) } catch {}
       }
@@ -799,6 +802,10 @@ export function stripMessagesForRemote(messages: ChatMessage[], projectPath?: st
           if (options.windowHeaders && stripped.type === 'bash_result' && b.type === 'tool_result') {
             return { ...stripped, ...(b.isTimedOut ? { isTimedOut: true } : {}), ...(b.isError ? { isError: true } : {}),
               ...(b.exitCode !== undefined ? { exitCode: b.exitCode } : {}) }
+          }
+          if (options.linkLargeResults && b.type === 'tool_result' && stripped.type === 'tool_result'
+            && !detailIds.has(b.toolUseId) && stripped.summary !== b.summary && largeBody(b.summary)) {
+            return { ...stripped, remoteBody: bodyVersion(b.summary) }
           }
           if (b.type === 'tool_use' && b.toolName === 'Workflow') {
             const agents = workflowAgentsById.get(b.toolUseId)

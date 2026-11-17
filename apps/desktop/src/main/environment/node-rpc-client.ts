@@ -730,7 +730,7 @@ export class NodeRpcClient extends EnvironmentRpcClient {
    * revision-0 detail now, later packets to `onUpdate` while the socket lives.
    */
   async subscribeDetail(
-    input: { sessionId: string; detailRef: string; subscriptionId: string },
+    input: { sessionId: string; detailRef: string; subscriptionId: string; chunkedSnapshot?: boolean },
     onUpdate: (update: DetailUpdate) => void,
   ): Promise<DetailUpdate> {
     const conn = this.conn

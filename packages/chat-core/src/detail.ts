@@ -15,6 +15,10 @@ export interface DetailTransport {
   /** Register interest and resolve with the revision-0 snapshot; later packets arrive through `deliver`. */
   subscribe(target: DetailTarget, subscriptionId: string): Promise<DetailUpdate>
   unsubscribe(target: DetailTarget, subscriptionId: string): void
+  /** Retain the latest assembled detail when a live row closes. */
+  rememberBody?(target: DetailTarget, text: string): void
+  /** Resolve an opted-in initial snapshot before applying buffered live offsets. */
+  readBody?(target: DetailTarget, snapshot: DetailUpdate & { body: NonNullable<DetailUpdate['body']> }): Promise<string>
 }
 
 export interface DetailClientOptions {
@@ -92,12 +96,13 @@ export function createDetailClient(transport: DetailTransport, options: DetailCl
         const subscriptionId = options.newId()
         let revision = -1
         let ready = false
+        let versioned = false
         const buffered: DetailUpdate[] = []
         const apply = (update: DetailUpdate) => {
           if (disposed || update.revision <= revision) return
           texts[index] = applyDetailUpdate(texts[index]!, update)
           revision = update.revision
-          write(target, texts[index]!, complete)
+          if (!versioned) write(target, texts[index]!, complete)
           onText(texts.join('\n\n'))
         }
         let released = false
@@ -111,12 +116,24 @@ export function createDetailClient(transport: DetailTransport, options: DetailCl
           if (released) return
           released = true
           listeners.delete(subscriptionId)
+          if (ready && revision > 0) transport.rememberBody?.(target, texts[index]!)
           transport.unsubscribe(target, subscriptionId)
         }
         cleanups.push(release)
         const snapshot = await transport.subscribe(target, subscriptionId)
         if (disposed) return
-        apply(snapshot)
+        if (snapshot.body) {
+          if (!transport.readBody) throw new Error('This client cannot read a paged tool body')
+          versioned = true
+          const body = await transport.readBody(target, { ...snapshot, body: snapshot.body })
+          if (disposed) return
+          const text = snapshot.body.type === 'tool_result'
+            ? JSON.stringify({ ...JSON.parse(snapshot.text), result: body })
+            : body
+          apply({ ...snapshot, text })
+        } else {
+          apply(snapshot)
+        }
         ready = true
         buffered.sort((a, b) => a.revision - b.revision).forEach(apply)
         if (complete) release()

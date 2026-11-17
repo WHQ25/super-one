@@ -83,7 +83,7 @@ export type TranscriptFragmentBody =
   /** One of a user message's attachments, which carry their preview bytes. */
   | { kind: 'attachment'; attachment: ImageAttachment }
   /** An atomic block whose projection alone exceeds a fragment. */
-  | { kind: 'omitted'; blockType: string; bytes: number }
+  | { kind: 'omitted'; blockType: string; bytes: number; toolBody?: import('../transcript-window/tool-body').ToolBodyRef }
   /** A run of collapsed process; `revision` hashes the fragments behind it. */
   | { kind: 'fold'; revision: string; summary: ProcessFoldSummary }
 

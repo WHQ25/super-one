@@ -110,7 +110,7 @@ export function handleSessionSubscribeDetail(payload: unknown, ctx: RpcContext):
   const subscriptionId = String(p.subscriptionId ?? '').trim()
   if (!sessionId || !detailRef || !subscriptionId) return { error: { code: 'invalid_argument', message: 'sessionId, detailRef and subscriptionId required' } }
   try {
-    return { result: subscribeDetail(delivery, sessions, { sessionId, detailRef, subscriptionId }) }
+    return { result: subscribeDetail(delivery, sessions, { sessionId, detailRef, subscriptionId, chunkedSnapshot: p.chunkedSnapshot === true }) }
   } catch (err) {
     return mapThrown(err)
   }

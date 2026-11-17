@@ -43,6 +43,7 @@ import { streamFilterMatcher, type EventStreamFilter } from './event-stream'
 import { readTopicRef, type TopicRef } from '@superone/shared/environment/topics'
 import { handleSessionGet, handleSessionHistoryIndex, handleSessionLoad, handleSessionSubscribeDetail, handleSessionUnsubscribeDetail } from './rpc-session-reads'
 import { handleSessionTranscriptFold, handleSessionTranscriptWindow } from './rpc-session-window'
+import { handleSessionToolChunk } from './rpc-session-tool-chunk'
 import { handleTopicCatchUp, handleTopicSubscribe, handleTopicUpdate, handleTopicUnsubscribe } from './rpc-topic-subscriptions'
 import { asRecord, mapThrown, requireScopes } from './rpc-helpers'
 import { DRAFT_HANDLERS, isDraftOpenReceiptLive } from './rpc-drafts'
@@ -376,6 +377,7 @@ const HANDLERS: Readonly<Record<string, (payload: unknown, ctx: RpcContext, meth
   'session.messages.list': (payload, ctx) => handleSessionMessagesList(payload, ctx),
   'session.load': (payload, ctx) => handleSessionLoad(payload, ctx),
   'session.transcriptWindow': (payload, ctx) => handleSessionTranscriptWindow(payload, ctx, serves(ctx, 'session.historyIndex') || ctx.extensionMethods?.has('session.historyIndex') === true),
+  'session.toolChunk': (payload, ctx) => handleSessionToolChunk(payload, ctx),
   'session.transcriptFold': (payload, ctx) => handleSessionTranscriptFold(payload, ctx),
   'session.historyIndex': (payload, ctx) => handleSessionHistoryIndex(payload, ctx),
   'session.subscribeDetail': (payload, ctx) => handleSessionSubscribeDetail(payload, ctx),

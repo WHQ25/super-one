@@ -227,7 +227,7 @@ export function materializeWindowMessage(message: WindowStoreMessage): ChatMessa
       continue
     }
     if (body.kind === 'omitted') {
-      content.push({ type: 'notice', id: `window:${fragment.key}`, level: 'info', kind: 'omitted', text: '' })
+      content.push({ type: 'notice', id: `window:${fragment.key}`, level: 'info', kind: 'omitted', text: '', ...(body.toolBody ? { toolBody: body.toolBody } : {}) })
       textBlock = null
       continue
     }

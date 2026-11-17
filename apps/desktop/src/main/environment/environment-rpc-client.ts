@@ -15,7 +15,7 @@ export abstract class EnvironmentRpcClient {
   abstract getDescriptor(): Promise<ExecutionEnvironmentDescriptor>
   abstract readonly tier: 'relay' | 'lan'
   abstract subscribeEvents(input: Omit<TopicSubscribeInput, 'subscriptionId'>, handlers: RpcStreamHandlers): Promise<TopicStream>
-  abstract subscribeDetail(input: { sessionId: string; detailRef: string; subscriptionId: string }, onUpdate: (update: DetailUpdate) => void): Promise<DetailUpdate>
+  abstract subscribeDetail(input: { sessionId: string; detailRef: string; subscriptionId: string; chunkedSnapshot?: boolean }, onUpdate: (update: DetailUpdate) => void): Promise<DetailUpdate>
   abstract unsubscribeDetail(input: { sessionId: string; subscriptionId: string }): Promise<void>
 
   async health(): Promise<{ ok: boolean; environmentId: string; uptimeMs: number }> {

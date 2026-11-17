@@ -687,6 +687,8 @@ const environmentAPI = {
       connectionId,
       input,
     ),
+  readToolChunk: (connectionId: string, input: import('@superone/shared/transcript-window/tool-body').ToolChunkRequest) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_READ_TOOL_CHUNK, connectionId, input),
   loadTranscriptFold: (connectionId: string, input: { sessionId: string; messageId: string; fold: string }) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_LOAD_TRANSCRIPT_FOLD, connectionId, input),
   openRemoteSession: (

@@ -387,6 +387,32 @@ export const RemoteNode: Story = {
 export const RemoteDesktop: Story = { ...RemoteNode, render: () => <RemoteCard connectionId="source-desktop" /> }
 export const RemoteDesktopDark: Story = { ...RemoteDesktop, globals: { theme: 'dark' } }
 
+/** Replacing the row reproduces a streamed turn settling into compact mode. */
+function RemountedPendingCard() {
+  const [generation, setGeneration] = useState(0)
+  const [connectionId] = useState(() => `remount-${crypto.randomUUID()}`)
+  return <>
+    <button onClick={() => setGeneration(value => value + 1)}>Remount card</button>
+    <RemoteCard key={generation} connectionId={connectionId} />
+  </>
+}
+export const PendingAfterRemount: Story = {
+  render: () => <RemountedPendingCard />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const page = within(canvasElement.ownerDocument.body)
+    await userEvent.click(await canvas.findByRole('button', { name: 'Agent' }))
+    await userEvent.click(await page.findByRole('menuitemradio', { name: 'Codex' }))
+    await userEvent.click(canvas.getByRole('button', { name: /GPT5.4 Codex/ }))
+    const menu = within(await page.findByRole('menu'))
+    await userEvent.click(menu.getByRole('button', { name: /GPT5.4 Codex/ }))
+    await userEvent.click(await menu.findByRole('menuitem', { name: /Codex Mini/ }))
+    await userEvent.click(canvas.getByRole('button', { name: 'Remount card' }))
+    await expect(await canvas.findByRole('button', { name: 'Agent' })).toHaveTextContent('Codex')
+    await expect(canvas.getByRole('button', { name: /Codex Mini/ })).toBeVisible()
+  },
+}
+
 /** Routed through the production ToolBlock and the desktop adapter (its buttons call `window.agent`, unmocked here). */
 export const InTranscript: Story = {
   render: () => (

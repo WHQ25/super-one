@@ -13,33 +13,57 @@ import type { ScheduledSend } from '@superone/shared/agent-types'
 
 interface ScheduledSendsState {
   bySession: Record<string, ScheduledSend>
-  load: () => Promise<void>
+  load: (connectionId?: string) => Promise<void>
   /** Fold in one change broadcast; `null` means the row is gone. */
-  apply: (sessionId: string, scheduled: ScheduledSend | null) => void
+  apply: (sessionId: string, scheduled: ScheduledSend | null, connectionId?: string) => void
 }
+
+function scheduleKey(sessionId: string, connectionId?: string): string {
+  return connectionId && connectionId !== 'local' ? JSON.stringify([connectionId, sessionId]) : sessionId
+}
+
+// A cancellation or delivery can arrive while the initial list RPC is in flight.
+const loading = new Map<string, Set<string>>()
 
 export const useScheduledSendsStore = create<ScheduledSendsState>((set) => ({
   bySession: {},
 
-  load: async () => {
+  load: async (connectionId = 'local') => {
+    const changed = new Set<string>()
+    loading.set(connectionId, changed)
     try {
-      const rows = await window.environment.callSessionList('local', 'sessionList.scheduledSends', {})
-      set({ bySession: Object.fromEntries(rows.map((row) => [row.sessionId, row])) })
+      const rows = await window.environment.callSessionList(connectionId, 'sessionList.scheduledSends', {})
+      if (loading.get(connectionId) !== changed) return
+      set(state => {
+        const next = { ...state.bySession }
+        for (const [key, row] of Object.entries(next)) {
+          if (key === scheduleKey(row.sessionId, connectionId) && !changed.has(key)) delete next[key]
+        }
+        for (const row of rows) {
+          const key = scheduleKey(row.sessionId, connectionId)
+          if (!changed.has(key)) next[key] = row
+        }
+        return { bySession: next }
+      })
     } catch {
       // Nothing to show is the right fallback: the sidebar simply keeps its
       // ordinary ordering until the next broadcast fills the map in.
+    } finally {
+      if (loading.get(connectionId) === changed) loading.delete(connectionId)
     }
   },
 
-  apply: (sessionId, scheduled) =>
+  apply: (sessionId, scheduled, connectionId) =>
     set((state) => {
+      const key = scheduleKey(sessionId, connectionId)
+      loading.get(connectionId ?? 'local')?.add(key)
       if (!scheduled) {
-        if (!(sessionId in state.bySession)) return {}
+        if (!(key in state.bySession)) return {}
         const next = { ...state.bySession }
-        delete next[sessionId]
+        delete next[key]
         return { bySession: next }
       }
-      return { bySession: { ...state.bySession, [sessionId]: scheduled } }
+      return { bySession: { ...state.bySession, [key]: scheduled } }
     }),
 }))
 
@@ -53,8 +77,9 @@ export const useScheduledSendsStore = create<ScheduledSendsState>((set) => ({
 export function armedSendFor(
   bySession: Record<string, ScheduledSend>,
   sessionId: string | null | undefined,
+  connectionId?: string,
 ): ScheduledSend | null {
   if (!sessionId) return null
-  const row = bySession[sessionId]
+  const row = bySession[scheduleKey(sessionId, connectionId)] ?? bySession[sessionId]
   return row?.armed ? row : null
 }

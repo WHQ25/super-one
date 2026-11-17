@@ -563,7 +563,9 @@ const sessionManager = new SessionManagerImpl({
     clearSessionPendingMiniAppCalls(sessionId)
   },
 })
+let nodeOwnsSchedules: (connectionId: string) => boolean = () => false
 const scheduledSendService = new ScheduledSendService({
+  nodeOwnsSchedules: connectionId => nodeOwnsSchedules(connectionId),
   sessionManager,
   broadcast: (sessionId, scheduled, delivered) => {
     safeSend(AgentIpcChannels.SCHEDULED_SEND_CHANGED, { sessionId, scheduled, delivered })
@@ -1123,6 +1125,7 @@ async function applyNodeHostSettings(settings: AppSettings): Promise<void> {
   const { createDesktopProvidersPort } = await import('./node-host/desktop-providers-port')
   setLegacyScheduleCancellation(sessionId => scheduledSendService.clear(sessionId))
   const environmentHost = getEnvironmentHost()
+  nodeOwnsSchedules = connectionId => environmentHost.servesScheduledSends(connectionId)
   phoneRpcRouter ??= createPhoneRpcRouter(environmentId => environmentHost.phoneRouteTarget(environmentId),
     (resource, lease) => environmentHost.publishPhoneControl(resource, lease))
   agentService.setRoutedSessionRelease(sessionId => phoneRpcRouter!.releaseSessions(sessionId))
@@ -1865,6 +1868,7 @@ function attachEnvironmentStatusBridge(host: EnvironmentHost): void {
     })
   })
   // A machine's sidebar summaries (running, read) of sessions this desktop does not follow.
+  host.onRemoteScheduledSendChanged((connectionId, event) => safeSend(AgentIpcChannels.SCHEDULED_SEND_CHANGED, { ...event, connectionId }))
   host.onRemoteSessionActivity((event) => rendererAgentEventTransport.push(event))
   // A remote session whose missed events are gone: the chat reads its snapshot again.
   host.onRemoteSessionResync((target) => safeSend(AgentIpcChannels.ENVIRONMENT_SESSION_RESYNC_EVENT, target))

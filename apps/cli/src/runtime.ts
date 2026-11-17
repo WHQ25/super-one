@@ -259,10 +259,14 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
   const sessionListNotices = createNodeSessionListNotices({
     environmentId: identity.environmentId,
     listSessions: () => sessions.list(),
+    listScheduledSends: () => sessions.scheduledSends.list(),
     getSession: (sessionId) => sessions.get(sessionId),
     projectPath: (projectId) => projects.get(projectId)?.path ?? null,
   })
-  const stopSessionListNotices = sessions.onEventsAppended((envelope) => sessionListNotices.onSessionEvent(envelope))
+  const stopSessionListNotices = sessions.onEventsAppended((envelope) => {
+    sessionListNotices.onSessionEvent(envelope)
+    sessions.scheduledSends.observe(envelope)
+  })
   const sessionProviders = createSessionProviderStore(db)
   const collaboration = new CollaborationService({
     db,
@@ -327,6 +331,8 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
     topicNotices: sessionListNotices.topicNotices,
   })
 
+  sessions.scheduledSends.start(sessionListNotices.scheduledSendChanged, simulatedHarness ? 200 : undefined)
+
   const catalogWatch = watchHarnessCatalogStamp({
     nodeHome: config.nodeHome,
     environmentId: identity.environmentId,
@@ -380,6 +386,7 @@ export async function startNodeRuntime(partial: StartNodeRuntimeOptions = {}): P
     server,
     startedAt,
     async stop() {
+      sessions.scheduledSends.stop()
       stopSessionListNotices()
       sessionListNotices.close()
       catalogWatch.close()

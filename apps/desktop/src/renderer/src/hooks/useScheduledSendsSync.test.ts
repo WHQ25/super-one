@@ -33,6 +33,16 @@ describe('useScheduledSendsSync', () => {
     expect(session('untouched')).toMatchObject({ draftText: 'continue the refactor' })
   })
 
+  it('clears only the node draft when the same session ID exists on two machines', () => {
+    const remote = 'remote:worker:/repo'
+    const projects = useChatStore.getState().projectSessions
+    useChatStore.setState({ projectSessions: { ...projects, [remote]: { ...projects['/repo'] } } })
+    renderHook(() => useScheduledSendsSync())
+    emit!({ sessionId: 'queued', connectionId: 'worker', scheduled: null, delivered: true })
+    expect(useChatStore.getState().projectSessions[remote]._sessions.queued.draftText).toBe('')
+    expect(session('queued').draftText).toBe('continue the refactor')
+  })
+
   it('leaves the composer alone when a schedule is cancelled', () => {
     renderHook(() => useScheduledSendsSync())
     emit!({ sessionId: 'queued', scheduled: null, delivered: false })

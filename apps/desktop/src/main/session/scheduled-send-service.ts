@@ -47,6 +47,7 @@ const POLL_INTERVAL_MS = 30_000
 const RESET_BUFFER_MS = 60_000
 
 export interface ScheduledSendDeps {
+  nodeOwnsSchedules?: (connectionId: string) => boolean
   sessionManager: SessionManagerImpl
   /**
    * Push the row (or its removal) to every renderer. `delivered` marks the one
@@ -398,6 +399,8 @@ export class ScheduledSendService {
     const rearming = this.autoRearm.has(sessionId) || (this.sending.has(sessionId) && existing?.armed === true)
     const continuation = this.autoRearm.get(sessionId)
     const rearmMessage = continuation?.message ?? existing?.message ?? null
+    const connectionId = projectPath && parseRemoteProjectKey(projectPath)?.connectionId
+    if (!existing && !continuation && connectionId && this.deps.nodeOwnsSchedules?.(connectionId)) return
     const remote = continuation?.remote ?? (projectPath && parseRemoteProjectKey(projectPath) ? { projectKey: projectPath, turn: null } : undefined)
     const next = upsertScheduledSend(sessionId, {
       sendAt: candidate + RESET_BUFFER_MS,

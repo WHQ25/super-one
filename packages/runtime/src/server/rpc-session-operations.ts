@@ -1,5 +1,6 @@
 import { OPERATION_SCOPES } from '@superone/shared/environment'
 import { SESSION_OPERATION_METHODS, SESSION_OPERATION_READS, SESSION_LIST_OPERATION_METHODS } from '@superone/shared/environment/session-operations'
+import { attachmentOriginal } from './session-attachments'
 import { asRecord, mapThrown, requireScopes } from './rpc-helpers'
 import type { RpcContext, RpcResult } from './rpc-context'
 
@@ -41,6 +42,21 @@ async function callOperation(payload: unknown, ctx: RpcContext, method: string):
         || (patch.attachments !== undefined && patch.attachments !== null && !Array.isArray(patch.attachments))
         || (patch.source !== undefined && !['manual', 'rate_limit'].includes(String(patch.source)))) {
         throw Object.assign(new Error('invalid scheduled send patch'), { code: 'invalid_argument' })
+      }
+      if (Array.isArray(patch.attachments)) {
+        if (patch.attachments.length > 8) throw Object.assign(new Error('too many scheduled attachments'), { code: 'invalid_argument' })
+        for (const value of patch.attachments) {
+          const image = asRecord(value)
+          if (typeof image.name !== 'string' || typeof image.mimeType !== 'string' || !image.mimeType
+            || typeof image.base64 !== 'string' || !image.base64 || image.base64.length > 5_500_000) {
+            throw Object.assign(new Error('invalid scheduled attachment'), { code: 'invalid_argument' })
+          }
+          if (image.originalPath !== undefined) {
+            const original = attachmentOriginal(ctx, sessionId, image.originalPath)
+            if (!original) throw Object.assign(new Error('invalid scheduled attachment original'), { code: 'invalid_argument' })
+            image.originalPath = original
+          }
+        }
       }
     }
     if (method === 'session.reset' && p.newSessionId !== undefined) {

@@ -1316,6 +1316,9 @@ export class SessionRuntime {
   async sendWithoutLease(input: {
     sessionId: string
     text: string
+    clientMessageId?: string
+    images?: TurnImageAttachment[]
+    echoUserMessage?: boolean
     requestId?: string
     model?: string | null
     effort?: string | null
@@ -1340,6 +1343,9 @@ export class SessionRuntime {
       throw Object.assign(new Error('session is closed'), { code: 'failed_precondition' })
     }
 
+    const taken = this.userRow(session, input.clientMessageId)
+    if (taken && !taken.metadata?.sendFailure) return this.clone(session)
+
     const pick = (
       provided: string | null | undefined,
       stored: string | null | undefined,
@@ -1354,6 +1360,9 @@ export class SessionRuntime {
     const turnOpts: TurnOpts = {
       inputAdmission: admission,
       text: input.text,
+      clientMessageId: input.clientMessageId,
+      images: input.images,
+      echoUserMessage: input.echoUserMessage,
       requestId: input.requestId,
       model: pick(input.model, session.model),
       effort: pick(input.effort, session.effort),

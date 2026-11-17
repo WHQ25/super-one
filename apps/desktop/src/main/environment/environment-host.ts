@@ -81,7 +81,7 @@ import { desktopWindowHolder } from '@superone/shared/environment/transcript-win
 import { desktopVoiceSignal } from './voice-signal-route'
 import type { TranscriptWindowSync } from '@superone/shared/transcript-window/window-sync'
 import { MAX_HELD } from '@superone/runtime/stream/delivery/window-views'
-import { remoteListObserver, type SessionActivityEvent } from './remote-list-observer'
+import { remoteListObserver, type ScheduleEvent, type SessionActivityEvent } from './remote-list-observer'
 import { invalidateRemoteGitReadsForConnection } from './remote-file-tree'
 import type { SessionActivity } from '@superone/shared/session-activity'
 import { createRemoteSession, type RemoteSessionCreateInput } from './create-remote-session'
@@ -125,7 +125,7 @@ import type {
   DraftUpsertRequest,
   ProjectSnapshot,
 } from '@superone/shared/environment'
-import type { ChatMessage, PinnedSessionEntry, SessionHistoryEntry, SettledSessionPage } from '@superone/shared/agent-types'
+import type { ScheduledSendPatch, ChatMessage, PinnedSessionEntry, SessionHistoryEntry, SettledSessionPage } from '@superone/shared/agent-types'
 import { SESSION_CALL_METHODS, SESSION_CALL_READS, type SessionCallMethod, type SessionCallMethods, type SessionForkRequestInput, type SessionPermissionAnswer, type SessionPlanAnswer, type SessionQuestionAnswer, type SessionSendRequest, type SessionSettingsPatch } from '@superone/shared/environment/session-requests'
 import { getScheduledSend, getScheduledSendRemoteTarget } from '../db-scheduled-sends'
 import { parseRemoteProjectKey, remoteProjectKey } from '@superone/shared/remote-resource-key'
@@ -1776,6 +1776,14 @@ export class EnvironmentHost {
   private readonly sessionActivityListeners = new Set<(event: SessionActivityEvent) => void>()
   /** Machines whose list changes this desktop watches. */
   private readonly watchedSessionLists = new Set<string>()
+  private readonly remoteScheduleIds = new Map<string, Set<string>>()
+  private readonly scheduleListeners = new Set<(connectionId: string, event: ScheduleEvent) => void>()
+
+  onRemoteScheduledSendChanged(listener: (connectionId: string, event: ScheduleEvent) => void): () => void {
+    this.scheduleListeners.add(listener)
+    return () => { this.scheduleListeners.delete(listener) }
+  }
+
   /** Each machine's latest sidebar summary of the sessions it holds live, kept across reconnects. */
   private readonly remoteSummaries = new Map<string, Map<string, SessionActivity>>()
   /** Whether a window here shows a remote session (set by the app). */
@@ -1832,6 +1840,8 @@ export class EnvironmentHost {
     this.watchedSessionLists.add(connectionId)
     let summaries = this.remoteSummaries.get(connectionId)
     if (!summaries) this.remoteSummaries.set(connectionId, summaries = new Map())
+    let scheduledIds = this.remoteScheduleIds.get(connectionId)
+    if (!scheduledIds) this.remoteScheduleIds.set(connectionId, scheduledIds = new Set())
     this.feedFor(connectionId).observe(remoteListObserver(connectionId, summaries, {
       sessionListChanged: (projectKey) => {
         for (const listener of [...this.sessionListListeners]) listener(connectionId, projectKey)
@@ -1849,12 +1859,13 @@ export class EnvironmentHost {
       harnessCatalogChanged: (harnessIds) => {
         this.noteAdvertisedHarnesses(connectionId, harnessIds)
       },
+      schedule: event => { for (const listener of this.scheduleListeners) listener(connectionId, event) },
       activity: (event) => {
         for (const listener of [...this.sessionActivityListeners]) listener(event)
         // A completion landing in a session on screen here is read as it lands.
         if (this.remoteSessionOnScreen(connectionId, event.activity.sessionId)) void this.reportSeen(connectionId, event.activity).catch(() => {})
       },
-    })).catch(() => { this.watchedSessionLists.delete(connectionId) })
+    }, scheduledIds)).catch(() => { this.watchedSessionLists.delete(connectionId) })
   }
 
   /** Calls `onEvent` as each event of a remote session is pushed, without mapping it for the chat. */
@@ -2159,15 +2170,7 @@ export class EnvironmentHost {
           )
           .slice(0, 8)
       : []
-    // A full-size original went ahead through the sync zone; the node reads its own copy.
-    // A local session's original is already a path on this machine.
-    if (!local && images.some((img) => img.originalPath !== undefined)) {
-      const zone = this.getSyncZone(connectionId)
-      if (!zone) throw new Error('This remote node cannot receive full-size attachments; remove them and attach again')
-      const { nodeAttachmentOriginal } = await import('../attachment-originals')
-      images = images.map(({ originalPath, ...img }) =>
-        typeof originalPath === 'string' ? { ...img, originalPath: nodeAttachmentOriginal(input.sessionId, originalPath, zone) } : img)
-    }
+    if (!local) images = await this.remoteAttachmentPaths(connectionId, input.sessionId, images)
     const options: Record<string, unknown> = {}
     if (model) options.model = model
     if (effort) options.effort = effort
@@ -2331,6 +2334,16 @@ export class EnvironmentHost {
     })
   }
 
+  private async remoteAttachmentPaths<T extends { originalPath?: string }>(connectionId: string, sessionId: string, images: T[]): Promise<T[]> {
+    if (!images.some(image => image.originalPath !== undefined)) return images
+    const zone = this.getSyncZone(connectionId)
+    if (!zone) throw new Error('This remote node cannot receive full-size attachments; remove them and attach again')
+    const { nodeAttachmentOriginal } = await import('../attachment-originals')
+    return images.map(image => image.originalPath === undefined ? image : {
+      ...image, originalPath: nodeAttachmentOriginal(sessionId, image.originalPath, zone),
+    })
+  }
+
   /** A session operation outside the shared node family (`SessionCallMethods`). */
   async callSession<M extends SessionCallMethod>(
     connectionId: string,
@@ -2339,14 +2352,22 @@ export class EnvironmentHost {
     input: SessionCallMethods[M]['input'],
   ): Promise<SessionCallMethods[M]['result']> {
     if (!SESSION_CALL_METHODS.has(method)) throw Object.assign(new Error(`${method} is not a session call`), { code: 'invalid_argument' })
-    if (connectionId !== 'local' && (method === 'session.scheduledSend.get' || method === 'session.scheduledSend.clear')) {
+    if (connectionId !== 'local' && method.startsWith('session.scheduledSend.')) {
       const legacy = this.legacyScheduledSends
       const row = legacy?.get(connectionId, sessionId)
       if (row && legacy) {
-        if (method === 'session.scheduledSend.get') return row as SessionCallMethods[M]['result']
+        if (method === 'session.scheduledSend.get') return { ...row, cancelOnly: true } as SessionCallMethods[M]['result']
+        if (method === 'session.scheduledSend.set') throw Object.assign(new Error('Cancel the existing desktop schedule before scheduling on the node'), { code: 'failed_precondition' })
         if (!currentControlScope()?.clientSessionId.startsWith('ipc:')) throw Object.assign(new Error('Cancelling a desktop schedule needs a window'), { code: 'failed_precondition' })
         legacy.clear(sessionId)
         return null as SessionCallMethods[M]['result']
+      }
+    }
+    if (connectionId !== 'local' && method === 'session.scheduledSend.set') {
+      const { patch } = input as { patch: ScheduledSendPatch }
+      if (patch.attachments?.length) {
+        const attachments = await this.remoteAttachmentPaths(connectionId, sessionId, patch.attachments)
+        input = { patch: { ...patch, attachments } } as SessionCallMethods[M]['input']
       }
     }
     const { gateway } = this.resolveSession(connectionId)
@@ -3916,6 +3937,10 @@ export class EnvironmentHost {
   private rememberAdvertisedHarnesses(connectionId: string): void {
     const ids = this.gatewayForConnection(connectionId)?.cachedDescriptor?.capabilities.harnessIds
     this.advertisedHarnessKeys.set(connectionId, harnessAdvertisementKey(ids))
+  }
+
+  servesScheduledSends(connectionId: string): boolean {
+    return servesMethod(this.gatewayForConnection(connectionId)?.cachedDescriptor?.capabilities, 'session.scheduledSend.set')
   }
 
   private gatewayForConnection(connectionId: string): RemoteEnvironmentGateway | null {

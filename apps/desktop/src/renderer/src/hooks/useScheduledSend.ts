@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import type { ImageAttachment, ScheduledSend, ScheduledSendPatch } from '@superone/shared/agent-types'
+import { connectionIdForProjectKey } from '@/lib/session-list-ops'
 import { callSession } from '@/lib/session-client'
 import { useEnvironmentServes } from './use-environment-serves'
 import { toast } from 'sonner'
@@ -71,16 +72,18 @@ export function useScheduledSend(
     }
     setLoading(true)
     let alive = true
+    let pushed = false
     void callSession(projectPath, sessionId, 'session.scheduledSend.get', {}).then(
       (row) => {
         if (!alive) return
-        setScheduled(row ?? null)
+        if (!pushed) setScheduled(row ?? null)
         setLoading(false)
       },
       () => { if (alive) setLoading(false) },
     )
     const unsub = window.environment.onScheduledSendChanged((event) => {
-      if (event.sessionId !== sessionId) return
+      if (event.sessionId !== sessionId || (event.connectionId && event.connectionId !== connectionIdForProjectKey(projectPath))) return
+      pushed = true
       setScheduled(event.scheduled)
       if (event.delivered) setDeliveredNonce((n) => n + 1)
     })

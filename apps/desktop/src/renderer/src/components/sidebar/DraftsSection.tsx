@@ -76,7 +76,7 @@ const DraftRow = memo(function DraftRow({
   const discardDraft = useDraftsStore((s) => s.discardDraft)
   // A draft whose session owes a send is not a note to self any more — it is
   // the message that goes out at that time, so the row leads with the clock.
-  const scheduled = useScheduledSendsStore((s) => armedSendFor(s.bySession, draft.originSessionId))
+  const scheduled = useScheduledSendsStore((s) => armedSendFor(s.bySession, draft.originSessionId, connectionId))
 
   const resume = () => {
     onResume?.(draft, slotY ?? 0)

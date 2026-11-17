@@ -178,11 +178,11 @@ const environmentAPI = {
   callComposer: <M extends import('@superone/shared/environment/composer-requests').ComposerCallMethod>(connectionId: string, method: M, input: import('@superone/shared/environment/composer-requests').ComposerCallMethods[M]['input']) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_CALL_COMPOSER, connectionId, method, input) as Promise<import('@superone/shared/environment/composer-requests').ComposerCallMethods[M]['result']>,
   onScheduledSendChanged: (
-    callback: (event: { sessionId: string; scheduled: ScheduledSend | null; delivered: boolean }) => void,
+    callback: (event: { connectionId?: string; sessionId: string; scheduled: ScheduledSend | null; delivered: boolean }) => void,
   ) => {
     const handler = (
       _e: Electron.IpcRendererEvent,
-      event: { sessionId: string; scheduled: ScheduledSend | null; delivered: boolean },
+      event: { connectionId?: string; sessionId: string; scheduled: ScheduledSend | null; delivered: boolean },
     ) => callback(event)
     ipcRenderer.on(AgentIpcChannels.SCHEDULED_SEND_CHANGED, handler)
     return () => {

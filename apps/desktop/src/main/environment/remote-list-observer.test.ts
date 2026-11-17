@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { TopicNoticeFrame } from '@superone/shared/environment'
 import type { SessionActivity } from '@superone/shared/session-activity'
-import { remoteListObserver, type SessionActivityEvent } from './remote-list-observer'
+import { remoteListObserver, type ScheduleEvent, type SessionActivityEvent } from './remote-list-observer'
 
 const summary = (sessionId: string, status: string): SessionActivity =>
   ({ sessionId, projectPath: '/work/app', status, provider: 'claude', pendingCount: 0, pendingReason: { en: null, zh: null } })
@@ -32,6 +32,20 @@ describe('remoteListObserver', () => {
     ])
     expect(after.heard.every((event) => !event.completed)).toBe(true)
     expect([...summaries.keys()]).toEqual(['kept'])
+  })
+
+  it('restores scheduled messages on reconnect and clears removed rows without reporting delivery', () => {
+    const heard: ScheduleEvent[] = []
+    const observer = remoteListObserver('conn-b', new Map(), {
+      sessionListChanged: () => {}, projectsChanged: () => {}, activity: () => {}, schedule: event => heard.push(event),
+    })
+    const scheduled = { sessionId: 'queued', sendAt: 1000, source: 'manual' as const, armed: true, message: 'later' }
+    observer.notice!({ topic, events: [], snapshot: { scheduledSends: [scheduled] } })
+    observer.notice!({ topic, events: [], snapshot: { scheduledSends: [] } })
+    observer.notice!({ topic, events: [{ type: 'scheduled_send_changed', sessionId: 'actual', scheduled: null, delivered: true }] })
+    expect(heard.map(event => [event.sessionId, event.scheduled, event.delivered])).toEqual([
+      ['queued', scheduled, false], ['queued', null, false], ['actual', null, true],
+    ])
   })
 
   it('reports a provider change and does not treat an environment snapshot as a session list', () => {

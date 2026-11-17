@@ -33,6 +33,18 @@ export const Video: Story = {
   render: () => <Column><MarkdownVideoPlayer src={sampleVideo} /></Column>,
 }
 
+export const VerticalVideoVolume: Story = {
+  ...Video,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    const mute = canvas.getByRole('button', { name: 'Mute' })
+    await userEvent.hover(mute)
+    const slider = await canvas.findByRole('slider', { name: 'Volume' })
+    await expect(slider).toHaveAttribute('aria-orientation', 'vertical')
+    await expect(slider.getBoundingClientRect().bottom).toBeLessThan(mute.getBoundingClientRect().top)
+  },
+}
+
 /** Authored `<video width>` keeps its size; the player stays centered. */
 export const VideoAuthoredWidth: Story = {
   render: () => <Column><MarkdownVideoPlayer src={sampleVideo} width={640} /></Column>,

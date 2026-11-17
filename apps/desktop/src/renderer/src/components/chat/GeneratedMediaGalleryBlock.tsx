@@ -1,11 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ImageIcon, Maximize2, Video } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { ImageGenerationItem, VideoGenerationItem } from '@superone/shared/agent-types'
 import type { GeneratedMediaItem } from '@superone/chat-view/presenters/tool-display'
 import { GeneratedMediaGallery, GeneratedMediaPlaceholder } from '@superone/chat-view/presenters/GeneratedMediaGallery'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
-import { useMediaUrl } from '@/hooks/use-media-server-port'
 import { useResolvedMediaSrc } from '@/hooks/use-resolved-media-src'
 import { toLocalFileUrl } from '@/lib/path-utils'
 import { encodeRemoteMediaUrl } from '@/lib/remote-media-url'
@@ -60,35 +59,49 @@ function ImagePreview({ items, index }: { items: ImageGenerationItem[]; index: n
   )
 }
 
-function VideoThumbnail({ path, onDuration }: { path?: string; onDuration: (ms: number) => void }) {
-  const src = useMediaUrl(path)
+function videoSource(path: string | undefined, projectPath: string | null | undefined) {
+  if (!path) return undefined
+  return projectPath && parseRemoteProjectKey(projectPath)
+    ? encodeRemoteMediaUrl(projectPath, path)
+    : toLocalFileUrl(path)
+}
+
+function VideoThumbnail({ source }: { source?: string }) {
+  const tile = useRef<HTMLSpanElement>(null)
+  const [visible, setVisible] = useState(typeof IntersectionObserver === 'undefined')
   const [failed, setFailed] = useState(false)
-  if (!src || failed) return <Video aria-hidden className="size-4" />
+  const { displaySrc } = useResolvedMediaSrc(visible ? source : undefined)
+
+  useEffect(() => {
+    if (visible || !tile.current) return
+    const observer = new IntersectionObserver(entries => {
+      if (!entries.some(entry => entry.isIntersecting)) return
+      setVisible(true)
+      observer.disconnect()
+    })
+    observer.observe(tile.current)
+    return () => observer.disconnect()
+  }, [visible])
+
   return (
-    <video
-      aria-hidden
-      src={src}
-      muted
-      playsInline
-      preload="metadata"
-      onLoadedMetadata={event => onDuration(event.currentTarget.duration * 1000)}
-      onError={() => setFailed(true)}
-      className="size-full object-cover"
-    />
+    <span ref={tile} aria-hidden className="flex size-full items-center justify-center">
+      {displaySrc && !failed ? (
+        <video
+          src={displaySrc}
+          muted
+          playsInline
+          preload="metadata"
+          onError={() => setFailed(true)}
+          className="size-full object-cover"
+        />
+      ) : <Video className="size-4" />}
+    </span>
   )
 }
 
-function VideoPreview({ item, projectPath, onDuration }: {
-  item: VideoGenerationItem
-  projectPath?: string | null
-  onDuration: (ms: number) => void
-}) {
+function VideoPreview({ item, source }: { item: VideoGenerationItem; source?: string }) {
   const { t } = useTranslation()
   const [loadError, setLoadError] = useState(false)
-  const path = item.savedPath
-  const source = path && (projectPath && parseRemoteProjectKey(projectPath)
-    ? encodeRemoteMediaUrl(projectPath, path)
-    : toLocalFileUrl(path))
   const { displaySrc, filePath, failed, loading } = useResolvedMediaSrc(source)
   if (item.status === 'failed' || failed || loadError) return <GeneratedMediaPlaceholder pending={false} />
   if (!displaySrc || loading) return <GeneratedMediaPlaceholder pending />
@@ -100,7 +113,6 @@ function VideoPreview({ item, projectPath, onDuration }: {
       fitToContainer
       showPlayOverlay
       playsInline
-      onLoadedMetadata={event => onDuration(event.currentTarget.duration * 1000)}
       onError={() => setLoadError(true)}
     />
   )
@@ -110,16 +122,15 @@ export function GeneratedMediaGalleryBlock({ items, projectPath }: { items: Gene
   const sourceImages = items.filter((item): item is ImageGenerationItem => item.type === 'image_generation')
   const images = useGalleryImagePaths(sourceImages, projectPath)
   const imageIndices = new Map(sourceImages.map((item, index) => [item, index]))
-  const remote = Boolean(projectPath && parseRemoteProjectKey(projectPath))
   return (
     <GeneratedMediaGallery
       items={items}
-      renderPreview={(item, onDuration) => item.type === 'image_generation'
+      renderPreview={(item) => item.type === 'image_generation'
         ? <ImagePreview items={images} index={imageIndices.get(item)!} />
-        : <VideoPreview item={item} projectPath={projectPath} onDuration={onDuration} />}
-      renderThumbnail={(item, onDuration) => item.type === 'image_generation'
+        : <VideoPreview item={item} source={videoSource(item.savedPath, projectPath)} />}
+      renderThumbnail={(item) => item.type === 'image_generation'
         ? <ImageThumbnail item={images[imageIndices.get(item)!]} />
-        : <VideoThumbnail key={item.savedPath} path={remote ? undefined : item.savedPath} onDuration={onDuration} />}
+        : <VideoThumbnail key={item.savedPath} source={videoSource(item.savedPath, projectPath)} />}
     />
   )
 }

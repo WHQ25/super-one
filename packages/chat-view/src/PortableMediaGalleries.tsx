@@ -24,12 +24,8 @@ function ImageThumbnail({ path, root }: { path: string; root?: string }) {
     : <ImageIcon aria-hidden className="size-4" />
 }
 
-function VideoThumbnail({ path, root, onDuration }: { path: string; root?: string; onDuration: (ms: number) => void }) {
+function VideoThumbnail({ path, root }: { path: string; root?: string }) {
   const phase = useHostVideoPoster(root, path)
-  const duration = phase.kind === 'ready' ? phase.poster.durationMs : undefined
-  useEffect(() => {
-    if (duration != null) onDuration(duration)
-  }, [duration, onDuration])
   return phase.kind === 'ready'
     ? <img src={phase.poster.dataUri} alt="" className="size-full object-cover" />
     : <Video aria-hidden className="size-4" />
@@ -71,10 +67,10 @@ export function PortableGeneratedMediaGallery({ items, projectPath }: {
           />
         )
       }}
-      renderThumbnail={(item, onDuration) => {
+      renderThumbnail={item => {
         if (item.status === 'failed') return null
         if (item.type === 'video_generation') {
-          return item.savedPath && <VideoThumbnail key={item.savedPath} path={item.savedPath} root={root} onDuration={onDuration} />
+          return item.savedPath && <VideoThumbnail key={item.savedPath} path={item.savedPath} root={root} />
         }
         const path = item.previewPath ?? item.savedPath
         return path && <ImageThumbnail key={path} path={path} root={root} />

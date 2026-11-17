@@ -8,6 +8,7 @@
 @import "./markdown-table.css";
 @import "./dockview-theme.css";
 @source "../../../../../../node_modules/streamdown/dist/*.js";
+@source "../components/chat/markdown-media-player.tsx";
 /* The chat presenters live in @superone/chat-view and reach the renderer through
    a node_modules symlink, which Tailwind's automatic source detection skips. Any
    utility used only there (ANSI terminal colors, `text-warning/60`, …) is

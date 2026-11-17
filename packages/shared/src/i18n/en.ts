@@ -5094,6 +5094,8 @@ export type Messages = {
     list: string
     expand: string
     collapse: string
+    previous: string
+    next: string
     item: string
     image: string
     video: string
@@ -10499,8 +10501,10 @@ export const en: Messages = {
   generatedMedia: {
     title: 'Generated Media',
     list: 'Media List',
-    expand: 'Expand List',
-    collapse: 'Collapse List',
+    expand: 'Expand Media Sidebar',
+    collapse: 'Collapse Media Sidebar',
+    previous: 'Previous Media',
+    next: 'Next Media',
     item: 'Result {{number}}',
     image: 'Image',
     video: 'Video',

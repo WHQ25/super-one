@@ -158,8 +158,8 @@ export function PortableHostVideo({ path, root, label, className, tileClassName,
         title={path}
         data-host-video="ready"
       >
-        <img src={poster.dataUri} alt={label} width={poster.width} height={poster.height} className={imageClassName ?? "block h-full w-auto max-w-full object-contain"} />
-        <span aria-hidden className="absolute inset-0 flex items-center justify-center">
+        <img src={poster.dataUri} alt={label} width={poster.width} height={poster.height} draggable={false} className={imageClassName ?? "block h-full w-auto max-w-full object-contain"} />
+        <span aria-hidden className="pointer-events-none absolute inset-0 flex items-center justify-center">
           <span className="flex size-11 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-sm">
             <Play className="ml-0.5 size-5 fill-current" />
           </span>

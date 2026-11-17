@@ -61,9 +61,9 @@ export const Mixed: Story = {
     const canvas = within(canvasElement)
     await userEvent.click(canvas.getByRole('button', { name: /screenshot.png/ }))
     await expect(await canvas.findByRole('button', { name: 'Node screenshot' })).toBeVisible()
-    await userEvent.click(canvas.getByRole('button', { name: 'Collapse List' }))
-    await expect(canvas.getByRole('button', { name: 'Expand List' })).toBeVisible()
-    await userEvent.click(canvas.getByRole('button', { name: 'Expand List' }))
+    await userEvent.click(canvas.getByRole('button', { name: 'Collapse Media Sidebar' }))
+    await expect(canvas.getByRole('button', { name: 'Expand Media Sidebar' })).toBeVisible()
+    await userEvent.click(canvas.getByRole('button', { name: 'Expand Media Sidebar' }))
     await expect(canvas.getByRole('button', { name: /screenshot.png/ })).toHaveAttribute('aria-pressed', 'true')
   },
 }
@@ -71,4 +71,11 @@ export const Mixed: Story = {
 export const MixedDarkNarrow: Story = {
   args: { items: mixedItems, narrow: true },
   globals: { theme: 'dark', locale: 'zh' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvas.findByText('1/3')).resolves.toBeVisible()
+    canvas.getByRole('button', { name: '下一项媒体' }).focus()
+    await userEvent.keyboard('{Enter}')
+    await expect(canvas.findByText('2/3')).resolves.toBeVisible()
+  },
 }

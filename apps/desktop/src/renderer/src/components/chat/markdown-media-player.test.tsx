@@ -66,6 +66,16 @@ describe('markdown video player', () => {
     expect(video.closest('[data-slot="markdown-video"]')?.hasAttribute('data-copy-text')).toBe(false)
   })
 
+  it('exposes a vertical video volume range and keeps the mute button working', () => {
+    const video = videoOf(<MarkdownVideoPlayer src="http://127.0.0.1/demo.mp4" />)
+    const volume = screen.getByRole('slider', { name: 'Volume' })
+    expect(volume).toHaveAttribute('aria-orientation', 'vertical')
+    fireEvent.change(volume, { target: { value: '0.35' } })
+    expect(video.volume).toBe(0.35)
+    fireEvent.click(screen.getByRole('button', { name: 'Mute' }))
+    expect(video.muted).toBe(true)
+  })
+
   it('drags the file out and does not treat the drag release as play', () => {
     const startDrag = vi.fn()
     const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue(undefined)

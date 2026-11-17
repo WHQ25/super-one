@@ -883,15 +883,20 @@ test('42 renders Codex images as a turn-end gallery whose tap carries the genera
 
   const turn = page.locator('[data-turn-id="recording-codex-image-gallery"]')
   const gallery = turn.getByRole('region', { name: 'Generated Media 2' })
-  await expect(gallery.getByRole('listitem')).toHaveCount(2)
-  await gallery.getByRole('button', { name: 'Collapse List' }).click()
-  await expect(gallery.getByRole('listitem')).toHaveCount(0)
-  await expect(gallery.getByRole('button', { name: 'Expand List' })).toContainText('concept-a.png')
-  await gallery.getByRole('button', { name: 'Expand List' }).click()
-  await expect(gallery.getByRole('listitem')).toHaveCount(2)
+  const counter = gallery.locator('[data-generated-media-counter]')
+  await expect(counter).toHaveText('1/2')
+  await expect(gallery.getByRole('list')).toHaveCount(0)
+  const stage = gallery.locator('[data-generated-media-carousel]')
+  const swipe = { pointerId: 1, pointerType: 'touch', isPrimary: true, clientY: 200, bubbles: true }
+  await stage.dispatchEvent('pointerdown', { ...swipe, clientX: 240 })
+  await stage.dispatchEvent('pointermove', { ...swipe, clientX: 125 })
+  await stage.dispatchEvent('pointerup', { ...swipe, clientX: 125 })
+  await expect(counter).toHaveText('2/2')
+  await gallery.getByRole('button', { name: 'Previous Media' }).focus()
+  await gallery.getByRole('button', { name: 'Previous Media' }).press('Enter')
+  await expect(counter).toHaveText('1/2')
   await expect(gallery.locator('[data-native-widget]')).toHaveCount(0)
 
-  // Each tile asks the host for its thumb; answer like the LAN host would.
   type HostRequest = { type?: string; requestId?: string; action?: string; payload?: { path?: string; src?: string; generation?: { revisedPrompt?: string } } }
   const readRequests = () => page.evaluate(() => (
     globalThis as typeof globalThis & { __hostMessages: HostRequest[] }
@@ -904,14 +909,17 @@ test('42 renders Codex images as a turn-end gallery whose tap carries the genera
   await expect(gallery.locator('[data-host-image="ready"] img')).toHaveCount(1)
 
   // Tapping opens the bytes fullscreen, titled by file name, with the prompt riding along for the info panel.
-  await gallery.locator('[data-generated-media-preview]').getByRole('button', { name: 'Preview concept-a.png' }).click()
+  const picture = gallery.locator('[data-generated-media-preview]').getByRole('button', { name: 'Preview concept-a.png' })
+  await picture.dispatchEvent('pointerdown', { ...swipe, clientX: 200 })
+  await picture.dispatchEvent('pointerup', { ...swipe, clientX: 200 })
+  await picture.dispatchEvent('click', { detail: 1 })
   await expect.poll(() => page.evaluate(() => (
     globalThis as typeof globalThis & { __hostMessages: HostRequest[] }
-  ).__hostMessages.some((item) => (
+  ).__hostMessages.filter((item) => (
     item.action === 'previewImage'
       && item.payload?.path === '/project/output/concept-a.png'
       && item.payload?.generation?.revisedPrompt === 'Compact mobile chat interface'
-  )))).toBe(true)
+  )).length)).toBe(1)
 })
 
 test('43 sends Codex plan decisions through the native host bridge', async ({ page }) => {

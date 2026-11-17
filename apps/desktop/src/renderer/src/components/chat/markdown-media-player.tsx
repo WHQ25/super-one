@@ -68,19 +68,23 @@ function togglePlay(el: HTMLMediaElement | null) {
 }
 
 /** A thin track + fill with a native range on top, so keyboard and pointer seeking stay native. */
-function MediaRange({ value, max, label, disabled, onChange, className }: {
+function MediaRange({ value, max, label, disabled, onChange, className, vertical = false }: {
   value: number
   max: number
   label: string
   disabled?: boolean
   onChange: (value: number) => void
   className?: string
+  vertical?: boolean
 }) {
   const percent = max > 0 ? Math.min(100, (value / max) * 100) : 0
   return (
-    <span className={cn('group/range relative flex h-4 min-w-0 items-center', className)}>
-      <span className="pointer-events-none absolute inset-x-0 h-1 overflow-hidden rounded-full bg-foreground/15">
-        <span className="block h-full bg-foreground/80" style={{ width: `${percent}%` }} />
+    <span className={cn('group/range relative flex min-w-0 items-center', vertical ? 'w-4 justify-center' : 'h-4', className)}>
+      <span className={cn(
+        'pointer-events-none absolute overflow-hidden rounded-full bg-foreground/15',
+        vertical ? 'inset-y-0 flex w-1 flex-col justify-end' : 'inset-x-0 h-1',
+      )}>
+        <span className={cn('block bg-foreground/80', vertical ? 'w-full' : 'h-full')} style={vertical ? { height: `${percent}%` } : { width: `${percent}%` }} />
       </span>
       <input
         type="range"
@@ -90,26 +94,30 @@ function MediaRange({ value, max, label, disabled, onChange, className }: {
         value={value}
         disabled={disabled}
         aria-label={label}
+        aria-orientation={vertical ? 'vertical' : undefined}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="absolute inset-0 h-full w-full cursor-pointer appearance-none bg-transparent outline-none disabled:cursor-default
+        className={cn(`absolute inset-0 h-full w-full cursor-pointer appearance-none bg-transparent outline-none disabled:cursor-default
                    [&::-webkit-slider-thumb]:size-3 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:rounded-full
                    [&::-webkit-slider-thumb]:bg-foreground [&::-webkit-slider-thumb]:opacity-0 [&::-webkit-slider-thumb]:shadow
                    [&::-webkit-slider-thumb]:transition-opacity group-hover/range:[&::-webkit-slider-thumb]:opacity-100
-                   focus-visible:[&::-webkit-slider-thumb]:opacity-100 disabled:[&::-webkit-slider-thumb]:hidden"
+                   focus-visible:[&::-webkit-slider-thumb]:opacity-100 disabled:[&::-webkit-slider-thumb]:hidden`,
+          vertical && '[direction:rtl] [writing-mode:vertical-lr]',
+        )}
       />
     </span>
   )
 }
 
-function VolumeControl({ media, state }: { media: RefObject<HTMLMediaElement | null>; state: PlaybackState }) {
+function VolumeControl({ media, state, vertical }: { media: RefObject<HTMLMediaElement | null>; state: PlaybackState; vertical: boolean }) {
   const { t } = useTranslation()
   const silent = state.muted || state.volume === 0
   const Icon = silent ? VolumeX : state.volume < 0.5 ? Volume1 : Volume2
   return (
-    <span className="group/volume flex items-center">
+    <span className={cn('group/volume flex items-center', vertical && 'relative')}>
       <IconButton
         size="md"
         tooltip={silent ? t('mediaPlayer.unmute') : t('mediaPlayer.mute')}
+        tooltipSide={vertical ? 'bottom' : 'top'}
         onClick={() => {
           const el = media.current
           if (!el) return
@@ -120,19 +128,25 @@ function VolumeControl({ media, state }: { media: RefObject<HTMLMediaElement | n
       >
         <Icon />
       </IconButton>
-      <span className="w-0 overflow-hidden transition-[width] duration-150 group-hover/volume:w-16 group-focus-within/volume:w-16">
-        <MediaRange
-          className="mx-1 w-14"
-          label={t('mediaPlayer.volume')}
-          value={state.muted ? 0 : state.volume}
-          max={1}
-          onChange={(v) => {
-            const el = media.current
-            if (!el) return
-            el.volume = v
-            el.muted = v === 0
-          }}
-        />
+      <span className={vertical
+        ? 'invisible absolute bottom-full left-1/2 z-10 -translate-x-1/2 pb-1 group-hover/volume:visible group-focus-within/volume:visible'
+        : 'w-0 overflow-hidden transition-[width] duration-150 group-hover/volume:w-16 group-focus-within/volume:w-16'
+      }>
+        <span className={vertical ? 'flex rounded-lg border border-border bg-popover px-1.5 py-2 shadow-sm' : 'contents'}>
+          <MediaRange
+            className={vertical ? 'h-16' : 'mx-1 w-14'}
+            vertical={vertical}
+            label={t('mediaPlayer.volume')}
+            value={state.muted ? 0 : state.volume}
+            max={1}
+            onChange={(v) => {
+              const el = media.current
+              if (!el) return
+              el.volume = v
+              el.muted = v === 0
+            }}
+          />
+        </span>
       </span>
     </span>
   )
@@ -144,6 +158,7 @@ interface MediaControlsProps {
   /** Fullscreen target; omitted for audio. */
   root?: RefObject<HTMLElement | null>
   fullscreen?: boolean
+  verticalVolume?: boolean
   /** Player-specific buttons, placed before the options menu. */
   extra?: ReactNode
   /**
@@ -154,7 +169,7 @@ interface MediaControlsProps {
   className?: string
 }
 
-function MediaControls({ media, state, root, fullscreen = false, extra, selectionChrome = false, className }: MediaControlsProps) {
+function MediaControls({ media, state, root, fullscreen = false, verticalVolume = false, extra, selectionChrome = false, className }: MediaControlsProps) {
   const { t } = useTranslation()
   const toggleFullscreen = useCallback(() => {
     if (document.fullscreenElement) void document.exitFullscreen()
@@ -169,8 +184,7 @@ function MediaControls({ media, state, root, fullscreen = false, extra, selectio
       <IconButton size="md" tooltip={state.playing ? t('mediaPlayer.pause') : t('mediaPlayer.play')} onClick={() => togglePlay(media.current)}>
         {state.playing ? <Pause /> : <Play />}
       </IconButton>
-      {/* Left-anchored so the slider grows rightward and the icon stays under the pointer. */}
-      <VolumeControl media={media} state={state} />
+      <VolumeControl media={media} state={state} vertical={verticalVolume} />
       <MediaRange
         className="mx-1 flex-1"
         label={t('mediaPlayer.seek')}
@@ -365,6 +379,7 @@ export function MarkdownVideoPlayer({ className, style, controls: _controls, fit
         root={allowFullscreen ? rootRef : undefined}
         fullscreen={fullscreen}
         selectionChrome
+        verticalVolume
         className={cn('mt-1.5 shrink-0 border-t border-border/60 pt-1.5', fullscreen && 'mt-0 px-3 py-2')}
       />
     </span>

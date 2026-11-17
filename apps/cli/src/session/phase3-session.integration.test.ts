@@ -157,6 +157,10 @@ describe('Phase 3 disconnect-safe remote Session', () => {
     rt.db
       .prepare(`UPDATE sessions SET status = 'streaming', updated_at = ? WHERE session_id = ?`)
       .run(Date.now(), session.sessionId)
+    // A real process crash also drops its schedulers. Stop them before closing
+    // SQLite, without sessions.dispose() settling the streaming turn.
+    rt.sessions.scheduledSends.stop()
+    rt.automationService.stop()
     // Force-close DB handles; do not await sessions.dispose() for this scenario.
     try {
       await rt.server.close()

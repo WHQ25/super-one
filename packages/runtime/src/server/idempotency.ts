@@ -25,10 +25,22 @@ export class IdempotencyService {
 
   /**
    * Returns prior result if same key+hash, throws conflict if same key different hash,
-   * or null if no receipt yet.
+   * or null if no receipt yet. Does not apply a liveness check; {@link runExclusive}
+   * drops a dead receipt before this rule.
    */
   lookup(clientIdentity: string, operation: string, idempotencyKey: string, payloadHash: string): unknown | null {
-    const row = this.db
+    const row = this.receiptRow(clientIdentity, operation, idempotencyKey)
+    if (!row) return null
+    if (row.request_payload_hash !== payloadHash) throw idempotencyConflict()
+    return JSON.parse(row.receipt_json)
+  }
+
+  private receiptRow(
+    clientIdentity: string,
+    operation: string,
+    idempotencyKey: string,
+  ): { request_payload_hash: string; receipt_json: string } | undefined {
+    return this.db
       .prepare(
         `SELECT request_payload_hash, receipt_json FROM idempotency_receipts
          WHERE client_identity = ? AND operation = ? AND idempotency_key = ?`,
@@ -36,14 +48,41 @@ export class IdempotencyService {
       .get(clientIdentity, operation, idempotencyKey) as
       | { request_payload_hash: string; receipt_json: string }
       | undefined
+  }
+
+  /**
+   * Receipt to replay, or null when `execute` should run. A receipt `isLive`
+   * rejects is deleted first, even when the new payload hash differs. A receipt
+   * that is still live (or any receipt when no liveness check was given) with
+   * a different hash is a conflict.
+   */
+  private replayReceipt<T>(
+    clientIdentity: string,
+    operation: string,
+    idempotencyKey: string,
+    payloadHash: string,
+    isLive?: (receipt: T) => boolean,
+  ): T | null {
+    const row = this.receiptRow(clientIdentity, operation, idempotencyKey)
     if (!row) return null
-    if (row.request_payload_hash !== payloadHash) {
-      throw Object.assign(new Error('idempotency key reused with different payload'), {
-        code: 'idempotency_conflict',
-        details: { receiptStored: true },
-      })
+    const sameHash = row.request_payload_hash === payloadHash
+    if (!isLive) {
+      if (!sameHash) throw idempotencyConflict()
+      return JSON.parse(row.receipt_json) as T
     }
-    return JSON.parse(row.receipt_json)
+    let receipt: T
+    try {
+      receipt = JSON.parse(row.receipt_json) as T
+    } catch {
+      this.delete(clientIdentity, operation, idempotencyKey)
+      return null
+    }
+    if (!isLive(receipt)) {
+      this.delete(clientIdentity, operation, idempotencyKey)
+      return null
+    }
+    if (!sameHash) throw idempotencyConflict()
+    return receipt
   }
 
   store(
@@ -80,7 +119,8 @@ export class IdempotencyService {
    *   receipt). Required for ephemeral resources (e.g. watchers) that do not survive
    *   disconnect/restart — durable replay would return a dead id.
    * @param options.isReceiptLive When durable, optional gate: if a stored receipt is no
-   *   longer live, it is discarded and execute() runs again.
+   *   longer live, it is discarded and execute() runs again, even when the new
+   *   payload hash differs. A live receipt with a different hash still conflicts.
    */
   async runExclusive<T>(
     clientIdentity: string,
@@ -97,11 +137,8 @@ export class IdempotencyService {
     const isLive = options?.isReceiptLive
 
     if (durable) {
-      const prior = this.lookup(clientIdentity, operation, idempotencyKey, payloadHash)
-      if (prior !== null) {
-        if (!isLive || isLive(prior as T)) return prior as T
-        this.delete(clientIdentity, operation, idempotencyKey)
-      }
+      const prior = this.replayReceipt(clientIdentity, operation, idempotencyKey, payloadHash, isLive)
+      if (prior !== null) return prior
     }
 
     const k = this.key(clientIdentity, operation, idempotencyKey)
@@ -117,11 +154,8 @@ export class IdempotencyService {
 
     const promise = (async () => {
       if (durable) {
-        const again = this.lookup(clientIdentity, operation, idempotencyKey, payloadHash)
-        if (again !== null) {
-          if (!isLive || isLive(again as T)) return again
-          this.delete(clientIdentity, operation, idempotencyKey)
-        }
+        const again = this.replayReceipt(clientIdentity, operation, idempotencyKey, payloadHash, isLive)
+        if (again !== null) return again
       }
       const result = await execute()
       if (durable) {
@@ -146,4 +180,11 @@ export class IdempotencyService {
       )
       .run(clientIdentity, operation, idempotencyKey)
   }
+}
+
+function idempotencyConflict(): Error {
+  return Object.assign(new Error('idempotency key reused with different payload'), {
+    code: 'idempotency_conflict',
+    details: { receiptStored: true },
+  })
 }

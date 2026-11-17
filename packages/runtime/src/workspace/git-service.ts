@@ -14,6 +14,7 @@ import {
   probeGitMentionCapabilities,
   type GitMentionRunners,
   activateWorktree as activateWorktreeAt,
+  rollbackCollabWorktree,
   assignBranch as assignBranchAt,
   handoffPreview as handoffPreviewAt,
   handoffToMain as handoffToMainAt,
@@ -87,6 +88,12 @@ export function sanitizeGitRef(ref: string): string {
       code: 'invalid_argument',
     })
   }
+}
+
+/** Git spawn failures stay `internal`. A refusal we raised keeps its code. */
+function keptGitCode(err: unknown): string {
+  const code = (err as { code?: unknown } | null)?.code
+  return code === 'failed_precondition' || code === 'invalid_argument' || code === 'not_found' ? code : 'internal'
 }
 
 export class WorkspaceGitService {
@@ -376,12 +383,36 @@ export class WorkspaceGitService {
         mode,
         branchName: safeBranchName,
         carryLocalChanges,
+        ifExists: input.ifExists,
+        isOccupied: input.isOccupied,
       })
       this.projects.touch(projectId)
       return result
     } catch (err) {
       throw Object.assign(new Error(gitErrorMessage(err) || 'git worktree add failed'), {
-        code: 'internal',
+        code: keptGitCode(err),
+      })
+    }
+  }
+
+  /**
+   * Remove a collaboration checkout and its branch after session creation was
+   * rejected. The RPC handler clears the activate receipt.
+   */
+  async rollbackWorktree(
+    projectId: string,
+    input: { path: string; branchName?: string; isOccupied: (path: string) => boolean },
+  ): Promise<void> {
+    const folderPath = this.root(projectId)
+    try {
+      await rollbackCollabWorktree(this.git, folderPath, {
+        path: input.path,
+        branchName: input.branchName ? sanitizeGitRef(input.branchName) : undefined,
+        isOccupied: input.isOccupied,
+      })
+    } catch (err) {
+      throw Object.assign(new Error(gitErrorMessage(err) || 'git worktree rollback failed'), {
+        code: keptGitCode(err),
       })
     }
   }

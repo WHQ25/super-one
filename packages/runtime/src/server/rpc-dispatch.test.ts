@@ -259,6 +259,25 @@ describe('scoped native topic subscriptions', () => {
     expect(open).not.toHaveBeenCalled()
   })
 
+  it('omits session bodies when asked and strips transcripts otherwise', async () => {
+    const sessions = {
+      snapshotSequence: () => '9',
+      list: () => [sessionRecord({
+        transcript: [{ kind: 'secret' } as unknown as NodeSessionRecord['transcript'][number]],
+        pendingInteraction: { interactionId: 'q', kind: 'question', createdAt: 1 },
+      })],
+    } as unknown as SessionHostPort
+    const ctx = projectsOnlyHost({ sessions })
+    const omitted = await dispatchRpc('session.snapshot', { omitSessions: true }, ctx)
+    expect(omitted.result).toMatchObject({ sessions: [], snapshotSequence: '9' })
+    const full = (await dispatchRpc('session.snapshot', {}, ctx)).result as {
+      sessions: Array<{ transcript: unknown; pendingInteraction: { interactionId: string } | null }>
+    }
+    expect(full.sessions).toHaveLength(1)
+    expect(full.sessions[0]?.transcript).toEqual([])
+    expect(full.sessions[0]?.pendingInteraction).toMatchObject({ interactionId: 'q' })
+  })
+
   it('rejects malformed workspace cursors before opening a stream', async () => {
     const ctx = projectsOnlyHost({ sessions: {} as SessionHostPort, streams: {} as RpcContext['streams'] })
     const payload = { subscriptionId: 'sub', afterSequence: '0', topics: [{ kind: 'sessionList', environmentId: 'env-1' }] }
@@ -309,6 +328,51 @@ describe('session.create', () => {
     expect(create).toHaveBeenCalledWith(expect.objectContaining({ externalParent: { sessionId: 'parent-a' } }))
   })
 
+  it('returns the existing child of the same grant without creating another', async () => {
+    const existing = sessionRecord({
+      sessionId: 'child-1',
+      transcript: [{ kind: 'secret' } as unknown as NodeSessionRecord['transcript'][number]],
+      pendingInteraction: { interactionId: 'q', kind: 'question', createdAt: 1 },
+      externalParent: { sessionId: 'parent-a', grantId: 'grant-1' },
+    })
+    const create = vi.fn()
+    const { ctx } = sessionHost()
+    ctx.sessions = { create, list: () => [existing] } as unknown as SessionHostPort
+    const res = await dispatchRpc('session.create', {
+      projectId: 'p1',
+      externalParent: { sessionId: 'parent-a', grantId: 'grant-1' },
+    }, ctx)
+    expect(res.error).toBeUndefined()
+    expect(create).not.toHaveBeenCalled()
+    expect(res.result).toMatchObject({
+      sessionId: 'child-1',
+      transcript: [],
+      pendingInteraction: { interactionId: 'q' },
+      externalParent: { sessionId: 'parent-a', grantId: 'grant-1' },
+    })
+  })
+
+  it('treats a session.create receipt as live only while that session exists', async () => {
+    let live: ((receipt: unknown) => boolean) | undefined
+    const { ctx, create } = sessionHost()
+    ctx.sessions = {
+      create,
+      get: (id: string) => (id === 'live' ? sessionRecord({ sessionId: 'live' }) : null),
+    } as unknown as SessionHostPort
+    ctx.idempotency = {
+      payloadHash: () => 'h',
+      runExclusive: async (_client, _operation, _key, _hash, execute, options) => {
+        live = options?.isReceiptLive as typeof live
+        return execute()
+      },
+    }
+    const res = await dispatchRpc('session.create', { projectId: 'p1' }, ctx)
+    expect(res.error).toBeUndefined()
+    expect(live?.({ sessionId: 'live' })).toBe(true)
+    expect(live?.({ sessionId: 'gone' })).toBe(false)
+    expect(live?.({})).toBe(false)
+  })
+
   it.each([{ sessionId: 'native-id' }, { acpAgentId: 'grok' }, { worktreeBranch: 'HEAD', worktreeMode: 'detach' }])('refuses native creation on a host without the native port before writes: %j', async (selection) => {
     const { ctx, create } = sessionHost()
     const result = await dispatchRpc('session.create', { projectId: 'p1', ...selection }, ctx)
@@ -332,7 +396,10 @@ describe('session.create', () => {
 
 describe('a partial git port', () => {
   function worktreeOnlyHost() {
-    const activateWorktree = vi.fn(async () => ({ path: '/tmp/p1-wt' }))
+    const activateWorktree = vi.fn(async (
+      _projectId: string,
+      _input: { ifExists?: string; isOccupied?: (path: string) => boolean },
+    ) => ({ path: '/tmp/p1-wt' }))
     const fetch = vi.fn(async () => {})
     const ctx = projectsOnlyHost({
       client: {
@@ -378,6 +445,80 @@ describe('a partial git port', () => {
     expect(await dispatchRpc('git.status', { projectId: 'p1' }, ctx)).toEqual({ result: { isRepo: true, branch: 'main' } })
     const res = await dispatchRpc('git.status', { projectId: 'p1', cwd: '/tmp/p1-wt' }, ctx)
     expect(res.error).toMatchObject({ code: 'internal', message: failed.message })
+  })
+
+  it('forwards recreate-clean and refuses an occupied checkout', async () => {
+    const { ctx, activateWorktree } = worktreeOnlyHost()
+    const open = await dispatchRpc('git.worktreeActivate', {
+      projectId: 'p1', baseBranch: 'origin/HEAD', mode: 'branch', branchName: 'b', ifExists: 'recreate-clean',
+    }, ctx)
+    expect(open.error).toBeUndefined()
+    const occupied = activateWorktree.mock.calls[0]?.[1]
+    expect(occupied?.ifExists).toBe('recreate-clean')
+    expect(occupied?.isOccupied?.('/tmp/anywhere')).toBe(true)
+
+    ctx.sessions = { list: () => [sessionRecord({ cwd: '/tmp/occupied' })] } as unknown as SessionHostPort
+    await dispatchRpc('git.worktreeActivate', {
+      projectId: 'p1', baseBranch: 'origin/HEAD', mode: 'branch', branchName: 'b', ifExists: 'recreate-clean',
+    }, ctx)
+    const listed = activateWorktree.mock.calls[1]?.[1]
+    expect(listed?.isOccupied?.('/tmp/occupied')).toBe(true)
+    expect(listed?.isOccupied?.('/tmp/other')).toBe(false)
+  })
+
+  it('replays a worktree activate receipt only while the checkout is still on disk', async () => {
+    let live: ((receipt: unknown) => boolean) | undefined
+    const { ctx } = worktreeOnlyHost()
+    ctx.idempotency = {
+      payloadHash: () => 'h',
+      runExclusive: async (_client, _operation, _key, _hash, execute, options) => {
+        live = options?.isReceiptLive as typeof live
+        return execute()
+      },
+    }
+    await dispatchRpc('git.worktreeActivate', {
+      projectId: 'p1', baseBranch: 'origin/HEAD', mode: 'branch', branchName: 'b',
+    }, ctx)
+    expect(live?.({ path: '/no/such/worktree' })).toBe(false)
+    expect(live?.({ path: process.cwd() })).toBe(true)
+    expect(live?.({})).toBe(false)
+  })
+
+  it('drops the activate receipt after rolling the grant worktree back', async () => {
+    const rollbackWorktree = vi.fn(async () => {})
+    const remove = vi.fn()
+    const ctx = projectsOnlyHost({
+      client: {
+        clientSessionId: 'c1',
+        scopes: ['environment:read', 'project:read', 'workspace:read', 'workspace:write'],
+        devicePublicKeyFingerprint: 'fp',
+        devicePublicKeyPem: 'pem',
+      } as RpcContext['client'],
+      idempotency: {
+        payloadHash: () => 'h',
+        runExclusive: (_client, _operation, _key, _hash, execute) => execute(),
+        delete: remove,
+      },
+      workspaceGit: { rollbackWorktree } as unknown as RpcContext['workspaceGit'],
+    })
+    const res = await dispatchRpc('git.worktreeRollback', {
+      projectId: 'p1', path: '/tmp/wt', branchName: 'superone/b', grantId: 'grant-1',
+    }, ctx)
+    expect(res).toEqual({ result: { ok: true, path: '/tmp/wt' } })
+    expect(rollbackWorktree).toHaveBeenCalledWith('p1', expect.objectContaining({
+      path: '/tmp/wt',
+      branchName: 'superone/b',
+      isOccupied: expect.any(Function),
+    }))
+    expect(remove).toHaveBeenCalledWith('c1', 'git.worktreeActivate', 'collab-wt:grant-1')
+
+    const unsupported = projectsOnlyHost({
+      client: ctx.client,
+      workspaceGit: {} as RpcContext['workspaceGit'],
+    })
+    expect(await dispatchRpc('git.worktreeRollback', {
+      projectId: 'p1', path: '/tmp/wt', grantId: 'grant-1',
+    }, unsupported)).toMatchObject({ error: { details: { unsupported: true } } })
   })
 
   it('advertises only the git methods it serves', async () => {

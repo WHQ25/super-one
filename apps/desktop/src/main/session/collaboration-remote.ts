@@ -19,6 +19,7 @@ import type { MessageDisplayFields } from '@superone/shared/message-display'
 import type { ClonedProject, EnvironmentEventEnvelope, ProjectSnapshot } from '@superone/shared/environment'
 import { normalizeGitRemoteUrl, repoIdentityRemote } from '@superone/shared/git-remote-url'
 import { gitRun } from '../git-run'
+import log from '../logger'
 import { collaborationStore } from './collaboration-mailbox'
 
 /** A connected machine as collaboration sees it. */
@@ -53,8 +54,23 @@ export interface RemoteCollaborationPort {
   activateWorktree(
     connectionId: string,
     projectId: string,
-    input: { baseBranch: string; mode: 'branch'; branchName: string },
+    input: {
+      baseBranch: string
+      mode: 'branch'
+      branchName: string
+      ifExists?: 'fail' | 'recreate-clean'
+      /** Stable idempotency key. The same key joins an activate still running on the node. */
+      commandKey?: string
+    },
   ): Promise<{ path: string }>
+  /**
+   * Remove the checkout after session creation was rejected. Absent on a test
+   * double; a node that does not serve it answers unsupported and is ignored.
+   */
+  rollbackWorktree?(
+    connectionId: string,
+    input: { projectId: string; path: string; branchName?: string; grantId: string; commandKey?: string },
+  ): Promise<void>
   /** The node's launchable agent profiles; rejects with an unsupported error on a node that has none to list. */
   listProfiles(connectionId: string, force?: boolean): Promise<SessionAgentProfile[]>
   createSession(connectionId: string, input: {
@@ -66,7 +82,10 @@ export interface RemoteCollaborationPort {
     cwd: string
     systemPromptAppend: string
     externalParentSessionId: string
+    externalParentGrantId?: string
     options: Record<string, unknown>
+    /** Stable idempotency key. A lost reply replays the first session. */
+    commandKey?: string
   }): Promise<{ sessionId: string }>
   /** Start a turn under this desktop's lease; resolves once the node accepts it. */
   send(connectionId: string, input: {
@@ -254,6 +273,39 @@ function isUnsupported(error: unknown): boolean {
   return (error as { details?: { unsupported?: unknown } } | null)?.details?.unsupported === true
 }
 
+/**
+ * A harness or argument rejection. A deadline has `transport: false` and no
+ * `rpcError`, and a dropped socket has `transport: true`: neither means the
+ * node refused the call, so neither may delete the checkout.
+ */
+function isDefiniteBusinessRejection(error: unknown): boolean {
+  const err = error as { rpcError?: unknown; transport?: unknown; details?: { unsupported?: unknown } } | null
+  return err?.rpcError === true && err.transport === false && err.details?.unsupported !== true
+}
+
+type RemoteChildInput = {
+  grant: CollaborationGrantRow
+  config: SessionAgentLaunchConfig & { remote: SessionAgentRemoteLaunch }
+}
+
+/** Persist the checkout before the session exists, so a lost reply retries the same one. */
+function rememberRemote(
+  input: RemoteChildInput,
+  patch: { eventCursor?: string; cwd?: string; branch?: string | null },
+): void {
+  const remote = input.config.remote
+  if (patch.eventCursor) remote.eventCursor = patch.eventCursor
+  if (patch.cwd) remote.cwd = patch.cwd
+  if ('branch' in patch) remote.branch = patch.branch
+  collaborationStore().updateConfig(input.grant.grant_id, input.config)
+}
+
+function forgetRemoteCheckout(input: RemoteChildInput): void {
+  delete input.config.remote.cwd
+  delete input.config.remote.branch
+  collaborationStore().updateConfig(input.grant.grant_id, input.config)
+}
+
 export interface StartedRemoteChild {
   sessionId: string
   /** Node event head before the child existed: its events all come after it. */
@@ -266,12 +318,11 @@ export interface StartedRemoteChild {
 
 /**
  * Create the approved remote child: clone when the target still lacks the
- * repository, cut a fresh worktree branch, and create the session with the
- * collaboration prompt and its external parent. The task is sent separately.
+ * repository, cut a grant-owned worktree branch, and create the session with
+ * the collaboration prompt and its external parent. The task is sent separately.
+ * A retry of the same grant joins the checkout already recorded on the grant.
  */
-export async function startRemoteChild(input: {
-  grant: CollaborationGrantRow
-  config: SessionAgentLaunchConfig & { remote: SessionAgentRemoteLaunch }
+export async function startRemoteChild(input: RemoteChildInput & {
   harnessId: string
   title: string
   systemPromptAppend: string
@@ -279,6 +330,7 @@ export async function startRemoteChild(input: {
   const { remote } = input.config
   const env = await connectedEnvironment(remote.environmentId)
   const p = await remotePort()
+  const grantId = input.grant.grant_id
   // Re-resolve: the target may have opened or cloned the repository since approval.
   let project: ProjectSnapshot | undefined = matchProject(await p.listProjects(env.connectionId), remote.repository)
   let cloned = false
@@ -298,48 +350,104 @@ export async function startRemoteChild(input: {
       }
     }
   }
-  const branch = input.config.worktree?.branchName?.trim()
-    || `superone/${branchSlug(input.config.name ?? 'agent')}-${input.grant.grant_id.slice(0, 8)}`
-  let cwd = project.path
-  let createdBranch: string | null = branch
-  try {
-    cwd = (await p.activateWorktree(env.connectionId, project.projectId, {
-      baseBranch: remote.baseRef,
-      mode: 'branch',
-      branchName: branch,
-    })).path
-  } catch (error) {
-    // A node that cannot cut worktrees runs the child in its checkout.
-    if (!isUnsupported(error)) {
-      throw failed(
-        `Could not create a worktree from ${remote.baseRef} on ${env.label}: `
-        + `${error instanceof Error ? error.message : String(error)}`,
-      )
-    }
-    createdBranch = null
+  // Taken before the worktree: a cursor read after the session exists would skip
+  // its events. Once a checkout is stored, keep the cursor already saved with it.
+  let eventCursor = remote.eventCursor
+  if (!eventCursor && !remote.cwd) {
+    eventCursor = await p.eventHead(env.connectionId)
+    rememberRemote(input, { eventCursor })
   }
-  const eventCursor = await p.eventHead(env.connectionId)
-  const { sessionId } = await p.createSession(env.connectionId, {
-    environmentId: remote.environmentId,
-    projectId: project.projectId,
-    // Remote launches only use base profiles, whose id is the same on every machine.
-    providerId: input.grant.agent_id,
-    harnessId: input.harnessId,
-    title: input.title,
-    cwd,
-    systemPromptAppend: input.systemPromptAppend,
-    externalParentSessionId: input.grant.parent_session_id,
-    options: {
+  // The full grant id, not a caller branch and not an 8-character prefix.
+  const branchName = `superone/${branchSlug(input.config.name ?? 'agent')}-${grantId}`
+  let cwd = remote.cwd
+  let branch: string | null = remote.branch ?? null
+  if (!cwd) {
+    branch = branchName
+    try {
+      cwd = (await p.activateWorktree(env.connectionId, project.projectId, {
+        baseBranch: remote.baseRef,
+        mode: 'branch',
+        branchName,
+        ifExists: 'recreate-clean',
+        commandKey: `collab-wt:${grantId}`,
+      })).path
+    } catch (error) {
+      // A node that cannot cut worktrees runs the child in its checkout.
+      if (!isUnsupported(error)) {
+        throw failed(
+          `Could not create a worktree from ${remote.baseRef} on ${env.label}: `
+          + `${error instanceof Error ? error.message : String(error)}`,
+        )
+      }
+      cwd = project.path
+      branch = null
+    }
+    rememberRemote(input, { cwd, branch })
+  }
+  let sessionId: string
+  try {
+    sessionId = (await p.createSession(env.connectionId, {
+      environmentId: remote.environmentId,
+      projectId: project.projectId,
+      // Remote launches only use base profiles, whose id is the same on every machine.
+      providerId: input.grant.agent_id,
       harnessId: input.harnessId,
-      ...(input.config.model ? { model: input.config.model } : {}),
-      ...(input.config.effort ? { effort: input.config.effort } : {}),
-      ...(input.config.apiProviderId ? { apiProviderId: input.config.apiProviderId } : {}),
-      ...(input.config.permissionMode ? { permissionMode: input.config.permissionMode } : {}),
-      ...(input.config.claudeFastMode !== undefined ? { claudeFastMode: input.config.claudeFastMode } : {}),
-      ...(input.config.sandboxMode ? { sandboxMode: input.config.sandboxMode } : {}),
-    },
-  })
-  return { sessionId, eventCursor, connectionId: env.connectionId, projectPath: project.path, cwd, branch: createdBranch }
+      title: input.title,
+      cwd,
+      systemPromptAppend: input.systemPromptAppend,
+      externalParentSessionId: input.grant.parent_session_id,
+      externalParentGrantId: grantId,
+      commandKey: `collab-session:${grantId}`,
+      options: {
+        harnessId: input.harnessId,
+        ...(input.config.model ? { model: input.config.model } : {}),
+        ...(input.config.effort ? { effort: input.config.effort } : {}),
+        ...(input.config.apiProviderId ? { apiProviderId: input.config.apiProviderId } : {}),
+        ...(input.config.permissionMode ? { permissionMode: input.config.permissionMode } : {}),
+        ...(input.config.claudeFastMode !== undefined ? { claudeFastMode: input.config.claudeFastMode } : {}),
+        ...(input.config.sandboxMode ? { sandboxMode: input.config.sandboxMode } : {}),
+      },
+    })).sessionId
+  } catch (error) {
+    if (isDefiniteBusinessRejection(error) && branch && cwd !== project.path) {
+      await rollbackRejectedWorktree(p, env.connectionId, input, project.projectId, cwd, branch)
+    }
+    throw error
+  }
+  return {
+    sessionId,
+    eventCursor: eventCursor ?? '',
+    connectionId: env.connectionId,
+    projectPath: project.path,
+    cwd,
+    branch,
+  }
+}
+
+/** The node refused to create the session. A timeout or a missing RPC leaves the checkout for the retry. */
+async function rollbackRejectedWorktree(
+  p: RemoteCollaborationPort,
+  connectionId: string,
+  input: RemoteChildInput,
+  projectId: string,
+  cwd: string,
+  branchName: string,
+): Promise<void> {
+  if (!p.rollbackWorktree) return
+  try {
+    await p.rollbackWorktree(connectionId, {
+      projectId,
+      path: cwd,
+      branchName,
+      grantId: input.grant.grant_id,
+      // A successful rollback stays live (the path is gone). The next checkout
+      // is a different path, so the key has to name this one or the retry conflicts.
+      commandKey: `collab-wt-rollback:${input.grant.grant_id}:${cwd}`,
+    })
+    forgetRemoteCheckout(input)
+  } catch (error) {
+    if (!isUnsupported(error)) log.warn('[collaboration] remote worktree rollback failed:', error)
+  }
 }
 
 /** The remote target of a spawn child, or null for a local child or any other session. */

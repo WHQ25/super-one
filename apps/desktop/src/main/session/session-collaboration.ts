@@ -412,8 +412,8 @@ function remoteLaunchProposal(
     role: input.role,
     config: {
       ...config,
-      // The branch name an agent picked still names the child's branch there.
-      ...(launch.config?.worktree?.branchName ? { worktree: { enabled: true, baseBranch: remote.baseRef, mode: 'branch', branchName: launch.config.worktree.branchName } } : {}),
+      // The host names the branch from the grant. A caller branch would let one
+      // launch claim a branch the user already has.
       name: input.name,
       role: input.role,
       remote,

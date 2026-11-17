@@ -43,6 +43,28 @@ describe('a collaboration child whose parent runs on another machine', () => {
     await restarted.dispose()
   })
 
+  it('keeps the grant that owns the child across a restart', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'external-parent-grant-'))
+    dirs.push(home)
+    const dbPath = join(home, 'state.sqlite')
+    const first = boot(dbPath)
+    const created = first.create({
+      projectId: 'p1',
+      controllerClientSessionId: 'client-a',
+      externalParent: { sessionId: 'parent-a', grantId: 'grant-1' },
+    })
+    expect(created.externalParent).toEqual({ sessionId: 'parent-a', grantId: 'grant-1' })
+    await first.dispose()
+
+    const restarted = boot(dbPath)
+    expect(restarted.get(created.sessionId)?.externalParent).toEqual({ sessionId: 'parent-a', grantId: 'grant-1' })
+    expect(createSqliteSessionStore(openNodeDatabase(dbPath)).loadAll()[0]?.externalParent).toEqual({
+      sessionId: 'parent-a',
+      grantId: 'grant-1',
+    })
+    await restarted.dispose()
+  })
+
   it('sends and retrieves through its controller and launches nothing', async () => {
     const reply = { content: [{ type: 'text' as const, text: '{"status":"sent"}' }] }
     const requestHostAction = vi.fn<HostActionRequestFn>(async () => ({ actionId: 'a1', state: 'succeeded', result: reply }) as HostActionTerminalResult)

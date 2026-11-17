@@ -1,4 +1,4 @@
-import type { NodeSessionRecord } from './types'
+import type { NodeSessionRecord, SessionExternalParent } from './types'
 import type { SessionStore } from './ports'
 import type { SqliteDatabase } from '../sqlite'
 
@@ -13,7 +13,7 @@ function parseSettingsJson(raw: string | null | undefined): {
   apiProviderId: string | null
   permissionPreset: string | null
   serviceTier?: string | null
-  externalParent: { sessionId: string } | null
+  externalParent: SessionExternalParent | null
 } {
   const empty = {
     permissionMode: null as string | null,
@@ -24,7 +24,7 @@ function parseSettingsJson(raw: string | null | undefined): {
     agent: null as string | null,
     apiProviderId: null as string | null,
     permissionPreset: null as string | null,
-    externalParent: null as { sessionId: string } | null,
+    externalParent: null as SessionExternalParent | null,
   }
   if (!raw) return empty
   try {
@@ -52,9 +52,14 @@ function parseSettingsJson(raw: string | null | undefined): {
   }
 }
 
-function externalParentOf(raw: unknown): { sessionId: string } | null {
+function externalParentOf(raw: unknown): SessionExternalParent | null {
   const sessionId = (raw as { sessionId?: unknown } | null)?.sessionId
-  return typeof sessionId === 'string' && sessionId ? { sessionId } : null
+  if (typeof sessionId !== 'string' || !sessionId) return null
+  const grantId = (raw as { grantId?: unknown } | null)?.grantId
+  return {
+    sessionId,
+    ...(typeof grantId === 'string' && grantId.trim() ? { grantId: grantId.trim() } : {}),
+  }
 }
 
 function serializeSettingsJson(session: NodeSessionRecord): string {

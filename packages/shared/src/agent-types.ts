@@ -1269,6 +1269,10 @@ export interface SessionAgentRemoteLaunch {
   uncommittedChanges: number
   /** Host-maintained: the child's node event sequence this desktop has processed. */
   eventCursor?: string
+  /** Host-maintained: checkout the child runs in, recorded before its session exists. */
+  cwd?: string
+  /** Host-maintained: grant-owned branch of that checkout. Null when the node has no worktrees. */
+  branch?: string | null
   /** Host-maintained: the run open at `eventCursor`; absent when none was. */
   run?: SessionAgentRunState
 }

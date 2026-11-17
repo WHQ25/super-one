@@ -24,8 +24,12 @@ afterEach(() => {
 class FakeNodeClient extends EnvironmentRpcClient {
   readonly tier = 'lan' as const
   socketOpen = true
-  /** Non-transport subscribe failures left. The gateway does not retry these. */
+  /**
+   * Subscribe failures left. A deadline is retried inside the gateway.
+   * Any other error is not, so the host may rebuild the feed once.
+   */
   failSubscribe = 0
+  failSubscribeAs: 'protocol' | 'deadline' = 'protocol'
   subscribeCount = 0
   readonly sends: string[] = []
   private enders: Array<(err: Error) => void> = []
@@ -61,6 +65,12 @@ class FakeNodeClient extends EnvironmentRpcClient {
     this.subscribeCount += 1
     if (this.failSubscribe > 0) {
       this.failSubscribe -= 1
+      if (this.failSubscribeAs === 'deadline') {
+        throw Object.assign(new Error('rpc timeout: topic.subscribe'), {
+          code: 'deadline_exceeded',
+          transport: false,
+        })
+      }
       throw new Error('protocol')
     }
     if (!this.socketOpen) throw Object.assign(new Error('not connected'), { transport: true, code: 'unavailable' })
@@ -192,5 +202,26 @@ describe('remote session feed after the node returns', () => {
     expect(client.subscribeCount).toBe(afterRebuild)
     expect(afterRebuild).toBeLessThanOrEqual(3)
     host.dispose()
+  })
+
+  it('retries a subscribe that misses its deadline without failing the feed', async () => {
+    const { host, client, raw } = setup()
+    raw.lastStatus.set(CONNECTION, connected(4))
+    client.failSubscribe = 1
+    client.failSubscribeAs = 'deadline'
+    vi.useFakeTimers()
+    try {
+      const followed = host.resumeRemoteSessionEvents(CONNECTION, SESSION)
+      await vi.advanceTimersByTimeAsync(1_000)
+      await followed
+      expect(client.subscribeCount).toBe(2)
+      expect(raw.sessionFeeds.get(CONNECTION)?.hasFailed()).toBe(false)
+      await vi.advanceTimersByTimeAsync(2_000)
+      expect(client.subscribeCount).toBe(2)
+      expect(raw.sessionFeeds.get(CONNECTION)?.hasFailed()).toBe(false)
+    } finally {
+      host.dispose()
+      vi.useRealTimers()
+    }
   })
 })

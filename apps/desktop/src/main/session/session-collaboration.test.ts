@@ -2111,11 +2111,18 @@ describe('spawning a child on another machine', () => {
   const ORIGIN = 'git@github.com:acme/app.git'
   let repo: string
   let calls: Record<string, unknown[]>
+  let order: string[]
   let remoteProjects: Array<{ projectId: string; path: string; name: string; extraDirs: string[]; repoIdentity: string | null }>
   let cloneReuses: boolean
   let remoteSession: { status: string; pendingInteraction: unknown }
   /** The target's own agent catalog; 'unsupported' is a node too old to serve one. */
   let remoteProfiles: SessionAgentProfile[] | 'unsupported'
+  /** Thrown by createSession after the call is recorded. Null creates `remote-child`. */
+  let createError: Error | null
+  /** The node cannot cut worktrees and the child runs in the project checkout. */
+  let worktreeUnsupported: boolean
+  /** Path the fake node returns from activateWorktree. A retry can cut a new one. */
+  let worktreePath: string
 
   function git(...args: string[]) {
     execFileSync('git', ['-C', repo, ...args], { stdio: 'ignore' })
@@ -2127,11 +2134,15 @@ describe('spawning a child on another machine', () => {
     git('-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'local only')
     git('remote', 'add', 'origin', ORIGIN)
     state.projects.push({ path: repo })
-    calls = { clone: [], fetch: [], activateWorktree: [], createSession: [], send: [] }
+    calls = { clone: [], fetch: [], activateWorktree: [], createSession: [], send: [], rollback: [], eventHead: [], grantAtCreate: [] }
+    order = []
     cloneReuses = false
     remoteProjects = []
     remoteSession = { status: 'streaming', pendingInteraction: null }
     remoteProfiles = 'unsupported'
+    createError = null
+    worktreeUnsupported = false
+    worktreePath = '/Users/b/.worktrees/app/1'
     const port: RemoteCollaborationPort = {
       listProfiles: async () => {
         if (remoteProfiles === 'unsupported') {
@@ -2152,18 +2163,38 @@ describe('spawning a child on another machine', () => {
         return cloneReuses ? { ...project, reused: true } : project
       },
       activateWorktree: async (_connectionId, projectId, input) => {
+        order.push('activate')
         calls.activateWorktree.push({ projectId, ...input })
-        return { path: '/Users/b/.worktrees/app/1' }
+        if (worktreeUnsupported) {
+          throw Object.assign(new Error('unsupported method: git.worktreeActivate'), { code: 'not_found', details: { unsupported: true } })
+        }
+        return { path: worktreePath }
+      },
+      rollbackWorktree: async (_connectionId, input) => {
+        order.push('rollback')
+        calls.rollback.push(input)
       },
       createSession: async (_connectionId, input) => {
+        order.push('create')
         calls.createSession.push(input)
+        const row = state.db!.prepare(
+          "SELECT config_json FROM session_collaboration_grants WHERE parent_session_id = 'parent'",
+        ).get() as { config_json: string } | undefined
+        if (row) calls.grantAtCreate.push(row.config_json)
+        if (createError) throw createError
         return { sessionId: 'remote-child' }
       },
       fetch: async (_connectionId, projectId) => { calls.fetch.push(projectId) },
       send: async (_connectionId, input) => { calls.send.push(input) },
       getSession: async () => remoteSession,
-      eventHead: async () => '41',
+      eventHead: async () => {
+        order.push('eventHead')
+        calls.eventHead.push('41')
+        return '41'
+      },
       listEvents: async () => [],
+      watchEvents: async () => () => {},
+      onConnectionChange: () => () => {},
     }
     setRemoteCollaborationPort(port)
   })
@@ -2368,28 +2399,163 @@ describe('spawning a child on another machine', () => {
 
     expect(result).toMatchObject({ status: 'started', sessionId: 'remote-child', environmentId: 'env-b', machine: 'Studio Mac' })
     expect(calls.clone).toEqual([{ remoteUrl: ORIGIN, parentPath: '~/SuperOne/Projects' }])
+    const grant = state.db!.prepare(
+      "SELECT credential_hash, config_json FROM session_collaboration_grants WHERE child_session_id = 'remote-child'",
+    ).get() as { credential_hash: string; config_json: string }
+    const branch = `superone/builder-${grant.credential_hash}`
     expect(calls.activateWorktree).toEqual([expect.objectContaining({
-      projectId: 'p-cloned', baseBranch: 'origin/HEAD', mode: 'branch', branchName: expect.stringMatching(/^superone\/builder-/),
+      projectId: 'p-cloned',
+      baseBranch: 'origin/HEAD',
+      mode: 'branch',
+      branchName: branch,
+      ifExists: 'recreate-clean',
+      commandKey: `collab-wt:${grant.credential_hash}`,
     })])
+    expect(order).toEqual(['eventHead', 'activate', 'create'])
     expect(calls.createSession).toEqual([expect.objectContaining({
       environmentId: 'env-b',
       projectId: 'p-cloned',
       providerId: 'claude-base',
       cwd: '/Users/b/.worktrees/app/1',
       externalParentSessionId: 'parent',
+      externalParentGrantId: grant.credential_hash,
+      commandKey: `collab-session:${grant.credential_hash}`,
       systemPromptAppend: expect.stringContaining('child session of SuperOne session parent'),
     })])
+    // The checkout and the event head are durable before the session exists.
+    expect(JSON.parse(calls.grantAtCreate[0] as string).remote).toMatchObject({
+      eventCursor: '41',
+      cwd: '/Users/b/.worktrees/app/1',
+      branch,
+    })
     expect(calls.send).toEqual([expect.objectContaining({ sessionId: 'remote-child', text: 'Implement export' })])
     expect(calls.fetch).toEqual([])
+    expect(calls.rollback).toEqual([])
     expect(host.createSession).not.toHaveBeenCalled()
-    // Its events are followed from the node head before it existed.
-    const grant = state.db!.prepare("SELECT config_json FROM session_collaboration_grants WHERE child_session_id = 'remote-child'").get() as { config_json: string }
-    expect(JSON.parse(grant.config_json).remote).toMatchObject({ eventCursor: '41', projectPath: '/Users/b/SuperOne/Projects/app' })
+    expect(result.config).toMatchObject({ cwd: '/Users/b/.worktrees/app/1', branch })
+    expect(JSON.parse(grant.config_json).remote).toMatchObject({
+      eventCursor: '41',
+      projectPath: '/Users/b/SuperOne/Projects/app',
+      cwd: '/Users/b/.worktrees/app/1',
+      branch,
+    })
 
-    // A retry neither creates a second child nor redelivers the task.
-    await startSessionAgent('parent', { launchId: 'remote' }, host)
+    // A retry neither creates a second child nor redelivers the task, and still reports the checkout.
+    const again = resultJson(await startSessionAgent('parent', { launchId: 'remote' }, host))
+    expect(again).toMatchObject({ reused: true, config: { cwd: '/Users/b/.worktrees/app/1', branch } })
     expect(calls.createSession).toHaveLength(1)
     expect(calls.send).toHaveLength(1)
+    expect(calls.activateWorktree).toHaveLength(1)
+  })
+
+  it('ignores a caller branch name and names the checkout from the grant', async () => {
+    const { parent, host } = remoteParent()
+    const launch = await requestRemote(parent, host, 'env-b', {
+      config: { worktree: { enabled: true, baseBranch: 'main', mode: 'branch', branchName: 'feat/hijack' } },
+    })
+    expect(launch.config.worktree).toBeUndefined()
+    await startSessionAgent('parent', { launchId: 'remote', task: 'Implement export' }, host)
+    const branchName = (calls.activateWorktree[0] as { branchName: string }).branchName
+    expect(branchName).not.toContain('hijack')
+    expect(branchName).toMatch(/^superone\/builder-[0-9a-f-]{36}$/)
+  })
+
+  it('runs in the project checkout when the node cannot cut worktrees', async () => {
+    worktreeUnsupported = true
+    const { parent, host } = remoteParent()
+    await requestRemote(parent, host)
+    const result = resultJson(await startSessionAgent('parent', { launchId: 'remote', task: 'Implement export' }, host))
+    expect(result.config).toMatchObject({ cwd: '/Users/b/SuperOne/Projects/app' })
+    expect(result.config.branch).toBeUndefined()
+    expect(calls.createSession).toEqual([expect.objectContaining({ cwd: '/Users/b/SuperOne/Projects/app' })])
+    expect(calls.rollback).toEqual([])
+    const grant = state.db!.prepare(
+      "SELECT config_json FROM session_collaboration_grants WHERE child_session_id = 'remote-child'",
+    ).get() as { config_json: string }
+    expect(JSON.parse(grant.config_json).remote).toMatchObject({
+      cwd: '/Users/b/SuperOne/Projects/app',
+      branch: null,
+    })
+  })
+
+  it('rolls the worktree back only when session creation is rejected, then cuts a fresh one', async () => {
+    createError = Object.assign(new Error('harness not ready: claude'), {
+      code: 'failed_precondition',
+      rpcError: true,
+      transport: false,
+    })
+    const { parent, host } = remoteParent()
+    await requestRemote(parent, host)
+    const failed = resultJson(await startSessionAgent('parent', { launchId: 'remote', task: 'Implement export' }, host))
+    expect(failed).toMatchObject({ status: 'error', message: 'harness not ready: claude' })
+    const grantId = (state.db!.prepare(
+      "SELECT credential_hash FROM session_collaboration_grants WHERE parent_session_id = 'parent'",
+    ).get() as { credential_hash: string }).credential_hash
+    expect(calls.rollback).toEqual([expect.objectContaining({
+      projectId: 'p-cloned',
+      path: '/Users/b/.worktrees/app/1',
+      branchName: `superone/builder-${grantId}`,
+      grantId,
+      commandKey: `collab-wt-rollback:${grantId}:/Users/b/.worktrees/app/1`,
+    })])
+    const stored = () => JSON.parse((state.db!.prepare(
+      "SELECT config_json FROM session_collaboration_grants WHERE parent_session_id = 'parent'",
+    ).get() as { config_json: string }).config_json).remote
+    expect(stored().cwd).toBeUndefined()
+    expect(stored().branch).toBeUndefined()
+    expect(stored().eventCursor).toBe('41')
+
+    worktreePath = '/Users/b/.worktrees/app/2'
+    const failedAgain = resultJson(await startSessionAgent('parent', { launchId: 'remote', task: 'Implement export' }, host))
+    expect(failedAgain).toMatchObject({ status: 'error', message: 'harness not ready: claude' })
+    expect(calls.rollback[1]).toMatchObject({
+      path: '/Users/b/.worktrees/app/2',
+      commandKey: `collab-wt-rollback:${grantId}:/Users/b/.worktrees/app/2`,
+    })
+    expect(stored().cwd).toBeUndefined()
+    expect(stored().eventCursor).toBe('41')
+    expect(calls.eventHead).toHaveLength(1)
+
+    createError = null
+    worktreePath = '/Users/b/.worktrees/app/3'
+    const started = resultJson(await startSessionAgent('parent', { launchId: 'remote', task: 'Implement export' }, host))
+    expect(calls.eventHead).toHaveLength(1)
+    expect(calls.activateWorktree).toHaveLength(3)
+    expect(started.config).toMatchObject({ cwd: '/Users/b/.worktrees/app/3', branch: `superone/builder-${grantId}` })
+  })
+
+  it('keeps the checkout when session creation times out and retries the same one', async () => {
+    createError = Object.assign(new Error('rpc timeout: session.create'), {
+      code: 'deadline_exceeded',
+      transport: false,
+    })
+    const { parent, host } = remoteParent()
+    await requestRemote(parent, host)
+    const failed = resultJson(await startSessionAgent('parent', { launchId: 'remote', task: 'Implement export' }, host))
+    expect(failed).toMatchObject({ status: 'error', message: 'rpc timeout: session.create' })
+    expect(calls.rollback).toEqual([])
+    const grantId = (state.db!.prepare(
+      "SELECT credential_hash FROM session_collaboration_grants WHERE parent_session_id = 'parent'",
+    ).get() as { credential_hash: string }).credential_hash
+    const stored = () => JSON.parse((state.db!.prepare(
+      "SELECT config_json FROM session_collaboration_grants WHERE parent_session_id = 'parent'",
+    ).get() as { config_json: string }).config_json).remote
+    expect(stored()).toMatchObject({
+      eventCursor: '41',
+      cwd: '/Users/b/.worktrees/app/1',
+      branch: `superone/builder-${grantId}`,
+    })
+
+    createError = null
+    const started = resultJson(await startSessionAgent('parent', { launchId: 'remote', task: 'Implement export' }, host))
+    expect(calls.eventHead).toHaveLength(1)
+    expect(calls.activateWorktree).toHaveLength(1)
+    expect(calls.createSession).toHaveLength(2)
+    expect(calls.createSession[1]).toMatchObject({
+      cwd: '/Users/b/.worktrees/app/1',
+      commandKey: `collab-session:${grantId}`,
+    })
+    expect(started.config).toMatchObject({ cwd: '/Users/b/.worktrees/app/1', branch: `superone/builder-${grantId}` })
   })
 
   it('fetches a checkout the clone found already on disk before cutting the worktree', async () => {

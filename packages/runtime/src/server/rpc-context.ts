@@ -156,8 +156,19 @@ export interface WorkspaceGitPort {
       mode: 'attach' | 'detach' | 'branch'
       branchName?: string
       carryLocalChanges?: boolean
+      ifExists?: 'fail' | 'recreate-clean'
+      /** Called inside the repo lock. */
+      isOccupied?: (path: string) => boolean
     },
   ): Promise<{ path: string }>
+  /**
+   * Remove a collaboration checkout and its branch. Absent on a partial git
+   * port: the dispatcher answers `git.worktreeRollback` as unsupported.
+   */
+  rollbackWorktree?(
+    projectId: string,
+    input: { path: string; branchName?: string; isOccupied: (path: string) => boolean },
+  ): Promise<void>
   removeWorktree(projectId: string, worktreePath: string): Promise<void>
   /** Update the project's remote-tracking refs of `remote` (and its `HEAD`). */
   fetch(projectId: string, remote: string): Promise<void>
@@ -264,6 +275,8 @@ export interface IdempotencyPort {
       isReceiptLive?: (receipt: T) => boolean
     },
   ): Promise<T>
+  /** Drop a receipt so the next call with this key runs again. */
+  delete?(clientIdentity: string, operation: string, idempotencyKey: string): void
 }
 
 /** Node-local AI provider credentials (CLI: ProviderStore). */

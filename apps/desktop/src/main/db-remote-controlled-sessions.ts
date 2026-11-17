@@ -25,7 +25,7 @@ export interface RemoteControllerRecord {
   apiProviderId?: string | null
   systemPromptAppend?: string | null
   /** Collaboration parent on the controller; its mailbox tools run there as Host Actions. */
-  externalParent?: { sessionId: string } | null
+  externalParent?: { sessionId: string; grantId?: string } | null
   /** This desktop took the session back; the controller watches until it reclaims it. */
   released?: boolean
 }

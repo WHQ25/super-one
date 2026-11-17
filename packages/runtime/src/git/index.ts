@@ -17,6 +17,7 @@ export {
   resolveMainWorktreeDir,
   carryUncommittedChanges,
   activateWorktree,
+  rollbackCollabWorktree,
   handoffPreview,
   handoffToMain,
   assignBranch,

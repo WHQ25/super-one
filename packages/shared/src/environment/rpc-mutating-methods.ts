@@ -29,6 +29,7 @@ const NODE_MUTATING_METHODS: ReadonlySet<string> = new Set([
   'git.switchBranch',
   'git.createBranch',
   'git.worktreeActivate',
+  'git.worktreeRollback',
   'git.worktreeAssignBranch',
   'git.worktreeHandoff',
   'git.uploadBundle',

@@ -42,7 +42,12 @@ export function environmentHostCollaborationPort(): RemoteCollaborationPort {
       await (await gateway(connectionId)).gitFetch(projectId, 'origin')
     },
     async activateWorktree(connectionId, projectId, input) {
-      return await (await gateway(connectionId)).gitWorktreeActivate(projectId, input) as { path: string }
+      const { commandKey, ...request } = input
+      return await (await gateway(connectionId)).gitWorktreeActivate(projectId, request, commandKey) as { path: string }
+    },
+    async rollbackWorktree(connectionId, input) {
+      const { commandKey, projectId, ...request } = input
+      await (await gateway(connectionId)).gitWorktreeRollback(projectId, request, commandKey)
     },
     async listProfiles(connectionId, force) {
       return await (await gateway(connectionId)).collaborationListProfiles(force === true) as SessionAgentProfile[]
@@ -54,8 +59,12 @@ export function environmentHostCollaborationPort(): RemoteCollaborationPort {
         title: input.title,
         cwd: input.cwd,
         systemPromptAppend: input.systemPromptAppend,
-        externalParent: { sessionId: input.externalParentSessionId },
+        externalParent: {
+          sessionId: input.externalParentSessionId,
+          ...(input.externalParentGrantId ? { grantId: input.externalParentGrantId } : {}),
+        },
         options: input.options,
+        commandKey: input.commandKey,
       })
     },
     send(connectionId, input) {

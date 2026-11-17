@@ -519,7 +519,13 @@ async function startRemoteSpawn(grant: GrantRow, callerSessionId: string, host: 
     // Record where it landed: retries and wakes route by this, not by the plan.
     const landed = {
       ...config,
-      remote: { ...config.remote, projectPath: started.projectPath, eventCursor: started.eventCursor },
+      remote: {
+        ...config.remote,
+        projectPath: started.projectPath,
+        eventCursor: started.eventCursor,
+        cwd: started.cwd,
+        branch: started.branch,
+      },
     }
     store().bindStartedSession(grant, childSessionId, landed)
     store().updateConfig(grant.grant_id, landed)
@@ -536,6 +542,8 @@ async function startRemoteSpawn(grant: GrantRow, callerSessionId: string, host: 
     }
     store().markTaskSent(grant.grant_id)
   }
+  const cwd = started?.cwd ?? config.remote.cwd
+  const branch = started ? started.branch : config.remote.branch
   return toolResult({
     status: 'started',
     mode: 'spawn',
@@ -551,7 +559,8 @@ async function startRemoteSpawn(grant: GrantRow, callerSessionId: string, host: 
       effort: config.effort,
       permissionMode: config.permissionMode,
       sandboxMode: config.sandboxMode,
-      ...(started ? { cwd: started.cwd, branch: started.branch } : {}),
+      ...(cwd ? { cwd } : {}),
+      ...(branch ? { branch } : {}),
       name: peer.name,
       role: peer.role,
     },

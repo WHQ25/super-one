@@ -89,6 +89,12 @@ function isTransportFailure(err: unknown): boolean {
   return (err as { transport?: boolean } | null)?.transport === true
 }
 
+/** A deadline leaves the socket up. Retry the topic; do not end the feed. */
+function isSubscribeDeadline(err: unknown): boolean {
+  const e = err as { code?: unknown; transport?: unknown; rpcError?: unknown } | null
+  return e?.code === 'deadline_exceeded' && e.transport === false && e.rpcError !== true
+}
+
 function abortableDelay(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     const timer = setTimeout(resolve, ms)
@@ -374,7 +380,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
    * starts at the true tail — not the end of the first page (limit 1000).
    */
   async eventHeadSequence(): Promise<string> {
-    const snap = await this.client.rpc<{ snapshotSequence?: string }>('session.snapshot')
+    const snap = await this.client.rpc<{ snapshotSequence?: string }>('session.snapshot', { omitSessions: true })
     const seq = snap?.snapshotSequence
     return typeof seq === 'string' && seq.length > 0 ? seq : '0'
   }
@@ -395,8 +401,9 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
    * from the last frame's cursor once the connection is back — its durable
    * sequence, and the version reached in each session for streaming events —
    * so the caller sees one gapless sequence, or hears through `onResnapshot`
-   * which sessions to read again. Transport failures retry until `shouldStop`
-   * says the connection will not come back; any other error ends the iteration.
+   * which sessions to read again. Transport failures and a missed subscribe
+   * deadline retry until `shouldStop` says the connection will not come back;
+   * any other error ends the iteration.
    */
   async *subscribeEvents(input: SubscribeEventsInput): AsyncIterable<EnvironmentEventEnvelope> {
     const { signal } = input
@@ -427,10 +434,17 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
         // flight is applied once it opens. If it never opens, the next
         // subscribe reads the set again and catches up from the cursor.
         stopWatch = input.interest?.watch(async (next) => {
-          const stream = await opening
+          // A failed open belongs to this loop (retry or end). The next open
+          // reads the topic set again, so the update has nothing to send.
+          let opened: TopicStream
+          try {
+            opened = await opening
+          } catch {
+            return
+          }
           // `update` sends before it awaits the ack, so the snapshot read can
           // share that round trip. The ack is still awaited before this resolves.
-          const pending = stream.update(next)
+          const pending = opened.update(next)
           input.onUpdateQueued?.(next)
           await pending
         })
@@ -440,7 +454,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
       } catch (err) {
         stopWatch?.()
         stream?.close()
-        if (!isTransportFailure(err) || input.shouldStop?.(err as Error)) throw err
+        if ((!isTransportFailure(err) && !isSubscribeDeadline(err)) || input.shouldStop?.(err as Error)) throw err
         await abortableDelay(RESUBSCRIBE_DELAY_MS, signal)
         continue
       }
@@ -802,9 +816,24 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
       mode: 'branch' | 'attach' | 'detach'
       branchName?: string
       carryLocalChanges?: boolean
+      ifExists?: 'fail' | 'recreate-clean'
     },
+    commandKey?: string,
   ): Promise<unknown> {
-    return this.client.rpc('git.worktreeActivate', { projectId, ...input })
+    return this.client.rpc('git.worktreeActivate', { projectId, ...input }, undefined, commandKey)
+  }
+
+  /**
+   * Remove a collaboration checkout after session creation was rejected.
+   * `commandKey` is the rollback's own idempotency key; `grantId` names the
+   * activate receipt (`collab-wt:<grantId>`) the node deletes with the tree.
+   */
+  async gitWorktreeRollback(
+    projectId: string,
+    input: { path: string; branchName?: string; grantId: string },
+    commandKey?: string,
+  ): Promise<unknown> {
+    return this.client.rpc('git.worktreeRollback', { projectId, ...input }, undefined, commandKey)
   }
 
   async gitWorktreeCheckedOutBranches(projectId: string): Promise<unknown> {
@@ -1510,7 +1539,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
           ...(input.externalParent ? { externalParent: input.externalParent } : {}),
           ...(input.continuesFrom ? { continuesFrom: input.continuesFrom } : {}),
           ...(input.options ? { options: input.options } : {}),
-        })
+        }, undefined, input.commandKey)
         return { sessionId: result.sessionId }
       },
       get: async (ref: SessionRef, options?: { includeTranscript?: boolean }) => {

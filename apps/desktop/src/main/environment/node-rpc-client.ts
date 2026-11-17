@@ -84,10 +84,12 @@ export type { TopicStream } from './environment-rpc-client'
 /** Pure reads the sidebar, status bar and pickers issue alike; identical ones in flight share a request. */
 const COALESCED_READS: ReadonlySet<string> = new Set([
   'environment.descriptor', 'environment.health', 'environment.status', 'environment.usage',
-  'project.list', 'session.list', 'git.status', 'git.branches',
+  'project.list', 'session.list', 'session.snapshot', 'git.status', 'git.branches',
 ])
 
 const RPC_TIMEOUT_MS = 15_000
+/** `session.snapshot` with `omitSessions` still shells out on a busy node; the body itself is small. */
+const SNAPSHOT_HEAD_TIMEOUT_MS = 45_000
 /** Read-only git that still shells out on the node (status/branches/diff). */
 const GIT_READ_RPC_TIMEOUT_MS = 30_000
 /** Long-running mutating git / large file RPCs (worktree, clone, handoff, bulk fs). */
@@ -104,15 +106,24 @@ const TRANSPORT_RETRY_ATTEMPTS = 2
 const HEARTBEAT_INTERVAL_MS = 15_000
 /** Consecutive unanswered pings before the socket is declared dead. */
 const HEARTBEAT_MAX_MISSED = 2
+/**
+ * After one RPC deadline, ask the socket if it is still there. A slow node
+ * answers; a half-open tunnel does not. This stays shorter than the heartbeat
+ * so a dead link is not left to the next keepalive.
+ */
+const LIVENESS_PROBE_MS = 5_000
 
-function rpcTimeoutMs(method: string): number | undefined {
+function rpcTimeoutMs(method: string, payload?: unknown): number | undefined {
   // Native provider deadlines still bound server work; user input has no deadline.
   // Heartbeats/close reject a lost transport without resending an App operation.
   if (method === 'mcpApps.provider' || method === 'codex.completeMcpOauth' || method === 'session.cleanup') return undefined
   // Only truly long mutators get 5 minutes — status/branches must not sit on 300s.
+  // `git.fetch` is the remote-collab caller and already a mutating git, not a status read.
   if (
     method === 'git.clone' ||
+    method === 'git.fetch' ||
     method === 'git.worktreeActivate' ||
+    method === 'git.worktreeRollback' ||
     method === 'git.worktreeAssignBranch' ||
     method === 'git.worktreeHandoff' ||
     method === 'git.switchBranch' ||
@@ -124,6 +135,11 @@ function rpcTimeoutMs(method: string): number | undefined {
     method === 'workspace.readFile'
   ) {
     return LONG_RPC_TIMEOUT_MS
+  }
+  // Event-head reads ask the node to skip session bodies. Old nodes ignore the
+  // field and still return the full snapshot, so this budget covers that too.
+  if (method === 'session.snapshot' && (payload as { omitSessions?: unknown } | null)?.omitSessions === true) {
+    return SNAPSHOT_HEAD_TIMEOUT_MS
   }
   // Controller long-poll — waitMs up to 30s + network headroom.
   if (method === 'session.hostActionsPoll') {
@@ -174,6 +190,8 @@ export class NodeRpcClient extends EnvironmentRpcClient {
   /** requestId of a ping still awaiting its pong, per heartbeat tick. */
   private pendingPingId: string | null = null
   private missedPongs = 0
+  /** One short ping after an RPC deadline. A second timeout does not start another. */
+  private livenessProbe: { requestId: string; timer: ReturnType<typeof setTimeout> } | null = null
   private readonly heartbeatIntervalMs: number
   /** Established encrypted channel per socket; absent on plain sockets. */
   private readonly channels = new WeakMap<NodeSocket, ChannelState>()
@@ -390,7 +408,7 @@ export class NodeRpcClient extends EnvironmentRpcClient {
               protocolVersion: PROTOCOL_GENERATION.current,
               newId: randomUUID,
               responseError: (error) => rpcResponseError(error.code, error.message, error.details),
-              timeoutError: (method) => transportError(`rpc timeout: ${method}`),
+              timeoutError: (method) => deadlineError(`rpc timeout: ${method}`),
               coalesces: (method) => COALESCED_READS.has(method),
               onControlLost: event => { for (const listener of this.controlListeners) listener(event) },
               onClientEvent: event => { for (const listener of this.clientEventListeners) listener(event) },
@@ -577,6 +595,44 @@ export class NodeRpcClient extends EnvironmentRpcClient {
     }
     this.pendingPingId = null
     this.missedPongs = 0
+    this.clearLivenessProbe()
+  }
+
+  private clearLivenessProbe(): void {
+    if (!this.livenessProbe) return
+    clearTimeout(this.livenessProbe.timer)
+    this.livenessProbe = null
+  }
+
+  /**
+   * An RPC deadline rejects that call only. The socket stays up unless this
+   * probe also goes unanswered — a slow `session.snapshot` must not tear down
+   * every other in-flight call.
+   */
+  private probeLivenessOnTimeout(socketId: number): void {
+    if (this.closed || !socketId || socketId !== this.wsSocketId || this.livenessProbe) return
+    const ws = this.ws
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      this.reportTransportDead('rpc timeout on a closed socket', socketId)
+      return
+    }
+    const requestId = randomUUID()
+    const timer = setTimeout(() => {
+      if (this.livenessProbe?.requestId !== requestId) return
+      this.livenessProbe = null
+      this.reportTransportDead('liveness probe timed out after an rpc timeout', socketId)
+    }, LIVENESS_PROBE_MS)
+    timer.unref?.()
+    this.livenessProbe = { requestId, timer }
+    try {
+      this.sendFrame(ws, { type: 'ping', requestId })
+    } catch (err) {
+      this.clearLivenessProbe()
+      this.reportTransportDead(
+        `liveness probe send failed: ${err instanceof Error ? err.message : String(err)}`,
+        socketId,
+      )
+    }
   }
 
   private heartbeatTick(): void {
@@ -621,11 +677,11 @@ export class NodeRpcClient extends EnvironmentRpcClient {
     return conn.request<T>(method, payload, {
       environmentId: envId,
       idempotencyKey,
-      timeoutMs: rpcTimeoutMs(method),
-      // A silent timeout on the live socket means the transport is gone even
-      // though no `close` arrived (dead SSH tunnel). Escalate so the supervisor
-      // reconnects instead of leaving every later send to time out too.
-      onTimeout: () => this.reportTransportDead(`rpc timeout: ${method}`, socketId),
+      timeoutMs: rpcTimeoutMs(method, payload),
+      // Reject this call. A probe, not the deadline itself, decides whether the
+      // tunnel is dead. Unsupervised retries must not treat the deadline as a
+      // dropped socket either (`deadlineError` is not a transport error).
+      onTimeout: () => this.probeLivenessOnTimeout(socketId),
     })
   }
 
@@ -846,14 +902,24 @@ export class NodeRpcClient extends EnvironmentRpcClient {
   }
 
   private onMessage(conn: RpcConnection, raw: unknown): void {
-    if ((raw as { type?: unknown } | null)?.type === 'pong') {
-      // Any pong proves liveness, even a late one from a previous tick.
-      this.pendingPingId = null
-      this.missedPongs = 0
-      return
-    }
+    // Any decrypted frame proves the socket still delivers, not only a pong.
+    this.pendingPingId = null
+    this.missedPongs = 0
+    this.clearLivenessProbe()
+    if ((raw as { type?: unknown } | null)?.type === 'pong') return
     conn.receive(raw)
   }
+}
+
+/**
+ * One call missed its deadline. Not a transport failure: the socket may still
+ * be fine, and a retry must not drop it or resend on that account alone.
+ */
+function deadlineError(message: string): Error {
+  return Object.assign(new Error(message), {
+    code: 'deadline_exceeded' as const,
+    transport: false as const,
+  })
 }
 
 /** Locally generated transport failure — safe to reconnect/resend with same key. */

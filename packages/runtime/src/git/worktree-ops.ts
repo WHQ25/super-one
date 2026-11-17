@@ -5,14 +5,15 @@
  * {@link withRepoLock} per process.
  */
 
-import { existsSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
-import { basename, join, resolve } from 'node:path'
+import { existsSync, lstatSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
+import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 import type { WorktreeMode } from '@superone/shared/agent-types'
 import { gitRun, type GitRunOptions } from './run'
 import { gitErrorMessage, sanitizeGitRef } from './sanitize-ref'
 import { withRepoLock } from './repo-lock'
+import { parseWorktreePorcelain, type WorktreePorcelainEntry } from './worktree-porcelain'
 import {
   allocateWorktreePath,
   checkedOutBranchesFromPorcelain,
@@ -50,6 +51,14 @@ export interface ActivateWorktreeInput {
   mode: WorktreeMode
   branchName?: string
   carryLocalChanges?: boolean
+  /**
+   * `fail` is `git worktree add -b` (the UI default). `recreate-clean` reuses
+   * or rebuilds a grant-owned branch already left behind, and refuses when a
+   * session still occupies that checkout.
+   */
+  ifExists?: 'fail' | 'recreate-clean'
+  /** Called inside the repo lock. True when a session's cwd is this checkout. */
+  isOccupied?: (path: string) => boolean
 }
 
 export interface ActivateWorktreeResult {
@@ -138,6 +147,9 @@ export async function activateWorktree(
   // interleaving pop each other's (or the user's) stash, and the
   // second-resolution path stamp collides — queue per repo.
   return withRepoLock(mainDir, async () => {
+    if (input.ifExists === 'recreate-clean' && mode === 'branch' && branchName?.trim()) {
+      return recreateCleanBranch(git, folderPath, mainDir, baseBranch, branchName.trim(), input.isOccupied)
+    }
     const commitHash = (await git.read(folderPath, ['rev-parse', baseBranch])).trim()
     const planned = planNewWorktreePaths({ mainDir, shortHash: commitHash.slice(0, 7) })
     if (!existsSync(planned.wtDir)) mkdirSync(planned.wtDir, { recursive: true })
@@ -145,6 +157,205 @@ export async function activateWorktree(
     await git.write(folderPath, ['worktree', ...worktreeAddArgs(mode, wtPath, baseBranch, branchName)])
     if (carryLocalChanges) await carryUncommittedChanges(git, folderPath, wtPath)
     return { path: wtPath, recordedBranch: recordedBranchForMode(mode, baseBranch, branchName) }
+  })
+}
+
+function refused(message: string): Error {
+  return Object.assign(new Error(message), { code: 'failed_precondition' })
+}
+
+/**
+ * A grant-owned branch may already exist from a timed-out attempt. Reuse it
+ * only when it is the requested base and clean; otherwise rebuild it. Never
+ * delete a checkout a session still uses, or the project's own checkout.
+ */
+async function recreateCleanBranch(
+  git: WorktreeGit,
+  folderPath: string,
+  mainDir: string,
+  baseBranch: string,
+  branchName: string,
+  isOccupied?: (path: string) => boolean,
+): Promise<ActivateWorktreeResult> {
+  const targetHash = (await git.read(folderPath, ['rev-parse', baseBranch])).trim()
+  let branchExists = false
+  try {
+    await git.read(folderPath, ['rev-parse', '--verify', '--quiet', `refs/heads/${branchName}`])
+    branchExists = true
+  } catch {
+    branchExists = false
+  }
+  // List before prune. A missing `.git` file makes prune drop the registration
+  // and leave the directory, which would skip the occupied check.
+  const checkout = branchExists
+    ? (await listWorktrees(git, folderPath)).find((entry) => entry.branch === branchName && !entry.bare)
+    : undefined
+  if (checkout) {
+    if (samePath(checkout.path, mainDir) || samePath(checkout.path, folderPath)) {
+      throw refused(`branch ${branchName} is checked out in the project`)
+    }
+    if (isOccupied?.(checkout.path)) throw refused(`worktree for ${branchName} is in use`)
+    if (await reusableCheckout(git, checkout.path, branchName, targetHash)) {
+      return { path: checkout.path, recordedBranch: branchName }
+    }
+    await removeCheckout(git, folderPath, checkout, mainDir)
+  }
+  await git.write(folderPath, ['worktree', 'prune'])
+  if (!branchExists) return addBranchWorktree(git, folderPath, mainDir, baseBranch, branchName, targetHash, true)
+  await git.write(folderPath, ['branch', '-f', branchName, targetHash])
+  return addBranchWorktree(git, folderPath, mainDir, branchName, branchName, targetHash, false)
+}
+
+async function listWorktrees(git: WorktreeGit, folderPath: string): Promise<WorktreePorcelainEntry[]> {
+  return parseWorktreePorcelain(await git.read(folderPath, ['worktree', 'list', '--porcelain']))
+}
+
+async function reusableCheckout(git: WorktreeGit, path: string, branchName: string, targetHash: string): Promise<boolean> {
+  if (!existsSync(path)) return false
+  // A half-written checkout (missing .git file, corrupt index) is not reusable.
+  // The caller removes it and attaches again.
+  try {
+    const head = (await git.read(path, ['rev-parse', 'HEAD'])).trim()
+    let symbolic = ''
+    try {
+      symbolic = (await git.read(path, ['symbolic-ref', 'HEAD'])).trim()
+    } catch {
+      symbolic = ''
+    }
+    if (head !== targetHash || symbolic !== `refs/heads/${branchName}`) return false
+    return (await git.read(path, ['status', '--porcelain'])).trim().length === 0
+  } catch {
+    return false
+  }
+}
+
+async function removeCheckout(
+  git: WorktreeGit,
+  folderPath: string,
+  entry: WorktreePorcelainEntry,
+  mainDir: string,
+): Promise<void> {
+  await forceRemoveWorktree(git, folderPath, entry.path, mainDir)
+}
+
+/**
+ * Drop a checkout the caller has already refused as the project root or as
+ * occupied. Unlock, then `remove --force`, then `remove --force --force`.
+ * `rmSync` runs only for a registered worktree of this repo, or a real
+ * directory that is a direct child of this repo's `~/.worktrees` folder.
+ */
+async function forceRemoveWorktree(git: WorktreeGit, folderPath: string, path: string, mainDir: string): Promise<void> {
+  await git.write(folderPath, ['worktree', 'unlock', path]).catch(() => {})
+  if (!existsSync(path)) {
+    await git.write(folderPath, ['worktree', 'prune']).catch(() => {})
+    return
+  }
+  try {
+    await git.write(folderPath, ['worktree', 'remove', '--force', path])
+    return
+  } catch {
+    /* locked, or the checkout metadata is incomplete */
+  }
+  try {
+    await git.write(folderPath, ['worktree', 'remove', '--force', '--force', path])
+    return
+  } catch {
+    /* Git refused the path. The directory itself may be the leftover. */
+  }
+  assertDeletableCheckout(path, { mainDir, folderPath, entries: await listWorktrees(git, folderPath) })
+  rmSync(path, { recursive: true, force: true })
+  await git.write(folderPath, ['worktree', 'prune'])
+}
+
+/** One path segment under `parent`, after resolving `.` and `..`. */
+function isDirectChildPath(parent: string, child: string): boolean {
+  const rel = relative(resolve(parent), resolve(child))
+  return rel.length > 0 && !isAbsolute(rel) && rel !== '..' && !rel.startsWith(`..${sep}`) && !rel.includes(sep)
+}
+
+function isSymlink(path: string): boolean {
+  try {
+    return lstatSync(path).isSymbolicLink()
+  } catch {
+    return false
+  }
+}
+
+function realpathStaysDirectChild(parent: string, child: string): boolean {
+  if (!existsSync(child)) return true
+  try {
+    const realParent = existsSync(parent) ? realpathSync(parent) : resolve(parent)
+    return isDirectChildPath(realParent, realpathSync(child))
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Git refuses `worktree remove` for a path this repo does not own, and the
+ * directory fallback must not go further than Git would have. A linked
+ * project checkout is not the main dir, so it is refused by `folderPath` too.
+ */
+function assertDeletableCheckout(
+  path: string,
+  scope: { mainDir: string; folderPath: string; entries: WorktreePorcelainEntry[] },
+): void {
+  if (samePath(path, scope.mainDir) || samePath(path, scope.folderPath)) {
+    throw refused('refusing to remove the project checkout')
+  }
+  if (isSymlink(path)) throw refused('refusing to remove a path that is not a worktree of this project')
+  const registered = scope.entries.some((entry) =>
+    !entry.bare
+    && samePath(entry.path, path)
+    && !samePath(entry.path, scope.mainDir)
+    && !samePath(entry.path, scope.folderPath))
+  if (registered) return
+  const wtDir = planNewWorktreePaths({ mainDir: scope.mainDir, shortHash: '0' }).wtDir
+  if (isDirectChildPath(wtDir, path) && realpathStaysDirectChild(wtDir, path)) return
+  throw refused('refusing to remove a path that is not a worktree of this project')
+}
+
+async function addBranchWorktree(
+  git: WorktreeGit,
+  folderPath: string,
+  mainDir: string,
+  baseRef: string,
+  branchName: string,
+  targetHash: string,
+  createBranch: boolean,
+): Promise<ActivateWorktreeResult> {
+  const planned = planNewWorktreePaths({ mainDir, shortHash: targetHash.slice(0, 7) })
+  if (!existsSync(planned.wtDir)) mkdirSync(planned.wtDir, { recursive: true })
+  const wtPath = allocateWorktreePath(planned.wtDir, basename(planned.wtPath))
+  const args = createBranch
+    ? ['worktree', ...worktreeAddArgs('branch', wtPath, baseRef, branchName)]
+    : ['worktree', 'add', wtPath, branchName]
+  await git.write(folderPath, args)
+  return { path: wtPath, recordedBranch: branchName }
+}
+
+/**
+ * Remove a collaboration checkout and its branch. Refuses the project root,
+ * the project checkout itself, anything a session still uses, and any path
+ * this repo does not have registered or under its own worktree directory.
+ * The caller clears the activate receipt.
+ */
+export async function rollbackCollabWorktree(
+  git: WorktreeGit,
+  folderPath: string,
+  input: { path: string; branchName?: string; isOccupied: (path: string) => boolean },
+): Promise<void> {
+  const mainDir = await resolveMainWorktreeDir(git, folderPath)
+  await withRepoLock(mainDir, async () => {
+    assertDeletableCheckout(input.path, { mainDir, folderPath, entries: await listWorktrees(git, folderPath) })
+    if (input.isOccupied(input.path)) throw refused('worktree is in use by a session')
+    await forceRemoveWorktree(git, folderPath, input.path, mainDir)
+    if (!input.branchName) return
+    try {
+      await git.write(folderPath, ['branch', '-D', input.branchName])
+    } catch (err) {
+      if (!/not found|not a valid branch name/i.test(gitErrorMessage(err))) throw err
+    }
   })
 }
 

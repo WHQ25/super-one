@@ -3,6 +3,9 @@ export interface WorktreePorcelainEntry {
   branch: string | null
   bare: boolean
   head?: string
+  /** `git worktree list --porcelain` marks a crash leftover that prune will not drop. */
+  locked?: boolean
+  prunable?: boolean
 }
 
 /**
@@ -15,13 +18,17 @@ export function parseWorktreePorcelain(out: string): WorktreePorcelainEntry[] {
   for (const line of out.split('\n')) {
     if (line.startsWith('worktree ')) {
       if (current.path) items.push(current as WorktreePorcelainEntry)
-      current = { path: line.slice('worktree '.length), branch: null, bare: false }
+      current = { path: line.slice('worktree '.length), branch: null, bare: false, locked: false, prunable: false }
     } else if (line.startsWith('branch ')) {
       current.branch = line.slice('branch '.length).replace(/^refs\/heads\//, '')
     } else if (line.startsWith('HEAD ')) {
       current.head = line.slice('HEAD '.length)
     } else if (line === 'bare') {
       current.bare = true
+    } else if (line === 'locked' || line.startsWith('locked ')) {
+      current.locked = true
+    } else if (line === 'prunable' || line.startsWith('prunable ')) {
+      current.prunable = true
     } else if (line === '') {
       if (current.path) items.push(current as WorktreePorcelainEntry)
       current = {}

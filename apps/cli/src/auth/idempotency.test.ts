@@ -33,3 +33,29 @@ describe('conflicting send receipts', () => {
       .resolves.toEqual({ accepted: true })
   })
 })
+
+describe('dead receipts', () => {
+  it('re-executes when a dead receipt was stored for a different payload', async () => {
+    const operation = 'session.create'
+    service.store('client', operation, 'k', service.payloadHash({ cwd: '/old' }), { sessionId: 's1' })
+    let ran = false
+    const result = await service.runExclusive(
+      'client', operation, 'k', service.payloadHash({ cwd: '/new' }),
+      async () => { ran = true; return { sessionId: 's2' } },
+      { isReceiptLive: () => false },
+    )
+    expect(ran).toBe(true)
+    expect(result).toEqual({ sessionId: 's2' })
+    expect(service.lookup('client', operation, 'k', service.payloadHash({ cwd: '/new' }))).toEqual({ sessionId: 's2' })
+  })
+
+  it('still conflicts when a live receipt has a different payload', async () => {
+    service.store('client', 'session.create', 'k', service.payloadHash({ cwd: '/old' }), { sessionId: 's1' })
+    await expect(service.runExclusive(
+      'client', 'session.create', 'k', service.payloadHash({ cwd: '/new' }),
+      async () => ({ sessionId: 's2' }),
+      { isReceiptLive: () => true },
+    )).rejects.toMatchObject({ code: 'idempotency_conflict', details: { receiptStored: true } })
+    expect(service.lookup('client', 'session.create', 'k', service.payloadHash({ cwd: '/old' }))).toEqual({ sessionId: 's1' })
+  })
+})

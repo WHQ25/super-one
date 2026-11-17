@@ -308,20 +308,79 @@ describe('NodeRpcClient half-open transport detection', () => {
     vi.useRealTimers()
   })
 
-  it('reports the transport dead when an rpc times out on the live socket', async () => {
+  it('rejects one rpc on deadline and drops the socket only after the liveness probe', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const onUnexpectedDisconnect = vi.fn()
-    const { client } = await connectClient({ supervised: true, onUnexpectedDisconnect })
+    const { client, ws } = await connectClient({
+      supervised: true,
+      onUnexpectedDisconnect,
+      heartbeatIntervalMs: 0,
+    })
     expect(client.connected).toBe(true)
 
     // Server never answers — exactly what a dead tunnel looks like to the client.
     const pending = client.rpc('environment.health').catch((e: Error) => e)
     await vi.advanceTimersByTimeAsync(16_000)
-    const err = (await pending) as Error
+    const err = (await pending) as Error & { transport?: boolean }
 
     expect(err.message).toMatch(/rpc timeout/)
+    expect(err.transport).toBe(false)
+    expect(onUnexpectedDisconnect).not.toHaveBeenCalled()
+    expect(client.connected).toBe(true)
+    expect(sentFrames(ws).filter((frame) => frame.type === 'ping')).toHaveLength(1)
+
+    await vi.advanceTimersByTimeAsync(5_000)
     expect(onUnexpectedDisconnect).toHaveBeenCalledTimes(1)
     expect(client.connected).toBe(false)
+  })
+
+  it('keeps the socket when any frame answers the timeout probe', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const onUnexpectedDisconnect = vi.fn()
+    const { client, ws } = await connectClient({
+      supervised: true,
+      onUnexpectedDisconnect,
+      heartbeatIntervalMs: 0,
+    })
+    const pending = client.rpc('environment.health').catch((e: Error) => e)
+    await vi.advanceTimersByTimeAsync(16_000)
+    expect((await pending).message).toMatch(/rpc timeout/)
+    const ping = sentFrames(ws).find((frame) => frame.type === 'ping')
+    ws.emit('message', Buffer.from(JSON.stringify({ type: 'pong', requestId: ping?.requestId })))
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(onUnexpectedDisconnect).not.toHaveBeenCalled()
+    expect(client.connected).toBe(true)
+    client.close()
+  })
+
+  it('does not drop an unsupervised socket when one rpc times out', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const { client } = await connectClient({ supervised: false, heartbeatIntervalMs: 0 })
+    const pending = client.rpc('environment.health').catch((e: Error) => e)
+    await vi.advanceTimersByTimeAsync(16_000)
+    const err = (await pending) as Error & { transport?: boolean }
+    expect(err.transport).toBe(false)
+    expect(client.connected).toBe(true)
+    expect(sockets).toHaveLength(1)
+    client.close()
+  })
+
+  it('gives an omitSessions snapshot and git.fetch more than the short read budget', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const { client } = await connectClient({ supervised: true, heartbeatIntervalMs: 0 })
+    let headSettled = false
+    let fetchSettled = false
+    const head = client.rpc('session.snapshot', { omitSessions: true }).then(() => { headSettled = true }, () => { headSettled = true })
+    const fetch = client.rpc('git.fetch', { projectId: 'p1' }).then(() => { fetchSettled = true }, () => { fetchSettled = true })
+    await vi.advanceTimersByTimeAsync(16_000)
+    expect(headSettled).toBe(false)
+    expect(fetchSettled).toBe(false)
+    await vi.advanceTimersByTimeAsync(30_000)
+    expect(headSettled).toBe(true)
+    expect(fetchSettled).toBe(false)
+    client.close()
+    await head
+    await fetch
   })
 
   it('does not report dead when a stale socket times out after replacement', async () => {

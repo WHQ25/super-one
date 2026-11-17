@@ -57,6 +57,7 @@ import {
   type CleanupConfirmOutcome,
   type ElicitationDecision,
   type NodeSessionRecord,
+  type SessionExternalParent,
   type NodeSessionSettings,
   type PendingInteraction,
   type PermissionDecision,
@@ -580,7 +581,7 @@ export class SessionRuntime {
     isAutomation?: boolean
     automationId?: string | null
     /** Collaboration parent on another machine (see {@link NodeSessionRecord.externalParent}). */
-    externalParent?: { sessionId: string } | null
+    externalParent?: SessionExternalParent | null
   }): NodeSessionRecord {
     const now = Date.now()
     const controller =
@@ -628,7 +629,14 @@ export class SessionRuntime {
       alwaysAllowedTools: [],
       isAutomation,
       automationId,
-      ...(input.externalParent ? { externalParent: { sessionId: input.externalParent.sessionId } } : {}),
+      ...(input.externalParent?.sessionId
+        ? {
+            externalParent: {
+              sessionId: input.externalParent.sessionId,
+              ...(input.externalParent.grantId ? { grantId: input.externalParent.grantId } : {}),
+            },
+          }
+        : {}),
     }
     this.live.set(session.sessionId, session)
     if (input.systemPromptAppend && input.systemPromptAppend.trim()) {
@@ -677,7 +685,7 @@ export class SessionRuntime {
     const target = this.live.get(to)
     const parent = source?.externalParent
     if (!source || !target || !parent) return
-    target.externalParent = { sessionId: parent.sessionId }
+    target.externalParent = { ...parent }
     source.externalParent = null
     this.systemPromptAppends.set(to, collaborationSystemPrompt(parent.sessionId))
     this.systemPromptAppends.delete(from)

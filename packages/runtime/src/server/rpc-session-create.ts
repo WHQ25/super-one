@@ -86,6 +86,8 @@ export async function handleSessionCreate(payload: unknown, ctx: CreateRpcContex
   const externalParent = asRecord(p.externalParent)
   const externalParentSessionId =
     typeof externalParent.sessionId === 'string' ? externalParent.sessionId.trim() : ''
+  const externalParentGrantId =
+    typeof externalParent.grantId === 'string' ? externalParent.grantId.trim() : ''
   if (p.externalParent != null && !externalParentSessionId) {
     return { error: { code: 'invalid_argument', message: 'externalParent.sessionId is required' } }
   }
@@ -156,7 +158,9 @@ export async function handleSessionCreate(payload: unknown, ctx: CreateRpcContex
       title: typeof p.title === 'string' ? p.title : undefined,
       cwd,
       systemPromptAppend,
-      ...(externalParentSessionId ? { externalParent: { sessionId: externalParentSessionId } } : {}),
+      ...(externalParentSessionId
+        ? { externalParent: { sessionId: externalParentSessionId, ...(externalParentGrantId ? { grantId: externalParentGrantId } : {}) } }
+        : {}),
       // Initial HA controller = creating client. Token refresh keeps the same
       // clientSessionId; re-pair does not — acquireControl rebinds (see above).
       controllerClientSessionId: ctx.client.clientSessionId,
@@ -171,6 +175,30 @@ export async function handleSessionCreate(payload: unknown, ctx: CreateRpcContex
       ctx.drafts.assertControl(selections.draftId, ctx.client.clientSessionId, selections.draftLeaseId!)
     }
     assertCreate()
+    // A re-pair mints a new client identity, so the old session.create receipt
+    // is invisible. The grant id is the stable owner of this child.
+    if (externalParentSessionId && externalParentGrantId && typeof ctx.sessions.list === 'function') {
+      const existing = ctx.sessions.list().find((session) =>
+        session.externalParent?.sessionId === externalParentSessionId
+        && session.externalParent.grantId === externalParentGrantId)
+      if (existing) {
+        const { transcript: _transcript, ...slim } = existing
+        return {
+          result: {
+            ...slim,
+            transcript: [],
+            defaults: {
+              model,
+              effort,
+              permissionMode,
+              sandboxMode,
+              permissionPreset: defaults.permissionPreset ?? null,
+              disabledSkills: defaults.disabledSkills ?? [],
+            },
+          },
+        }
+      }
+    }
     const continuation = continuesFrom && !ctx.sessions.createOnHost ? ctx.collaboration : undefined
     if (continuesFrom && !ctx.sessions.createOnHost) {
       if (!continuation?.assertContinuable || !continuation.continueSession) {

@@ -280,7 +280,7 @@ export class DesktopSessionHost extends DesktopSessionReads<DesktopSessionRow> i
   }
 
   /** The collaboration parent on the controller, when this session is such a child. */
-  externalParentOf(sessionId: string): { sessionId: string } | null {
+  externalParentOf(sessionId: string): { sessionId: string; grantId?: string } | null {
     return this.deps.rows.get(sessionId)?.controller?.externalParent ?? null
   }
 
@@ -478,7 +478,14 @@ export class DesktopSessionHost extends DesktopSessionReads<DesktopSessionRow> i
         label: this.deps.controllerLabel(clientSessionId),
         ...(input.apiProviderId ? { apiProviderId: input.apiProviderId } : {}),
         ...(input.systemPromptAppend ? { systemPromptAppend: input.systemPromptAppend } : {}),
-        ...(input.externalParent ? { externalParent: { sessionId: input.externalParent.sessionId } } : {}),
+        ...(input.externalParent
+          ? {
+              externalParent: {
+                sessionId: input.externalParent.sessionId,
+                ...(input.externalParent.grantId ? { grantId: input.externalParent.grantId } : {}),
+              },
+            }
+          : {}),
       }, options.settings)
       : null
     const session = await createDesktopSession(this.deps, input, options, controller)

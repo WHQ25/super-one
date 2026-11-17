@@ -281,7 +281,7 @@ Set `cwd` only because this launch targets a genuinely different project root. T
 A `spawn` launch may run on another connected machine: `session_collab_list_agents` lists them under `environments[]` with the agents each one can run, and the launch passes that `environmentId` as `environment`. Use it for a heavy job or a toolchain this machine lacks.
 
 - The child works in a fresh worktree and branch of the same repository on that machine, cloned there when missing. A project without an origin remote cannot run elsewhere.
-- It sees only what is pushed. The approval card warns about unpushed commits and uncommitted files; push them first when the child needs them. `cwd`, `worktree` (except `branchName`) and `carryLocalChanges` do not apply. An `apiProviderId` must be one of that machine's own (`session_collab_list_agents({ id, environment })` → `apiProviders[]`); omit it for that machine's default.
+- It sees only what is pushed. The approval card warns about unpushed commits and uncommitted files; push them first when the child needs them. `cwd`, `worktree` (including `branchName`) and `carryLocalChanges` do not apply: the host names the branch from the grant. An `apiProviderId` must be one of that machine's own (`session_collab_list_agents({ id, environment })` → `apiProviders[]`); omit it for that machine's default.
 - Ask it to push its branch (or open a PR) and report the branch name, then fetch the branch here to verify.
 - The mailbox works as for a local child. `session_collab_retrieve` reports its `state` from that machine, or `unreachable` while it is offline.
 - `handoff` and `link` stay on this machine, and a remote child cannot launch children.

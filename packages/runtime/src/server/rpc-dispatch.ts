@@ -28,7 +28,7 @@ import { applySessionTagOp, parseSessionTagOp } from '@superone/shared/session-t
 import { mentionMatchTier } from '@superone/shared/mention-match-tier'
 import { parseSessionSearchProjectPaths } from '@superone/shared/session-title-search'
 import { cloneRepository, type CloneRepositoryInput } from '@superone/shared/git-clone'
-import { isGitRemoteName } from '../git/index'
+import { isGitRemoteName, samePath } from '../git/index'
 import { isGitMentionRefKind } from '@superone/shared/git-mention-query'
 import type { ConsumerBinding, ConsumerId, Platform } from '@superone/shared/platform-registry'
 import { loadNodeAgentSettings, patchNodeAgentSettings, resolveAgentTurnDefaults } from '../settings/index'
@@ -215,21 +215,7 @@ export async function dispatchRpc(method: string, payload: unknown, ctx: HostRpc
         },
         {
           durable: true,
-          isReceiptLive:
-            method === 'workspace.watchStart'
-              ? (receipt: unknown) => {
-                  const watchId = (receipt as { watchId?: string } | null)?.watchId
-                  if (!watchId) return false
-                  const buf = watchBuffers.get(watchId)
-                  return !!buf && buf.owner === ctx.client.clientSessionId
-                }
-              : method === 'workspace.tailWatchStart'
-                ? (receipt: unknown) => {
-                    const watchId = (receipt as { watchId?: string } | null)?.watchId
-                    if (!watchId) return false
-                    return !!ctx.workspaceTailWatch?.isLive(watchId, ctx.client.clientSessionId)
-                  }
-                : method === 'draft.open' ? (receipt: unknown) => isDraftOpenReceiptLive(ctx, receipt) : undefined,
+          isReceiptLive: receiptLiveness(method, ctx),
         },
       )
       return { result }
@@ -249,6 +235,52 @@ export async function dispatchRpc(method: string, payload: unknown, ctx: HostRpc
   }
 
   return dispatchRpcInner(method, payload, ctx)
+}
+
+/** A stored receipt is replayed only while the resource it names still exists. */
+function receiptLiveness(method: string, ctx: HostRpcContext): ((receipt: unknown) => boolean) | undefined {
+  if (method === 'workspace.watchStart') {
+    return (receipt) => {
+      const watchId = (receipt as { watchId?: string } | null)?.watchId
+      if (!watchId) return false
+      const buf = watchBuffers.get(watchId)
+      return !!buf && buf.owner === ctx.client.clientSessionId
+    }
+  }
+  if (method === 'workspace.tailWatchStart') {
+    return (receipt) => {
+      const watchId = (receipt as { watchId?: string } | null)?.watchId
+      if (!watchId) return false
+      return !!ctx.workspaceTailWatch?.isLive(watchId, ctx.client.clientSessionId)
+    }
+  }
+  if (method === 'draft.open') return (receipt) => isDraftOpenReceiptLive(ctx, receipt)
+  if (method === 'git.worktreeActivate') {
+    return (receipt) => {
+      const path = (receipt as { path?: unknown } | null)?.path
+      return typeof path === 'string' && path.length > 0 && existsSync(path)
+    }
+  }
+  if (method === 'git.worktreeRollback') {
+    return (receipt) => {
+      const path = (receipt as { path?: unknown } | null)?.path
+      return typeof path !== 'string' || path.length === 0 || !existsSync(path)
+    }
+  }
+  if (method === 'session.create') {
+    return (receipt) => {
+      const sessionId = (receipt as { sessionId?: unknown } | null)?.sessionId
+      return typeof sessionId === 'string' && sessionId.length > 0 && ctx.sessions?.get(sessionId) != null
+    }
+  }
+  return undefined
+}
+
+function worktreeOccupied(ctx: HostRpcContext, path: string): boolean {
+  // No session list: refuse the delete rather than guess the checkout is free.
+  if (!ctx.sessions?.list) return true
+  return ctx.sessions.list().some((session) =>
+    typeof session.cwd === 'string' && session.cwd.length > 0 && samePath(session.cwd, path))
 }
 
 const HANDLERS: Readonly<Record<string, (payload: unknown, ctx: RpcContext, method: string) => RpcResult | Promise<RpcResult>>> = {
@@ -299,6 +331,7 @@ const HANDLERS: Readonly<Record<string, (payload: unknown, ctx: RpcContext, meth
   'git.mentionRefs': (payload, ctx) => handleGitMentionRefs(payload, ctx),
   'git.mentionCapabilities': (payload, ctx) => handleGitMentionCapabilities(payload, ctx),
   'git.worktreeActivate': (payload, ctx) => handleGitWorktreeActivate(payload, ctx),
+  'git.worktreeRollback': (payload, ctx) => handleGitWorktreeRollback(payload, ctx),
   'git.fetch': (payload, ctx) => handleGitFetch(payload, ctx),
   'git.init': (payload, ctx) => handleGitInit(payload, ctx),
   'git.worktreeCheckedOutBranches': (payload, ctx) => handleGitWorktreeCheckedOutBranches(payload, ctx),
@@ -347,7 +380,7 @@ const HANDLERS: Readonly<Record<string, (payload: unknown, ctx: RpcContext, meth
   'session.historyIndex': (payload, ctx) => handleSessionHistoryIndex(payload, ctx),
   'session.subscribeDetail': (payload, ctx) => handleSessionSubscribeDetail(payload, ctx),
   'session.unsubscribeDetail': (payload, ctx) => handleSessionUnsubscribeDetail(payload, ctx),
-  'session.snapshot': (_payload, ctx) => handleSessionSnapshot(ctx),
+  'session.snapshot': (payload, ctx) => handleSessionSnapshot(payload, ctx),
   'session.close': (payload, ctx) => handleSessionClose(payload, ctx),
   'session.remove': (payload, ctx) => handleSessionRemove(payload, ctx),
   'session.rename': (payload, ctx) => handleSessionRename(payload, ctx),
@@ -1438,6 +1471,7 @@ async function handleGitWorktreeActivate(payload: unknown, ctx: RpcContext): Pro
   if (!mode) {
     return { error: { code: 'invalid_argument', message: 'mode must be branch|attach|detach' } }
   }
+  const ifExists = p.ifExists === 'recreate-clean' ? 'recreate-clean' : 'fail'
   try {
     return {
       result: await ctx.workspaceGit.activateWorktree(String(p.projectId ?? ''), {
@@ -1445,8 +1479,37 @@ async function handleGitWorktreeActivate(payload: unknown, ctx: RpcContext): Pro
         mode,
         branchName: typeof p.branchName === 'string' ? p.branchName : undefined,
         carryLocalChanges: p.carryLocalChanges === true,
+        ...(ifExists === 'recreate-clean'
+          ? { ifExists, isOccupied: (path: string) => worktreeOccupied(ctx, path) }
+          : {}),
       }),
     }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+async function handleGitWorktreeRollback(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.writeWorkspace)
+  if (denied) return denied
+  const rollback = ctx.workspaceGit.rollbackWorktree
+  if (!rollback) return unsupported('git.worktreeRollback')
+  const p = asRecord(payload)
+  const projectId = String(p.projectId ?? '').trim()
+  const path = typeof p.path === 'string' ? p.path.trim() : ''
+  const grantId = typeof p.grantId === 'string' ? p.grantId.trim() : ''
+  const branchName = typeof p.branchName === 'string' && p.branchName.trim() ? p.branchName.trim() : undefined
+  if (!projectId || !path || !grantId) {
+    return { error: { code: 'invalid_argument', message: 'projectId, path and grantId are required' } }
+  }
+  try {
+    await rollback(projectId, {
+      path,
+      branchName,
+      isOccupied: (candidate) => worktreeOccupied(ctx, candidate),
+    })
+    ctx.idempotency.delete?.(ctx.client.clientSessionId, 'git.worktreeActivate', `collab-wt:${grantId}`)
+    return { result: { ok: true, path } }
   } catch (err) {
     return mapThrown(err)
   }
@@ -2806,14 +2869,17 @@ function handleSessionMessagesList(payload: unknown, ctx: RpcContext): RpcResult
   }
 }
 
-function handleSessionSnapshot(ctx: RpcContext): RpcResult {
+function handleSessionSnapshot(payload: unknown, ctx: RpcContext): RpcResult {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
   if (denied) return denied
+  const omitSessions = asRecord(payload).omitSessions === true
   return {
     result: {
       environmentId: ctx.identity.environmentId,
       snapshotSequence: ctx.sessions.snapshotSequence(),
-      sessions: ctx.sessions.list(),
+      // Transcripts made this the call that timed out a remote spawn. Callers
+      // that need messages use session.get / session.messages.list.
+      sessions: omitSessions ? [] : ctx.sessions.list().map((session) => ({ ...session, transcript: [] })),
       capturedAt: Date.now(),
     },
   }

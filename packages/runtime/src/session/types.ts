@@ -38,6 +38,12 @@ export interface NodeSessionSettings {
   agent?: string | null
 }
 
+/** Collaboration parent on another machine. `grantId` names the launch that owns this child. */
+export interface SessionExternalParent {
+  sessionId: string
+  grantId?: string
+}
+
 export interface NodeSessionRecord {
   sessionId: string
   projectId: string
@@ -124,7 +130,7 @@ export interface NodeSessionRecord {
    * Its mailbox belongs to that parent: `session_collab_send/retrieve` go to the
    * controller as Host Actions, and the child may not launch children itself.
    */
-  externalParent?: { sessionId: string } | null
+  externalParent?: SessionExternalParent | null
   /**
    * Spawn parent on this host (`session_collaboration_grants`). Absent for a
    * root session and for a mailbox row whose child lives on another machine.

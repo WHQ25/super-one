@@ -373,10 +373,10 @@ describe('merged status chip', () => {
     const user = userEvent.setup()
     render(<WorkDirIndicator isGitRepo />)
     await user.click(screen.getByRole('button'))
-    expect(await screen.findByText(/uncommitted/i)).toBeTruthy()
+    await waitFor(() => expect(getGitInfo).toHaveBeenCalled())
 
     await user.click(screen.getByRole('tab', { name: 'Worktree' }))
-    expect(screen.getByRole('checkbox', { name: /carry local changes/i })).toBeChecked()
+    expect(await screen.findByRole('checkbox', { name: /carry local changes/i })).toBeChecked()
     expect(screen.getByText('Fork to new worktree')).toBeTruthy()
   })
 
@@ -414,7 +414,12 @@ describe('merged status chip', () => {
     expect(screen.queryByText('Checkout')).toBeNull()
     const search = screen.getByPlaceholderText('Search or create branch…')
     await user.type(search, 'feat/new')
-    expect(screen.getByRole('button', { name: 'Create branch: feat/new' })).toBeTruthy()
+    const create = screen.getByRole('button', { name: 'Create branch: feat/new' })
+    expect(create.className).toContain('focus-visible:shadow-none')
+    expect(search.closest('form')).toHaveClass('border-b')
+    const branchList = document.querySelector('[data-slot="workdir-branch-list"]') as HTMLElement
+    expect(within(branchList).queryByText('No matches')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'New Branch…' })).toBeNull()
     await user.clear(search)
 
     await user.click(screen.getByRole('tab', { name: 'Worktree' }))
@@ -628,10 +633,20 @@ describe('checkout sources', () => {
       getLocalBranchSources: vi.fn(async () => ({
         develop: { source: NODE, ref: 'develop', head: HEAD_X, relation: 'behind', behind: 3 },
       })),
-      listCheckoutSourceBranches: vi.fn(async () => ({
-        ok: true,
-        branches: [{ ref: 'feat/x', title: 'feat/x', head: HEAD_X, localName: 'feat/x', relation: 'new', checkedOut: true }],
-      })),
+      listCheckoutSourceBranches: vi.fn(async (_folder: string, source: { kind: string }) => {
+        if (source.kind === 'pr') {
+          return { ok: true, branches: [{ ref: '482', title: '#482 Check out branches', head: HEAD_X, localName: 'feat/pr', relation: 'update', detail: 'vensen' }] }
+        }
+        if (source.kind === 'remote') {
+          return { ok: true, branches: [{ ref: 'release/2.4', title: 'origin/release/2.4', head: HEAD_X, localName: 'release/2.4', relation: 'new' }], fetchedAt: Date.now() }
+        }
+        return { ok: true, branches: [
+          { ref: 'feat/x', title: 'feat/x', head: HEAD_X, localName: 'feat/x', relation: 'new', checkedOut: true },
+          { ref: 'fix/sidebar', title: 'fix/sidebar', head: HEAD_X, localName: 'fix/sidebar', relation: 'behind', behind: 2 },
+          { ref: 'old', title: 'old', head: HEAD_X, localName: 'old', relation: 'ahead', ahead: 3 },
+          { ref: 'wip', title: 'wip', head: HEAD_X, localName: 'wip', relation: 'diverged' },
+        ] }
+      }),
       checkoutFromSource,
       switchGitBranch,
       cancelCheckout: vi.fn(async () => {}),
@@ -659,32 +674,119 @@ describe('checkout sources', () => {
     return user
   }
 
-  it('offers the node as a source and syncs a branch that is behind it from its badge', async () => {
+  it('lists local branches without a source badge', async () => {
+    await openPopover()
+    const list = document.querySelector('[data-slot="workdir-branch-list"]') as HTMLElement
+    expect(list).toHaveClass('max-h-55')
+    expect(await within(list).findByRole('button', { name: 'develop' })).toBeTruthy()
+    expect(within(list).queryByRole('button', { name: 'Sync from Office' })).toBeNull()
+    expect(within(list).queryByText('New')).toBeNull()
+  })
+
+  it('checks out a git remote branch and a pull request from the same list', async () => {
     const user = await openPopover()
-    expect(await screen.findByText(/Check Out Branch from/)).toBeTruthy()
-    await user.click(await screen.findByRole('button', { name: 'Sync from Office' }))
-    expect(checkoutFromSource).toHaveBeenCalledWith({
-      folderPath: PROJECT, source: NODE, branch: { ref: 'develop', head: HEAD_X }, localName: 'develop',
+    await user.click(await screen.findByRole('button', { name: 'origin/release/2.4' }))
+    await waitFor(() => expect(switchGitBranch).toHaveBeenCalledWith(PROJECT, 'release/2.4'))
+    expect(checkoutFromSource).toHaveBeenCalledWith(expect.objectContaining({
+      folderPath: PROJECT,
+      source: { kind: 'remote', remote: 'origin' },
+      localName: 'release/2.4',
+      branch: { ref: 'release/2.4', head: HEAD_X },
+    }))
+  })
+
+  it('checks out a pull request from the branch list', async () => {
+    const user = await openPopover()
+    await user.click(await screen.findByRole('button', { name: /#482/ }))
+    await waitFor(() => expect(switchGitBranch).toHaveBeenCalledWith(PROJECT, 'feat/pr'))
+    expect(checkoutFromSource).toHaveBeenCalledWith(expect.objectContaining({
+      folderPath: PROJECT,
+      source: { kind: 'pr' },
+      localName: 'feat/pr',
+      branch: { ref: '482', head: HEAD_X },
+    }))
+    expect(screen.queryByRole('button', { name: 'Sync and Check Out' })).toBeNull()
+  })
+
+  it('creates a new or diverged node branch and fast-forwards a linear one', async () => {
+    const user = await openPopover()
+    expect(screen.queryByRole('button', { name: /feat\/x/ })).toBeNull()
+    await user.click(await screen.findByRole('button', { name: 'Sync Branches' }))
+    await user.click(await screen.findByRole('button', { name: /feat\/x/ }))
+    expect(checkoutFromSource).not.toHaveBeenCalled()
+    const actions = document.querySelector('[data-slot="workdir-sync-actions"]') as HTMLElement
+    const branches = document.querySelector('[data-slot="workdir-sync-branches"]') as HTMLElement
+    expect(branches.contains(actions)).toBe(false)
+    expect(within(actions).getByRole('textbox', { name: 'Local branch name' })).toHaveValue('feat/x')
+    await user.click(within(actions).getByRole('button', { name: 'Create Branch' }))
+    await waitFor(() => expect(checkoutFromSource).toHaveBeenCalledWith(expect.objectContaining({
+      source: NODE, localName: 'feat/x', createOnly: true,
+    })))
+    expect(checkoutFromSource.mock.calls[0]?.[0]).not.toHaveProperty('includeWorkingTree')
+    expect(switchGitBranch).not.toHaveBeenCalled()
+
+    await user.click(await screen.findByRole('button', { name: /fix\/sidebar/ }))
+    const forward = document.querySelector('[data-slot="workdir-sync-actions"]') as HTMLElement
+    expect(within(forward).queryByRole('textbox')).toBeNull()
+    await user.click(within(forward).getByRole('button', { name: 'Fast-forward' }))
+    await waitFor(() => {
+      const request = checkoutFromSource.mock.calls.at(-1)?.[0]
+      expect(request).toEqual(expect.objectContaining({
+        folderPath: PROJECT, source: NODE, localName: 'fix/sidebar',
+        branch: { ref: 'fix/sidebar', head: HEAD_X },
+      }))
+      expect(request).not.toHaveProperty('createOnly')
+    })
+
+    await user.click(await screen.findByRole('button', { name: /^old/ }))
+    const catchUp = document.querySelector('[data-slot="workdir-sync-actions"]') as HTMLElement
+    await user.click(within(catchUp).getByRole('button', { name: 'Catch Up' }))
+    await waitFor(() => {
+      const request = checkoutFromSource.mock.calls.at(-1)?.[0]
+      expect(request).toEqual(expect.objectContaining({
+        folderPath: NODE.folderPath,
+        source: { kind: 'node', connectionId: 'local', folderPath: PROJECT },
+        localName: 'old',
+        branch: { ref: 'old', head: HEAD_X },
+      }))
+      expect(request).not.toHaveProperty('createOnly')
     })
     expect(switchGitBranch).not.toHaveBeenCalled()
+
+    await user.click(await screen.findByRole('button', { name: /^wip/ }))
+    const diverged = document.querySelector('[data-slot="workdir-sync-actions"]') as HTMLElement
+    expect(within(diverged).getByRole('textbox', { name: 'Local branch name' })).toHaveValue('wip-Office')
+    expect(within(diverged).getByRole('button', { name: 'Create Branch' })).toBeTruthy()
   })
 
-  it('creates a node branch locally and switches the checkout to it', async () => {
+  it('lists missing branches and pull requests in the checkout branch list', async () => {
+    useMultiHostSidebarStore.setState({
+      environments: [
+        ...useMultiHostSidebarStore.getState().environments,
+        { environmentId: 'lab', connectionId: 'lab', label: 'Lab', kind: 'cli-node', connection: 'offline',
+          projectsStatus: 'ready', projectsError: null, checkouts: [checkout('lab', 'lab', 'p3', 'remote:lab:/srv/proj')] },
+      ],
+    })
     const user = await openPopover()
-    await user.click(await screen.findByText(/Check Out Branch from/))
-    await user.click(await screen.findByRole('button', { name: /feat\/x/ }))
-    await user.click(screen.getByRole('button', { name: 'Create and Check Out' }))
-    await waitFor(() => expect(switchGitBranch).toHaveBeenCalledWith(PROJECT, 'feat/x'))
-    expect(checkoutFromSource).toHaveBeenCalledWith(expect.objectContaining({ source: NODE, localName: 'feat/x' }))
-  })
-
-  it('lists every source in the menu, pull requests included', async () => {
-    const user = await openPopover()
-    await user.click(await screen.findByRole('button', { name: /Office/, expanded: false }))
-    const menu = screen.getByRole('menu')
-    expect(within(menu).getByRole('menuitem', { name: /Office/ })).toBeTruthy()
-    expect(within(menu).getByRole('menuitem', { name: /origin/ })).toBeTruthy()
-    expect(within(menu).getByRole('menuitem', { name: /Pull Requests/ })).toBeTruthy()
+    const list = document.querySelector('[data-slot="workdir-branch-list"]') as HTMLElement
+    expect(await within(list).findByRole('button', { name: 'origin/release/2.4' })).toBeTruthy()
+    expect(within(list).getByRole('button', { name: /#482/ })).toBeTruthy()
+    expect(within(list).queryByRole('button', { name: /feat\/x/ })).toBeNull()
+    expect(within(list).queryByText('Lab · Offline')).toBeNull()
+    expect(screen.queryByRole('button', { name: /feat\/x/ })).toBeNull()
+    const search = screen.getByPlaceholderText('Search or create branch…')
+    await user.type(search, 'release')
+    await user.click(screen.getByRole('button', { name: 'Sync Branches' }))
+    expect(screen.getByPlaceholderText('Search branches to sync…')).toHaveValue('')
+    const sync = document.querySelector('[data-slot="workdir-sync-list"]') as HTMLElement
+    expect(await within(sync).findByRole('button', { name: /feat\/x/ })).toBeTruthy()
+    const feat = within(sync).getByRole('button', { name: /feat\/x/ })
+    expect(within(feat).getByText('Office · new branch')).toBeTruthy()
+    expect(within(sync).getByRole('button', { name: /fix\/sidebar/ })).toHaveTextContent('2 commits ahead')
+    expect(within(sync).getByRole('button', { name: /^old/ })).toHaveTextContent('3 commits behind')
+    expect(within(sync).getByText('Lab · Offline')).toBeTruthy()
+    expect(screen.queryByRole('button', { name: 'origin/release/2.4' })).toBeNull()
+    expect(screen.queryByText(/Check Out Branch from/)).toBeNull()
   })
 
   it('offers this computer as the source of a node checkout, without remotes or badges', async () => {
@@ -698,8 +800,7 @@ describe('checkout sources', () => {
       },
     })
     const listCheckoutSourceBranches = vi.mocked(window.app.listCheckoutSourceBranches)
-    const user = await openPopover()
-    await user.click(await screen.findByText(/Check Out Branch from/))
+    await openPopover()
     await waitFor(() => expect(listCheckoutSourceBranches).toHaveBeenCalledWith(
       REMOTE, { kind: 'node', connectionId: 'local', folderPath: PROJECT }, undefined,
     ))

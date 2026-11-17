@@ -307,7 +307,7 @@ export async function remoteBranchRelations(
   host: EnvironmentHost,
   folderPath: string,
   items: Array<{ localName: string; head: string }>,
-): Promise<Array<{ relation: BranchRelation; behind?: number }>> {
+): Promise<Array<{ relation: BranchRelation; behind?: number; ahead?: number }>> {
   const node = await requireNodeGit(host, folderPath, 'git.branchRelations')
   return (await node.gw.gitBranchRelations(node.projectId, items)).relations
 }

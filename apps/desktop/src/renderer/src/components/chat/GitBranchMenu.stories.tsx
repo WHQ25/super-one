@@ -1,6 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import { GitBranchMenu, type GitBranchMenuProps } from './GitBranchMenu'
-import { CheckoutSourceFooter, RelationPill } from './CheckoutSourcePanel'
+import { CheckoutBranchExtras, CheckoutSourceFooter, RelationPill } from './CheckoutSourcePanel'
 import type { CheckoutSourceOption } from './checkout-sources'
 
 const SOURCES: CheckoutSourceOption[] = [
@@ -26,7 +26,6 @@ const meta = {
     current: 'main',
     local,
     onSelect: () => {},
-    onCreate: () => {},
   },
 } satisfies Meta<typeof Frame>
 
@@ -67,6 +66,30 @@ export const WithSources: Story = {
           ? <span className="rounded-full border px-1.5 text-[11px] text-muted-foreground">#479</span>
           : null,
     footer: <CheckoutSourceFooter options={SOURCES} selected={SOURCES[0]!} onOpen={() => {}} />,
+  },
+}
+
+const HEAD = 'a'.repeat(40)
+
+/** Remote branches and pull requests share the local branch list. */
+export const WithIncoming: Story = {
+  args: {
+    extra: (
+      <CheckoutBranchExtras
+        folderPath="/repo"
+        onLanded={() => {}}
+        items={[
+          {
+            option: SOURCES[1]!,
+            branch: { ref: 'release/2.4', title: 'origin/release/2.4', head: HEAD, localName: 'release/2.4', relation: 'new' },
+          },
+          {
+            option: { id: 'pr', group: 'pr', label: 'Pull Requests', source: { kind: 'pr' } },
+            branch: { ref: '482', title: '#482 Check out branches', head: HEAD, localName: 'feat/remote-checkout', relation: 'update', detail: 'vensen' },
+          },
+        ]}
+      />
+    ),
   },
 }
 

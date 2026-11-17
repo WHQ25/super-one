@@ -2626,12 +2626,51 @@ export type Messages = {
       searchBranches: string
       createBranch: string
       localBranches: string
-      newBranch: string
       sourceCheckoutFrom: string
       sourceHeader: string
       sourceGroupNodes: string
       sourceGroupRemotes: string
       sourceGroupGitHub: string
+      syncSection: string
+      syncSearch: string
+      /** Second line of a sync row: source environment and how its tip compares. */
+      syncBranchDetail: string
+      /** The same branch does not exist yet. */
+      syncStatusNew: string
+      /** The other environment is ahead, and the commit count is unknown. */
+      syncStatusAhead: string
+      /** The other environment is one commit ahead of the same branch. */
+      syncStatusAheadCount_one: string
+      /** The other environment is this many commits ahead of the same branch. */
+      syncStatusAheadCount_other: string
+      /** The other environment is behind, and the commit count is unknown. */
+      syncStatusBehind: string
+      /** The other environment is one commit behind the same branch. */
+      syncStatusBehindCount_one: string
+      /** The other environment is this many commits behind the same branch. */
+      syncStatusBehindCount_other: string
+      /** The other environment has diverged from the same branch. */
+      syncStatusDiverged: string
+      /** The tip is not here yet, so the same branch cannot be compared. */
+      syncStatusUpdate: string
+      /** Create the selected tip as a new branch on this checkout. */
+      syncCreateBranch: string
+      /** Fast-forward this branch to the other environment's tip. */
+      syncFastForward: string
+      /** One line under the fast-forward button. */
+      syncFastForwardHint: string
+      /** The other environment's branch fast-forwards to this tip. */
+      syncCatchUp: string
+      /** One line under the catch-up button. */
+      syncCatchUpHint: string
+      /** Shown while a fast-forward or catch-up is running. */
+      syncMoving: string
+      /** Fast-forward finished. `source` is the other environment. */
+      syncFastForwarded: string
+      /** Catch-up finished. `source` is the environment whose branch moved. */
+      syncCaughtUp: string
+      /** The tips are no longer a fast-forward in either direction. */
+      syncMoveRefused: string
       sourcePullRequests: string
       sourceOffline: string
       sourceNeedsUpgrade: string
@@ -8008,12 +8047,32 @@ export const en: Messages = {
       searchBranches: 'Search or create branch…',
       createBranch: 'Create branch: {{name}}',
       localBranches: '{{environment}} · Local Branches',
-      newBranch: 'New Branch…',
       sourceCheckoutFrom: 'Check Out Branch from <source></source>',
       sourceHeader: 'Check Out from <source></source>',
       sourceGroupNodes: 'Environments',
       sourceGroupRemotes: 'Git Remotes',
       sourceGroupGitHub: 'GitHub',
+      syncSection: 'Sync Branches',
+      syncSearch: 'Search branches to sync…',
+      syncBranchDetail: '{{source}} · {{relation}}',
+      syncStatusNew: 'new branch',
+      syncStatusAhead: 'ahead',
+      syncStatusAheadCount_one: '{{count}} commit ahead',
+      syncStatusAheadCount_other: '{{count}} commits ahead',
+      syncStatusBehind: 'behind',
+      syncStatusBehindCount_one: '{{count}} commit behind',
+      syncStatusBehindCount_other: '{{count}} commits behind',
+      syncStatusDiverged: 'diverged',
+      syncStatusUpdate: 'not compared yet',
+      syncCreateBranch: 'Create Branch',
+      syncFastForward: 'Fast-forward',
+      syncFastForwardHint: 'Move this branch forward to that tip.',
+      syncCatchUp: 'Catch Up',
+      syncCatchUpHint: 'Move their branch forward to this tip.',
+      syncMoving: 'Syncing {{branch}}…',
+      syncFastForwarded: 'Fast-forwarded {{branch}} from {{source}}',
+      syncCaughtUp: 'Caught {{branch}} up on {{source}}',
+      syncMoveRefused: '{{branch}} is no longer a fast-forward',
       sourcePullRequests: 'Pull Requests',
       sourceOffline: 'Offline',
       sourceNeedsUpgrade: 'Update this environment to check out from it',

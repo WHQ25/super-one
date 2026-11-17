@@ -202,7 +202,7 @@ describe('branch bundle', () => {
       { relation: 'same' },
       { relation: 'behind', behind: 1 },
       { relation: 'same' },
-      { relation: 'ahead' },
+      { relation: 'ahead', ahead: 1 },
       { relation: 'update' },
     ])
   })

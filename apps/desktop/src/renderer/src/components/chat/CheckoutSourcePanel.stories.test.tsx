@@ -8,9 +8,11 @@ const HEAD = 'd'.repeat(40)
 
 let panel: typeof import('./CheckoutSourcePanel.stories')
 let menu: typeof import('./GitBranchMenu.stories')
+let sync: typeof import('./EnvironmentSyncSection.stories')
 beforeAll(async () => {
   panel = await import('./CheckoutSourcePanel.stories')
   menu = await import('./GitBranchMenu.stories')
+  sync = await import('./EnvironmentSyncSection.stories')
   // Storybook's IPC mocks do not reach Vitest's window.app.
   Object.assign(window.app, {
     listCheckoutSourceBranches: async () => ({
@@ -30,7 +32,7 @@ it.each(['en', 'zh'])('renders the checkout-source stories with resolved copy in
   const previous = i18n.language
   await i18n.changeLanguage(locale)
   try {
-    for (const mod of [panel, menu]) {
+    for (const mod of [panel, menu, sync]) {
       const { default: meta, ...named } = mod as unknown as Record<string, { args?: object; beforeEach?: () => void; component?: ComponentType<object> }>
       const Component = meta!.component!
       for (const story of Object.values(named)) {

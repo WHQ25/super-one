@@ -205,7 +205,7 @@ const meta = {
 export default meta
 type Story = StoryObj<typeof meta>
 
-/** Checkout tab: local branches and New Branch. */
+/** Checkout tab: local branches. Search creates a missing name. */
 export const CheckoutBranches: Story = { play: openPopover }
 
 /** Same checkout tab in dark. */

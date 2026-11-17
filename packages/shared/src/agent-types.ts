@@ -2084,7 +2084,10 @@ export interface CheckoutSourceBranch {
   /** Default local branch name. */
   localName: string
   relation: BranchRelation
+  /** Commits this tip has that the same branch on the target does not. The tip is ahead. */
   behind?: number
+  /** Commits the same branch on the target has that this tip does not. The tip is behind. */
+  ahead?: number
   /** Node only: uncommitted work in the checkout that has the branch. */
   dirty?: GitDirtyStatus
   /** Pull request from a fork. */
@@ -2132,6 +2135,7 @@ export interface LocalBranchSource {
   head?: string
   relation?: BranchRelation
   behind?: number
+  ahead?: number
 }
 
 export interface CheckoutSourcesInfo {

@@ -1,9 +1,26 @@
 # Checkout sources
 
-The desktop location popover (Local tab) can create or update a branch from
-somewhere other than the checkout itself. Under New Branch, "Check Out Branch
-from <source>" opens a source. The source chip switches between sources, and
-the last one used is remembered per checkout.
+The desktop location popover (Local tab) lists this checkout's branches in
+one group with git remote branches it does not have yet and every open pull
+request. A row is the branch name only. Clicking a local branch switches to
+it. Clicking a remote branch or a pull request checks that tip out. Searching
+for a name the list does not have offers to create that branch. The list
+scrolls at the same max height as the existing-worktree list.
+
+Branches on another environment are not in that list. Moving one is a sync:
+the commits travel from one machine to the other. A Sync Branches row at the
+bottom of the Local tab opens over the branch list, the same way choosing a
+base branch covers the existing worktrees. Identical tips are left out. Each
+row names the branch, then the other environment and how that tip compares
+with the same branch, separated by a middle dot. A missing branch is new.
+Ahead and behind include how many commits. A tip can also be diverged, or
+not compared yet. Selecting a row keeps one action under the list. A new branch, a diverged
+tip, or a tip that is not here yet offers to create a new branch at that
+commit. A missing name uses the remote name. An existing name is left alone
+and the new branch defaults to `name-source`. When the other environment is
+ahead, the action fast-forwards this branch to that tip. When it is behind,
+the action fast-forwards their branch to this tip. The current checkout
+stays where it is.
 
 ## Sources and targets
 
@@ -13,9 +30,9 @@ the last one used is remembered per checkout.
 | Git remote | This computer's checkouts | Remote-tracking refs as of the last fetch; fetched in the background when stale | Remote-tracking ref |
 | Pull requests | This computer's checkouts with a remote; disabled until `gh` can read the repository | `gh pr list` | `git fetch <origin> refs/pull/<n>/head` |
 
-Offline and upgrade-needed environments stay in the menu, disabled with the
-reason. A node that does not serve the `git.*` methods below reports that it
-is too old.
+Offline and upgrade-needed environments stay in the sync section, with the
+reason, and their branches are not mixed into the branch list. A node that does not serve the
+`git.*` methods below reports that it is too old.
 
 ## Moving a branch between environments
 
@@ -61,14 +78,13 @@ branch switch, so its failure dialog applies.
 
 A branch from a git remote gets an ordinary upstream. A branch from an
 environment or a pull request records `branch.<name>.superoneSource` (JSON
-with the source and its ref). The branch list shows a badge for recorded
-sources, and for upstream branches that are behind or diverged. A behind
-badge syncs in place; a diverged badge opens the source on that branch.
+with the source and its ref). The branch list does not show that record.
 
 A node checkout keeps no record. A recorded source names an environment
 by this controller's connection id, so it would mean nothing to another
-controller. A node checkout's popover therefore shows no badges.
+controller.
 
-Branch rows show how each incoming tip relates to the target's branch:
-`new`, `same`, `behind`, `ahead`, or `diverged`. When the target does not
-have the tip yet, the row shows `update`.
+Each incoming tip is still compared with the target's branch: `new`,
+`same`, `behind`, `ahead`, `diverged`, or `update` when the target does not
+have that commit yet. The list uses the comparison to decide which rows to
+show. It does not print the comparison on the row.

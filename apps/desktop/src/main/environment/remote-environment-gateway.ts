@@ -838,7 +838,7 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
   gitBranchRelations(
     projectId: string,
     items: Array<{ localName: string; head: string }>,
-  ): Promise<{ relations: Array<{ relation: BranchRelation; behind?: number }> }> {
+  ): Promise<{ relations: Array<{ relation: BranchRelation; behind?: number; ahead?: number }> }> {
     return this.client.rpc('git.branchRelations', { projectId, items })
   }
 

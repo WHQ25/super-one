@@ -466,7 +466,7 @@ export class WorkspaceGitService {
   async branchRelations(
     projectId: string,
     items: Array<{ localName: string; head: string }>,
-  ): Promise<{ relations: Array<{ relation: BranchRelation; behind?: number }> }> {
+  ): Promise<{ relations: Array<{ relation: BranchRelation; behind?: number; ahead?: number }> }> {
     const root = this.root(projectId)
     const valid = items.slice(0, MAX_RELATION_ITEMS)
       .filter((item) => typeof item.localName === 'string' && item.localName && typeof item.head === 'string')

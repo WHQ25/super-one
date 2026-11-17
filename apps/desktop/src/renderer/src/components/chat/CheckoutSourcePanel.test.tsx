@@ -4,7 +4,7 @@ import { act, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { BranchImportResult, CheckoutFromSourceRequest, CheckoutProgress, CheckoutSourceBranch, CheckoutSourceBranchesResult } from '@superone/shared/agent-types'
 import { CheckoutSourcePanel } from './CheckoutSourcePanel'
-import { checkoutSourceOptions, type CheckoutSourceOption } from './checkout-sources'
+import { branchesForUnifiedList, checkoutSourceOptions, readCheckoutSourceBranches, type CheckoutSourceOption } from './checkout-sources'
 
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn(), info: vi.fn() }))
 vi.mock('sonner', () => ({ toast }))
@@ -169,6 +169,38 @@ describe('checkoutSourceOptions', () => {
     })
     expect(options.map((option) => option.id)).toEqual(['node:local', 'node:lab'])
     expect(options[0]!.source).toEqual({ kind: 'node', connectionId: 'local', folderPath: 'remote:local:/srv/app' })
+  })
+})
+
+describe('unified branch list', () => {
+  const local = new Set(['main', 'develop'])
+
+  it('keeps pull requests, missing remote branches, and node branches that still differ', () => {
+    const origin: CheckoutSourceOption = { id: 'remote:origin', group: 'remote', label: 'origin', source: { kind: 'remote', remote: 'origin' } }
+    expect(branchesForUnifiedList(origin, [
+      branch({ relation: 'new' }),
+      branch({ ref: 'main', localName: 'main', relation: 'new' }),
+      branch({ ref: 'develop', localName: 'develop', relation: 'behind', behind: 1 }),
+    ], local).map((item) => item.ref)).toEqual(['feat/x'])
+    expect(branchesForUnifiedList(NODE, [
+      branch({ relation: 'new' }),
+      branch({ ref: 'main', localName: 'main', relation: 'same' }),
+      branch({ ref: 'develop', localName: 'develop', relation: 'behind', behind: 1 }),
+    ], local).map((item) => item.ref)).toEqual(['feat/x', 'develop'])
+    expect(branchesForUnifiedList(PR, [
+      branch({ ref: '7', title: '#7 Fix', localName: 'develop', relation: 'update' }),
+    ], local).map((item) => item.ref)).toEqual(['7'])
+  })
+
+  it('keeps a stale remote list when the refresh fails', async () => {
+    const origin: CheckoutSourceOption = { id: 'remote:origin', group: 'remote', label: 'origin', source: { kind: 'remote', remote: 'origin' } }
+    listCheckoutSourceBranches
+      .mockResolvedValueOnce({ ok: true, branches: [branch({ title: 'old' })], fetchedAt: Date.now() - 60 * 60_000 })
+      .mockResolvedValueOnce({ ok: false, reason: 'error', error: 'network down' })
+    await expect(readCheckoutSourceBranches('/repo', origin)).resolves.toMatchObject({
+      ok: true, branches: [expect.objectContaining({ title: 'old' })],
+    })
+    expect(listCheckoutSourceBranches).toHaveBeenLastCalledWith('/repo', origin.source, { fetch: true })
   })
 })
 

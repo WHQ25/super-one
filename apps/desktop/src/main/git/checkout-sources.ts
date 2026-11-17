@@ -36,7 +36,7 @@ import type {
 } from '@superone/shared/agent-types'
 import type { NodeBranchBundle, TransferControl } from '../environment/remote-worktree'
 
-type Relation = { relation: BranchRelation; behind?: number }
+type Relation = { relation: BranchRelation; behind?: number; ahead?: number }
 type Incoming = Pick<NodeBranchBundle, 'bundlePath' | 'head' | 'snapshot'> & {
   localName: string
   onDiverged?: BranchImportConflictMode

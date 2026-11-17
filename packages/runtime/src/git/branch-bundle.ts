@@ -157,13 +157,14 @@ export async function checkoutHolding(git: WorktreeGit, root: string, branch: st
 
 /**
  * Where each incoming tip stands against the local branch it would land on.
+ * `behind` and `ahead` count the commits between that branch and the tip.
  * `update`: the tip is not in this repository yet, so only an import can tell.
  */
 export async function branchRelations(
   git: WorktreeGit,
   repoPath: string,
   items: ReadonlyArray<{ localName: string; head: string }>,
-): Promise<Array<{ relation: BranchRelation; behind?: number }>> {
+): Promise<Array<{ relation: BranchRelation; behind?: number; ahead?: number }>> {
   const locals = new Map<string, string>()
   const out = await git.read(repoPath, ['for-each-ref', '--format=%(refname:short)%00%(objectname)', 'refs/heads'])
   for (const line of out.split('\n')) {
@@ -183,7 +184,10 @@ export async function branchRelations(
       const behind = Number((await git.read(repoPath, ['rev-list', '--count', `${old}..${head}`])).trim()) || undefined
       return { relation: 'behind' as const, ...(behind ? { behind } : {}) }
     }
-    if (await isAncestor(git, repoPath, head, old)) return { relation: 'ahead' as const }
+    if (await isAncestor(git, repoPath, head, old)) {
+      const ahead = Number((await git.read(repoPath, ['rev-list', '--count', `${head}..${old}`])).trim()) || undefined
+      return { relation: 'ahead' as const, ...(ahead ? { ahead } : {}) }
+    }
     return { relation: 'diverged' as const }
   }))
 }

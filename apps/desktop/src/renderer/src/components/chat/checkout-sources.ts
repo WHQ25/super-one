@@ -1,4 +1,4 @@
-import type { CheckoutSource, CheckoutSourcesInfo } from '@superone/shared/agent-types'
+import type { CheckoutSource, CheckoutSourceBranch, CheckoutSourceBranchesResult, CheckoutSourcesInfo } from '@superone/shared/agent-types'
 import { normalizeGitRemoteUrl, repoIdentityRemote } from '@superone/shared/git-remote-url'
 import type { EnvironmentBucket, EnvironmentKind } from '@/lib/multi-host/types'
 import type { NodeLinkPath } from '@superone/shared/environment/node-route'
@@ -111,4 +111,44 @@ export function rememberCheckoutSource(folderPath: string, id: string): void {
   } catch {
     // Remembering is a convenience only.
   }
+}
+
+/** A git remote fetched longer ago than this is refreshed before its branches are shown. */
+const REMOTE_STALE_MS = 5 * 60_000
+
+/**
+ * Branches from one source. A git remote shows its last fetch immediately and
+ * fetches again when that fetch is stale.
+ */
+export async function readCheckoutSourceBranches(
+  folderPath: string,
+  option: CheckoutSourceOption,
+): Promise<CheckoutSourceBranchesResult> {
+  const read = (fetch: boolean) => window.app.listCheckoutSourceBranches(
+    folderPath, option.source, fetch ? { fetch: true } : undefined,
+  )
+  const cached = await read(false)
+  const fresh = cached.ok && !!cached.fetchedAt && Date.now() - cached.fetchedAt < REMOTE_STALE_MS
+  if (option.group !== 'remote' || fresh || (!cached.ok && cached.reason !== 'error')) return cached
+  const fetched = await read(true)
+  return fetched.ok || !cached.ok ? fetched : cached
+}
+
+/**
+ * Rows added beside this checkout's own branches.
+ *
+ * A git remote is listed only when this checkout has no branch of that name,
+ * so it can sit in the same list and be checked out directly. A pull request
+ * is its own tip, so it stays even when a local branch wears the same name.
+ * Another environment keeps every branch that is not already identical,
+ * because syncing or resolving it takes more than a checkout.
+ */
+export function branchesForUnifiedList(
+  option: CheckoutSourceOption,
+  branches: readonly CheckoutSourceBranch[],
+  localNames: ReadonlySet<string>,
+): CheckoutSourceBranch[] {
+  if (option.group === 'pr') return [...branches]
+  if (option.group === 'node') return branches.filter((branch) => branch.relation !== 'same')
+  return branches.filter((branch) => branch.relation === 'new' && !localNames.has(branch.localName))
 }

@@ -107,7 +107,11 @@ cold session. Composer admission checks control, while `composer.await` has no
 fixed deadline and survives an expired admission grant. A window releases its
 forms on navigation or destruction.
 
-Schedules belong to their session host. Old desktop-owned node schedules remain
+Schedules belong to their session host. The CLI node persists the due time,
+message and attachments in SQLite and sends into the owning session using a
+durable message ID. It checks overdue schedules on startup and waits for a busy
+session to settle. Changes and reconnect snapshots use the session-list topic.
+Old desktop-owned node schedules remain
 readable and cancellable offline through the environment boundary; new scheduling
 requires the node's served method. This compatibility path cannot arm or edit a
 schedule and does not mutate a node session. Composer draft mirroring and phone

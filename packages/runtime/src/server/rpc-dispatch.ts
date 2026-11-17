@@ -1,5 +1,6 @@
 import { SESSION_OPERATION_HANDLERS } from './rpc-session-operations'
-import { dirname as configDirname, isAbsolute, join as pathJoin, resolve as pathResolve, sep } from 'node:path'
+import { dirname as configDirname, isAbsolute, join as pathJoin, resolve as pathResolve } from 'node:path'
+import { attachmentOriginal } from './session-attachments'
 import { handleSessionCreate } from './rpc-session-create'
 import { isAllowedSessionCwd } from './session-cwd'
 import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
@@ -2147,26 +2148,6 @@ async function handleSessionSetUiFlags(payload: unknown, ctx: RpcContext): Promi
 }
 
 /** The resolved node path of an attachment original inside `sessionId`'s zone, or null. */
-function attachmentOriginal(ctx: RpcContext, sessionId: string, path: unknown): string | null {
-  if (ctx.sameHost) {
-    try {
-      return typeof path === 'string' && isAbsolute(path) && statSync(path).isFile() ? path : null
-    } catch {
-      return null
-    }
-  }
-  const zone = ctx.artifacts
-  if (!zone) return null
-  const prefix = pathJoin(zone.syncRoot, sessionId) + sep
-  if (typeof path !== 'string' || !path.startsWith(prefix)) return null
-  try {
-    const resolved = zone.resolve(sessionId, path.slice(prefix.length).split(sep).join('/'))
-    return statSync(resolved).isFile() ? resolved : null
-  } catch {
-    return null
-  }
-}
-
 async function handleSessionSend(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.operateSession)
   if (denied) return denied

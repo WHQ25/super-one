@@ -163,6 +163,17 @@ CREATE TABLE IF NOT EXISTS sessions (
   tags_json TEXT NOT NULL DEFAULT '[]'
 );
 
+CREATE TABLE IF NOT EXISTS scheduled_sends (
+  session_id TEXT PRIMARY KEY REFERENCES sessions(session_id) ON DELETE CASCADE,
+  send_at INTEGER NOT NULL,
+  armed INTEGER NOT NULL,
+  source TEXT NOT NULL,
+  message TEXT,
+  attachments TEXT,
+  delivery_id TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_scheduled_sends_due ON scheduled_sends(armed, send_at);
+
 -- Host Action channel (durable poll/claim/respond). Also ensured at open time.
 CREATE TABLE IF NOT EXISTS host_actions (
   action_id TEXT PRIMARY KEY NOT NULL,

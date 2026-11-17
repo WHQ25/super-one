@@ -407,7 +407,8 @@ describe('legacy desktop-owned node schedules', () => {
     let row: import('@superone/shared/agent-types').ScheduledSend | null = { sessionId: 'remote-own', armed: true, sendAt: Date.now() + 60_000, message: 'later', source: 'manual' }
     const clear = vi.fn(() => { row = null })
     const { host } = localRoute({}, { legacyScheduledSends: { get: (connectionId, sessionId) => connectionId === 'offline' && sessionId === 'remote-own' ? row : null, clear } })
-    expect(await host.callSession('offline', 'remote-own', 'session.scheduledSend.get', {})).toMatchObject({ armed: true })
+    expect(await host.callSession('offline', 'remote-own', 'session.scheduledSend.get', {})).toMatchObject({ armed: true, cancelOnly: true })
+    await expect(host.callSession('offline', 'remote-own', 'session.scheduledSend.set', { patch: { armed: true } })).rejects.toMatchObject({ code: 'failed_precondition' })
     await expect(host.callSession('offline', 'remote-own', 'session.scheduledSend.clear', {})).rejects.toMatchObject({ code: 'failed_precondition' })
     await expect(runWindowControl(7, () => host.callSession('other', 'remote-own', 'session.scheduledSend.clear', {}))).rejects.toMatchObject({ code: 'not_found' })
     await runWindowControl(7, () => host.callSession('offline', 'remote-own', 'session.scheduledSend.clear', {}))

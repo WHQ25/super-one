@@ -89,6 +89,7 @@ export function partitionSidebarSessionGroups(
   groups: SidebarSessionGroup[],
   scheduledBySession: Record<string, ScheduledSend>,
   isAttention: (session: SessionHistoryEntry) => boolean,
+  connectionId?: string,
 ): SidebarSessionSections {
   const attention: SidebarSessionGroup[] = []
   const scheduled: Array<{ group: SidebarSessionGroup; sendAt: number; index: number }> = []
@@ -101,7 +102,7 @@ export function partitionSidebarSessionGroups(
       attention.push(group)
       return
     }
-    const queued = armedSendFor(scheduledBySession, group.parent.sessionId)
+    const queued = armedSendFor(scheduledBySession, group.parent.sessionId, connectionId)
     if (queued) {
       scheduled.push({ group, sendAt: queued.sendAt, index })
       return
@@ -400,6 +401,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
   )
 
   const derived = useMemo(() => {
+    const connectionId = parseRemoteProjectKey(folder.path)?.connectionId
     const projectSession = useChatStore.getState().projectSessions[folder.path]
     const dbVisibleSessions = listedSessions.filter((session) => {
       if (!isListedSession(session)) return false
@@ -410,7 +412,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
       if (!parseRemoteProjectKey(folder.path) || session.messageCount > 0
         || (session.title && session.title !== DEFAULT_SESSION_TITLE && session.title !== 'Untitled')
         || session.parentSessionId || session.childCount || session.isPinned || session.providerSessionId
-        || armedSendFor(scheduledBySession, session.sessionId)
+        || armedSendFor(scheduledBySession, session.sessionId, connectionId)
         || session.sessionId === foregroundSessionId) return true
       const live = projectSession?._sessions[session.sessionId]
       const realtime = useCodexRealtimeViewStore.getState().sessions[session.sessionId]
@@ -498,6 +500,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
       groupSidebarSessions(sessions),
       scheduledBySession,
       isAttention,
+      connectionId,
     )
     // An open project shows every loaded non-settled group. Further pages arrive
     // when that list scrolls. A collapsed project keeps sessions waiting on the

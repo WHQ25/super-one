@@ -1,4 +1,4 @@
-import type { AgentEvent, AgentStatus, HarnessId, PermissionRequest } from '@superone/shared/agent-types'
+import type { AgentEvent, AgentStatus, HarnessId, PermissionRequest, ScheduledSend } from '@superone/shared/agent-types'
 import { SESSION_DURABLE_EVENT, type EnvironmentEventEnvelope } from '@superone/shared/environment'
 import { SESSION_LIST_EVENT_TYPES, topicKey, type TopicRef, type TopicVersionCursor } from '@superone/shared/environment/topics'
 import { summarizeSessionActivity, type SessionActivity } from '@superone/shared/session-activity'
@@ -32,6 +32,7 @@ const ACTIVITY_EVENTS = new Set<string>([
 
 export interface NodeSessionListNoticeDeps {
   environmentId: string
+  listScheduledSends?(): ScheduledSend[]
   listSessions(): NodeSessionRecord[]
   getSession(sessionId: string): NodeSessionRecord | null
   projectPath(projectId: string): string | null
@@ -96,7 +97,7 @@ export function createNodeSessionListNotices(deps: NodeSessionListNoticeDeps) {
     const base = snapshot && typeof snapshot === 'object' && !Array.isArray(snapshot)
       ? snapshot as Record<string, unknown>
       : {}
-    follower.push({ topic, cursor: resumed.cursor, events: [], snapshot: { ...base, activities: activities() } })
+    follower.push({ topic, cursor: resumed.cursor, events: [], snapshot: { ...base, activities: activities(), scheduledSends: deps.listScheduledSends?.() ?? [] } })
   }
 
   const wantsList = (topics: readonly TopicRef[]) =>
@@ -128,6 +129,9 @@ export function createNodeSessionListNotices(deps: NodeSessionListNoticeDeps) {
 
   return {
     topicNotices: { covers: ['sessionList'] as const, open },
+    scheduledSendChanged(sessionId: string, scheduled: ScheduledSend | null, delivered: boolean) {
+      publish({ type: 'scheduled_send_changed', environmentId: deps.environmentId, sessionId, scheduled, delivered })
+    },
     onSessionEvent(envelope: EnvironmentEventEnvelope) {
       if (envelope.aggregateType !== 'session' || envelope.environmentId !== deps.environmentId) return
       const sessionId = envelope.aggregateId

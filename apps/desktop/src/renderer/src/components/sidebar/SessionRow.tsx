@@ -10,6 +10,7 @@ import { useChatStore } from '@/stores/chat'
 import { useAppStore, useHasRealProject } from '@/stores/app'
 import { useRealtimeCallStore } from '@/stores/realtime-call'
 import { REALTIME_VOICE_GLYPH_SCALE } from '@/lib/realtime-voice-visuals'
+import { connectionIdForProjectKey } from '@/lib/session-list-ops'
 import { armedSendFor, useScheduledSendsStore } from '@/stores/scheduled-sends'
 import { formatSendWhen } from '@/components/chat/scheduled-send-time'
 import { remoteControllerBadgeText } from '@/components/chat/RemoteControllerBanner'
@@ -348,7 +349,7 @@ export const SessionRow = memo(function SessionRow({
     childTurnOpen,
   })
   const HarnessIcon = resolveSessionIcon(session.provider, session.acpAgentId)
-  const scheduled = useScheduledSendsStore((s) => armedSendFor(s.bySession, session.sessionId))
+  const scheduled = useScheduledSendsStore((s) => armedSendFor(s.bySession, session.sessionId, connectionIdForProjectKey(folderPath)))
   const scheduledLabel = scheduled
     ? t('sidebar.scheduledFor', { time: formatSendWhen(scheduled.sendAt, Date.now()) })
     : null

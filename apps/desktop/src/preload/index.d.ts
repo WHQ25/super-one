@@ -912,7 +912,7 @@ export interface EnvironmentAPI extends MediaComposerAPI {
   searchMentions(projectPath: string, query: string, agents: { name: string; model: string }[], additionalDirs?: string[], scopeDir?: string): Promise<MentionSearchItem[]>
   disconnectSessionController(sessionId?: string): Promise<void>
   callComposer<M extends import('@superone/shared/environment/composer-requests').ComposerCallMethod>(connectionId: string, method: M, input: import('@superone/shared/environment/composer-requests').ComposerCallMethods[M]['input']): Promise<import('@superone/shared/environment/composer-requests').ComposerCallMethods[M]['result']>
-  onScheduledSendChanged(callback: (event: { sessionId: string; scheduled: ScheduledSend | null; delivered: boolean }) => void): () => void
+  onScheduledSendChanged(callback: (event: { connectionId?: string; sessionId: string; scheduled: ScheduledSend | null; delivered: boolean }) => void): () => void
   callSessionList<M extends import('@superone/shared/environment/session-operations').SessionListOperationMethod>(connectionId: string, method: M, input: import('@superone/shared/environment/session-operations').SessionListOperationMethods[M]['input']): Promise<import('@superone/shared/environment/session-operations').SessionListOperationMethods[M]['result']>
 
   mcpAppRequest(projectPath: string, sessionId: string, request: import('@superone/shared/mcp-apps').McpAppViewRequest, context?: import('@superone/shared/mcp-apps-desktop').McpAppDesktopRequestContext): Promise<import('@superone/shared/mcp-apps').McpAppHostResult>

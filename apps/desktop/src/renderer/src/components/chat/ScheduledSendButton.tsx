@@ -178,9 +178,9 @@ export function ScheduledSendButton({
   // Only the two non-destructive states reach this: accepting an offer, and an
   // ordinary send. Cancelling has its own target inside the armed chip.
   const handlePrimary = useCallback(() => {
-    if (scheduled) onArm(armableSendAt(scheduled.sendAt, scheduled))
-    else onSendNow()
-  }, [onArm, onSendNow, scheduled])
+    if (!scheduled) onSendNow()
+    else if (canArm) onArm(armableSendAt(scheduled.sendAt, scheduled))
+  }, [canArm, onArm, onSendNow, scheduled])
 
   // Unarmed is a question the user has not answered yet, so it asks rather than
   // states — and asks about the event ("on reset") rather than a clock time they
@@ -242,7 +242,7 @@ export function ScheduledSendButton({
                 <HoverCloseSlot onClose={onDismiss} label={t('chat.scheduledSend.dismiss')}>
                   <Clock className="size-3.5 shrink-0" />
                 </HoverCloseSlot>
-                <button type="button" aria-label={primaryLabel} className="cursor-pointer">
+                <button type="button" disabled={!canArm} aria-label={primaryLabel} className="cursor-pointer disabled:cursor-default">
                   <ChipLabel>{label}</ChipLabel>
                 </button>
               </div>

@@ -6,6 +6,7 @@ import { useAppStore } from '@/stores/app'
 import { createDefaultPerSessionState, createDefaultProjectState, useChatStore } from '@/stores/chat'
 import { useRealtimeCallStore } from '@/stores/realtime-call'
 import { useScheduledSendsStore } from '@/stores/scheduled-sends'
+import { connectionIdForProjectKey } from '@/lib/session-list-ops'
 import { setSessionSettlePending } from '@/lib/session-settle-pending'
 import { SessionRow } from './SessionRow'
 
@@ -48,11 +49,13 @@ function Preview({
   scheduledIds = [],
   voiceCallSessionId,
   width = 280,
+  folderPath = FOLDER,
 }: {
   rows: RowSpec[]
   activeId?: string
   scheduledIds?: string[]
   voiceCallSessionId?: string
+  folderPath?: string
   width?: number
 }) {
   const scheduledKey = scheduledIds.join(',')
@@ -79,14 +82,14 @@ function Preview({
       project._sessions[row.session.sessionId] = session
       if (row.unseen) project.unseenCompletedSessions.add(row.session.sessionId)
     }
-    useAppStore.setState({ currentFolder: FOLDER, tmpFolder: null })
+    useAppStore.setState({ currentFolder: folderPath, tmpFolder: null })
     useChatStore.setState({
-      activeProject: FOLDER,
-      projectSessions: { [FOLDER]: project },
+      activeProject: folderPath,
+      projectSessions: { [folderPath]: project },
     })
-    useScheduledSendsStore.setState({
-      bySession: Object.fromEntries(scheduledIds.map((id) => [id, armed(id)])),
-    })
+    useScheduledSendsStore.setState({ bySession: {} })
+    const connectionId = connectionIdForProjectKey(folderPath)
+    for (const id of scheduledIds) useScheduledSendsStore.getState().apply(id, armed(id), connectionId)
     useRealtimeCallStore.setState({
       ...prevRealtimeCall,
       sessionId: voiceCallSessionId ?? null,
@@ -98,7 +101,7 @@ function Preview({
       useScheduledSendsStore.setState(prevSched)
       useRealtimeCallStore.setState(prevRealtimeCall)
     }
-  }, [activeId, scheduledKey, liveKey, voiceCallSessionId])
+  }, [activeId, folderPath, scheduledKey, liveKey, voiceCallSessionId])
 
   return (
     <div className="bg-sidebar p-1.5 text-sidebar-foreground" style={{ width }} data-sidebar-inner>
@@ -106,7 +109,7 @@ function Preview({
         <SessionRow
           key={session.sessionId}
           session={session}
-          folderPath={FOLDER}
+          folderPath={folderPath}
           hasChildren={hasChildren}
           childrenCollapsed={childrenCollapsed}
           onToggleChildren={hasChildren ? () => {} : undefined}
@@ -430,4 +433,9 @@ export const StartedFromAnotherDeviceDark: Story = {
   ...StartedFromAnotherDevice,
   name: 'Started from another device (dark)',
   globals: { theme: 'dark' },
+}
+
+export const RemoteScheduledSend: Story = {
+  render: () => <Preview folderPath="remote:lab:/work" scheduledIds={['queued']}
+    rows={[{ session: entry('queued', 'Review the overnight build') }]} />,
 }

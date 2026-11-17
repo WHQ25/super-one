@@ -1258,7 +1258,7 @@ export function ChatInput({
     queuedMessageRef.current = scheduled?.message ?? null
 
     useEffect(() => {
-      if (isRemoteLocked || !scheduled?.armed) return
+      if (isRemoteLocked || !scheduled?.armed || scheduled.cancelOnly) return
       // The row never echoes its attachments back, so the composer arming or
       // remounting under a schedule is the last state known to be queued.
       let queuedAttachments = attachmentsKey(scheduledDraftRef.current().attachments)
@@ -1282,7 +1282,7 @@ export function ChatInput({
         if (Object.keys(patch).length > 0) setScheduledDraft(patch)
       }, SCHEDULED_SEND_SYNC_MS)
       return () => clearInterval(id)
-    }, [scheduled?.armed, setScheduledDraft, isRemoteLocked])
+    }, [scheduled?.armed, scheduled?.cancelOnly, setScheduledDraft, isRemoteLocked])
 
     /**
      * Empty the composer once — and only once — the mirrored text has actually
@@ -2411,11 +2411,11 @@ export function ChatInput({
               scheduled={scheduled}
               canSend={canSend}
               waitingFor={originalsUploading ? t('chat.attachmentOriginal.waiting') : undefined}
-              canArm={scheduleServed && canArmSchedule}
-              canEdit={scheduleServed}
+              canArm={scheduleServed && !scheduled?.cancelOnly && canArmSchedule && !originalsHeld}
+              canEdit={scheduleServed && !scheduled?.cancelOnly}
               onSendNow={handleSend}
               onArm={handleArmScheduled}
-              onDisarm={scheduleServed ? handleDisarmScheduled : clearScheduled}
+              onDisarm={scheduleServed && !scheduled?.cancelOnly ? handleDisarmScheduled : clearScheduled}
               onDismiss={clearScheduled}
               onSetSendAt={setSendAt}
             />}

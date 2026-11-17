@@ -197,9 +197,11 @@ export function updateActivePerSession(
 }
 
 /** The project holding a session id in this window's store, if loaded here. */
-export function findSessionTarget(state: Pick<ChatStore, 'projectSessions'>, sessionId: string): SessionWriteTarget | null {
+export function findSessionTarget(
+  state: Pick<ChatStore, 'projectSessions'>, sessionId: string, acceptsProject?: (projectPath: string) => boolean,
+): SessionWriteTarget | null {
   for (const [projectPath, project] of Object.entries(state.projectSessions)) {
-    if (project._sessions[sessionId]) return { projectPath, sessionId }
+    if (project._sessions[sessionId] && (!acceptsProject || acceptsProject(projectPath))) return { projectPath, sessionId }
   }
   return null
 }

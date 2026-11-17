@@ -743,6 +743,8 @@ export type ScheduledSendSource = 'rate_limit' | 'manual'
 
 /** A message queued to be sent to a session at a wall-clock time. */
 export interface ScheduledSend {
+  /** Desktop-owned schedule for a remote session, retained for cancellation after an upgrade. */
+  cancelOnly?: true
   sessionId: string
   /** Epoch ms the queued message is due. */
   sendAt: number

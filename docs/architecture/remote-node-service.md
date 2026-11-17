@@ -1420,7 +1420,9 @@ checkout, so opening a suggested task does not add its worktree to the sidebar.
 
 Git commands and worktree creation execute on the node. A local and a remote
 clone are distinct projects even when repository identity groups them in the UI.
-Worktree paths never cross environments. `git.clone` without a parent directory
+Worktree paths never cross environments. Each host applies the
+repository's own [worktree space settings](../features/worktree-space.md) when
+it creates one. `git.clone` without a parent directory
 clones into the node's `agent.projectsDir` setting (default
 `~/SuperOne/Projects`), which is where a remote collaboration launch puts a
 repository the node lacks; matching uses the normalized origin URL of

@@ -52,15 +52,17 @@ export function worktreeAddArgs(
   wtPath: string,
   baseRef: string,
   branchName?: string,
+  noCheckout = false,
 ): string[] {
+  const flags = noCheckout ? ['--no-checkout'] : []
   if (mode === 'branch') {
     if (!branchName?.trim()) throw new Error('Branch name is required for branch mode')
-    return ['add', '-b', branchName.trim(), wtPath, baseRef]
+    return ['add', ...flags, '-b', branchName.trim(), wtPath, baseRef]
   }
   if (mode === 'attach') {
-    return ['add', wtPath, baseRef]
+    return ['add', ...flags, wtPath, baseRef]
   }
-  return ['add', '--detach', wtPath, baseRef]
+  return ['add', ...flags, '--detach', wtPath, baseRef]
 }
 
 export function recordedBranchForMode(

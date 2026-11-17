@@ -4945,6 +4945,8 @@ export const AgentIpcChannels = {
   /** Local data sizes for Settings → Storage, and one action from that page. */
   STORAGE_INVENTORY_GET: 'app:storage-inventory',
   STORAGE_ACTION: 'app:storage-action',
+  STORAGE_WORKTREES_GET: 'app:storage-worktrees',
+  STORAGE_WORKTREES_REMOVE: 'app:storage-worktrees-remove',
   /** Stable per-installation id used as the analytics distinct id. */
   APP_INSTALL_ID_GET: 'app:install-id-get',
   /**

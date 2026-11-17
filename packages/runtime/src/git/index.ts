@@ -18,6 +18,7 @@ export {
   carryUncommittedChanges,
   activateWorktree,
   rollbackCollabWorktree,
+  removeWorktree,
   handoffPreview,
   handoffToMain,
   assignBranch,
@@ -28,6 +29,7 @@ export {
   type HandoffResult,
   type HandoffPreview,
 } from './worktree-ops'
+export { WORKTREE_CONFIG_FILE, readWorktreeConfig, type WorktreeConfig } from './worktree-config'
 export {
   applyIncomingBranch,
   branchRelations,

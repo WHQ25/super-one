@@ -89,3 +89,22 @@ export interface StorageActionResult {
   removedBytes: number
   compact?: StorageCompactResult
 }
+
+/** A SuperOne-created worktree under `~/.worktrees`. */
+export interface StorageWorktree {
+  path: string
+  /** Directory name of the repository it was cut from. */
+  repo: string
+  /** Checked-out branch; null when detached or unreadable. */
+  branch: string | null
+  bytes: number
+  /** A session or project still points at it; it cannot be removed here. */
+  inUse: boolean
+  /** Has uncommitted changes that removal would discard. */
+  dirty: boolean
+}
+
+export interface StorageWorktreeRemoval {
+  removed: string[]
+  failed: { path: string; error: string }[]
+}

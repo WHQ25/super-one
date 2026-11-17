@@ -58,7 +58,9 @@ function stub(options: { inventory?: StorageInventory; result?: StorageActionRes
     ? vi.fn().mockRejectedValue(new Error('busy'))
     : vi.fn().mockImplementation(async (action: string) => options.result ?? { action, removedBytes: MB })
   const revealFile = vi.fn().mockResolvedValue(undefined)
-  Object.assign(window.app, { getStorageInventory, applyStorageAction, revealFile })
+  // The worktree section loads on its own; its states are covered in WorktreeStorageSection.test.tsx.
+  const getStorageWorktrees = vi.fn().mockResolvedValue([])
+  Object.assign(window.app, { getStorageInventory, applyStorageAction, revealFile, getStorageWorktrees })
   return { getStorageInventory, applyStorageAction, revealFile }
 }
 

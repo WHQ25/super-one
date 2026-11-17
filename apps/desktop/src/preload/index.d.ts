@@ -587,6 +587,8 @@ interface AppAPI extends WindowLayoutAPI {
   retrySyncZoneHandoffs(): Promise<{ retried: number }>
   getStorageInventory(): Promise<import('@superone/shared/desktop-storage').StorageInventory>
   applyStorageAction(action: import('@superone/shared/desktop-storage').StorageApplyAction, harnessId?: string): Promise<import('@superone/shared/desktop-storage').StorageActionResult>
+  getStorageWorktrees(): Promise<import('@superone/shared/desktop-storage').StorageWorktree[]>
+  removeStorageWorktrees(paths: string[]): Promise<import('@superone/shared/desktop-storage').StorageWorktreeRemoval>
   getInstallId(): Promise<string>
   /**
    * false — status only.

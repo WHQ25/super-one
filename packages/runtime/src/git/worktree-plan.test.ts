@@ -45,6 +45,12 @@ describe('worktreeAddArgs', () => {
     expect(worktreeAddArgs('attach', '/wt', 'main')).toEqual(['add', '/wt', 'main'])
     expect(worktreeAddArgs('detach', '/wt', 'main')).toEqual(['add', '--detach', '/wt', 'main'])
   })
+
+  it('leaves the files unwritten when a sparse checkout follows', () => {
+    expect(worktreeAddArgs('branch', '/wt', 'main', 'feat', true)).toEqual(['add', '--no-checkout', '-b', 'feat', '/wt', 'main'])
+    expect(worktreeAddArgs('attach', '/wt', 'main', undefined, true)).toEqual(['add', '--no-checkout', '/wt', 'main'])
+    expect(worktreeAddArgs('detach', '/wt', 'main', undefined, true)).toEqual(['add', '--no-checkout', '--detach', '/wt', 'main'])
+  })
 })
 
 describe('recordedBranchForMode', () => {

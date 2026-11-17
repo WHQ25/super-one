@@ -4,6 +4,7 @@ import { expect, userEvent, waitFor, within } from 'storybook/test'
 import type { StorageActionResult, StorageInventory } from '@superone/shared/desktop-storage'
 import { mockIpc } from '../../../../../.storybook/mock-ipc'
 import { StorageSettingsPage } from './StorageSettingsPage'
+import { seedWorktreeStorage } from './WorktreeStorageSection.stories'
 
 const GB = 1024 ** 3
 const MB = 1024 ** 2
@@ -102,6 +103,8 @@ function seed(next: StorageInventory, options: SeedOptions = {}) {
     actionDelay = options.actionDelay ?? 0
     reads = 0
     result = options.result ?? compacted
+    // The page embeds the worktree section, whose mock keeps the last story's state.
+    seedWorktreeStorage()
     return <Story />
   }
 }

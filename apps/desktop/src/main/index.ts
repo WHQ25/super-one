@@ -4664,6 +4664,8 @@ function registerIpcHandlers(): void {
   })
   ipcMain.handle(AgentIpcChannels.STORAGE_INVENTORY_GET, async () => (await import('./storage-ipc')).getDesktopStorageInventory())
   ipcMain.handle(AgentIpcChannels.STORAGE_ACTION, async (_e, action: unknown, harnessId: unknown) => (await import('./storage-ipc')).runDesktopStorageAction(action, harnessId))
+  ipcMain.handle(AgentIpcChannels.STORAGE_WORKTREES_GET, async () => (await import('./storage-ipc')).getDesktopStorageWorktrees())
+  ipcMain.handle(AgentIpcChannels.STORAGE_WORKTREES_REMOVE, async (_e, paths: unknown) => (await import('./storage-ipc')).removeDesktopStorageWorktrees(paths))
 
   ipcMain.handle(AgentIpcChannels.APP_INSTALL_ID_GET, () => getInstallId())
   ipcMain.handle(

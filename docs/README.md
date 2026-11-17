@@ -57,6 +57,7 @@ the same commit.
 - [composer.md](features/composer.md) — desktop composer slot, decision queue, and focus and draft rules
 - [checkout-sources.md](features/checkout-sources.md) — checking out local branches from other environments, git remotes and pull requests
 - [session-links.md](features/session-links.md) — session Markdown chips, source ownership and environment-scoped archive discovery
+- [worktree-space.md](features/worktree-space.md) — sparse and shared-directory worktrees, and removing unused ones from Storage settings
 - [session-continuation.md](features/session-continuation.md) — continuing a cache-expired long session in a new one that takes over its collaboration channels
 - [mobile-codex-realtime-voice.md](features/mobile-codex-realtime-voice.md) — foreground native voice, endpoint ownership and media lifecycle
 

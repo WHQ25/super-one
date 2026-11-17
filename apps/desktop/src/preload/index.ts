@@ -1943,6 +1943,10 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.STORAGE_INVENTORY_GET),
   applyStorageAction: (action: import('@superone/shared/desktop-storage').StorageApplyAction, harnessId?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.STORAGE_ACTION, action, harnessId),
+  getStorageWorktrees: () =>
+    ipcRenderer.invoke(AgentIpcChannels.STORAGE_WORKTREES_GET),
+  removeStorageWorktrees: (paths: string[]) =>
+    ipcRenderer.invoke(AgentIpcChannels.STORAGE_WORKTREES_REMOVE, paths),
   getInstallId: () => ipcRenderer.invoke(AgentIpcChannels.APP_INSTALL_ID_GET),
   openComputerUsePermissions: (
     request: boolean | 'guided' | 'accessibility' | 'screenRecording' = true,

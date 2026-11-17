@@ -1,11 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
 import { basename, join } from 'node:path'
 import { homedir, tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
 import { gitRun, type GitRunOptions } from './run'
 import { planNewWorktreePaths } from './worktree-plan'
-import { activateWorktree, GIT_READ_OPTS, handoffPreview, handoffToMain, rollbackCollabWorktree, worktreeGit } from './worktree-ops'
+import { GIT_READ_OPTS, activateWorktree, handoffPreview, handoffToMain, removeWorktree, rollbackCollabWorktree, worktreeGit } from './worktree-ops'
 
 function git(cwd: string, args: string[]): string {
   return execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' })
@@ -255,5 +255,120 @@ describe('worktree ops', () => {
       expect(existsSync(join(created.path, '.git'))).toBe(true)
       expect(existsSync(join(dir, 'README.md'))).toBe(true)
     })
+  })
+})
+
+describe('worktree space settings', () => {
+  let home: string
+  let dir: string
+  const realHome = process.env.HOME
+  const g = worktreeGit()
+
+  beforeEach(() => {
+    // Worktrees land under `~/.worktrees`; keep them out of the real home.
+    home = realpathSync(mkdtempSync(join(tmpdir(), 's1-wt-home-')))
+    process.env.HOME = home
+    dir = join(home, 'repo')
+    mkdirSync(dir)
+    git(dir, ['init', '-b', 'main'])
+    git(dir, ['config', 'user.email', 't@example.com'])
+    git(dir, ['config', 'user.name', 't'])
+    for (const file of ['apps/a/a.txt', 'apps/b/b.txt', 'packages/p/p.txt', 'README.md']) {
+      mkdirSync(join(dir, file, '..'), { recursive: true })
+      writeFileSync(join(dir, file), `${file}\n`)
+    }
+    writeFileSync(join(dir, '.gitignore'), 'node_modules/\n.superone/\n')
+    git(dir, ['add', '.'])
+    git(dir, ['commit', '-m', 'init'])
+    mkdirSync(join(dir, 'node_modules'))
+    writeFileSync(join(dir, 'node_modules', 'dep.js'), 'dep\n')
+  })
+
+  afterEach(() => {
+    process.env.HOME = realHome
+    rmSync(home, { recursive: true, force: true })
+  })
+
+  function configure(config: object): void {
+    mkdirSync(join(dir, '.superone'), { recursive: true })
+    writeFileSync(join(dir, '.superone', 'worktree.json'), JSON.stringify(config))
+  }
+
+  it('checks out everything and links nothing without settings', async () => {
+    const { path } = await activateWorktree(g, dir, { baseBranch: 'main', mode: 'detach' })
+    expect(existsSync(join(path, 'apps/b/b.txt'))).toBe(true)
+    expect(existsSync(join(path, 'node_modules'))).toBe(false)
+  })
+
+  it('checks out only the configured directories, on the requested branch', async () => {
+    configure({ sparsePaths: ['apps/a'] })
+    const result = await activateWorktree(g, dir, { baseBranch: 'main', mode: 'branch', branchName: 'feat/sparse' })
+    expect(existsSync(join(result.path, 'apps/a/a.txt'))).toBe(true)
+    expect(existsSync(join(result.path, 'README.md'))).toBe(true)
+    expect(existsSync(join(result.path, 'apps/b'))).toBe(false)
+    expect(existsSync(join(result.path, 'packages'))).toBe(false)
+    expect(git(result.path, ['symbolic-ref', '--short', 'HEAD']).trim()).toBe('feat/sparse')
+    expect(git(result.path, ['status', '--porcelain']).trim()).toBe('')
+    expect(result.recordedBranch).toBe('feat/sparse')
+  })
+
+  it('keeps a sparse detached worktree detached and clean', async () => {
+    configure({ sparsePaths: ['packages/p'] })
+    const { path } = await activateWorktree(g, dir, { baseBranch: 'main', mode: 'detach' })
+    expect(existsSync(join(path, 'packages/p/p.txt'))).toBe(true)
+    expect(existsSync(join(path, 'apps'))).toBe(false)
+    expect(() => git(path, ['symbolic-ref', '-q', 'HEAD'])).toThrow()
+    expect(git(path, ['status', '--porcelain']).trim()).toBe('')
+  })
+
+  it('removes the worktree and its new branch when the sparse checkout fails', async () => {
+    configure({ sparsePaths: ['apps/a'] })
+    const failing: typeof gitRun = (cwd, args, env, opts) =>
+      args[0] === 'checkout' ? Promise.reject(new Error('checkout failed')) : gitRun(cwd, args, env, opts)
+    await expect(
+      activateWorktree(worktreeGit(failing), dir, { baseBranch: 'main', mode: 'branch', branchName: 'feat/broken' }),
+    ).rejects.toThrow('checkout failed')
+    expect(git(dir, ['worktree', 'list', '--porcelain']).match(/^worktree /gm)).toHaveLength(1)
+    expect(git(dir, ['branch', '--list', 'feat/broken']).trim()).toBe('')
+  })
+
+  it('links an ignored path from the main checkout and keeps the link out of git status', async () => {
+    configure({ sharedPaths: ['node_modules', 'apps/a', 'missing'] })
+    const { path } = await activateWorktree(g, dir, { baseBranch: 'main', mode: 'detach' })
+    expect(lstatSync(join(path, 'node_modules')).isSymbolicLink()).toBe(true)
+    expect(readFileSync(join(path, 'node_modules', 'dep.js'), 'utf8')).toBe('dep\n')
+    // A tracked path stays a real checkout; a missing one is skipped.
+    expect(lstatSync(join(path, 'apps/a')).isSymbolicLink()).toBe(false)
+    expect(existsSync(join(path, 'missing'))).toBe(false)
+    expect(git(path, ['status', '--porcelain']).trim()).toBe('')
+    expect(git(dir, ['status', '--porcelain']).trim()).toBe('')
+
+    // A second worktree does not repeat the exclude rule.
+    await activateWorktree(g, dir, { baseBranch: 'main', mode: 'detach' })
+    const exclude = readFileSync(join(dir, '.git', 'info', 'exclude'), 'utf8')
+    expect(exclude.split('\n').filter((line) => line === '/node_modules')).toHaveLength(1)
+  })
+
+  it('removes an unused worktree without touching the shared directory or its branch', async () => {
+    configure({ sharedPaths: ['node_modules'] })
+    const { path } = await activateWorktree(g, dir, { baseBranch: 'main', mode: 'branch', branchName: 'feat/keep' })
+    writeFileSync(join(path, 'scratch.txt'), 'uncommitted\n')
+
+    await removeWorktree(g, path)
+
+    expect(existsSync(path)).toBe(false)
+    expect(existsSync(join(dir, 'node_modules', 'dep.js'))).toBe(true)
+    expect(git(dir, ['branch', '--list', 'feat/keep']).trim()).toContain('feat/keep')
+    expect(git(dir, ['worktree', 'list', '--porcelain']).match(/^worktree /gm)).toHaveLength(1)
+  })
+
+  it('deletes a leftover directory git no longer tracks and refuses the main checkout', async () => {
+    const { path } = await activateWorktree(g, dir, { baseBranch: 'main', mode: 'detach' })
+    rmSync(join(path, '.git'))
+    await removeWorktree(g, path)
+    expect(existsSync(path)).toBe(false)
+
+    await expect(removeWorktree(g, dir)).rejects.toThrow(/main checkout/)
+    expect(existsSync(join(dir, 'README.md'))).toBe(true)
   })
 })

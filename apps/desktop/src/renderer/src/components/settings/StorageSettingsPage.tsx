@@ -23,6 +23,7 @@ import {
   storageTotalBytes,
 } from './storage-optimize'
 import { CategoryRow, SpacePair, StorageLoading, StorageSummary } from './StorageSettingsComponents'
+import { WorktreeStorageSection } from './WorktreeStorageSection'
 
 type State =
   | { status: 'loading' }
@@ -206,6 +207,8 @@ export function StorageSettingsPage() {
           </SettingsSection>
         )
       })}
+
+      <WorktreeStorageSection />
 
       <Dialog open={pending !== null} onOpenChange={(open) => { if (!open) { setPending(null); setPendingHarnessId(null) } }}>
         <DialogContent>

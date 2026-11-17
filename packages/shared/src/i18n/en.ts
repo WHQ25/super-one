@@ -5271,6 +5271,27 @@ export type Messages = {
     optimizeVacuumSkipped: string
     retiredAntigravity: string
     sections: { database: string; browser: string; node: string; sync: string; cache: string; runtimes: string }
+    worktrees: {
+      section: string
+      measuring: string
+      unreadable: string
+      empty: string
+      inUse: string
+      inUseDescription_one: string
+      inUseDescription_other: string
+      detached: string
+      uncommitted: string
+      remove: string
+      removeUnused: string
+      removed_one: string
+      removed_other: string
+      removeFailed_one: string
+      removeFailed_other: string
+      confirmTitle_one: string
+      confirmTitle_other: string
+      confirm: string
+      confirmDirty: string
+    }
     categories: {
       chatDatabase: { label: string; description: string }
       backup: { label: string; description: string }
@@ -10660,6 +10681,27 @@ export const en: Messages = {
       runtimes: 'Runtimes',
     },
     retiredAntigravity: 'Older managed runtime. This version uses the agy CLI, so this whole directory can be removed.',
+    worktrees: {
+      section: 'Worktrees',
+      measuring: 'Measuring worktrees…',
+      unreadable: 'Worktree usage could not be read.',
+      empty: 'SuperOne has not created any worktrees on this computer.',
+      inUse: 'In Use',
+      inUseDescription_one: '{{count}} worktree that a session still uses. Delete that session to free it.',
+      inUseDescription_other: '{{count}} worktrees that sessions still use. Delete those sessions to free them.',
+      detached: 'Detached',
+      uncommitted: 'uncommitted changes',
+      remove: 'Remove',
+      removeUnused: 'Remove Unused',
+      removed_one: 'Removed {{count}} worktree and freed {{bytes}}.',
+      removed_other: 'Removed {{count}} worktrees and freed {{bytes}}.',
+      removeFailed_one: '{{count}} worktree could not be removed. Freed {{bytes}}.',
+      removeFailed_other: '{{count}} worktrees could not be removed. Freed {{bytes}}.',
+      confirmTitle_one: 'Remove this worktree?',
+      confirmTitle_other: 'Remove {{count}} worktrees?',
+      confirm: 'No session uses this. Removing frees {{bytes}}. Branches and commits stay in the repository.',
+      confirmDirty: 'This worktree has uncommitted changes that will be lost. Branches and commits stay in the repository.',
+    },
     categories: {
       chatDatabase: { label: 'Chat Database', description: 'Sessions, messages, and Cursor resume state. These files are never deleted from here.' },
       backup: { label: 'Backup', description: 'Copies of the chat database kept during schema upgrades. Safe to remove once SuperOne has started.' },

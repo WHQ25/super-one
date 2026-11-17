@@ -5,8 +5,8 @@
  * {@link withRepoLock} per process.
  */
 
-import { existsSync, lstatSync, mkdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
-import { basename, isAbsolute, join, relative, resolve, sep } from 'node:path'
+import { appendFileSync, existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'node:fs'
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path'
 import { tmpdir } from 'node:os'
 import { randomUUID } from 'node:crypto'
 import type { WorktreeMode } from '@superone/shared/agent-types'
@@ -14,6 +14,7 @@ import { gitRun, type GitRunOptions } from './run'
 import { gitErrorMessage, sanitizeGitRef } from './sanitize-ref'
 import { withRepoLock } from './repo-lock'
 import { parseWorktreePorcelain, type WorktreePorcelainEntry } from './worktree-porcelain'
+import { readWorktreeConfig } from './worktree-config'
 import {
   allocateWorktreePath,
   checkedOutBranchesFromPorcelain,
@@ -154,7 +155,20 @@ export async function activateWorktree(
     const planned = planNewWorktreePaths({ mainDir, shortHash: commitHash.slice(0, 7) })
     if (!existsSync(planned.wtDir)) mkdirSync(planned.wtDir, { recursive: true })
     const wtPath = allocateWorktreePath(planned.wtDir, basename(planned.wtPath))
-    await git.write(folderPath, ['worktree', ...worktreeAddArgs(mode, wtPath, baseBranch, branchName)])
+    const config = readWorktreeConfig(mainDir)
+    const sparse = config.sparsePaths.length > 0
+    await git.write(folderPath, ['worktree', ...worktreeAddArgs(mode, wtPath, baseBranch, branchName, sparse)])
+    if (sparse) {
+      try {
+        await checkOutSparse(git, wtPath, config.sparsePaths)
+      } catch (err) {
+        await removeFreshWorktree(git, folderPath, wtPath, input).catch(() => {
+          /* the checkout error is the one worth reporting */
+        })
+        throw err
+      }
+    }
+    await linkSharedPaths(git, mainDir, wtPath, config.sharedPaths)
     if (carryLocalChanges) await carryUncommittedChanges(git, folderPath, wtPath)
     return { path: wtPath, recordedBranch: recordedBranchForMode(mode, baseBranch, branchName) }
   })
@@ -224,6 +238,45 @@ async function reusableCheckout(git: WorktreeGit, path: string, branchName: stri
     }
     if (head !== targetHash || symbolic !== `refs/heads/${branchName}`) return false
     return (await git.read(path, ['status', '--porcelain'])).trim().length === 0
+  } catch {
+    return false
+  }
+}
+
+/** Fill a `--no-checkout` worktree with only the configured directories (plus root files). */
+async function checkOutSparse(git: WorktreeGit, wtPath: string, directories: string[]): Promise<void> {
+  await git.write(wtPath, ['sparse-checkout', 'init', '--cone'])
+  await git.write(wtPath, ['sparse-checkout', 'set', '--', ...directories])
+  // The index is still unborn, so this is an initial checkout of HEAD that stays on its branch.
+  await git.write(wtPath, ['checkout', 'HEAD'])
+}
+
+/**
+ * Link git-ignored paths (dependency and cache directories) from the main
+ * checkout so a worktree does not grow its own copy. Best effort: a path that
+ * is missing, tracked, or already present in the worktree is left alone.
+ */
+async function linkSharedPaths(git: WorktreeGit, mainDir: string, wtPath: string, paths: string[]): Promise<void> {
+  for (const path of paths) {
+    try {
+      const source = join(mainDir, path)
+      const target = join(wtPath, path)
+      if (!existsSync(source) || pathExists(target)) continue
+      // Only ignored paths are shared: a tracked path belongs to the checkout.
+      await git.read(mainDir, ['check-ignore', '-q', '--', path])
+      mkdirSync(dirname(target), { recursive: true })
+      symlinkSync(source, target, lstatSync(source).isDirectory() ? 'junction' : 'file')
+      await excludeLink(git, wtPath, path)
+    } catch {
+      /* sharing never blocks creation */
+    }
+  }
+}
+
+function pathExists(path: string): boolean {
+  try {
+    lstatSync(path)
+    return true
   } catch {
     return false
   }
@@ -359,13 +412,48 @@ export async function rollbackCollabWorktree(
   })
 }
 
+/** A `dir/` ignore rule does not match a link, which would then show up as untracked and be carried or handed off. */
+async function excludeLink(git: WorktreeGit, wtPath: string, path: string): Promise<void> {
+  const ignored = await git.read(wtPath, ['check-ignore', '-q', '--', path]).then(() => true, () => false)
+  if (ignored) return
+  const exclude = resolve(wtPath, (await git.read(wtPath, ['rev-parse', '--git-path', 'info/exclude'])).trim())
+  const rule = `/${path}`
+  const current = existsSync(exclude) ? readFileSync(exclude, 'utf8') : ''
+  if (current.split('\n').includes(rule)) return
+  mkdirSync(dirname(exclude), { recursive: true })
+  appendFileSync(exclude, `${current && !current.endsWith('\n') ? '\n' : ''}${rule}\n`)
+}
+
+async function removeFreshWorktree(git: WorktreeGit, sourceDir: string, worktreePath: string, input: ActivateWorktreeInput): Promise<void> {
+  await git.write(sourceDir, ['worktree', 'remove', '--force', worktreePath])
+  if (input.mode === 'branch' && input.branchName) await git.write(sourceDir, ['branch', '-D', sanitizeGitRef(input.branchName)])
+}
+
+/**
+ * Remove a worktree nobody uses any more. Its branch is kept. A directory git
+ * no longer knows (or refuses to remove) is deleted and its record pruned.
+ */
+export async function removeWorktree(git: WorktreeGit, worktreePath: string): Promise<void> {
+  const mainDir = await resolveMainWorktreeDir(git, worktreePath).catch(() => null)
+  if (!mainDir || samePath(mainDir, worktreePath)) {
+    if (mainDir) throw new Error('Refusing to remove the main checkout')
+    rmSync(worktreePath, { recursive: true, force: true })
+    return
+  }
+  await withRepoLock(mainDir, async () => {
+    try {
+      await git.write(mainDir, ['worktree', 'remove', '--force', worktreePath])
+    } catch {
+      rmSync(worktreePath, { recursive: true, force: true })
+      await git.write(mainDir, ['worktree', 'prune'])
+    }
+  })
+}
+
 /** Roll back only a fresh, unused checkout; no agent turn has been admitted yet. */
 export async function rollbackUnusedWorktree(git: WorktreeGit, sourceDir: string, worktreePath: string, input: ActivateWorktreeInput): Promise<void> {
   const mainDir = await resolveMainWorktreeDir(git, sourceDir)
-  await withRepoLock(mainDir, async () => {
-    await git.write(sourceDir, ['worktree', 'remove', '--force', worktreePath])
-    if (input.mode === 'branch' && input.branchName) await git.write(sourceDir, ['branch', '-D', sanitizeGitRef(input.branchName)])
-  })
+  await withRepoLock(mainDir, () => removeFreshWorktree(git, sourceDir, worktreePath, input))
 }
 
 /**

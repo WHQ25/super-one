@@ -1,7 +1,7 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { AgentEvent } from '@superone/shared/agent-types'
-import { isSubagentToolName } from '@superone/shared/tool-ui'
+import type { AgentEvent, PermissionMode } from '@superone/shared/agent-types'
+import { isSubagentToolName, parseMcpToolName, SUPERONE_KNOWN_MCP_BARE_TOOLS } from '@superone/shared/tool-ui'
 import {
   parseAntigravitySubagentTranscript,
   type ParentWakeupProgress,
@@ -16,6 +16,7 @@ export interface TrackedSubagent {
   conversationId?: string
   outputFile?: string
   spawnStepIndex?: number
+  isSwarmWorker?: boolean
   lastRawLength: number
   emittedSavedImages?: boolean
   completed: boolean
@@ -282,6 +283,7 @@ export function emitWakeupProgressSteps(
             messageId: targetMessageId,
             description: desc,
             startedAtMs: now,
+            ...(tc.input.isSwarmWorker === true ? { isSwarmWorker: true } : {}),
             lastRawLength: 0,
             completed: false,
           })
@@ -396,21 +398,26 @@ export function flushRemainingWakeupToolResults(
 }
 
 const NON_INTERACTIVE_WAKEUP_TOOLS = new Set([
-  'read_file',
-  'view_file',
-  'grep_search',
-  'find_by_name',
-  'list_dir',
-  'search_web',
-  'read_url_content',
-  'manage_task',
-  'manage_subagents',
-  'schedule',
-  'define_subagent',
-  'send_message',
-  'list_resources',
-  'read_resource',
+  'read_file', 'view_file', 'view_file_outline', 'view_code_item', 'read_notebook',
+  'grep_search', 'find_by_name', 'list_dir', 'search_web', 'read_url_content',
+  'manage_task', 'manage_subagents', 'manage_inbox', 'schedule', 'define_subagent',
+  'send_message', 'list_resources', 'read_resource', 'command_status', 'task_output',
+  'wait', 'wait_5_seconds', 'swarm',
 ])
+
+const ACCEPT_EDITS_MUTATION_TOOLS = new Set([
+  'write_file', 'write_to_file', 'create_file', 'edit_file',
+  'replace_file_content', 'multi_replace_file_content', 'edit_notebook', 'notebook_edit',
+])
+
+function isMcpWakeupTool(rawName: string | undefined, mappedName: string | undefined): boolean {
+  if (!rawName) return false
+  if (rawName === 'call_mcp_tool' || rawName.startsWith('mcp__') || SUPERONE_KNOWN_MCP_BARE_TOOLS.has(rawName)) {
+    return true
+  }
+  if (parseMcpToolName(rawName)) return true
+  return Boolean(mappedName && parseMcpToolName(mappedName))
+}
 
 export function resolveWakeupStallTimeoutMs(
   wakeup: ParentWakeupProgress,
@@ -418,13 +425,25 @@ export function resolveWakeupStallTimeoutMs(
   interactionStallTimeoutMs: number,
   wakeupResponseTimeoutMs: number,
   hasExplicitStallTimeout: boolean,
+  permissionMode?: PermissionMode | null,
 ): number {
-  if (wakeup.pendingToolRawName === 'ask_question') return interactionStallTimeoutMs
-  if (profile !== 'standard') return wakeupResponseTimeoutMs
-  if (!hasExplicitStallTimeout && wakeup.pendingToolRawName && NON_INTERACTIVE_WAKEUP_TOOLS.has(wakeup.pendingToolRawName)) {
+  const rawName = wakeup.pendingToolRawName
+  if (rawName === 'ask_question' || wakeup.pendingToolName === 'AskUserQuestion') {
+    return interactionStallTimeoutMs
+  }
+  if (profile === 'bypass') return wakeupResponseTimeoutMs
+  if (profile === 'auto') {
+    if (rawName === 'run_command' && wakeup.pendingToolBypassSandbox) return interactionStallTimeoutMs
     return wakeupResponseTimeoutMs
   }
-  if (hasExplicitStallTimeout || wakeup.pendingToolRawName !== 'run_command') {
+  if (!hasExplicitStallTimeout) {
+    if (isMcpWakeupTool(rawName, wakeup.pendingToolName)) return wakeupResponseTimeoutMs
+    if (rawName && NON_INTERACTIVE_WAKEUP_TOOLS.has(rawName)) return wakeupResponseTimeoutMs
+    if (permissionMode === 'acceptEdits' && rawName && ACCEPT_EDITS_MUTATION_TOOLS.has(rawName)) {
+      return wakeupResponseTimeoutMs
+    }
+  }
+  if (hasExplicitStallTimeout || rawName !== 'run_command' || wakeup.pendingToolBypassSandbox) {
     return interactionStallTimeoutMs
   }
   return Math.max(interactionStallTimeoutMs, (wakeup.pendingToolWaitMs ?? 1_500) + 2_000)

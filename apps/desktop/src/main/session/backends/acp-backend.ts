@@ -42,6 +42,12 @@ import {
   antigravityPermissionLaunchProfile,
   type AntigravityPermissionLaunchProfile,
 } from '../../acp/antigravity-runtime-bridge'
+import {
+  buildAntigravityModelCatalogError,
+  isAntigravityUnknownModelError,
+  isDegradedAntigravityModelCatalog,
+  resolveCachedAntigravityModelFallback,
+} from '../../acp/antigravity-model-guard'
 import { createAcpRuntime, type AcpRuntime, type AcpRuntimeOptions } from '../../acp/acp-runtime'
 import type { FolderTrustRequest } from '../../acp/folder-trust'
 import { describeAcpRequestFailure } from '../../acp/acp-request-error'
@@ -180,7 +186,12 @@ export class AcpBackend implements SessionBackend {
    * actor and Grok marks the workflow `interrupted`.
    */
   hasActiveBackgroundTasks(): boolean {
-    return this.liveBackgroundTaskIds.size > 0 || this.cronTaskIds.size > 0
+    return (
+      this.liveBackgroundTaskIds.size > 0 ||
+      this.cronTaskIds.size > 0 ||
+      this.agentWakeMessageId !== null ||
+      Boolean(this.runtime?.hasActiveBackgroundWork?.())
+    )
   }
 
   private started = false
@@ -215,6 +226,8 @@ export class AcpBackend implements SessionBackend {
   private terminalPermissionAbort = new AbortController()
   private interrupted = false
   private currentMessageId: string | null = null
+  private agentWakeMessageId: string | null = null
+  private committedProviderSessionId: string | null = null
   /** Assistant bubble the live `session/prompt` is currently streaming into. */
   private liveAssistantId: string | null = null
   /** Ids minted for this prompt (primary + sealed/folded segments). */
@@ -386,10 +399,18 @@ export class AcpBackend implements SessionBackend {
     }
   }
 
+  private resetUncommittedDegradedSession(): void {
+    if (!this.startOpts || this.committedProviderSessionId) return
+    this.startOpts = { ...this.startOpts, providerSessionId: undefined }
+  }
+
   async start(opts: BackendStartOptions): Promise<void> {
     if (this.disposed) throw new Error('AcpBackend already disposed')
     const next = this.pinnedConfig(opts.config)
     const restart = this.needsRuntimeRestart(opts) || this.isLaunchChanged(next)
+    if (opts.providerSessionId?.trim()) {
+      this.committedProviderSessionId = opts.providerSessionId.trim()
+    }
     this.startOpts = opts
     this.config = next
     if (restart && (this.runtime || this.ensureRuntimePromise)) {
@@ -410,6 +431,7 @@ export class AcpBackend implements SessionBackend {
 
   async rebuild(opts: BackendStartOptions): Promise<void> {
     await this.teardownRuntime()
+    this.committedProviderSessionId = opts.providerSessionId?.trim() || null
     this.startOpts = opts
     this.config = this.pinnedConfig(opts.config)
     this.started = true
@@ -428,6 +450,9 @@ export class AcpBackend implements SessionBackend {
 
   prewarm(opts: BackendStartOptions): void {
     if (this.disposed) return
+    if (opts.providerSessionId?.trim()) {
+      this.committedProviderSessionId = opts.providerSessionId.trim()
+    }
     const next = this.pinnedConfig(opts.config)
     const restart = this.needsRuntimeRestart(opts)
     if (restart && (this.runtime || this.ensureRuntimePromise)) {
@@ -562,6 +587,28 @@ export class AcpBackend implements SessionBackend {
     this.persistConfigCache(configOptions, models, agentId)
     if (models && models.models.length > 0) {
       this.emitModels(models, agentId, epoch)
+    } else if (isAntigravityAcpAgent(agentId ?? undefined) && (configOptions?.length ?? 0) > 0) {
+      const cached = resolveCachedAntigravityModelFallback(this.startOpts?.model)
+      this.modelConfigId = null
+      if (cached) {
+        this.emit({
+          type: 'acp_models',
+          models: cached.models,
+          selectedModelId: cached.selectedModelId,
+          configId: cached.configId,
+          status: 'ready',
+          agentId,
+        })
+      } else {
+        this.emit({
+          type: 'acp_models',
+          models: [],
+          selectedModelId: null,
+          configId: null,
+          status: 'ready',
+          agentId,
+        })
+      }
     } else {
       this.modelConfigId = null
       this.emit({
@@ -870,6 +917,24 @@ export class AcpBackend implements SessionBackend {
 
   private routeSessionEvent(event: AgentEvent, agentId: string | null, epoch: number): void {
     if (epoch !== this.runtimeEpoch) return
+    if (event.type === 'message_start' && !this.currentMessageId) {
+      this.agentWakeMessageId = event.message.id
+    } else if (
+      (event.type === 'message_complete' ||
+        event.type === 'message_interrupted' ||
+        event.type === 'message_error') &&
+      this.agentWakeMessageId === event.messageId
+    ) {
+      this.agentWakeMessageId = null
+      if (!this.activePrompt) {
+        this.cancelPendingInteractions('abandoned')
+      }
+    } else if (event.type === 'status_change' && event.status !== 'streaming' && !this.activePrompt) {
+      this.agentWakeMessageId = null
+      this.cancelPendingInteractions('abandoned')
+      this.pendingQueued.flush()
+      this.flushPendingTaskNotifications()
+    }
     if (event.type === 'permission_mode_change') {
       if (this.pendingPermissionMode !== null) return
       if (this.applyingPermissionMode === event.mode) return
@@ -1057,7 +1122,7 @@ export class AcpBackend implements SessionBackend {
       log.warn('[AcpBackend] ask_user_question with empty questions — cancelling')
       return Promise.resolve(formatGrokAskUserResponse({ kind: 'cancelled' }))
     }
-    const openMessageId = this.liveAssistantId ?? this.currentMessageId
+    const openMessageId = this.liveAssistantId ?? this.currentMessageId ?? this.agentWakeMessageId
     if (openMessageId) {
       this.emit({
         type: 'content_delta',
@@ -1075,7 +1140,8 @@ export class AcpBackend implements SessionBackend {
     return new Promise((resolve) => {
       this.pendingQuestions.set(requestId, {
         resolve: (answer) => {
-          const messageId = this.liveAssistantId ?? this.currentMessageId ?? openMessageId
+          const messageId =
+            this.liveAssistantId ?? this.currentMessageId ?? this.agentWakeMessageId ?? openMessageId
           if (messageId) {
             if (answer.kind === 'accepted') {
               const updatedInput = buildAnsweredQuestionInput({
@@ -1331,7 +1397,11 @@ export class AcpBackend implements SessionBackend {
    * `await ensureRuntime()` that assigns `activePrompt`.
    */
   private isTurnBusy(): boolean {
-    return this.currentMessageId !== null || this.activePrompt !== null
+    return (
+      this.currentMessageId !== null ||
+      this.activePrompt !== null ||
+      Boolean(this.runtime?.isPromptActive?.())
+    )
   }
 
   /**
@@ -1437,7 +1507,8 @@ export class AcpBackend implements SessionBackend {
   }
 
   private splitLiveAssistantAfterInterject(request: SendMessageRequest): void {
-    const sealedId = this.currentMessageId
+    const sealedId = this.currentMessageId ?? this.agentWakeMessageId
+    this.agentWakeMessageId = null
     if (sealedId) {
       this.emit({
         type: 'message_complete',
@@ -1621,19 +1692,48 @@ export class AcpBackend implements SessionBackend {
     }
 
     try {
-      const runtime = await this.ensureRuntime()
-      if (request.model) {
+      let runtime = await this.ensureRuntime()
+      if (isDegradedAntigravityModelCatalog(this.config.agentId, runtime)) {
+        log.warn('[AcpBackend] antigravity runtime has empty model catalog — respawning before prompt')
+        this.resetUncommittedDegradedSession()
+        await this.teardownRuntime()
+        runtime = await this.ensureRuntime()
+      }
+      const targetModel =
+        request.model?.trim() ||
+        (isAntigravityAcpAgent(this.config.agentId) ? this.startOpts?.model?.trim() : '') ||
+        ''
+      if (targetModel) {
         try {
-          // Prefer turn-level effort (Claude field / Grok mode id string) then lastModeConfig.
           const turnEffort =
             typeof request.effort === 'string' ? request.effort.trim() : ''
-          await this.applyModel(runtime, request.model, {
-            reasoningEffort: turnEffort || undefined,
-          })
+          const alreadySelected =
+            isAntigravityAcpAgent(this.config.agentId) &&
+            !turnEffort &&
+            runtime.getModelConfig()?.selectedModelId === targetModel
+          if (!alreadySelected) {
+            await this.applyModel(runtime, targetModel, {
+              reasoningEffort: turnEffort || undefined,
+            })
+          }
         } catch (err) {
+          if (
+            isAntigravityAcpAgent(this.config.agentId) &&
+            isAntigravityUnknownModelError(err) &&
+            (runtime.getModelConfig()?.models.length ?? 0) === 0
+          ) {
+            this.resetUncommittedDegradedSession()
+            await this.teardownRuntime()
+            throw buildAntigravityModelCatalogError(targetModel)
+          }
           log.debug('[AcpBackend] set model before prompt failed:', err)
         }
+      } else if (isDegradedAntigravityModelCatalog(this.config.agentId, runtime)) {
+        this.resetUncommittedDegradedSession()
+        await this.teardownRuntime()
+        throw buildAntigravityModelCatalogError(null)
       }
+      this.committedProviderSessionId = runtime.sessionId
       const turn = runtime.prompt(request.content, messageId, onEvent, request.images, { onInputAccepted: delivery?.onInputAccepted })
       this.activePrompt = turn
       await turn
@@ -1716,6 +1816,7 @@ export class AcpBackend implements SessionBackend {
     this.modeConfigId = null
     this.selectedModelId = null
     this.lastModeConfig = null
+    this.agentWakeMessageId = null
     this.pendingPermissionMode = null
     this.applyingPermissionMode = null
     this.runtimeAgentKey = null
@@ -1739,6 +1840,7 @@ export class AcpBackend implements SessionBackend {
     await this.teardownRuntime()
     this.resumeForceAttempted.clear()
     this.lastSpawnResumeId = null
+    this.committedProviderSessionId = null
     this.startOpts = null
     this.eventListeners.clear()
     this.providerSessionIdListeners.clear()
@@ -1873,13 +1975,24 @@ export class AcpBackend implements SessionBackend {
   }
 
   async setModel(model: string, opts?: { contextWindow?: number }): Promise<void> {
+    if (this.startOpts) {
+      this.startOpts = { ...this.startOpts, model }
+    }
     if (!this.runtime) {
-      // Picked before the agent started (a new session, a profile launch): applied once it is up.
       if (opts?.contextWindow != null) this.pendingContextWindow = { model, contextWindow: opts.contextWindow }
       return
     }
-    // A refused switch leaves the runtime on its old model; the caller decides
-    // whether that is fatal (context window) or recoverable by a restart.
+    if (
+      isDegradedAntigravityModelCatalog(this.config.agentId, this.runtime) &&
+      !this.isTurnBusy() &&
+      !this.hasActiveBackgroundTasks()
+    ) {
+      this.resetUncommittedDegradedSession()
+      await this.teardownRuntime()
+      const fresh = await this.ensureRuntime()
+      await this.applyModel(fresh, model, opts)
+      return
+    }
     await this.applyModel(this.runtime, model, opts)
   }
 
@@ -1970,7 +2083,7 @@ export class AcpBackend implements SessionBackend {
     ) {
       this.preserveStateBeforePermissionRestart()
       if (this.startOpts) this.startOpts = { ...this.startOpts, permissionMode: mode }
-      if (this.isTurnBusy() || this.liveBackgroundTaskIds.size > 0) {
+      if (this.isTurnBusy() || this.hasActiveBackgroundTasks()) {
         await this.applyRuntimePermissionMode(this.runtime, mode)
         log.info('[AcpBackend] setPermissionMode deferred antigravity restart until idle mode=%s', mode)
         return
@@ -2303,7 +2416,12 @@ export class AcpBackend implements SessionBackend {
   private noteBackgroundTaskLifecycle(event: AgentEvent): void {
     if (event.type === 'task_started') {
       if (event.taskType && ACP_BACKGROUND_IDLE_TASK_TYPES.has(event.taskType)) return
-      if (event.taskId) this.liveBackgroundTaskIds.add(event.taskId)
+      if (event.taskId) {
+        if (event.toolUseId) this.liveBackgroundTaskIds.delete(`tool:${event.toolUseId}`)
+        this.liveBackgroundTaskIds.add(event.taskId)
+      } else if (event.toolUseId) {
+        this.liveBackgroundTaskIds.add(`tool:${event.toolUseId}`)
+      }
       return
     }
     if (event.type === 'task_progress') {
@@ -2314,6 +2432,7 @@ export class AcpBackend implements SessionBackend {
       const status = event.taskStatus
       if (status === 'completed' || status === 'stopped' || status === 'failed') {
         if (event.taskId) this.liveBackgroundTaskIds.delete(event.taskId)
+        if (event.toolUseId) this.liveBackgroundTaskIds.delete(`tool:${event.toolUseId}`)
       }
       return
     }

@@ -1,6 +1,6 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { normalizeCustomBuiltinInput, uiToolNameFromId } from '@superone/shared/tool-ui'
+import { normalizeCustomBuiltinInput, normalizeSwarmTool, normalizeToolIdKey, uiToolNameFromId } from '@superone/shared/tool-ui'
 import { resolveAntigravityBrainRoots } from './antigravity-profile'
 
 const MAX_CONSUMED_TRANSCRIPT_RESULTS = 1000
@@ -122,6 +122,12 @@ export function inferAntigravityWireTool(
   inObj: Record<string, unknown>,
   mutateInput = false,
 ): { mappedUiName: string | null; inferredTitle?: string } {
+  const swarmCandidate = strippedToolName ?? title
+  if (swarmCandidate && normalizeToolIdKey(swarmCandidate) === 'swarm') {
+    const swarm = normalizeSwarmTool(inObj)
+    if (mutateInput) Object.assign(inObj, swarm.input)
+    return { mappedUiName: swarm.toolName, inferredTitle: swarm.toolName }
+  }
   const direct =
     uiToolNameFromId(strippedToolName ?? title) ??
     (typeof inObj.variant === 'string' ? uiToolNameFromId(inObj.variant) ?? inObj.variant : null)
@@ -342,7 +348,7 @@ function selectMatchingTranscriptOutput(
 }
 
 const MANAGE_TASK_NAMES = new Set(['manage_task', 'ManageTask', 'send_command_input'])
-const MANAGE_SUBAGENTS_NAMES = new Set(['manage_subagents', 'ManageSubagents'])
+const MANAGE_SUBAGENTS_NAMES = new Set(['manage_subagents', 'ManageSubagents', 'swarm'])
 const SCHEDULE_NAMES = new Set(['schedule', 'Schedule'])
 const DEFINE_SUBAGENT_NAMES = new Set(['define_subagent', 'DefineSubagent'])
 const SEND_MESSAGE_NAMES = new Set(['send_message', 'SendMessage'])

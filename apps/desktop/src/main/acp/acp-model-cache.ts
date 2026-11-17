@@ -221,12 +221,26 @@ function mergeAgentCatalog(
   prev: AcpAgentConfigCatalog | undefined,
 ): AcpAgentConfigCatalog {
   if (!prev) return next
-  const nextHasModes = Boolean(next.extraModes?.length)
-    || next.configOptions.some(
-      (o) => o.category === 'mode' || o.id === 'mode' || isAcpEffortConfigOption(o),
-    )
+  const prevModelOptions = prev.configOptions.filter((o) => o.category === 'model' || o.id === 'model')
+  const nextHasModelOption = next.configOptions.some((o) => o.category === 'model' || o.id === 'model')
+  const nextHasEffortOption = next.configOptions.some((o) => isAcpEffortConfigOption(o))
+  const degradedModelCatalog =
+    prevModelOptions.length > 0 && !nextHasModelOption && !next.extraModels?.length
+  const mergedConfigOptions = degradedModelCatalog
+    ? [
+        ...prevModelOptions,
+        ...(nextHasEffortOption ? [] : prev.configOptions.filter((o) => isAcpEffortConfigOption(o))),
+        ...next.configOptions,
+      ]
+    : (next.configOptions.length ? next.configOptions : prev.configOptions)
+  const nextHasModes =
+    !degradedModelCatalog &&
+    (Boolean(next.extraModes?.length)
+      || next.configOptions.some(
+        (o) => o.category === 'mode' || o.id === 'mode' || isAcpEffortConfigOption(o),
+      ))
   return {
-    configOptions: next.configOptions.length ? next.configOptions : prev.configOptions,
+    configOptions: mergedConfigOptions,
     extraModels: next.extraModels?.length
       ? (prev.extraModels?.length ? overlayAcpModelList(next.extraModels, prev.extraModels) : next.extraModels)
       : prev.extraModels,
@@ -256,6 +270,8 @@ function catalogHasContent(cat: AcpAgentConfigCatalog | undefined): boolean {
 function isCatalogFresh(agentId: string, cat: AcpAgentConfigCatalog | undefined): boolean {
   if (!catalogHasContent(cat) || !cat?.updatedAt) return false
   if (agentId === 'antigravity') {
+    const hasModelOption = cat.configOptions.some((o) => o.category === 'model' || o.id === 'model')
+    if (!hasModelOption) return false
     const session = deriveSessionCatalog(cat)
     const hasNonGemini = session.models.some((m) => !m.id.toLowerCase().startsWith('gemini-'))
     const hasEffortMetadata = session.models.some(

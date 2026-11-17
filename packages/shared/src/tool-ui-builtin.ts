@@ -234,11 +234,55 @@ function parseTranscriptMcpArgs(rawArgs: unknown): Record<string, unknown> | nul
   return null
 }
 
+function normalizeSwarmTool(
+  rawInput: Record<string, unknown>,
+): { toolName: string; input: Record<string, unknown> } {
+  const action = pickStr(rawInput, ['action', 'Action'])?.toLowerCase()
+  const name = pickStr(rawInput, ['name', 'Name'])
+  if (action === 'add') {
+    const brief = pickStr(rawInput, ['brief', 'Brief', 'prompt', 'Prompt'])
+    const model = pickStr(rawInput, ['model', 'Model'])
+    const description = name
+      ? brief
+        ? `${name}: ${brief.slice(0, 100)}`
+        : name
+      : brief
+        ? brief.slice(0, 120)
+        : 'Swarm worker'
+    return {
+      toolName: 'Agent',
+      input: {
+        ...rawInput,
+        run_in_background: true,
+        isSwarmWorker: true,
+        subagent_type: name || 'swarm',
+        description,
+        ...(brief ? { prompt: brief } : {}),
+        ...(model ? { model } : {}),
+      },
+    }
+  }
+  const normalizedAction = action === 'status' || !action ? 'list' : action
+  return {
+    toolName: 'ManageSubagents',
+    input: {
+      ...rawInput,
+      action: normalizedAction,
+      ...(name ? { conversationIds: [name] } : {}),
+    },
+  }
+}
+
+export { normalizeSwarmTool }
+
 export function normalizeTranscriptTool(
   rawName: string,
   rawInput: Record<string, unknown>,
 ): { toolName: string; input: Record<string, unknown> } {
   const normalizedRawKey = normalizeToolIdKey(rawName)
+  if (normalizedRawKey === 'swarm') {
+    return normalizeSwarmTool(rawInput)
+  }
   const envelopeId = typeof rawInput.tool_name === 'string' ? rawInput.tool_name : ''
   const isUseTool = normalizedRawKey === 'use_tool' || rawInput.variant === 'UseTool'
   if (isUseTool && envelopeId.includes('__')) {

@@ -400,6 +400,7 @@ export function grokCollabStreamingInput(argumentsJson: string | undefined): str
 export {
   FULL_RESULT_TOOL_NAMES,
   normalizeCustomBuiltinInput,
+  normalizeSwarmTool,
   normalizeTranscriptTool,
   resolveCustomVariantToolName,
 } from './tool-ui-builtin'

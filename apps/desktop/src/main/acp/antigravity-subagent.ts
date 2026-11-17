@@ -56,6 +56,9 @@ function getOrCreateSessionState(
       backgroundWatch: false,
       parentTurnEnded: false,
       foregroundEndStepIndex: null,
+      lastParentRawLength: 0,
+      lastWakeupActivityAtMs: null,
+      resumedInteractionStepIndex: null,
       activeWakeupMinSpawnStepIndex: null,
       allWorkCompletedAtMs: null,
       awaitingToolSinceMs: null,
@@ -139,6 +142,7 @@ export function noteAntigravitySubagentEvents(
     if (state.trackedByToolUseId.has(event.delta.toolUseId)) continue
 
     let description = 'Subagent'
+    let isSwarmWorker = false
     try {
       const parsedIn = JSON.parse(event.delta.input) as Record<string, unknown>
       if (typeof parsedIn.description === 'string' && parsedIn.description.trim()) {
@@ -146,6 +150,7 @@ export function noteAntigravitySubagentEvents(
       } else if (typeof parsedIn.subagent_type === 'string' && parsedIn.subagent_type.trim()) {
         description = parsedIn.subagent_type.trim()
       }
+      isSwarmWorker = parsedIn.isSwarmWorker === true
     } catch {
       void 0
     }
@@ -155,6 +160,7 @@ export function noteAntigravitySubagentEvents(
       messageId,
       description,
       startedAtMs: Date.now(),
+      ...(isSwarmWorker ? { isSwarmWorker: true } : {}),
       lastRawLength: 0,
       completed: false,
     })
@@ -186,6 +192,19 @@ export function hasPendingAntigravitySubagentWakeup(parentSessionId: string): bo
   syncSessionSubagents(state)
   const anyActiveSubagent = [...state.trackedByToolUseId.values()].some((e) => !e.completed)
   return anyActiveSubagent || isEffectiveWakeupPending(state)
+}
+
+export function hasActiveAntigravityWakeup(parentSessionId: string): boolean {
+  const state = sessionStates.get(parentSessionId)
+  if (!state) return false
+  const anyActiveSubagent = [...state.trackedByToolUseId.values()].some((e) => !e.completed)
+  return (
+    anyActiveSubagent ||
+    isEffectiveWakeupPending(state) ||
+    state.backgroundWatch ||
+    state.parentTurnEnded ||
+    state.idleWakeupMessageId !== null
+  )
 }
 
 export function waitForAntigravitySubagentWakeup(

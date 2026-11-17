@@ -45,6 +45,8 @@ export interface ParentWakeupProgress {
   completed: boolean
   awaitingToolExecution?: boolean
   pendingToolRawName?: string
+  pendingToolName?: string
+  pendingToolBypassSandbox?: boolean
   pendingToolWaitMs?: number
   steps: ParentWakeupPlannerStep[]
   turnInputTokens: number
@@ -80,7 +82,7 @@ export function extractParentWakeupProgress(
   let nextUserStepIndex = Number.POSITIVE_INFINITY
   for (const { stepIndex, rec } of records) {
     if (rec.type !== 'USER_INPUT') continue
-    if (stepIndex <= afterStepIndex) {
+    if (stepIndex <= afterStepIndex || turnStartStepIndex < 0) {
       if (stepIndex > turnStartStepIndex) turnStartStepIndex = stepIndex
     } else if (stepIndex < nextUserStepIndex) {
       nextUserStepIndex = stepIndex
@@ -278,6 +280,12 @@ export function extractParentWakeupProgress(
     ...(awaitingToolExecution && pendingCall
       ? {
           pendingToolRawName: pendingCall.rawName,
+          pendingToolName: pendingCall.toolName,
+          ...(pendingCall.input.BypassSandbox === true ||
+          pendingCall.input.bypass_sandbox === true ||
+          pendingCall.input.bypassSandbox === true
+            ? { pendingToolBypassSandbox: true }
+            : {}),
           ...(pendingCall.waitMsBeforeAsync !== undefined
             ? { pendingToolWaitMs: pendingCall.waitMsBeforeAsync }
             : {}),

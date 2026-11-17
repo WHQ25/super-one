@@ -175,9 +175,11 @@ import {
   cancelAntigravitySubagentWakeupWait,
   clearUnflushedAntigravityWakeupReplay,
   disposeAntigravitySubagentTracker,
+  hasActiveAntigravityWakeup,
   noteAntigravitySubagentEvents,
   shouldDropAntigravityPreUserReplay,
 } from './antigravity-subagent'
+import { ANTIGRAVITY_WAKEUP_CONTINUATION_PROMPT } from './antigravity-model-guard'
 import { pushBashOutput } from '../bash-output-watcher'
 import type {
   AgentErrorInfo,
@@ -291,8 +293,10 @@ export interface AcpRuntime {
      * emit idle over the replacement. `onInputAccepted` runs just before
      * session/prompt goes out (see `SendDelivery`).
      */
-    opts?: { sendNow?: boolean; onInputAccepted?: () => void },
+    opts?: { sendNow?: boolean; onInputAccepted?: () => void; inheritedOpenToolIds?: readonly string[] },
   ): Promise<void>
+  isPromptActive?: () => boolean
+  hasActiveBackgroundWork?: () => boolean
   cancel(): Promise<void>
   close(): Promise<void>
   /** Mid-turn insert. Queues into the live turn at the next safe point. */
@@ -1579,6 +1583,8 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
               ensureMessage: () => ensureAgentInitiatedMessage(null),
               completeMessage: () => completeAgentInitiated('complete'),
               permissionProfile: () => antigravityPermissionLaunchProfile(currentPermissionMode),
+              permissionMode: () => currentPermissionMode,
+              resumeInteractionStream: (targetMessageId) => resumeAntigravityInteractionStream(targetMessageId),
             },
           )
         }
@@ -1620,9 +1626,37 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     }
   }
 
-  return {
+  const resumeAntigravityInteractionStream = (targetMessageId: string): boolean => {
+    if (closed || !pumping || liveTurn()) return false
+    if (agentInitiatedMessageId === targetMessageId) {
+      agentInitiatedMessageId = null
+    }
+    const inheritedOpenToolIds = [...wakeScope.openToolIds]
+    wakeScope.openToolIds.clear()
+    void runtimeApi
+      .prompt(
+        ANTIGRAVITY_WAKEUP_CONTINUATION_PROMPT,
+        targetMessageId,
+        (ev) => opts.onSessionEvent?.(ev),
+        undefined,
+        { inheritedOpenToolIds },
+      )
+      .catch((err) => {
+        log.warn('[acp-runtime] wakeup interaction continuation failed:', err)
+      })
+    return true
+  }
+
+  const runtimeApi: AcpRuntime = {
     sessionId: activeSession.sessionId,
     launch,
+    isPromptActive: () => Boolean(liveTurn()),
+    hasActiveBackgroundWork: () =>
+      Boolean(
+        liveTurn() ||
+          agentInitiatedMessageId ||
+          (launch.agentId === 'antigravity' && hasActiveAntigravityWakeup(activeSession.sessionId)),
+      ),
     isSessionRecapAvailable: () => sessionRecapAvailable,
     async requestRecap(auto) {
       if (!sessionRecapAvailable) {
@@ -1829,6 +1863,11 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         manualCompact: false,
         compactStartedAt: 0,
         compactionSettled: false,
+      }
+      if (promptOpts?.inheritedOpenToolIds) {
+        for (const toolId of promptOpts.inheritedOpenToolIds) {
+          turn.openToolIds.add(toolId)
+        }
       }
       currentTurn = turn
       wakeScope = newTurnScope()
@@ -2094,6 +2133,9 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       if (launch.agentId === 'antigravity') {
         cancelAntigravitySubagentWakeupWait(activeSession.sessionId)
       }
+      if (!turn && agentInitiatedMessageId) {
+        completeAgentInitiated('interrupted')
+      }
       const waiter = promptStopWaiters[0] ?? null
       try {
         await activeConnection.agent.notify(methods.agent.session.cancel, {
@@ -2243,4 +2285,5 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       try { disposeStream?.() } catch { /* ignore */ }
     },
   }
+  return runtimeApi
 }

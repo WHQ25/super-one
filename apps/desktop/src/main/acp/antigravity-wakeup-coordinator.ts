@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs'
-import type { AgentEvent } from '@superone/shared/agent-types'
+import type { AgentEvent, PermissionMode } from '@superone/shared/agent-types'
 import {
   clearSettledWakeupBackgroundTasks,
   reconcileForegroundCompletedBackgroundTasks,
@@ -31,6 +31,8 @@ export interface AntigravityIdleWakeupHooks {
   ensureMessage: () => string
   completeMessage: () => void
   permissionProfile?: () => 'standard' | 'auto' | 'bypass'
+  permissionMode?: () => PermissionMode
+  resumeInteractionStream?: (messageId: string) => boolean
 }
 
 export interface SessionSubagentState extends WakeupEmitContext {
@@ -42,6 +44,9 @@ export interface SessionSubagentState extends WakeupEmitContext {
   backgroundWatch: boolean
   parentTurnEnded: boolean
   foregroundEndStepIndex: number | null
+  lastParentRawLength: number
+  lastWakeupActivityAtMs: number | null
+  resumedInteractionStepIndex: number | null
   awaitingToolSinceMs: number | null
   noWakeupTimeoutMs: number
   wakeupResponseTimeoutMs: number
@@ -73,6 +78,8 @@ export function settleWakeupWaiters(
   state.foregroundEndStepIndex = null
   state.activeWakeupMinSpawnStepIndex = null
   state.allWorkCompletedAtMs = null
+  state.lastWakeupActivityAtMs = null
+  state.resumedInteractionStepIndex = null
   state.awaitingToolSinceMs = null
   state.hasExplicitStallTimeout = false
   clearSettledWakeupBackgroundTasks(state.bgTasks)
@@ -122,6 +129,62 @@ function wakeupHasUnseenSteps(
   )
 }
 
+function settleUnboundSwarmWorkersOnWakeup(
+  state: SessionSubagentState,
+  parentRaw: string,
+  now: number,
+): void {
+  if (!parentRaw) return
+  const hasUnboundSwarm = [...state.trackedByToolUseId.values()].some(
+    (entry) => entry.isSwarmWorker && !entry.conversationId && !entry.completed,
+  )
+  if (!hasUnboundSwarm) return
+  const afterStepIndex =
+    state.foregroundEndStepIndex ??
+    state.bgTasks.idleWatchStepIndex ??
+    state.activeWakeupMinSpawnStepIndex ??
+    0
+  const check = extractParentWakeupProgress(parentRaw, afterStepIndex)
+  if (!check.sawSystemMessage) return
+  for (const entry of state.trackedByToolUseId.values()) {
+    if (!entry.isSwarmWorker || entry.conversationId || entry.completed) continue
+    entry.completed = true
+    state.replayedBackgroundToolIds.add(entry.toolUseId)
+    const durationMs = Math.max(0, now - entry.startedAtMs)
+    state.emitEvent({
+      type: 'content_delta',
+      messageId: entry.messageId,
+      delta: {
+        type: 'tool_result',
+        toolUseId: entry.toolUseId,
+        summary: JSON.stringify({ subagent_id: entry.toolUseId, status: 'completed', provider: 'antigravity' }),
+        isError: false,
+      },
+    })
+    state.emitEvent({
+      type: 'task_notification',
+      toolUseId: entry.toolUseId,
+      taskId: entry.toolUseId,
+      taskStatus: 'completed',
+      outputFile: '',
+      summary: entry.description,
+      usage: { totalTokens: 0, toolUses: 0, durationMs },
+    })
+  }
+}
+
+function tryResumeWakeupInteraction(
+  state: SessionSubagentState,
+  hooks: AntigravityIdleWakeupHooks,
+  pendingStepIdx: number,
+): boolean {
+  if (!hooks.resumeInteractionStream || state.resumedInteractionStepIndex === pendingStepIdx) return false
+  const targetMsgId = state.idleWakeupMessageId ?? hooks.ensureMessage()
+  state.idleWakeupMessageId = targetMsgId
+  state.resumedInteractionStepIndex = pendingStepIdx
+  return hooks.resumeInteractionStream(targetMsgId)
+}
+
 function emitBackgroundWatch(
   state: SessionSubagentState,
   parentRaw: string,
@@ -134,6 +197,7 @@ function emitBackgroundWatch(
   const wakeup = extractParentWakeupProgress(parentRaw, afterStepIndex)
   let stillRunning = anyActive
   if (wakeupHasUnseenSteps(state, wakeup)) {
+    state.lastWakeupActivityAtMs = now
     const targetMsgId = state.idleWakeupMessageId ?? hooks.ensureMessage()
     state.idleWakeupMessageId = targetMsgId
     if (emitWakeupProgressSteps(state, wakeup, targetMsgId, now)) stillRunning = true
@@ -144,14 +208,21 @@ function emitBackgroundWatch(
     state.unlockedPostStallStream = false
     if (state.awaitingToolSinceMs === null) state.awaitingToolSinceMs = now
     if (!stillRunning) {
+      const isAskQuestion =
+        wakeup.pendingToolRawName === 'ask_question' ||
+        wakeup.pendingToolName === 'AskUserQuestion'
+      const pendingStepIdx = wakeup.steps[wakeup.steps.length - 1]?.stepIndex ?? -1
+      if (isAskQuestion && tryResumeWakeupInteraction(state, hooks, pendingStepIdx)) return
       const stallMs = resolveWakeupStallTimeoutMs(
         wakeup,
         hooks.permissionProfile?.() ?? 'standard',
         state.interactionStallTimeoutMs,
         state.wakeupResponseTimeoutMs,
         state.hasExplicitStallTimeout,
+        hooks.permissionMode?.(),
       )
       if (now - state.awaitingToolSinceMs >= stallMs) {
+        if (!state.hasExplicitStallTimeout && tryResumeWakeupInteraction(state, hooks, pendingStepIdx)) return
         if (state.idleWakeupMessageId) hooks.completeMessage()
         state.idleWakeupMessageId = null
         settleWakeupWaiters(state, 'completed')
@@ -160,6 +231,7 @@ function emitBackgroundWatch(
     return
   }
   state.awaitingToolSinceMs = null
+  state.resumedInteractionStepIndex = null
   state.stalledWakeupToolReplay = false
 
   if (stillRunning) {
@@ -175,18 +247,26 @@ function emitBackgroundWatch(
   }
 
   const elapsedSinceDone = state.allWorkCompletedAtMs === null ? 0 : now - state.allWorkCompletedAtMs
+  const activityAnchor = state.lastWakeupActivityAtMs ?? state.allWorkCompletedAtMs
+  const elapsedSinceActivity = activityAnchor === null ? 0 : now - activityAnchor
   const noWakeupTimedOut = !wakeup.sawSystemMessage && elapsedSinceDone >= state.noWakeupTimeoutMs
   const plannerStalled =
     wakeup.sawSystemMessage &&
     !wakeup.completed &&
-    elapsedSinceDone >= state.wakeupResponseTimeoutMs
+    elapsedSinceActivity >= state.wakeupResponseTimeoutMs
   if (!wakeup.completed && !plannerStalled && !noWakeupTimedOut) return
   const targetMsgId = state.idleWakeupMessageId
   if (targetMsgId) {
     flushRemainingWakeupToolResults(state, wakeup, targetMsgId)
   }
-  const lastStep = wakeup.steps[wakeup.steps.length - 1]
-  if (lastStep) state.bgTasks.idleWatchStepIndex = lastStep.stepIndex
+  if (wakeup.completed) {
+    const lastStep = wakeup.steps[wakeup.steps.length - 1]
+    if (lastStep) state.bgTasks.idleWatchStepIndex = lastStep.stepIndex
+  } else if (plannerStalled) {
+    state.unflushedWakeupReplay = true
+    state.stalledWakeupToolReplay = true
+    state.unlockedPostStallStream = false
+  }
   state.idleWakeupMessageId = null
   if (targetMsgId) hooks.completeMessage()
   settleWakeupWaiters(state, 'completed')
@@ -211,7 +291,13 @@ export function syncSessionSubagents(state: SessionSubagentState): void {
     }
   }
 
+  if (parentRaw.length > 0 && parentRaw.length !== state.lastParentRawLength) {
+    state.lastParentRawLength = parentRaw.length
+    state.lastWakeupActivityAtMs = now
+  }
+
   syncTrackedSubagentEntries(state, spawnedRefs, now)
+  settleUnboundSwarmWorkersOnWakeup(state, parentRaw, now)
 
   const anyActiveSubagentBefore = [...state.trackedByToolUseId.values()].some((e) => !e.completed)
   const bgSummary = parentRaw
@@ -229,6 +315,7 @@ export function syncSessionSubagents(state: SessionSubagentState): void {
       }
 
   if (bgSummary.emittedCompletionFromTranscript) {
+    state.lastWakeupActivityAtMs = now
     if (state.parentTurnEnded) state.unflushedWakeupReplay = true
     for (const id of bgSummary.emittedCompletedToolUseIds) {
       state.emittedWakeupToolUseIds.add(id)
@@ -252,8 +339,10 @@ export function syncSessionSubagents(state: SessionSubagentState): void {
 
   if (anyActive) {
     state.allWorkCompletedAtMs = null
-  } else if ((state.trackedByToolUseId.size > 0 || wakeupPending) && state.allWorkCompletedAtMs === null) {
+    state.lastWakeupActivityAtMs = null
+  } else if ((state.trackedByToolUseId.size > 0 || wakeupPending || state.backgroundWatch) && state.allWorkCompletedAtMs === null) {
     state.allWorkCompletedAtMs = now
+    if (state.lastWakeupActivityAtMs === null) state.lastWakeupActivityAtMs = now
   }
 
   if (
@@ -297,6 +386,7 @@ export function syncSessionSubagents(state: SessionSubagentState): void {
         state.interactionStallTimeoutMs,
         state.wakeupResponseTimeoutMs,
         state.hasExplicitStallTimeout,
+        state.idleHooks?.permissionMode?.(),
       )
       if (now - state.awaitingToolSinceMs >= stallMs) {
         state.unflushedWakeupReplay = true
@@ -308,9 +398,11 @@ export function syncSessionSubagents(state: SessionSubagentState): void {
       state.awaitingToolSinceMs = null
       if (!anyActive && state.allWorkCompletedAtMs !== null) {
         const elapsedSinceDone = now - state.allWorkCompletedAtMs
+        const activityAnchor = state.lastWakeupActivityAtMs ?? state.allWorkCompletedAtMs
+        const elapsedSinceActivity = now - activityAnchor
         if (!wakeup.sawSystemMessage && elapsedSinceDone >= state.noWakeupTimeoutMs) {
           settleWakeupWaiters(state, 'completed')
-        } else if (wakeup.sawSystemMessage && elapsedSinceDone >= state.wakeupResponseTimeoutMs) {
+        } else if (wakeup.sawSystemMessage && elapsedSinceActivity >= state.wakeupResponseTimeoutMs) {
           settleWakeupWaiters(state, 'completed')
         }
       }

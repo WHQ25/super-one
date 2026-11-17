@@ -529,6 +529,16 @@ const environmentAPI = {
       connectionId,
       projectPath,
     ) as Promise<DraftListEntry[]>,
+  listFailedRemoteSends: () => ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_LIST_FAILED_REMOTE_SENDS),
+  saveFailedRemoteSend: (record: import('@superone/shared/send-failure').FailedRemoteSend) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_SAVE_FAILED_REMOTE_SEND, record),
+  resolveFailedRemoteSend: (projectPath: string, messageId: string, draft?: DraftUpsertRequest) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_RESOLVE_FAILED_REMOTE_SEND, projectPath, messageId, draft),
+  onFailedRemoteSendResolved: (callback: (path: string, id: string) => void) => {
+    const listener = (_event: Electron.IpcRendererEvent, path: string, id: string) => callback(path, id)
+    ipcRenderer.on(AgentIpcChannels.ENVIRONMENT_FAILED_REMOTE_SEND_RESOLVED, listener)
+    return () => { ipcRenderer.removeListener(AgentIpcChannels.ENVIRONMENT_FAILED_REMOTE_SEND_RESOLVED, listener) }
+  },
   openDraft: (connectionId: string, draftId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_OPEN_DRAFT, connectionId, draftId) as Promise<import('@superone/shared/environment').DraftOpenResult>,
   closeDraft: (connectionId: string, draftId: string, leaseId: string) =>

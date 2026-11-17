@@ -107,6 +107,14 @@ describe('DraftsSection', () => {
     expect(resumeDraft).toHaveBeenCalledWith('local', one)
   })
 
+  it('marks an unsynced remote draft with an upload icon', () => {
+    const pending = { ...draft('d1', 'remote edit'), pendingSync: true as const }
+    useDraftsStore.setState({ byConnection: { node: [pending] } })
+    render(<DraftsSection connectionIds={['node']} />)
+    expect(screen.getByLabelText('sidebar.drafts.pendingSync')).toHaveClass('lucide-cloud-upload')
+    expect(screen.queryByLabelText('sidebar.scheduledFor')).toBeNull()
+  })
+
   it('leads with the clock once the draft has a send queued behind it', () => {
     const one = draft('d1', 'first draft')
     useDraftsStore.setState({ byConnection: { local: [one] } })

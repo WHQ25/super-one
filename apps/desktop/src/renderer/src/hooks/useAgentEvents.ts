@@ -8,6 +8,7 @@ import { buildMiniAppUrlHost } from '@superone/shared/miniapp-url'
 import { coalesceAgentEventBatch } from '@/lib/agent-event-batcher'
 import { applyDraftChange, flushDraftBeforeOpen, startDraftAutosave } from '@/lib/draft-sync'
 import { startComposerDraftMirror } from '@/lib/composer-draft-mirror'
+import { startFailedRemoteSendRecovery } from '@/lib/failed-remote-sends'
 import { useDraftsStore } from '@/stores/drafts'
 import { desktopDetailClient } from '@/lib/desktop-detail-client'
 
@@ -16,6 +17,7 @@ export function useAgentEvents(): void {
 
   useEffect(() => {
     const stop = startDraftAutosave()
+    const stopRecovery = startFailedRemoteSendRecovery()
     const stopMirror = startComposerDraftMirror()
     const stopHandover = window.environment.onDraftOpenRequested?.(flushDraftBeforeOpen)
     const unsub = window.agent.onAgentEvent((event) => {
@@ -27,7 +29,7 @@ export function useAgentEvents(): void {
         if (draft.controllerDeviceId) applyDraftChange({ type: 'draft_changed', draftId: draft.id, draft, reason: 'opened' })
       }
     })
-    return () => { stop(); stopMirror(); unsub(); stopHandover?.() }
+    return () => { stop(); stopRecovery(); stopMirror(); unsub(); stopHandover?.() }
   }, [])
 
   useEffect(() => {

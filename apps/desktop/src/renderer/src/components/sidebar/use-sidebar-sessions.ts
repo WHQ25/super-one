@@ -8,6 +8,9 @@ import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { projectSessionKey } from '@superone/shared/remote-resource-key'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
+import { resolveFailedRemoteSend } from '@/lib/failed-remote-sends'
+import { consumeDraftForSession } from '@/stores/chat-store/helpers/draft-promote'
+import { hasFailedFirstSend } from '@/stores/chat-store/helpers/session-liveness'
 import { closeSessionBoundTabs } from '@/lib/session-bound-tabs'
 import { isRunningChildSettleError, removeSession, setSessionFlags, setSessionRead } from '@/lib/session-client'
 import { withSessionSettlePending } from '@/lib/session-settle-pending'
@@ -648,7 +651,14 @@ export function useSidebarSessions({ currentFolder, selectedHostConnectionId, ho
 
   const executeDeleteSession = useCallback(async (target: { sessionId: string; folderPath: string }) => {
     const remote = parseRemoteProjectKey(target.folderPath)
-    await removeSession(target.folderPath, target.sessionId)
+    const cached = useChatStore.getState().projectSessions[target.folderPath]?._sessions[target.sessionId]
+    const failed = remote && hasFailedFirstSend(cached) ? cached.messages[0] : null
+    if (failed && cached.firstSendDraft && !cached.hostSessionOwned) {
+      await consumeDraftForSession(target.folderPath, target.sessionId)
+    } else {
+      await removeSession(target.folderPath, target.sessionId)
+    }
+    if (failed) await resolveFailedRemoteSend(target.folderPath, failed.id)
 
     const current = useChatStore.getState().projectSessions[target.folderPath]
     if (current?._activeSessionId === target.sessionId) {

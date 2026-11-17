@@ -6,12 +6,37 @@ function isClientOnly(message: ChatMessage): boolean {
   return message.providerId === 'local' || message.metadata?.sendFailure != null
 }
 
+/** Host transcript windows can carry thumbnails while the composer still owns the originals. */
+export function keepFailedSendOriginals(row: ChatMessage, previous?: ChatMessage): ChatMessage {
+  if (!row.metadata?.sendFailure || row.id !== previous?.id || !previous?.attachments?.length) return row
+  const originals = previous.attachments
+  if (!row.attachments?.length) return { ...row, attachments: originals }
+  let changed = false
+  const attachments = row.attachments.map((attachment, index) => {
+    if (attachment.base64 && !attachment.preview) return attachment
+    const original = attachment.id
+      ? originals.find(item => item.id === attachment.id)
+      : originals[index]
+    if (!original?.base64 || original.preview || original.name !== attachment.name) return attachment
+    changed = true
+    return original
+  })
+  return changed ? { ...row, attachments } : row
+}
+
+function withLocalOriginals(current: readonly ChatMessage[], rows: readonly ChatMessage[]): readonly ChatMessage[] {
+  if (!rows.some(row => row.metadata?.sendFailure)) return rows
+  const byId = new Map(current.map(row => [row.id, row]))
+  return rows.map(row => keepFailedSendOriginals(row, byId.get(row.id)))
+}
+
 /**
  * The window's rows, with an unsent local bubble kept after the host row it
  * followed. A host row the window no longer holds is gone: older history loads
  * as its own page.
  */
 export function mergeWindowMessages(current: readonly ChatMessage[], windowed: readonly ChatMessage[]): ChatMessage[] {
+  windowed = withLocalOriginals(current, windowed)
   const ids = new Set(windowed.map((message) => message.id))
   const local = (message: ChatMessage) => !ids.has(message.id) && isClientOnly(message)
   if (!current.some(local)) return [...windowed]
@@ -33,6 +58,7 @@ export function applyWindowRows(
   rows: readonly ChatMessage[],
   patch: { removed?: readonly string[]; order?: readonly string[] },
 ): ChatMessage[] {
+  rows = withLocalOriginals(current, rows)
   const removed = new Set(patch.removed ?? [])
   const updates = new Map(rows.map((message) => [message.id, message]))
   const local = (message: ChatMessage) => !updates.has(message.id) && !removed.has(message.id) && isClientOnly(message)

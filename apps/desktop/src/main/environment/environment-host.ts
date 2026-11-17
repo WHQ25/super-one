@@ -62,6 +62,7 @@ import {
   sshArgsForSpec,
   tunnelSpecFromEndpoint,
 } from '@superone/shared/environment'
+import { AsyncCoalescer } from '@superone/runtime/async-coalescer'
 import { EnvironmentRegistryImpl } from './environment-registry'
 import { ArtifactTransferService } from './artifact-transfer-service'
 import { NodeConnectionManager } from './node-connection-manager'
@@ -276,6 +277,7 @@ export class EnvironmentHost {
     string,
     { generation: number; projects: ProjectSnapshot[] }
   >()
+  private readonly draftFlushes = new AsyncCoalescer<{ flushed: number; failed: number }>()
   private readonly remoteProjectLoads = new Map<
     string,
     { generation: number; promise: Promise<ProjectSnapshot[]> }
@@ -732,17 +734,21 @@ export class EnvironmentHost {
       const local = this.registry.getLocal()
       return (await local.drafts!.list(projectPath ? { projectPath } : undefined)) as DraftListEntry[]
     }
-    const pending = listPendingDrafts(connectionId).filter(
-      (p) => !projectPath || p.draft.projectPath === projectPath,
-    )
     let remote: DraftRecord[] = []
     try {
+      // Reconnect starts the upload and the sidebar refresh together. List the
+      // node after its current upload so newly acknowledged rows are present.
+      if (this.draftFlushes.isInFlight(connectionId)) await this.flushPendingDrafts(connectionId)
       const gateway = this.requireRemoteGateway(connectionId)
-      remote = await gateway.drafts?.list(projectPath ? { projectPath } : undefined) ?? []
+      remote = await gateway.drafts?.list({ projectPath, omitAttachmentData: true }) ?? []
     } catch {
       // Node unreachable: its drafts live there and are simply not available
       // right now. Never fabricate a stale mirror — show only what we hold.
     }
+    // A save or reconnect flush may have drained the outbox during the remote read.
+    const pending = listPendingDrafts(connectionId).filter(
+      (p) => !projectPath || p.draft.projectPath === projectPath,
+    )
     return mergePendingIntoDrafts(remote, pending)
   }
 
@@ -841,7 +847,11 @@ export class EnvironmentHost {
    * Drain the outbox for a node that just came back. Called from the
    * connection lifecycle — never on a self-owned timer.
    */
-  async flushPendingDrafts(connectionId: string): Promise<{ flushed: number; failed: number }> {
+  flushPendingDrafts(connectionId: string): Promise<{ flushed: number; failed: number }> {
+    return this.draftFlushes.get(connectionId, () => this.drainPendingDrafts(connectionId))
+  }
+
+  private async drainPendingDrafts(connectionId: string): Promise<{ flushed: number; failed: number }> {
     const queued = listFlushablePendingDrafts(connectionId)
     if (queued.length === 0) return { flushed: 0, failed: 0 }
     let flushed = 0
@@ -2371,6 +2381,10 @@ export class EnvironmentHost {
       }
     }
     const { gateway } = this.resolveSession(connectionId)
+    if (connectionId !== 'local' && method === 'session.scheduledSend.get' && gateway.cachedDescriptor
+      && !servesMethod(gateway.cachedDescriptor.capabilities, method)) {
+      return null as SessionCallMethods[M]['result']
+    }
     const control = SESSION_CALL_READS.has(method) ? {} : await this.ensureSessionLease(connectionId, sessionId)
     return gateway.callSession(method, { ...input, sessionId, ...control })
   }

@@ -1123,6 +1123,10 @@ export interface EnvironmentAPI extends MediaComposerAPI {
    * unreachable node contributes nothing rather than a stale mirror.
    */
   listDrafts(connectionId: string, projectPath?: string): Promise<DraftListEntry[]>
+  listFailedRemoteSends(): Promise<import('@superone/shared/send-failure').FailedRemoteSend[]>
+  saveFailedRemoteSend(record: import('@superone/shared/send-failure').FailedRemoteSend): Promise<void>
+  resolveFailedRemoteSend(projectPath: string, messageId: string, draft?: DraftUpsertRequest): Promise<void>
+  onFailedRemoteSendResolved(callback: (path: string, id: string) => void): () => void
   /** Take the host's draft lease and the flushed composer. */
   openDraft(connectionId: string, draftId: string): Promise<DraftOpenResult>
   /** Release a lease from `openDraft`. */

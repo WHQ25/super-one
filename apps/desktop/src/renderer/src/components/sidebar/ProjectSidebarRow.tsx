@@ -7,6 +7,7 @@ import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
 import { useChatStore } from '@/stores/chat'
+import { hasFailedFirstSend } from '@/stores/chat-store/helpers/session-liveness'
 import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { armedSendFor, useScheduledSendsStore } from '@/stores/scheduled-sends'
@@ -350,6 +351,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
           (data.pendingAsyncQuestions?.length ?? 0) > 0 ? 1 : 0,
           data.activityPendingCount ?? 0,
           data.awaitingAssistantReply ? 1 : 0,
+          hasFailedFirstSend(data) ? 1 : 0,
           data.sessionProvider ?? '',
           data.acpAgentId ?? '',
           data.session?.sessionId ?? '',
@@ -450,7 +452,8 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
         if (!data._historyHydrated && data.messages.some(
           (message) => message.metadata?.collaboration?.kind === 'initial_task',
         )) continue
-        if (!data._title && !getSessionTitle(data.messages) && !data._historyHydrated) continue
+        if (!data._historyHydrated && !data._title && !getSessionTitle(data.messages)
+          && !data.firstSendDraft && !hasFailedFirstSend(data)) continue
         live.push({
           sessionId: sid,
           title,

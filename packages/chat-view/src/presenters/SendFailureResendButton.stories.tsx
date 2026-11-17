@@ -4,7 +4,7 @@ import { ChatMessagePresenter } from './ChatMessage'
 import { SendFailureResendButton } from './SendFailureResendButton'
 
 /** Local interaction only: Resend never reaches a host. */
-function FailedUserMessage({ text, error }: { text: string; error: string }) {
+function FailedUserMessage({ text, error, showTransportError }: { text: string; error: string; showTransportError?: boolean }) {
   const [failed, setFailed] = useState(true)
   return (
     <ChatMessagePresenter
@@ -13,7 +13,7 @@ function FailedUserMessage({ text, error }: { text: string; error: string }) {
       body={<p className="whitespace-pre-wrap">{text}</p>}
       interrupted={false}
       interruptedLabel=""
-      sendFailure={failed ? <SendFailureResendButton error={error} onResend={() => setFailed(false)} /> : undefined}
+      sendFailure={failed ? <SendFailureResendButton error={error} showTransportError={showTransportError} onResend={() => setFailed(false)} /> : undefined}
     />
   )
 }
@@ -32,6 +32,8 @@ type Story = StoryObj<typeof meta>
 
 /** A dropped connection: the tooltip only offers Resend. */
 export const RemoteUnavailable: Story = {}
+
+export const DesktopRemoteUnavailable: Story = { args: { showTransportError: true } }
 
 /** A refusal: the tooltip adds the host's reason under Resend. */
 export const HostRefused: Story = {

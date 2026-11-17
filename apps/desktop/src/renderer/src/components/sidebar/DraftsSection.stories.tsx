@@ -113,7 +113,7 @@ function EnvironmentsPreview() {
     const environment = window.environment
     const byConnection = {
       local: rows,
-      'build-node': [{ ...rows[0], id: 'remote-draft', text: 'Rerun the nightly build', title: 'Rerun the nightly build' }],
+      'build-node': [{ ...rows[0], id: 'remote-draft', text: 'Rerun the nightly build', title: 'Rerun the nightly build', pendingSync: true as const }],
     }
     window.environment = {
       ...environment,

@@ -22,6 +22,15 @@ describe('mergeWindowMessages', () => {
   it('drops a host row the window no longer holds', () => {
     expect(mergeWindowMessages([row('old', 'earlier'), row('a', 'tail')], [row('a', 'tail')]).map((message) => message.id)).toEqual(['a'])
   })
+
+  it('keeps the original attachment for editing and resending a failed host row', () => {
+    const attachment = { id: 'image', name: 'image.png', mimeType: 'image/png', base64: 'original' }
+    const local = { ...row('u1', 'review this'), attachments: [attachment] }
+    const host = { ...local, attachments: [{ ...attachment, preview: true, base64: 'thumbnail' }],
+      metadata: { sendFailure: { error: 'Node disconnected' } } }
+    expect(mergeWindowMessages([local], [host])).toEqual([{ ...host, attachments: [attachment] }])
+    expect(applyWindowRows([local], [host], { order: ['u1'] })).toEqual([{ ...host, attachments: [attachment] }])
+  })
 })
 
 describe('applyWindowRows', () => {

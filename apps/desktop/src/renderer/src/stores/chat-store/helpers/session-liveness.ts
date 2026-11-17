@@ -7,6 +7,17 @@
  */
 
 import type { PerSessionState } from '../types'
+import type { ChatMessage } from '@superone/shared/agent-types'
+
+/** A failed first turn can be the only record of a conversation the node never created. */
+export function hasFailedFirstSend(session: { messages?: readonly ChatMessage[] } | undefined): boolean {
+  const messages = session?.messages
+  return messages?.length === 1 && messages[0].role === 'user' && !!messages[0].metadata?.sendFailure
+}
+
+export function hasCachedFirstSend(session: PerSessionState | undefined): boolean {
+  return !!session?.firstSendDraft || hasFailedFirstSend(session)
+}
 
 export function _isBusyStatus(status: PerSessionState['status']): boolean {
   return status === 'streaming' || status === 'background'

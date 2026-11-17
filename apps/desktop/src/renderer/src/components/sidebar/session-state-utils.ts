@@ -1,10 +1,12 @@
 import type {
   AskUserQuestionRequest,
+  ChatMessage,
   HarnessId,
   PermissionRequest,
   PlanApprovalRequest,
   SessionHistoryEntry,
 } from '@superone/shared/agent-types'
+import { hasFailedFirstSend } from '@/stores/chat-store/helpers/session-liveness'
 export { DEFAULT_SESSION_TITLE, getSessionTitle, resolveSessionTitle } from '@/lib/session-title'
 
 // Pending-interaction copy moved to `@superone/shared/pending-interaction` so the
@@ -39,6 +41,7 @@ export function isEphemeralSession(
 }
 
 type InputSession = {
+  messages?: readonly ChatMessage[]
   status?: string
   pendingPermissions?: PermissionRequest[]
   pendingQuestion?: AskUserQuestionRequest | null
@@ -51,11 +54,12 @@ type InputSession = {
 } | undefined
 
 /**
- * The turn is blocked on a person: a permission, a question, a plan, or the
- * same fact reported by a remote activity summary before the transcript loads.
+ * A session that needs a response, including a first send the user can recover.
+ * Remote activity summaries can report a prompt before the transcript loads.
  */
 export function sessionNeedsUserInput(session: InputSession): boolean {
   if (!session || session._sideChatParentId) return false
+  if (hasFailedFirstSend(session)) return true
   if ((session.pendingPermissions?.length ?? 0) > 0) return true
   if (session.pendingQuestion) return true
   if (session.pendingPlanApproval) return true

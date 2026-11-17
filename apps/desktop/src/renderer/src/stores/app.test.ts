@@ -464,6 +464,16 @@ describe('selectProject', () => {
     expect(useChatStore.getState().activeProject).toBe('remote:env-remote:/work/remote-app')
   })
 
+  it('can select the project of a cached failed session while its node is unreachable', async () => {
+    resetStore({ selectedHostConnectionId: 'local' })
+    const path = 'remote:env-remote:/work/remote-app'
+    await useAppStore.getState().selectProject(path, { connectionId: 'env-remote', useCachedProject: true })
+    expect(mockEnvironment.openProject).not.toHaveBeenCalled()
+    expect(useAppStore.getState().currentFolder).toBe(path)
+    expect(useAppStore.getState().selectedHostConnectionId).toBe('env-remote')
+    expect(useChatStore.getState().activeProject).toBe(path)
+  })
+
   it('does not auto-select an existing remote session (stays on New session draft)', async () => {
     mockEnvironment.openProject.mockResolvedValue({
       projectId: 'p1',

@@ -5,6 +5,7 @@
  * cannot resolve, so they silently did nothing outside unit-test mocks.
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { resumeDraft } from '@/lib/draft-resume'
 import { useChatStore } from '@/stores/chat-store'
 import { createDefaultPerSessionState, createDefaultProjectState } from '@/stores/chat-store/defaults'
 import { useAppStore } from '@/stores/app'
@@ -42,6 +43,34 @@ describe('promoting through the live chat store', () => {
     await promoteDraftIfUnsent(useChatStore.getState(), '/repo', 'focused')
     const draftId = vi.mocked(window.environment.upsertDraft).mock.calls[0][1].id
     expect(useChatStore.getState().projectSessions['/repo']._sessions.focused.draftId).toBe(draftId)
+  })
+
+  it('opens an incoming remote draft while the other composer in the project is saving', async () => {
+    const projectKey = 'remote:node:/repo'
+    useChatStore.setState((state) => ({ activeProject: projectKey, projectSessions: {
+      [projectKey]: state.projectSessions['/repo'],
+    } }))
+    const remote = {
+      id: 'incoming', title: 'incoming', text: 'listed text', projectPath: '/repo', originSessionId: 'background',
+      settings: {}, docJson: null, attachments: [], createdAt: '', updatedAt: '', model: null, harness: null, permissionMode: null,
+    }
+    window.environment.openDraft = vi.fn().mockResolvedValue({ leaseId: 'lease', draft: { ...remote, text: 'latest edit' } })
+    let finishSave!: () => void
+    const waitForSave = new Promise<void>((resolve) => { finishSave = resolve })
+    vi.mocked(window.environment.upsertDraft).mockImplementationOnce(async (_connectionId, input) => {
+      await waitForSave
+      return { ...remote, ...input, settings: input.settings ?? {} }
+    })
+    const resume = resumeDraft('node', remote)
+    try {
+      expect(window.environment.openDraft).toHaveBeenCalledWith('node', 'incoming')
+    } finally {
+      finishSave()
+    }
+    expect(await resume).toEqual({ ok: true })
+    const project = useChatStore.getState().projectSessions[projectKey]
+    expect(project._sessions[project._activeSessionId!].draftText).toBe('latest edit')
+    expect(useDraftsStore.getState().byConnection.node).toContainEqual(expect.objectContaining({ text: 'focused draft' }))
   })
 
   it('records the focused session worktree only on the focused draft', async () => {

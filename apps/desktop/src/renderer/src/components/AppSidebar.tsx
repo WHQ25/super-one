@@ -34,6 +34,8 @@ import { cn } from '@superone/ui/lib/utils'
 import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import { FileTree } from '@/components/sidebar/FileTree'
 import { useMosaicStore } from '@/components/mosaic/mosaic-store'
+import { hasCachedFirstSend } from '@/stores/chat-store/helpers/session-liveness'
+import { switchToProjectSession } from '@/stores/chat-store/helpers/switch-to-session'
 import { useSidebarSessions } from '@/components/sidebar/use-sidebar-sessions'
 import { ProjectSidebarRow } from '@/components/sidebar/ProjectSidebarRow'
 import { CloningProjectRow } from '@/components/sidebar/CloningProjectRow'
@@ -386,13 +388,15 @@ export const AppSidebar = memo(function AppSidebar() {
     if (options?.revealProject !== false) {
       setExpandedFolders((prev) => prev.has(folderPath) ? prev : new Set([...prev, folderPath]))
     }
-    if (!folderSessionsRef.current[folderPath]) {
-      void loadFolderSessions(folderPath, 'switch')
-    }
     const remote = parseRemoteProjectKey(folderPath)
     const project = remote
       ? sessionProjectsRef.current.find((p) => p.path === folderPath)
       : undefined
+    if (remote && hasCachedFirstSend(ps?._sessions[sessionId])) {
+      await switchToProjectSession(useChatStore.getState, folderPath, sessionId, project?.id)
+      return
+    }
+    if (!folderSessionsRef.current[folderPath]) void loadFolderSessions(folderPath, 'switch')
     // A local resume is on this machine. The glyph spinner only covers a remote
     // hydrate, which sits beside the title long enough to read as loading.
     if (remote) setOpeningSession({ folderPath, sessionId })

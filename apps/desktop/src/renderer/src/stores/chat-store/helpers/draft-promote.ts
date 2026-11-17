@@ -454,6 +454,15 @@ export function discardDeletedDraft(draftId: string, store?: ChatStore): void {
   useChatStore.setState((s) => apply(s))
 }
 
+/** Keep the saved draft recoverable while its first message waits for a host session. */
+export function claimFirstSendDraft(projectPath: string, sessionId: string, savedId: string | null): NonNullable<PerSessionState['firstSendDraft']> {
+  const { connectionId } = resolveDraftTarget(projectPath)
+  const draftId = draftIdBySession.get(sessionId) ?? savedId ?? useDraftsStore.getState().byConnection[connectionId]
+    ?.find(row => row.originSessionId === sessionId)?.id
+  if (draftId) claimDraftForSession(sessionId, draftId)
+  return { projectPath, sessionId, draftId }
+}
+
 /**
  * Drop the environment draft bound to this session (first send / session gone).
  * Best-effort: a missing mapping is a no-op.

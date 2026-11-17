@@ -1,11 +1,12 @@
 import { useAppStore } from '@/stores/app'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import type { ChatStore } from '../types'
+import { hasCachedFirstSend } from './session-liveness'
 
 type NavigationState = Pick<ChatStore, 'activeProject' | 'projectSessions' | 'switchSession'>
 
 /** Project keys identify their host independently of the sidebar's selection. */
-export async function switchToProjectSession(get: () => NavigationState, projectPath: string, sessionId: string): Promise<void> {
+export async function switchToProjectSession(get: () => NavigationState, projectPath: string, sessionId: string, projectId?: string): Promise<void> {
   const state = get()
   if (projectPath === state.activeProject) {
     if (sessionId === state.projectSessions[projectPath]?._activeSessionId) return
@@ -14,7 +15,12 @@ export async function switchToProjectSession(get: () => NavigationState, project
   }
   // Keep the sidebar and main chat in sync, including remote → local return.
   const connectionId = parseRemoteProjectKey(projectPath)?.connectionId ?? 'local'
-  await useAppStore.getState().selectProject(projectPath, { connectionId })
+  const cached = state.projectSessions[projectPath]?._sessions?.[sessionId]
+  await useAppStore.getState().selectProject(projectPath, {
+    connectionId,
+    ...(projectId ? { projectId } : {}),
+    ...(connectionId !== 'local' && hasCachedFirstSend(cached) ? { useCachedProject: true } : {}),
+  })
   const fresh = get()
   if (fresh.activeProject !== projectPath) throw new Error('Session project could not be opened')
   // Remote sessions may have advanced on another client while this project was

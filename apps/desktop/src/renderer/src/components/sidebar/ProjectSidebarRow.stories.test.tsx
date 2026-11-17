@@ -74,11 +74,12 @@ it.each([
   await i18n.changeLanguage(locale)
   const { container, unmount } = render(stories[story].render!({} as never, {} as never))
   try {
-    for (const action of ['Publish empty host row', 'Finish session creation', 'Start reply']) {
+    for (const action of ['Switch session', 'Refuse session creation', 'Publish empty host row', 'Finish session creation', 'Start reply']) {
       fireEvent.click(screen.getByRole('button', { name: action }))
       expect(screen.queryByText('New session')).toBeNull()
       expect(screen.getByText('Fix the remote sidebar')).toBeInTheDocument()
       expect(container.querySelectorAll('.group\\/session')).toHaveLength(1)
+      expect(container.querySelector('.group\\/draft')).toBeNull()
     }
   } finally {
     unmount()

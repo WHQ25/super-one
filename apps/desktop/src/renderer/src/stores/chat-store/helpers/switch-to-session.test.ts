@@ -33,6 +33,18 @@ describe('cross-project session navigation', () => {
     expect(state.switchSession).toHaveBeenCalledWith('source')
   })
 
+  it('uses the cached remote project to reach a failed first turn from another project', async () => {
+    const state = source()
+    const target = 'remote:cli-lab:/work/app'
+    state.projectSessions[target] = { _sessions: { failed: {
+      messages: [{ role: 'user', metadata: { sendFailure: { error: 'connection closed' } } }],
+    } } } as unknown as NavigationState['projectSessions'][string]
+    app.selectProject.mockImplementation(async path => { state.activeProject = path })
+    await switchToProjectSession(() => state, target, 'failed', 'project')
+    expect(app.selectProject).toHaveBeenCalledWith(target, { connectionId: 'cli-lab', projectId: 'project', useCachedProject: true })
+    expect(state.switchSession).toHaveBeenCalledWith('failed')
+  })
+
   it('does not restore a session into the old project when project selection fails', async () => {
     const state = source()
     app.selectProject.mockResolvedValue(undefined)

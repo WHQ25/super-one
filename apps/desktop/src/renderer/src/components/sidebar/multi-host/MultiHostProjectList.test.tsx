@@ -93,6 +93,20 @@ describe('environment sections', () => {
     useChatStore.setState({ activeProject: null, projectSessions: {}, agentTitles: {} })
   })
 
+  it.each(['environment', 'project'] as const)('opens a failed first send when the offline catalog loses its project (%s)', groupBy => {
+    const project = createDefaultProjectState()
+    project._sessions.failed = {
+      ...createDefaultPerSessionState(),
+      messages: [{ id: 'first', role: 'user', providerId: 'local', status: 'complete', createdAt: '',
+        content: [{ type: 'text', text: 'Recover this turn' }], metadata: { sendFailure: { error: 'Disconnected' } } }],
+    }
+    useChatStore.setState({ projectSessions: { [remote.pathKey]: project } })
+    renderList({ groupBy, environments: [
+      bucket({ environmentId: 'node-1', connectionId: 'cli-1', label: 'build', connection: 'offline' }),
+    ] })
+    fireEvent.click(screen.getByText('Recover this turn'))
+    expect(callbacks.onSwitchSession).toHaveBeenCalledWith(remote.pathKey, 'failed', { revealProject: false })
+  })
   it('lists each device without a painted name bar', () => {
     renderList()
 

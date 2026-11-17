@@ -1,5 +1,6 @@
 import { callSession, patchSessionSettings } from '@/lib/session-client'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
+import { hasFailedFirstSend } from './helpers/session-liveness'
 import { create } from 'zustand'
 import { useAppStore } from '../app'
 import { switchToProjectSession } from './helpers/switch-to-session'
@@ -728,13 +729,20 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
         unsent: isUnsentSession(cached ?? undefined),
       })
       useAppStore.getState().setActiveWorktree(activeProject, remoteCachedWorktree)
+      // The first turn and its error belong to this window until the node creates a session.
+      if (painted?.firstSendDraft && !painted.hostSessionOwned) return
       const { hydrateRemoteSession, followRemoteSessionEvents, keepRendererOwnedState } = await import('@/lib/remote-session-ops')
-      const { hydrated, snap } = await hydrateRemoteSession(
+      const result = await hydrateRemoteSession(
         activeProject,
         sessionId,
         prev,
         { adoptSession: true },
-      )
+      ).catch(error => {
+        if (hasFailedFirstSend(painted)) return null
+        throw error
+      })
+      if (!result) return
+      const { hydrated, snap } = result
       // Keep the composer typed into during the awaits above.
       // A later switch owns _activeSessionId; this hydrate must not steal it back.
       let applied = hydrated
@@ -742,6 +750,11 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
       set((s) => {
         const proj = getProject(s, activeProject)
         const current = proj._sessions[sessionId]
+        // First-send creation can adopt the host id while this request is in flight.
+        if (!current) {
+          stillActive = false
+          return {}
+        }
         applied = keepRendererOwnedState(current, hydrated, prev)
         stillActive = proj._activeSessionId === sessionId
         return {

@@ -24,6 +24,7 @@ import { callSession } from '@/lib/session-client'
 import { failedMessageResend, withoutSendFailure } from '@superone/chat-core'
 import { isDuplicateSend } from '@superone/shared/send-failure'
 import { restoreSentDraft } from '@/components/chat/chat-input/restore-sent-draft'
+import { keepEditedRemoteSend } from '@/lib/failed-remote-sends'
 import { messageDraft } from '@/components/chat/chat-input/message-draft'
 
 function assertCanRewind(result: RewindFilesResult): RewindFilesResult {
@@ -136,13 +137,17 @@ export const createSessionSlice: StateCreator<ChatStore, [], [], SessionSlice> =
   },
 
   editFailedMessage: (messageId, target) => {
-    const msg = getScopedPerSession(get(), target).messages.find((m) => m.id === messageId)
+    const { projectPath, sessionId, session } = resolveWriteScope(get(), target)
+    const msg = session.messages.find((m) => m.id === messageId)
     if (!msg?.metadata?.sendFailure) return
     dropSendReplay(messageId)
     set((s) => commitPerSession(s, target, (sess) => ({
       messages: sess.messages.filter((m) => m.id !== messageId),
+      ...(sess.firstSendDraft && sess.messages[0]?.id === messageId
+        ? { draftId: sess.firstSendDraft.draftId ?? null, firstSendDraft: undefined } : {}),
       ...composerDraftFrom(sess, msg),
     })))
+    if (projectPath && sessionId) keepEditedRemoteSend(projectPath, sessionId, messageId)
   },
 
   deleteQueuedMessage: async (messageId, target) => {

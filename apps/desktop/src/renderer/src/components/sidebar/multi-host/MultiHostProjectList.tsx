@@ -1,5 +1,6 @@
 import { useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useShallow } from 'zustand/react/shallow'
 import { toast } from 'sonner'
 import { CalendarClock, Cloud, Folder, FolderOpen, Pencil, Search, SquarePen, Trash2 } from 'lucide-react'
 import type { PinnedSessionEntry, RecentFolder, SessionHistoryEntry } from '@superone/shared/agent-types'
@@ -19,6 +20,8 @@ import { ProjectHistoryList } from '@/components/sidebar/ProjectHistoryList'
 import { ProjectSidebarRow } from '@/components/sidebar/ProjectSidebarRow'
 import { inputProjectPathKey } from '@/components/sidebar/session-state-utils'
 import { useChatStore } from '@/stores/chat'
+import { hasFailedFirstSend } from '@/stores/chat-store/helpers/session-liveness'
+import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { CloningProjectRow } from '@/components/sidebar/CloningProjectRow'
 import { useBackgroundCloneStore } from '@/stores/background-clones'
 import { SidebarCollapse, SidebarHeightMorph } from '@/components/sidebar/SidebarCollapse'
@@ -192,10 +195,32 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
     )
   }
 
+  // A disconnected node can return an empty project catalog. The failed turn
+  // is still held by this window, so keep its session reachable until the
+  // ordinary project list can render it again.
+  const failedPaths = useChatStore(useShallow(state => Object.keys(state.projectSessions).filter(path =>
+    Object.values(state.projectSessions[path]._sessions).some(session => !session._sideChatParentId && hasFailedFirstSend(session)),
+  )))
+  const unlistedRows = failedPaths.map(path => {
+    const remote = parseRemoteProjectKey(path)
+    const bucket = remote && props.environments.find(host => host.connectionId === remote.connectionId)
+    if (!bucket) return null
+    const hiddenHost = bucket.connection === 'offline' && props.groupBy === 'environment' && !props.flat
+    if (!hiddenHost && bucket.checkouts.some(checkout => checkout.pathKey === path)) return null
+    return <ProjectSidebarRow key={path}
+      folder={{ path, name: remote.path, id: '', addedAt: '', lastOpened: '' }}
+      isExpanded={false} sessionsOnly offline={bucket.connection === 'offline'} sessions={EMPTY_SESSIONS}
+      onSwitchSession={props.onSwitchSession} onPinSession={props.onPinSession}
+      onSettleSession={props.onSettleSession} onRenameSession={props.onRenameSession}
+      onDeleteSession={props.onDeleteSession} onToggleExpand={props.onToggleProject}
+      onEditProject={props.onEditProject} onRemoveProject={props.onRemoveProject} onNewSession={props.onNewSession} />
+  }).filter(row => row !== null)
+
   if (props.flat) {
     const sections = environmentSections(environments, sort)
     return (
       <div className="flex w-0 min-w-full flex-col px-2 pb-1.5 [&>*]:min-w-0">
+        {unlistedRows}
         {sections.map(({ bucket, checkouts }) => {
           const cloningTasks = backgroundCloneTasks.filter((task) => task.connectionId === bucket.connectionId)
           return (
@@ -220,7 +245,7 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
           </div>
           )
         })}
-        {sections.length === 0 && (
+        {sections.length === 0 && unlistedRows.length === 0 && (
           <div className="px-2.5 py-2 text-xs text-sidebar-foreground/70">{t('sidebar.environmentSection.empty')}</div>
         )}
       </div>
@@ -231,6 +256,7 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
     const sections = environmentSections(environments, sort).filter((section) => section.bucket.connection !== 'offline')
     return (
       <div className="flex w-0 min-w-full flex-col px-2 pb-1.5 [&>*]:min-w-0">
+        {unlistedRows}
         {sections.map(({ bucket, checkouts }) => {
           const collapsed = collapsedEnvironmentIds.includes(bucket.environmentId)
           const projectMax = environmentHeights?.projects.get(bucket.environmentId)
@@ -298,6 +324,7 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
   const errors = environments.filter((bucket) => bucket.projectsStatus === 'error')
   return (
     <div className="flex w-0 min-w-full flex-col px-2 pb-1.5 [&>*]:min-w-0">
+      {unlistedRows}
       {errors.map((bucket) => (
         <ProjectLoadError
           key={bucket.environmentId}
@@ -369,7 +396,7 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
           </RepoGroupHeader>
         )
       })}
-      {groups.length === 0 && errors.length === 0 && (
+      {groups.length === 0 && errors.length === 0 && unlistedRows.length === 0 && (
         <div className="flex flex-1 items-center justify-center p-4 text-xs text-sidebar-foreground/70">
           {t('sidebar.empty')}
         </div>

@@ -15,6 +15,8 @@ vi.mock('electron-log', () => ({ default: { info: vi.fn(), warn: vi.fn(), error:
 vi.mock('../logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }, mobileLog: vi.fn() }))
 
 import { startNodeRuntime, type NodeRuntime } from '../../../../../apps/cli/src/runtime'
+import { RemoteEnvironmentGateway } from './remote-environment-gateway'
+import { enqueuePendingDraft } from '../db-drafts'
 import { EnvironmentHost, resetEnvironmentHostForTests } from './environment-host'
 
 let host: EnvironmentHost | undefined
@@ -33,24 +35,94 @@ afterEach(async () => {
   for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
 })
 
+async function pairDraftNode() {
+  const [userData, nodeHome, projectDir] = ['draft-controller-', 'draft-node-', 'draft-project-']
+    .map((prefix) => mkdtempSync(join(tmpdir(), prefix)))
+  dirs.push(userData!, nodeHome!, projectDir!)
+  electron.userData = userData!
+  db = new Database(':memory:')
+  db.exec(`CREATE TABLE pending_drafts (
+    id TEXT PRIMARY KEY, connection_id TEXT NOT NULL, payload_json TEXT NOT NULL,
+    queued_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT
+  )`)
+  database.getDb.mockReturnValue(db)
+  runtime = await startNodeRuntime({ nodeHome: nodeHome!, bindHost: '127.0.0.1', bindPort: 0, simulatedHarness: true })
+  host = new EnvironmentHost(userData!)
+  const { connectionId, descriptor } = await host.pairRemote({
+    baseUrl: runtime.server.url, pairingToken: runtime.auth.createPairingToken().token, label: 'draft-node',
+  })
+  const project = await host.getGateway(descriptor.environmentId)!.openProject(projectDir!)
+  return { host, connectionId, descriptor, project, projectDir: projectDir! }
+}
+
 describe('consuming a remote draft', () => {
-  it('deletes an opened draft under its lease after the message reaches the node', async () => {
-    const [userData, nodeHome, projectDir] = ['draft-controller-', 'draft-node-', 'draft-project-']
-      .map((prefix) => mkdtempSync(join(tmpdir(), prefix)))
-    dirs.push(userData!, nodeHome!, projectDir!)
-    electron.userData = userData!
-    db = new Database(':memory:')
-    db.exec(`CREATE TABLE pending_drafts (
-      id TEXT PRIMARY KEY, connection_id TEXT NOT NULL, payload_json TEXT NOT NULL,
-      queued_at TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, last_error TEXT
-    )`)
-    database.getDb.mockReturnValue(db)
-    runtime = await startNodeRuntime({ nodeHome: nodeHome!, bindHost: '127.0.0.1', bindPort: 0, simulatedHarness: true })
-    host = new EnvironmentHost(userData!)
-    const { connectionId, descriptor } = await host.pairRemote({
-      baseUrl: runtime.server.url, pairingToken: runtime.auth.createPairingToken().token, label: 'draft-node',
+  it('lists attachment metadata and restores the bytes only when the draft opens', async () => {
+    const { host, connectionId, projectDir } = await pairDraftNode()
+    const attachment = { id: 'image', name: 'image.png', mimeType: 'image/png', data: 'YWJj' }
+    await host.upsertDraft(connectionId, { id: 'image-draft', projectPath: projectDir, text: '', attachments: [attachment] })
+    expect(await host.listDrafts(connectionId)).toMatchObject([{ attachments: [{ ...attachment, data: '' }] }])
+    expect((await host.openDraft(connectionId, 'image-draft')).draft.attachments).toEqual([attachment])
+  }, 30_000)
+
+  it('clears the pending badge when a reconnect flush finishes during the list read', async () => {
+    const { host, connectionId, descriptor, projectDir } = await pairDraftNode()
+    const draft = { id: 'queued', text: 'pending edit', projectPath: projectDir }
+    enqueuePendingDraft(connectionId, draft)
+    const gateway = host.getGateway(descriptor.environmentId)!.drafts!
+    const list = gateway.list.bind(gateway)
+    vi.spyOn(gateway, 'list').mockImplementationOnce(async (input) => {
+      await host.flushPendingDrafts(connectionId)
+      return list(input)
     })
-    const project = await host.getGateway(descriptor.environmentId)!.openProject(projectDir!)
+    const rows = await host.listDrafts(connectionId)
+    expect(rows).toMatchObject([{ id: draft.id, text: draft.text }])
+    expect(rows[0].pendingSync).toBeUndefined()
+  }, 30_000)
+
+  it('reads the confirmed draft when a reconnect upload is still in flight', async () => {
+    const { host, connectionId, descriptor, projectDir } = await pairDraftNode()
+    const draft = { id: 'queued', text: 'offline edit', projectPath: projectDir }
+    enqueuePendingDraft(connectionId, draft)
+    const gateway = host.getGateway(descriptor.environmentId)!.drafts!
+    const upsert = gateway.upsert.bind(gateway)
+    let resumeUpload!: () => void
+    const gate = new Promise<void>((resolve) => { resumeUpload = resolve })
+    vi.spyOn(gateway, 'upsert').mockImplementationOnce(async (input) => {
+      await gate
+      return upsert(input)
+    })
+    const flush = host.flushPendingDrafts(connectionId)
+    const list = vi.spyOn(gateway, 'list')
+    const refresh = host.listDrafts(connectionId)
+    try {
+      expect(list).not.toHaveBeenCalled()
+    } finally {
+      resumeUpload()
+      await flush
+    }
+    const rows = await refresh
+    expect(rows).toMatchObject([{ id: draft.id, text: draft.text }])
+    expect(rows[0].pendingSync).toBeUndefined()
+  }, 30_000)
+
+  it('resolves an absent schedule without calling a node that does not serve scheduled sends', async () => {
+    const { host, connectionId, descriptor } = await pairDraftNode()
+    const gateway = host.getGateway(descriptor.environmentId)!
+    if (!(gateway instanceof RemoteEnvironmentGateway)) throw new Error('Expected paired node gateway')
+    gateway.rememberDescriptor({
+      ...descriptor,
+      capabilities: {
+        ...descriptor.capabilities,
+        methods: descriptor.capabilities.methods.filter(method => !method.startsWith('session.scheduledSend.')),
+      },
+    })
+    const rpc = vi.spyOn(gateway, 'callSession')
+    await expect(host.callSession(connectionId, 'draft-origin', 'session.scheduledSend.get', {})).resolves.toBeNull()
+    expect(rpc).not.toHaveBeenCalled()
+  }, 30_000)
+
+  it('deletes an opened draft under its lease after the message reaches the node', async () => {
+    const { host, connectionId, descriptor, project, projectDir } = await pairDraftNode()
     await host.upsertDraft(connectionId, {
       id: 'saved-draft', text: 'send this message', projectPath: projectDir!, originSessionId: 'composer-id',
     })

@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo } from 'react'
+import { createStore, useStore } from 'zustand'
+import { LruMap } from '@superone/shared/lru-map'
 import { useTranslation } from 'react-i18next'
 import { Loader2 } from 'lucide-react'
 import type { SessionAgentLaunchSettings } from '@superone/shared/agent-types'
@@ -30,10 +32,6 @@ export type LaunchOptionsState =
   | { status: 'ready'; options: SuggestedTaskLaunchOptions }
   | { status: 'error'; message: string }
 
-function launchErrorMessage(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
 /**
  * A remote card may only offer harnesses that node advertises as enabled and
  * ready. `null` means the descriptor is not loaded yet, so the served list
@@ -55,70 +53,35 @@ export function offerSuggestedTaskProfiles(
   return { ...options, profiles, initial: { agentId: profiles[0]!.id, settings: {} } }
 }
 
-/** The launch pickers of a pending card, loaded from main; null while there is nothing to launch. */
-function useLaunchOptions(target: { projectPath: string; sessionId: string; taskId: string } | null): {
-  state: LaunchOptionsState | null
-  refresh: () => void
-  refreshing: boolean
-} {
-  const [state, setState] = useState<{ key: string; value: LaunchOptionsState } | null>(null)
-  const [refreshing, setRefreshing] = useState(false)
-  const sessionId = target?.sessionId
-  const taskId = target?.taskId
-  const projectPath = target?.projectPath
-  const key = JSON.stringify([projectPath, sessionId, taskId])
-  const request = useRef(0)
-  useEffect(() => {
-    if (!projectPath || !sessionId || !taskId) {
-      setState(null)
-      setRefreshing(false)
-      return
-    }
-    const token = ++request.current
-    let cancelled = false
-    setState({ key, value: { status: 'loading' } })
-    setRefreshing(false)
-    callSession(projectPath, sessionId, 'session.suggestedTaskLaunchOptions', { taskId }).then(
-      (options) => {
-        if (!cancelled && request.current === token) setState({ key, value: { status: 'ready', options } })
-      },
-      (error: unknown) => {
-        if (!cancelled && request.current === token) setState({ key, value: { status: 'error', message: launchErrorMessage(error) } })
-      },
-    )
-    return () => {
-      cancelled = true
-      request.current += 1
-    }
-  }, [projectPath, sessionId, taskId])
-  const refresh = useCallback(() => {
-    if (!projectPath || !sessionId || !taskId) return
-    const token = ++request.current
-    const refreshKey = key
-    setRefreshing(true)
-    callSession(projectPath, sessionId, 'session.suggestedTaskLaunchOptions', { taskId, force: true }).then(
-      (options) => {
-        if (request.current !== token) return
-        setState({ key: refreshKey, value: { status: 'ready', options } })
-      },
-      (error: unknown) => {
-        if (request.current !== token) return
-        setState((current) => (
-          current?.key === refreshKey && current.value.status === 'ready'
-            ? current
-            : { key: refreshKey, value: { status: 'error', message: launchErrorMessage(error) } }
-        ))
-      },
-    ).finally(() => {
-      if (request.current === token) setRefreshing(false)
-    })
-  }, [projectPath, sessionId, taskId, key])
-  return {
-    state: target ? state?.key === key ? state.value : { status: 'loading' } : null,
-    refresh,
-    refreshing: target ? refreshing : false,
-  }
+interface LaunchDraft {
+  state: LaunchOptionsState
+  fetching: boolean
+  picked?: SuggestedTaskLaunchChoice
 }
+
+const initialDraft = (): LaunchDraft => ({ state: { status: 'loading' }, fetching: false })
+const emptyDraft = createStore(initialDraft)
+
+function createLaunchDraft(projectPath: string, sessionId: string, taskId: string) {
+  const store = createStore(initialDraft)
+  async function load(force = false) {
+    const { state, fetching } = store.getState()
+    if (fetching || (!force && state.status === 'ready')) return
+    store.setState({ fetching: true, state: state.status === 'ready' ? state : { status: 'loading' } })
+    try {
+      const options = await callSession(projectPath, sessionId, 'session.suggestedTaskLaunchOptions',
+        force ? { taskId, force } : { taskId })
+      store.setState({ state: { status: 'ready', options }, fetching: false })
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      store.setState({ state: state.status === 'ready' ? state : { status: 'error', message }, fetching: false })
+    }
+  }
+  return { store, load }
+}
+
+// Keep pending cards across transcript remounts, including while their host is answering.
+const launchDrafts = new LruMap<string, ReturnType<typeof createLaunchDraft>>(128)
 
 /**
  * Agent, model and how the new session runs, once main has listed them.
@@ -208,24 +171,29 @@ export function SuggestedTaskToolBlock({ result, ...props }: Props) {
   ))
   const taskId = suggestedTaskIdFromResult(result)
   const pending = !props.state && !props.isStreaming && !props.isError && !props.isDenied && props.allowExpand !== false
-  const target = useMemo(
-    () => (pending && projectPath && sessionId && taskId ? { projectPath, sessionId, taskId } : null),
-    [pending, projectPath, sessionId, taskId],
-  )
-  const launchOptions = useLaunchOptions(target)
+  const sourceKey = projectPath && sessionId && taskId ? JSON.stringify([projectPath, sessionId, taskId]) : null
+  const draft = useMemo(() => {
+    if (!pending || !sourceKey || !projectPath || !sessionId || !taskId) return null
+    const existing = launchDrafts.get(sourceKey)
+    if (existing) return existing
+    const created = createLaunchDraft(projectPath, sessionId, taskId)
+    launchDrafts.set(sourceKey, created)
+    return created
+  }, [pending, sourceKey, projectPath, sessionId, taskId])
+  const { state, fetching, picked } = useStore(draft?.store ?? emptyDraft)
+  useEffect(() => { void draft?.load() }, [draft])
+  useEffect(() => {
+    if (props.state && sourceKey) launchDrafts.delete(sourceKey)
+  }, [props.state, sourceKey])
   const remote = Boolean(projectPath && connectionIdForProjectKey(projectPath) !== 'local')
   const hostCatalog = useProjectHarnessCatalog(useAppStore((state) => state.harnessCatalog))
   const catalog = remote ? 'profile' : 'local'
-  const shownState = launchOptions.state?.status === 'ready'
-    ? { status: 'ready' as const, options: offerSuggestedTaskProfiles(launchOptions.state.options, remote ? hostCatalog : null) }
-    : launchOptions.state
-  const readyProfiles = shownState?.status === 'ready' ? shownState.options.profiles : null
-  const sourceKey = JSON.stringify([projectPath, sessionId, taskId])
-  const [selection, setSelection] = useState<{ source: string; choice: SuggestedTaskLaunchChoice }>()
-  const picked = selection?.source === sourceKey ? selection.choice : undefined
-  const setPicked = (choice: SuggestedTaskLaunchChoice) => setSelection({ source: sourceKey, choice })
+  const shownState = state.status === 'ready'
+    ? { status: 'ready' as const, options: offerSuggestedTaskProfiles(state.options, remote ? hostCatalog : null) }
+    : state
+  const readyProfiles = shownState.status === 'ready' ? shownState.options.profiles : null
   const validPick = picked && readyProfiles?.some((profile) => profile.id === picked.agentId) ? picked : undefined
-  const servedInitial = shownState?.status === 'ready' ? shownState.options.initial : undefined
+  const servedInitial = shownState.status === 'ready' ? shownState.options.initial : undefined
   const choice = validPick
     ?? (servedInitial && readyProfiles?.some((profile) => profile.id === servedInitial.agentId) ? servedInitial : undefined)
 
@@ -243,10 +211,16 @@ export function SuggestedTaskToolBlock({ result, ...props }: Props) {
       {...props}
       actions={actions}
       unavailableReason={t('chat.toolBlock.suggestedTask.unavailable')}
-      launchControls={shownState ? <SuggestedTaskLaunchControls state={shownState} choice={validPick} onChange={setPicked}
-        catalog={catalog}
-        onRefreshModels={catalog === 'profile' ? launchOptions.refresh : undefined}
-        modelsLoading={catalog === 'profile' ? launchOptions.refreshing : undefined} /> : undefined}
+      launchControls={draft && (
+        <SuggestedTaskLaunchControls
+          state={shownState}
+          choice={validPick}
+          onChange={(picked) => draft.store.setState({ picked })}
+          catalog={catalog}
+          onRefreshModels={remote ? () => { void draft.load(true) } : undefined}
+          modelsLoading={remote ? fetching : undefined}
+        />
+      )}
       renderMarkdown={renderToolMarkdown}
     />
   )

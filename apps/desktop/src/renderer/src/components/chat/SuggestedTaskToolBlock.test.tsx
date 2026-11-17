@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 import { fireEvent, render, waitFor } from '@testing-library/react'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import userEvent from '@testing-library/user-event'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { resetEnvironmentListCache } from '@/lib/environment-list'
 import { SessionScopeProvider } from '@/stores/chat-store/session-scope'
 import { SuggestedTaskToolBlock } from './SuggestedTaskToolBlock'
@@ -23,9 +24,56 @@ function environment(
 ) {
   return { callSession, listItems, onStatusEvent: () => () => {} }
 }
-const taskId = '0b9f3c1e-2a4d-4e5f-8a6b-7c8d9e0f1a2b'
+let taskId: string
+beforeEach(() => { taskId = crypto.randomUUID() })
 
 describe('suggested task execution environment', () => {
+  it('restores the selected harness and model on the first render after a remount', async () => {
+    const user = userEvent.setup()
+    const profiles = ['claude', 'codex'].map(id => ({
+      id, name: id, harnessId: id, apiProviders: [], models: [], efforts: [], defaultConfig: {},
+    }))
+    const options = { profiles, initial: { agentId: 'claude', settings: {} } }
+    const callSession = vi.fn(async (_connection: string, _session: string, method: string) =>
+      method === 'session.suggestedTaskLaunchOptions' ? options : { sessionId: 'new' })
+    Object.defineProperty(window, 'environment', { configurable: true, value: environment(callSession) })
+    const card = (sessionId: string) => <SessionScopeProvider value={{ projectPath: '/repo', sessionId }}>
+      <SuggestedTaskToolBlock params={{ title: 'Follow up' }} result={JSON.stringify({ taskId })} />
+    </SessionScopeProvider>
+    const view = render(card('original'))
+    await user.click(await view.findByRole('button', { name: 'Agent' }))
+    await user.click(await view.findByRole('menuitemradio', { name: 'codex' }))
+    await user.click(view.getByRole('button', { name: 'Pick model' }))
+    view.unmount()
+
+    const reopened = render(card('original'))
+    expect(reopened.getByRole('button', { name: 'Agent' })).toHaveTextContent('codex')
+    expect(callSession).toHaveBeenCalledTimes(1)
+    fireEvent.click(reopened.getByRole('button', { name: 'Launch' }))
+    await waitFor(() => expect(callSession).toHaveBeenCalledWith('local', 'original', 'session.launchSuggestedTask', {
+      taskId, choice: { agentId: 'codex', settings: { model: 'codex' } },
+    }))
+
+    reopened.rerender(card('other'))
+    expect(await reopened.findByRole('button', { name: 'Agent' })).toHaveTextContent('claude')
+    expect(callSession).toHaveBeenCalledWith('local', 'other', 'session.suggestedTaskLaunchOptions', { taskId })
+  })
+
+  it('joins an options request started before the card remounted', async () => {
+    const options = { profiles: [], initial: { agentId: 'claude', settings: {} } }
+    let finish!: (result: typeof options) => void
+    const callSession = vi.fn(() => new Promise(resolve => { finish = resolve }))
+    Object.defineProperty(window, 'environment', { configurable: true, value: environment(callSession) })
+    const card = <SessionScopeProvider value={{ projectPath: '/repo', sessionId: 'source' }}>
+      <SuggestedTaskToolBlock params={{ title: 'Follow up' }} result={JSON.stringify({ taskId })} />
+    </SessionScopeProvider>
+    render(card).unmount()
+    const reopened = render(card)
+    expect(callSession).toHaveBeenCalledTimes(1)
+    finish(options)
+    await waitFor(() => expect(reopened.container.querySelector('.animate-spin')).toBeNull())
+  })
+
   it('does not carry a previous host selection into a newly loading source environment', async () => {
     const options = { profiles: [{ id: 'claude-base', name: 'Host A model', harnessId: 'claude', defaultConfig: {}, apiProviders: [], models: [], efforts: [] }], initial: { agentId: 'claude-base', settings: {} } }
     const callSession = vi.fn((connection: string, _session: string, method: string) => {

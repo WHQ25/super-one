@@ -1,12 +1,23 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Button } from '@superone/ui/components/ui/button'
 import { Kbd, NewlineKeys } from '@superone/ui/components/ui/kbd'
-import { AutoResizeTextarea } from '@superone/ui/components/ui/auto-resize-textarea'
 import { cn } from '@superone/ui/lib/utils'
 import type { AskUserQuestionRequest, QuestionAnnotations, QuestionPreviewFormat, UserQuestion } from '@superone/shared/agent-types'
+import {
+  hasPreviewOptions,
+  KeyedInput,
+  OptionButtons,
+  OptionDescriptionCallout,
+  QuestionPreviewBox,
+  questionKey,
+  QuestionTabs,
+  selectedOptionLabels,
+  selectedOptionPreview,
+  type RenderQuestionPreview,
+} from './AskUserQuestionShared'
 
-type RenderPreview = (props: { content: string; format: QuestionPreviewFormat }) => ReactNode
+type RenderPreview = RenderQuestionPreview
 
 export interface AskUserQuestionFormProps {
   request: AskUserQuestionRequest
@@ -22,16 +33,8 @@ export interface AskUserQuestionFormProps {
   keyboard?: { inScope: (event?: KeyboardEvent) => boolean; mac: boolean }
 }
 
-function questionKey(q: UserQuestion): string {
-  return q.id ?? q.question
-}
-
 function notesKey(q: UserQuestion, optionLabel: string): string {
   return `${questionKey(q)}\0${optionLabel}`
-}
-
-function hasPreviewOptions(q: UserQuestion): boolean {
-  return q.options.some((o) => !!o.preview)
 }
 
 function isAnswered(q: UserQuestion, selections: Record<string, string>, otherTexts: Record<string, string>): boolean {
@@ -68,99 +71,9 @@ function defaultSelections(questions: UserQuestion[]): Record<string, string> {
   return result
 }
 
-function isSelected(q: UserQuestion, selections: Record<string, string>, label: string): boolean {
-  const sel = selections[questionKey(q)] ?? ''
-  return q.multiSelect ? sel.split(', ').includes(label) : sel === label
-}
-
-const OPTION = 'cursor-pointer rounded text-left whitespace-normal transition'
-/** Option-sized controls: compact beside their shortcuts, a finger's width on touch. */
-const optionSize = (keys: boolean) => (keys ? 'px-2 py-1 text-xs' : 'px-3 py-2 text-sm')
-const INPUT = 'w-full rounded border-0 bg-muted pr-2 text-foreground shadow-none placeholder:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring'
-
-function OptionButtons({ q, selections, onSelect, keys, className }: {
-  q: UserQuestion
-  selections: Record<string, string>
-  onSelect: (q: UserQuestion, label: string) => void
-  keys: boolean
-  className: string
-}) {
-  return (
-    <div className={className}>
-      {q.options.map((opt, i) => (
-        <button
-          key={opt.label}
-          type="button"
-          onClick={() => onSelect(q, opt.label)}
-          className={cn(OPTION, optionSize(keys), isSelected(q, selections, opt.label) ? 'bg-primary text-primary-foreground' : 'bg-muted text-foreground hover:bg-accent')}
-        >
-          {keys && <Kbd variant="square" className="mr-1.5">{i + 1}</Kbd>}
-          {opt.label}
-        </button>
-      ))}
-    </div>
-  )
-}
-
 function OptionDescription({ q, selections }: { q: UserQuestion; selections: Record<string, string> }) {
-  const sel = selections[questionKey(q)]
-  if (!sel) return null
-  const label = q.multiSelect ? sel.split(', ').pop() : sel
-  const desc = q.options.find((o) => o.label === label)?.description
-  if (!desc) return null
-  return (
-    <div className="mt-2 border-l-2 border-primary bg-primary/10 px-2.5 py-1.5 text-xs leading-snug text-primary">
-      {desc}
-    </div>
-  )
-}
-
-/** A text field with the shortcut that reaches it drawn inside, when there is one. */
-function KeyedInput({ keys, shortcut, inputRef, ...props }: {
-  keys: boolean
-  shortcut?: ReactNode
-  inputRef: RefObject<HTMLTextAreaElement | null>
-  placeholder: string
-  value: string
-  onChange: (value: string) => void
-  onFocus?: () => void
-  onBlur?: () => void
-  onSubmit?: () => void
-}) {
-  return (
-    <div className="relative mt-2">
-      {shortcut != null && (
-        <Kbd variant="square" className="pointer-events-none absolute left-2 top-1.5">{shortcut}</Kbd>
-      )}
-      <AutoResizeTextarea
-        ref={inputRef}
-        placeholder={props.placeholder}
-        aria-label={props.placeholder}
-        value={props.value}
-        onValueChange={props.onChange}
-        onSubmit={keys ? props.onSubmit : undefined}
-        onFocus={props.onFocus}
-        onBlur={props.onBlur}
-        className={cn(INPUT, keys ? 'min-h-7 py-1.5 text-xs leading-4' : 'py-2 text-sm', shortcut != null ? 'pl-[30px]' : keys ? 'pl-2' : 'pl-3')}
-      />
-    </div>
-  )
-}
-
-/** The preview of the option the person picked last, if it has one. */
-function selectedPreview(q: UserQuestion, selections: Record<string, string>): string | null {
-  const sel = selections[questionKey(q)]
-  if (!sel) return null
-  const label = q.multiSelect ? sel.split(', ').at(-1) : sel
-  return q.options.find((o) => o.label === label)?.preview ?? null
-}
-
-function PreviewBox({ content, format, renderPreview }: { content: string; format: QuestionPreviewFormat; renderPreview: RenderPreview }) {
-  return (
-    <div className={cn('overflow-y-auto rounded-md border border-border/50 text-xs', format === 'html' ? 'max-h-[28rem] bg-transparent p-0' : 'max-h-64 bg-muted/30 p-3')}>
-      {renderPreview({ content, format })}
-    </div>
-  )
+  const labels = selectedOptionLabels(selections[questionKey(q)], q.multiSelect)
+  return <OptionDescriptionCallout options={q.options} labels={labels} multiSelect={q.multiSelect} />
 }
 
 /** Desktop: options beside (or above, for HTML) the preview; Other is a shortcut that swaps in a text field. */
@@ -180,7 +93,7 @@ function PreviewQuestionPanel({ q, previewFormat, selections, notesTexts, onSele
 }) {
   const { t } = useTranslation()
   const key = questionKey(q)
-  const previewContent = useMemo(() => selectedPreview(q, selections), [q, selections])
+  const previewContent = useMemo(() => selectedOptionPreview(q, selections), [q, selections])
   const isHtml = previewFormat === 'html'
 
   return (
@@ -201,7 +114,7 @@ function PreviewQuestionPanel({ q, previewFormat, selections, notesTexts, onSele
         </div>
         <div className="min-w-0 flex-1">
           {previewContent ? (
-            <PreviewBox content={previewContent} format={previewFormat} renderPreview={renderPreview} />
+            <QuestionPreviewBox content={previewContent} format={previewFormat} renderPreview={renderPreview} />
           ) : (
             <div className="flex h-full items-center justify-center rounded-md border border-dashed border-border/30 p-3 text-xs text-muted-foreground">
               {t('chat.askUser.selectOptionPreview')}
@@ -289,14 +202,14 @@ function TouchQuestionPanel({ q, previewFormat, selections, otherTexts, notesTex
 }) {
   const { t } = useTranslation()
   const key = questionKey(q)
-  const previewContent = selectedPreview(q, selections)
+  const previewContent = selectedOptionPreview(q, selections)
   return (
     <div>
       <OptionButtons q={q} selections={selections} onSelect={onSelect} keys={false} className="flex flex-wrap gap-1.5" />
       <OptionDescription q={q} selections={selections} />
       {previewContent && (
         <div className="mt-2">
-          <PreviewBox content={previewContent} format={previewFormat} renderPreview={renderPreview} />
+          <QuestionPreviewBox content={previewContent} format={previewFormat} renderPreview={renderPreview} />
           <KeyedInput
             keys={false}
             inputRef={notesInputRef}
@@ -473,23 +386,12 @@ export function AskUserQuestionForm({ request, onSubmit, onDismiss, renderPrevie
           A fieldset can't pass that height to its rows, so it only disables them. */}
       <fieldset disabled={settled} className="contents">
       {!singleQuestion && (
-        <div className="mb-3 flex shrink-0 gap-1 overflow-x-auto border-b border-border/50 pb-2">
-          {questions.map((q, i) => (
-            <button
-              key={questionKey(q)}
-              type="button"
-              title={q.header || q.question}
-              aria-label={`Q${i + 1}: ${q.question}`}
-              aria-pressed={activeTab === i}
-              onClick={() => setActiveTab(i)}
-              className={cn('relative shrink-0 cursor-pointer rounded-md px-2.5 py-1 text-xs font-medium transition', activeTab === i ? 'bg-primary/15 text-primary' : 'text-muted-foreground hover:text-foreground')}
-            >
-              {/* Full question titles can hide every later tab, even on desktop. */}
-              {`Q${i + 1}`}
-              {isAnswered(q, selections, otherTexts) && <span className="ml-1 text-xs text-green-500">&#10003;</span>}
-            </button>
-          ))}
-        </div>
+        <QuestionTabs
+          questions={questions}
+          activeTab={activeTab}
+          onSelectTab={setActiveTab}
+          isTabAnswered={(q) => isAnswered(q, selections, otherTexts)}
+        />
       )}
       {!keys && <TouchQuestionText q={activeQuestion} />}
       {/* Padded past every edge so a focused field's ring is not clipped by the scroller. */}

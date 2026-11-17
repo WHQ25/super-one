@@ -1,5 +1,6 @@
 import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { ReactNode } from 'react'
+import { NestedToolContext } from './nested-tool-context'
 import { ToolBlock } from './ToolBlock'
 
 function StoryShell({ children, width = 720 }: { children: ReactNode; width?: number }) {
@@ -202,6 +203,82 @@ export const CursorBridgeNarrow: Story = {
         annotations: { 'Which database?': { notes: 'Use the shared staging cluster and rotate the credentials before the release branch is cut.' } },
       })}
       result={'"Which database?"="Postgres"'}
+    />
+  ),
+}
+
+export const MultiQuestionTabbed: Story = {
+  name: 'Answered · multi-question tabbed with descriptions and Other',
+  render: () => (
+    <ToolBlock
+      toolName="AskUserQuestion"
+      status="complete"
+      input={JSON.stringify({
+        questions: [
+          {
+            question: 'Which auth strategy should we use?',
+            header: 'Auth',
+            multiSelect: false,
+            options: [
+              { label: 'JWT + Refresh', description: 'Stateless access token with revocable refresh token.' },
+              { label: 'Session Cookie', description: 'Server-side session state for same-origin web apps.' },
+            ],
+          },
+          {
+            question: 'Which checks should run before release?',
+            header: 'Checks',
+            multiSelect: true,
+            options: [
+              { label: 'Unit', description: 'Fast isolated test suite.' },
+              { label: 'Lint', description: 'Static formatting and lint checks.' },
+              { label: 'E2E', description: 'End-to-end desktop and mobile checks.' },
+            ],
+          },
+          {
+            question: 'Any migration constraints?',
+            header: 'Constraints',
+            multiSelect: false,
+            options: [
+              { label: 'Backward compatible', description: 'Keep old schema readable during rollout.' },
+              { label: 'Clean rebuild', description: 'Drop local caches and recreate schema.' },
+            ],
+          },
+        ],
+        answers: {
+          'Which auth strategy should we use?': 'JWT + Refresh',
+          'Which checks should run before release?': 'Unit, E2E',
+          'Any migration constraints?': 'Keep old columns read-only for 2 weeks',
+        },
+      })}
+      result={'"Which auth strategy should we use?"="JWT + Refresh" "Which checks should run before release?"="Unit, E2E" "Any migration constraints?"="Keep old columns read-only for 2 weeks"'}
+    />
+  ),
+}
+
+export const NestedInSubagent: Story = {
+  name: 'Nested in subagent (allowExpand=false)',
+  decorators: [(Story) => <NestedToolContext.Provider value={{ allowExpand: false }}><Story /></NestedToolContext.Provider>],
+  render: () => (
+    <ToolBlock
+      toolName="AskUserQuestion"
+      status="complete"
+      input={JSON.stringify({
+        questions: CURSOR_QUESTIONS,
+        answers: { 'Which database?': 'Postgres' },
+      })}
+      result={'"Which database?"="Postgres"'}
+    />
+  ),
+}
+
+export const StrippedRemoteFallback: Story = {
+  name: 'Remote stripped fallback (count-only questions)',
+  render: () => (
+    <ToolBlock
+      toolName="AskUserQuestion"
+      status="complete"
+      input={JSON.stringify({ questions: [{}, {}] })}
+      result={'"Which database?"="Postgres" "Which region?"="us-east-1"'}
     />
   ),
 }

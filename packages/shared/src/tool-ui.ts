@@ -321,6 +321,14 @@ const HIDDEN_SUPERONE_MCP_TOOLS = new Set([
  * name before `_meta` arrives — callers must hide at that first name, not wait
  * for the refined tool_call.
  */
+export function isAskUserQuestionToolName(toolName: string): boolean {
+  if (!toolName) return false
+  if (toolName === 'AskUserQuestion' || toolName.endsWith('__AskUserQuestion')) return true
+  const mcp = parseMcpToolName(toolName)
+  const bare = mcp?.mcpToolName ?? toolName
+  return (uiToolNameFromId(bare) ?? bare) === 'AskUserQuestion'
+}
+
 export function isAlwaysHiddenToolName(toolName: string): boolean {
   const ui = uiToolNameFromId(toolName) ?? toolName
   if (HIDDEN_UI_TOOL_NAMES.has(ui)) return true

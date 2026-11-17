@@ -46,3 +46,21 @@ export const LongCodexTitlesTouch: Story = {
   args: { keyboard: undefined },
   decorators: [(Story) => <div style={{ width: 320 }}><Story /></div>],
 }
+
+export const MultiSelectDescriptions: Story = {
+  args: {
+    request: {
+      requestId: 'multi-desc-story',
+      questions: [{
+        question: 'Which verification checks should run before shipping?',
+        header: 'Checks',
+        multiSelect: true,
+        options: [
+          { label: 'Unit', description: 'Fast isolated unit tests across shared packages.' },
+          { label: 'Typecheck', description: 'Strict TypeScript checks for node and web.' },
+          { label: 'E2E', description: 'Full interactive browser and mobile flows.' },
+        ],
+      }],
+    },
+  },
+}

@@ -81,11 +81,13 @@ describe('partitionTurnForCompactMode', () => {
     const items = [
       { kind: 'tools', id: 'early' },
       { kind: 'block', block: { type: 'tool_use', toolName: 'AskUserQuestion' }, id: 'ask' },
+      { kind: 'block', block: { type: 'tool_use', toolName: 'ask_question' }, id: 'ask-alias' },
+      { kind: 'block', block: { type: 'tool_use', toolName: 'mcp__superone__ask_user_question' }, id: 'ask-mcp' },
       { kind: 'tools', id: 'late' },
       text('answer'),
     ]
     const runs = partitionTurnForCompactMode(items, isClaudePinnedSegment)
-    expect(shape(runs)).toEqual(['c:early', 'p:ask', 'c:late', 'p:answer'])
+    expect(shape(runs)).toEqual(['c:early', 'p:ask,ask-alias,ask-mcp', 'c:late', 'p:answer'])
   })
 
   it('pins suggested-task cards — only the user can launch them', () => {

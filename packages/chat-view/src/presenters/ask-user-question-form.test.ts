@@ -180,3 +180,26 @@ it.each([false, true])('numbers long Codex question tabs and preserves answers (
   await act(async () => button('chat.askUser.submit').click())
   expect(onSubmit).toHaveBeenCalledWith({ '0': 'Yes', '1': 'Yes', '2': 'No' }, undefined)
 })
+
+it('shows descriptions for all selected options in multiSelect mode', async () => {
+  const multiRequest: AskUserQuestionRequest = {
+    requestId: 'multi-desc',
+    questions: [{
+      question: 'Which checks should run?',
+      header: 'Checks',
+      multiSelect: true,
+      options: [
+        { label: 'Unit', description: 'Fast isolated tests' },
+        { label: 'Lint', description: 'Static code rules' },
+        { label: 'E2E', description: 'Full browser flow' },
+      ],
+    }],
+  }
+  const { button } = await mount({ request: multiRequest, keyboard: { inScope: () => true, mac: false } })
+  await act(async () => button('Unit').click())
+  expect(container!.textContent).toContain('Fast isolated tests')
+  await act(async () => button('E2E').click())
+  expect(container!.textContent).toContain('Unit:Fast isolated tests')
+  expect(container!.textContent).toContain('E2E:Full browser flow')
+  expect(container!.textContent).not.toContain('Static code rules')
+})

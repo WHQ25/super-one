@@ -10,8 +10,12 @@ import { PortableWidgetBlock } from './PortableWidgetBlock'
 import { isGalleryPayload, parsePortableNativeWidgetResult } from './portable-native-widget'
 import { resolveWidgetCall } from '@superone/shared/generative-ui/widget-data'
 import { PortableTurnContext } from './portable-turn-context'
-import { isSuperoneMcpServerName } from '@superone/shared/tool-ui'
-import { parseMcpToolName } from './presenters/tool-display'
+import { isAskUserQuestionToolName, isSuperoneMcpServerName } from '@superone/shared/tool-ui'
+import { parseMcpToolName, parseToolInput } from './presenters/tool-display'
+import {
+  AskUserQuestionBlockPresenter,
+  isAskUserQuestionDismissed,
+} from './presenters/AskUserQuestionResult'
 import { resolveMcpServerIconFromMap } from '@superone/shared/mcp-server-icon'
 import {
   GenericToolRowPresenter,
@@ -303,6 +307,25 @@ export function PortableToolRow({ allowExpand = true, inSubagent = false, ...pro
     return <InputRequestToolRow title={title} result={props.result} streaming={props.status === 'streaming'} isError={props.isError} />
   }
   const isDenied = Boolean(props.result?.startsWith('[denied] '))
+  if (isAskUserQuestionToolName(props.toolName)) {
+    const cleanResult = isDenied && props.result ? props.result.slice('[denied] '.length) : props.result
+    const isQuestionDismissed = isAskUserQuestionDismissed(cleanResult, isDenied)
+    const isStreaming = props.status === 'streaming'
+    if (isStreaming || (!props.isError && !isDenied) || isQuestionDismissed) {
+      return (
+        <AskUserQuestionBlockPresenter
+          params={parseToolInput(props.input, 'AskUserQuestion')}
+          result={cleanResult}
+          toolUseId={props.toolUseId}
+          isStreaming={isStreaming}
+          isDenied={isDenied}
+          elapsedSeconds={props.elapsedSeconds}
+          allowExpand={allowExpand && !inSubagent}
+          renderPreview={ports.renderQuestionPreview}
+        />
+      )
+    }
+  }
   // Like the desktop's subagent card, the phone's never mounts a widget. Denied and failed
   // calls keep the ordinary row: it is the only one that says why.
   if (isWidgetTool && inSubagent && !props.isError && !isDenied) {

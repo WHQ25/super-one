@@ -2972,6 +2972,8 @@ export type Messages = {
       yourAnswer: string
       answered: string
       otherOption: string
+      otherLabel: string
+      noteLabel: string
       selectOptionPreview: string
       noteOptionalPlaceholder: string
       submit: string
@@ -8268,6 +8270,8 @@ export const en: Messages = {
       yourAnswer: 'Your Answer',
       answered: 'Answered',
       otherOption: 'Other...',
+      otherLabel: 'Other',
+      noteLabel: 'Note',
       selectOptionPreview: 'Select an option to preview',
       noteOptionalPlaceholder: 'Add a note (optional)...',
       submit: 'Submit',

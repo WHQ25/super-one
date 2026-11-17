@@ -6,7 +6,11 @@ import { Ban, ChevronRight, TriangleAlert } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { resolveWidgetCall } from '@superone/shared/generative-ui/widget-data'
 import { parseNativeWidgetResult } from '@superone/shared/generative-ui/native-widgets'
-import { isSuperoneMcpServerName } from '@superone/shared/tool-ui'
+import { isAskUserQuestionToolName, isSuperoneMcpServerName } from '@superone/shared/tool-ui'
+import {
+  AskUserQuestionBlockPresenter,
+  isAskUserQuestionDismissed,
+} from '@superone/chat-view/presenters/AskUserQuestionResult'
 import { AutomationToolBlock, isAutomationToolName } from './AutomationToolBlock'
 import { AgentProfileToolBlock, isAgentProfileToolName } from './AgentProfileToolBlock'
 import { BrowserToolBlock } from './BrowserToolBlock'
@@ -164,7 +168,8 @@ export function hasDedicatedToolRow(toolName: string): boolean {
     toolName === 'ManageTask' ||
     toolName === 'manage_task' ||
     toolName === 'ManageSubagents' ||
-    toolName === 'manage_subagents'
+    toolName === 'manage_subagents' ||
+    isAskUserQuestionToolName(toolName)
   ) return true
   const serverName = parseMcpToolName(toolName)?.serverName
   return Boolean(serverName && isSuperoneMcpServerName(serverName))
@@ -323,6 +328,24 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
   }
   if (toolName === 'ExitPlanMode') {
     return ports.renderExitPlanMode(result)
+  }
+  if (isAskUserQuestionToolName(toolName)) {
+    const isQuestionDismissed = isAskUserQuestionDismissed(cleanResult, isDenied)
+    if (isStreaming || (!isError && !isDenied) || isQuestionDismissed) {
+      return (
+        <AskUserQuestionBlockPresenter
+          params={params}
+          result={cleanResult}
+          toolUseId={toolUseId}
+          isStreaming={isStreaming}
+          isDenied={isDenied}
+          elapsedSeconds={elapsedSeconds}
+          stallLevel={stallLevel}
+          allowExpand={allowExpand}
+          renderPreview={ports.renderQuestionPreview}
+        />
+      )
+    }
   }
   // The review's findings live entirely in the input — the result is a bare ack — so
   // this dispatches on the params and never waits for a result to render.

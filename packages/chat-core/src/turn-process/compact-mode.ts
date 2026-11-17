@@ -1,4 +1,5 @@
 import { isSuggestTaskTool } from '@superone/shared/suggested-task'
+import { isAskUserQuestionToolName } from '@superone/shared/tool-ui'
 
 export interface CompactChatModePorts {
   isWidgetShowTool(toolName: string): boolean
@@ -29,8 +30,7 @@ export interface CompactChatModePorts {
  */
 export function isPinnedToolName(toolName: string, ports: CompactChatModePorts): boolean {
   return ports.isWidgetShowTool(toolName)
-    || toolName === 'AskUserQuestion'
-    || toolName.endsWith('__AskUserQuestion')
+    || isAskUserQuestionToolName(toolName)
     || isSuggestTaskTool(toolName)
 }
 

@@ -674,6 +674,7 @@ function App(): React.JSX.Element {
       )}>
         <ActivityPanel
           getMaxWidth={getActivityMaxWidth}
+          floatChatOnResizeOverflow={!inMiniWindow}
           transitionMs={inMiniWindow ? FOLD_PANEL_MS : undefined}
         />
 

@@ -10,6 +10,7 @@ import { useMiniAppStore } from '@/stores/miniapp'
 import { useActivityPanelOnScreen } from '@/hooks/useActivityPanelOnScreen'
 import { useResizeHandle } from '@/hooks/useResizeHandle'
 import { useSlotBounds } from '@/hooks/useSlotBounds'
+import { setChatFloating } from '@/lib/layout-actions'
 import { ACTIVITY_PANEL_TRANSITION, LAYOUT } from '@/lib/layout-constants'
 import { ActivityHeaderGroupProvider, ActivityHeaderPrefix } from './ActivityHeaderPrefix'
 import { ResizeHandleLine } from '@/components/ResizeHandleLine'
@@ -38,6 +39,8 @@ const SUPERONE_DOCKVIEW_THEME: DockviewTheme = {
 
 interface ActivityPanelProps {
   getMaxWidth: () => number
+  /** The width limit reserves space for the docked chat. */
+  floatChatOnResizeOverflow?: boolean
   /** Overrides the idle transition — the mini-window fold runs the panels on its own clock. */
   transitionMs?: number
   className?: string
@@ -87,7 +90,7 @@ function ActivityNewTabAction({ group }: IDockviewHeaderActionsProps) {
   )
 }
 
-export function ActivityPanel({ getMaxWidth, transitionMs, className }: ActivityPanelProps) {
+export function ActivityPanel({ getMaxWidth, floatChatOnResizeOverflow, transitionMs, className }: ActivityPanelProps) {
   const { side, panelWidth, setPanelWidthByUser, maximized } = useActivityPanelStore()
   const fillsWindow = useActivityPanelStore(selectPanelFillsWindow)
   const visible = useActivityPanelOnScreen()
@@ -99,6 +102,12 @@ export function ActivityPanel({ getMaxWidth, transitionMs, className }: Activity
   const stopTabStripEdgeFadeRef = useRef<(() => void) | null>(null)
 
   const getWidth = useCallback(() => useActivityPanelStore.getState().panelWidth, [])
+  const collapseChat = useCallback(() => {
+    const panel = useActivityPanelStore.getState()
+    if (panel.showPanel && !selectPanelFillsWindow(panel)) {
+      setChatFloating(true, { expanded: false })
+    }
+  }, [])
   const layoutDockview = useCallback((width?: number, height?: number) => {
     const inner = innerRef.current
     if (inner) apiRef.current?.layout(width ?? inner.clientWidth, height ?? inner.clientHeight)
@@ -140,6 +149,7 @@ export function ActivityPanel({ getMaxWidth, transitionMs, className }: Activity
     outerRef,
     innerRef,
     onResize: layoutDockview,
+    onMaxWidthExceeded: floatChatOnResizeOverflow ? collapseChat : undefined,
   })
 
   const onReady = useCallback((event: DockviewReadyEvent) => {
@@ -317,7 +327,8 @@ export function ActivityPanel({ getMaxWidth, transitionMs, className }: Activity
 
       {visible && !fillsWindow && (
         <div
-          onMouseDown={onResizeStart}
+          data-activity-resize-handle=""
+          onMouseDown={(event) => { if (event.button === 0) onResizeStart(event) }}
           className="group absolute inset-y-0 z-30 w-2 cursor-col-resize"
           style={side === 'right' ? { right: panelWidth - 4 } : { left: panelWidth - 4 }}
         >

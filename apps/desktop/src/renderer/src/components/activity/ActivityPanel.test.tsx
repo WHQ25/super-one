@@ -1,9 +1,10 @@
 /** @vitest-environment jsdom */
 
-import { act, cleanup, render, within } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, within } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { useAppStore } from '@/stores/app'
 import { useActivityPanelStore } from '@/stores/activity-panel'
+import { useChatStore } from '@/stores/chat'
 import { WindowsTitleBar } from '@/components/WindowsTitleBar'
 import { ActivityPanel } from './ActivityPanel'
 import { getDockApi, openNewFileTab, splitActivityTab } from './activity-panel-api'
@@ -11,10 +12,48 @@ import { getDockApi, openNewFileTab, splitActivityTab } from './activity-panel-a
 beforeEach(() => {
   Object.assign(window.app, { platform: 'darwin', getFullscreen: async () => false })
   useAppStore.setState({ showSidebar: false, currentFolder: null })
-  useActivityPanelStore.setState({ showPanel: true, side: 'left', maximized: false, maximizedGroupId: null })
+  useActivityPanelStore.setState({ showPanel: true, side: 'left', maximized: false, maximizedGroupId: null, chatFloating: false })
 })
 
 afterEach(cleanup)
+
+describe('activity panel resize', () => {
+  it.each(['left', 'right'] as const)('collapses chat after dragging past its minimum with the panel on the %s', (side) => {
+    useActivityPanelStore.setState({ side, panelWidth: 440, userResized: false })
+    const wasOpen = useChatStore.getState().isOpen
+    useChatStore.setState({ isOpen: true })
+
+    try {
+      const { container } = render(<ActivityPanel getMaxWidth={() => 500} floatChatOnResizeOverflow transitionMs={0} />)
+      const handle = container.querySelector('[data-activity-resize-handle]')!
+      const direction = side === 'left' ? 1 : -1
+      const startX = 500
+      const drag = (distance: number) => fireEvent.mouseMove(document, { clientX: startX + distance * direction })
+
+      fireEvent.mouseDown(handle, { clientX: startX })
+      drag(60)
+      expect(container.querySelector('[data-activity-outer]')).toHaveStyle({ width: '500px' })
+      drag(68)
+      expect(useActivityPanelStore.getState().chatFloating).toBe(false)
+      expect(useChatStore.getState().isOpen).toBe(true)
+
+      drag(84)
+      expect(useActivityPanelStore.getState()).toMatchObject({ chatFloating: true, maximized: false, panelWidth: 500, userResized: true })
+      expect(useChatStore.getState().isOpen).toBe(false)
+      expect(handle).not.toBeInTheDocument()
+      expect(document.body.style.cursor).toBe('')
+
+      // Once floated, the remainder of the gesture cannot overwrite the docked width.
+      drag(0)
+      fireEvent.mouseUp(document, { clientX: startX })
+      expect(container.querySelector('[data-activity-outer]')).toHaveStyle({ width: '100%' })
+      expect(useActivityPanelStore.getState().panelWidth).toBe(500)
+    } finally {
+      fireEvent.blur(window)
+      useChatStore.setState({ isOpen: wasOpen })
+    }
+  })
+})
 
 async function renderSplit(direction: 'right' | 'below' = 'right') {
   const view = render(<ActivityPanel getMaxWidth={() => 1000} transitionMs={0} />)

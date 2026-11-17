@@ -5089,6 +5089,18 @@ export type Messages = {
     incompleteApps: string
     mcpAppsSection: string
   }
+  generatedMedia: {
+    title: string
+    list: string
+    expand: string
+    collapse: string
+    item: string
+    image: string
+    video: string
+    pending: string
+    unavailable: string
+    openImage: string
+  }
   mediaPlayer: {
     play: string
     pause: string
@@ -10483,6 +10495,18 @@ export const en: Messages = {
     discoverApps: 'Refresh MCP Apps',
     incompleteApps: 'Some MCP servers did not respond.',
     mcpAppsSection: 'MCP Apps',
+  },
+  generatedMedia: {
+    title: 'Generated Media',
+    list: 'Media List',
+    expand: 'Expand List',
+    collapse: 'Collapse List',
+    item: 'Result {{number}}',
+    image: 'Image',
+    video: 'Video',
+    pending: 'Generating…',
+    unavailable: 'Preview Unavailable',
+    openImage: 'Open Image',
   },
   mediaPlayer: {
     play: 'Play',

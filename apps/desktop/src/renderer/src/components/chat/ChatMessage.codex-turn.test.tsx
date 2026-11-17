@@ -26,8 +26,8 @@ vi.mock('./ToolBlock', async (importOriginal) => {
   }
 })
 
-vi.mock('./ImageGalleryBlock', () => ({
-  ImageGalleryBlock: ({ items }: { items: Array<{ id: string }> }) => (
+vi.mock('./GeneratedMediaGalleryBlock', () => ({
+  GeneratedMediaGalleryBlock: ({ items }: { items: Array<{ id: string }> }) => (
     <div data-testid="gallery">gallery:{items.length}</div>
   ),
 }))

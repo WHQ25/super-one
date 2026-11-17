@@ -18,8 +18,7 @@ export interface ChatMessagePresenterProps {
   userBubbleProps?: HTMLAttributes<HTMLDivElement>
   /** Floating menu anchored to the user bubble's wrapper; rendered when open. */
   userMenu?: ReactNode
-  imageGallery?: ReactNode
-  videoGallery?: ReactNode
+  mediaGallery?: ReactNode
   interrupted: boolean
   interruptedLabel: string
   turnSummary?: ReactNode
@@ -43,8 +42,7 @@ export function ChatMessagePresenter({
   body,
   userBubbleProps,
   userMenu,
-  imageGallery,
-  videoGallery,
+  mediaGallery,
   interrupted,
   interruptedLabel,
   turnSummary,
@@ -72,8 +70,7 @@ export function ChatMessagePresenter({
       )}
     >
       {body}
-      {!isUser && imageGallery}
-      {!isUser && videoGallery}
+      {!isUser && mediaGallery}
       {interrupted && (
         <div className="mt-1 flex items-center gap-1 text-xs text-muted-foreground">
           <OctagonX className="size-3" />

@@ -1,66 +1,84 @@
-import type { ImageGenerationItem, VideoGenerationItem } from '@superone/shared/agent-types'
-import { AlertCircle, ImageIcon } from 'lucide-react'
-import { GALLERY_TILE, PortableGalleryHeader, PortableGalleryImage, PortableNativeGallery } from './PortableNativeGallery'
+import { useEffect, useState } from 'react'
+import { ImageIcon, Video } from 'lucide-react'
+import { loadHostImage, PortableHostImage } from './PortableHostImage'
+import { PortableHostVideo, useHostVideoPoster } from './PortableHostVideo'
+import { generationInfo } from './PortableNativeGallery'
+import { portableFileName } from './portable-native-widget'
+import { GeneratedMediaGallery, GeneratedMediaPlaceholder } from './presenters/GeneratedMediaGallery'
+import type { GeneratedMediaItem } from './presenters/tool-display'
 
-/** Same caption as the desktop `ImageGalleryBlock`. */
-export function imageGalleryCaption(items: ImageGenerationItem[]): string {
-  if (items.some((item) => item.status === 'in_progress')) return 'Generating…'
-  return `${items.length} image${items.length === 1 ? '' : 's'} generated`
+const PREVIEW_FALLBACK = 'flex min-h-24 w-full flex-col items-center justify-center gap-2 p-3 text-center text-xs text-primary'
+
+function ImageThumbnail({ path, root }: { path: string; root?: string }) {
+  const [src, setSrc] = useState<string>()
+  useEffect(() => {
+    let active = true
+    void loadHostImage(root, path, false).then(phase => {
+      if (active) setSrc(phase.kind === 'ready' ? phase.dataUri : undefined)
+    })
+    return () => { active = false }
+  }, [path, root])
+
+  return src
+    ? <img src={src} alt="" className="size-full object-cover" onError={() => setSrc(undefined)} />
+    : <ImageIcon aria-hidden className="size-4" />
 }
 
-/**
- * Turn-end image gallery, laid out like the desktop block: a muted caption and
- * a wrapping row of fixed-height tiles. An item without a file yet is a
- * skeleton tile; a failed one is a flagged tile, so the row keeps its shape.
- */
-export function PortableImageGallery({ items }: { items: ImageGenerationItem[] }) {
-  return (
-    <div className="my-2" data-portable-image-gallery>
-      <PortableGalleryHeader kind="image">{imageGalleryCaption(items)}</PortableGalleryHeader>
-      <div className="flex flex-wrap gap-2">
-        {items.map((item) => {
-          if (item.savedPath) return <PortableGalleryImage key={item.id} item={item} />
-          if (item.status === 'failed') {
-            return (
-              <div
-                key={item.id}
-                className={`${GALLERY_TILE} flex w-40 items-center justify-center border-destructive/30 bg-destructive/5 text-destructive`}
-                title={item.revisedPrompt}
-                data-portable-image-placeholder="failed"
-              >
-                <AlertCircle className="size-4" />
-              </div>
-            )
-          }
-          return (
-            <div
-              key={item.id}
-              className={`${GALLERY_TILE} flex w-40 animate-pulse items-center justify-center`}
-              role="status"
-              aria-busy="true"
-              aria-label="Generating image"
-              data-portable-image-placeholder="pending"
-            >
-              <ImageIcon className="size-6 text-muted-foreground" />
-            </div>
-          )
-        })}
-      </div>
-    </div>
-  )
+function VideoThumbnail({ path, root, onDuration }: { path: string; root?: string; onDuration: (ms: number) => void }) {
+  const phase = useHostVideoPoster(root, path)
+  const duration = phase.kind === 'ready' ? phase.poster.durationMs : undefined
+  useEffect(() => {
+    if (duration != null) onDuration(duration)
+  }, [duration, onDuration])
+  return phase.kind === 'ready'
+    ? <img src={phase.poster.dataUri} alt="" className="size-full object-cover" />
+    : <Video aria-hidden className="size-4" />
 }
 
-/**
- * Turn-end video cards. Only a finished video has a path to preview; an
- * in-flight one is represented by its still-visible submit tool row.
- */
-export function PortableVideoGallery({ items }: { items: VideoGenerationItem[] }) {
-  const available = items.filter((item) => Boolean(item.savedPath))
-  if (available.length === 0) return null
-  const title = `${available.length} video${available.length === 1 ? '' : 's'} generated`
+export function PortableGeneratedMediaGallery({ items, projectPath }: {
+  items: GeneratedMediaItem[]
+  projectPath?: string | null
+}) {
+  const root = projectPath ?? undefined
   return (
-    <PortableNativeGallery
-      payload={{ kind: 'native', nativeType: 'video-gallery', title, videos: available }}
+    <GeneratedMediaGallery
+      items={items}
+      renderPreview={(item) => {
+        if (item.status === 'failed') return <GeneratedMediaPlaceholder pending={false} />
+        const path = item.savedPath
+        if (!path) return <GeneratedMediaPlaceholder pending />
+        const label = portableFileName(path)
+        return item.type === 'image_generation' ? (
+          <div className="flex min-h-0 flex-1 flex-col justify-center">
+            <PortableHostImage
+              path={path}
+              root={root}
+              label={label}
+              className={PREVIEW_FALLBACK}
+              pictureClassName="min-h-0 flex-1 overflow-hidden rounded-lg bg-black"
+              imageClassName="block size-full object-contain"
+              generation={generationInfo(item)}
+            />
+          </div>
+        ) : (
+          <PortableHostVideo
+            path={path}
+            root={root}
+            label={label}
+            className={PREVIEW_FALLBACK + ' flex-1'}
+            tileClassName="relative min-h-0 w-full flex-1 overflow-hidden rounded-lg bg-black"
+            imageClassName="block size-full object-contain"
+          />
+        )
+      }}
+      renderThumbnail={(item, onDuration) => {
+        if (item.status === 'failed') return null
+        if (item.type === 'video_generation') {
+          return item.savedPath && <VideoThumbnail key={item.savedPath} path={item.savedPath} root={root} onDuration={onDuration} />
+        }
+        const path = item.previewPath ?? item.savedPath
+        return path && <ImageThumbnail key={path} path={path} root={root} />
+      }}
     />
   )
 }

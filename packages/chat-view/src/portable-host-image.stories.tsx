@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { ImageGenerationItem } from '@superone/shared/agent-types'
 import { installFakeNativeHost } from './fixtures/native-host'
 import { PortableHostImage } from './PortableHostImage'
-import { PortableImageGallery } from './PortableMediaGalleries'
+import { PortableGeneratedMediaGallery } from './PortableMediaGalleries'
 import { PortableMarkdown } from './PortableMarkdown'
 import { PortableNativeGallery } from './PortableNativeGallery'
 import { PortableTurnProvider } from './PortableTurnAdapters'
@@ -112,7 +112,7 @@ const GENERATED = (id: string, extra: Partial<ImageGenerationItem> = {}): ImageG
 export const Gallery: Story = {
   name: 'Turn-end gallery · one image, as the desktop block lays it out',
   render: () => (
-    <PortableImageGallery
+    <PortableGeneratedMediaGallery
       items={[GENERATED('astronaut', {
         revisedPrompt: 'An astronaut tending a glowing bonsai on the Moon',
         generationMs: 14_320,
@@ -123,9 +123,9 @@ export const Gallery: Story = {
 }
 
 export const GalleryMany: Story = {
-  name: 'Turn-end gallery · tiles wrap; a failed and a pending item keep their slot',
+  name: 'Turn-end gallery · mixed states; a failed and a pending item keep their slot',
   render: () => (
-    <PortableImageGallery
+    <PortableGeneratedMediaGallery
       items={[
         GENERATED('concept-a'),
         GENERATED('concept-b'),
@@ -140,7 +140,7 @@ export const GalleryMany: Story = {
 export const GalleryRelay: Story = {
   name: 'Turn-end gallery · relay, chips wait for a Load tap',
   args: { mode: 'relay' },
-  render: () => <PortableImageGallery items={[GENERATED('relay-a'), GENERATED('relay-b')]} />,
+  render: () => <PortableGeneratedMediaGallery items={[GENERATED('relay-a'), GENERATED('relay-b')]} />,
 }
 
 export const NativeWidgetGallery: Story = {

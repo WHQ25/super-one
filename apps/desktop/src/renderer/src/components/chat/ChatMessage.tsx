@@ -7,7 +7,7 @@ import { Pencil } from 'lucide-react'
 import { ToolBlock } from './ToolBlock'
 import { ToolGroup } from './ToolGroup'
 import { AppToolGroup } from './AppToolGroup'
-import { parseToolInput, isHiddenToolBlock, collectGeneratedImages, collectGeneratedVideos } from './tool-display'
+import { parseToolInput, isHiddenToolBlock, collectGeneratedMedia } from './tool-display'
 import {
   isClaudePinnedSegment,
 } from './compact-chat-mode'
@@ -19,8 +19,7 @@ import { WorkflowBlock } from './WorkflowBlock'
 import { DesktopTranscriptFold } from './DesktopTranscriptFold'
 import { buildCompactTurn, turnDisplayContent } from '@superone/chat-view/presenters/turn-content'
 import { useTurnPlanApproval } from './use-turn-plan-approval'
-import { ImageGalleryBlock } from './ImageGalleryBlock'
-import { VideoGalleryBlock } from './VideoGalleryBlock'
+import { GeneratedMediaGalleryBlock } from './GeneratedMediaGalleryBlock'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { getActiveSessionView, useActiveSession, useChatStore, useSessionScope } from '@/stores/chat'
 import { codexAsyncAnswerCopyText, codexAsyncAnswerQuestions, codexAsyncReplyText, isCodexAsyncAnswer, isDismissedCodexAsyncAnswer } from '@superone/shared/codex-async-question'
@@ -181,12 +180,8 @@ export const ChatMessage = memo(function ChatMessage({
     { source: sourceMessage, following: followingMessage, id: segmentId },
     content => groupContent(content, apps),
   ), [isUser, sourceMessage, followingMessage, segmentId, apps])
-  const generatedImages = useMemo(
-    () => grouped && turnContent ? collectGeneratedImages(turnContent, grouped.toolResultMap) : [],
-    [grouped, turnContent],
-  )
-  const generatedVideos = useMemo(
-    () => grouped && turnContent ? collectGeneratedVideos(turnContent, grouped.toolResultMap) : [],
+  const generatedMedia = useMemo(
+    () => grouped && turnContent ? collectGeneratedMedia(turnContent, grouped.toolResultMap) : [],
     [grouped, turnContent],
   )
   const planApproval = useTurnPlanApproval(message, isStreaming, isLastAssistant)
@@ -308,11 +303,8 @@ export const ChatMessage = memo(function ChatMessage({
           ? <CollabTaskBubble text={userText} from={message.metadata?.collaboration} actions={userActions} />
           : undefined}
         body={body}
-        imageGallery={generatedImages.length > 0
-          ? <ImageGalleryBlock items={generatedImages} projectPath={projectPath} />
-          : undefined}
-        videoGallery={generatedVideos.length > 0
-          ? <VideoGalleryBlock items={generatedVideos} />
+        mediaGallery={generatedMedia.length > 0
+          ? <GeneratedMediaGalleryBlock items={generatedMedia} projectPath={projectPath} />
           : undefined}
         interrupted={message.status === 'interrupted'}
         interruptedLabel={t('chat.interrupted')}

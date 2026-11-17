@@ -5143,6 +5143,18 @@ export const zh: Messages = {
     incompleteApps: '部分 MCP 服务器未响应。',
     mcpAppsSection: 'MCP 应用',
   },
+  generatedMedia: {
+    title: '生成结果',
+    list: '媒体列表',
+    expand: '展开列表',
+    collapse: '收起列表',
+    item: '结果 {{number}}',
+    image: '图片',
+    video: '视频',
+    pending: '正在生成…',
+    unavailable: '无法预览',
+    openImage: '打开图片',
+  },
   mediaPlayer: {
     play: '播放',
     pause: '暂停',

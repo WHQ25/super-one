@@ -292,6 +292,7 @@ interface MarkdownVideoPlayerProps extends Omit<ComponentProps<'video'>, 'src'> 
   src?: string
   /** Fit the video and control bar inside a file preview's bounded stage. */
   fitToContainer?: boolean
+  showPlayOverlay?: boolean
   allowFullscreen?: boolean
   /** Local file for the context menu and for dragging the clip out. */
   filePath?: string
@@ -299,7 +300,8 @@ interface MarkdownVideoPlayerProps extends Omit<ComponentProps<'video'>, 'src'> 
   copyText?: string
 }
 
-export function MarkdownVideoPlayer({ className, style, controls: _controls, fitToContainer = false, allowFullscreen = true, filePath, copyText, ...props }: MarkdownVideoPlayerProps) {
+export function MarkdownVideoPlayer({ className, style, controls: _controls, fitToContainer = false, showPlayOverlay = false, allowFullscreen = true, filePath, copyText, ...props }: MarkdownVideoPlayerProps) {
+  const { t } = useTranslation()
   const rootRef = useRef<HTMLSpanElement>(null)
   const videoRef = useRef<HTMLVideoElement>(null)
   const dragEndRef = useRef(0)
@@ -323,7 +325,7 @@ export function MarkdownVideoPlayer({ className, style, controls: _controls, fit
       data-selection-atomic={copyText ? '' : undefined}
       className={cn('my-3 flex w-full flex-col', bounded && 'my-0 h-full min-h-0', fullscreen && 'bg-background', className)}
     >
-      <span className={cn('flex justify-center', bounded && 'min-h-0 flex-1 items-center', fullscreen && 'bg-black')}>
+      <span className={cn('relative flex justify-center', bounded && 'min-h-0 flex-1 items-center', fullscreen && 'bg-black')}>
         <video
           ref={videoRef}
           preload="metadata"
@@ -346,6 +348,16 @@ export function MarkdownVideoPlayer({ className, style, controls: _controls, fit
             !fullscreen && 'rounded-lg',
           )}
         />
+        {showPlayOverlay && !playback.playing && (
+          <IconButton
+            size="lg"
+            tooltip={t('mediaPlayer.play')}
+            className="absolute top-1/2 left-1/2 size-12 -translate-x-1/2 -translate-y-1/2 rounded-full border border-white/30 bg-black/70 text-white hover:bg-black/85 hover:text-white"
+            onClick={() => togglePlay(videoRef.current)}
+          >
+            <Play className="fill-current" />
+          </IconButton>
+        )}
       </span>
       <MediaControls
         media={videoRef}

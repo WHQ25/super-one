@@ -293,75 +293,60 @@ export function parseToolInput(input: string, toolName?: string): Record<string,
 
 export { extractPartialToolInput }
 
-/**
- * The generated images a turn should show in its turn-end gallery.
- *
- * Pairs with `isHiddenToolBlock`: a successful generation's tool row is hidden
- * because this collects it instead. A surface that adopts one without the other
- * either loses the images or shows them twice.
- */
-export function collectGeneratedImages(
+export type GeneratedMediaItem = ImageGenerationItem | VideoGenerationItem
+
+/** Keep the turn's tool order, and update repeated video status results in place. */
+export function collectGeneratedMedia(
   content: ContentBlock[],
   toolResultMap: Map<string, string>,
-): ImageGenerationItem[] {
-  const items: ImageGenerationItem[] = []
+): GeneratedMediaItem[] {
+  const items: GeneratedMediaItem[] = []
+  const videoIndices = new Map<string, number>()
+  const addVideos = (videos: VideoGenerationItem[]) => {
+    for (const video of videos) {
+      const index = videoIndices.get(video.id)
+      if (index === undefined) {
+        videoIndices.set(video.id, items.length)
+        items.push(video)
+      } else {
+        items[index] = video
+      }
+    }
+  }
   for (const block of content) {
     if (block.type !== 'tool_use') continue
-    // A harness-native generation (Codex ImageGen) carries the card itself, status included.
-    if (block.toolName === CODEX_IMAGE_GENERATION_TOOL) {
-      const generation = parseToolInput(block.input, block.toolName) as Omit<ImageGenerationItem, 'id' | 'type'>
-      items.push({ ...generation, id: block.toolUseId, type: 'image_generation' })
-      continue
-    }
-    // A native-template widget_show hands the gallery items the host already prepared, so an
-    // agent-written provider adapter lands in the same surface as a built-in generation.
-    if (isWidgetShowTool(block.toolName)) {
-      items.push(...nativeWidgetImages(toolResultMap.get(block.toolUseId)))
-      continue
-    }
-    if (isSubagentToolName(block.toolName)) {
+    const { toolName, toolUseId } = block
+    const result = toolResultMap.get(toolUseId)
+    if (toolName === CODEX_IMAGE_GENERATION_TOOL) {
+      const generation = parseToolInput(block.input, toolName) as Omit<ImageGenerationItem, 'id' | 'type'>
+      items.push({ ...generation, id: toolUseId, type: 'image_generation' })
+    } else if (isWidgetShowTool(toolName)) {
+      items.push(...nativeWidgetImages(result))
+      addVideos(nativeWidgetVideos(result))
+    } else if (isSubagentToolName(toolName)) {
       items.push(...subagentGeneratedImages(
-        block.toolUseId,
-        parseToolInput(block.input, block.toolName),
-        toolResultMap.get(block.toolUseId),
+        toolUseId,
+        parseToolInput(block.input, toolName),
+        result,
         block.taskResultText,
         block.taskStatus,
       ))
-      continue
+    } else if (isMediaGenerateImageTool(toolName)) {
+      items.push(...toImageGenerationItems(toolUseId, parseToolInput(block.input, toolName), result))
+    } else if (isMediaVideoStatusTool(toolName) || isGrokVideoGenTool(toolName)) {
+      // Only a completing result belongs here. The submit row owns progress, including
+      // when the status poll that finishes it appears in a subsequent message.
+      addVideos(toVideoStatusItems(result))
     }
-    if (!isMediaGenerateImageTool(block.toolName)) continue
-    items.push(...toImageGenerationItems(
-      block.toolUseId,
-      parseToolInput(block.input, block.toolName),
-      toolResultMap.get(block.toolUseId),
-    ))
   }
   return items
 }
 
-/**
- * Collect the finished video cards for a turn.
- *
- * Only the completing status poll produces a card. A generation spans two tool calls and the poll
- * usually lands in a later message than the submit, so a placeholder emitted at submit time would
- * be stranded in an earlier message with no way to ever settle — the visible submit tool block is
- * the progress affordance instead.
- */
-export function collectGeneratedVideos(
-  content: ContentBlock[],
-  toolResultMap: Map<string, string>,
-): VideoGenerationItem[] {
-  const byId = new Map<string, VideoGenerationItem>()
-  for (const block of content) {
-    if (block.type !== 'tool_use') continue
-    const result = toolResultMap.get(block.toolUseId)
-    if (isWidgetShowTool(block.toolName)) {
-      for (const item of nativeWidgetVideos(result)) byId.set(item.id, item)
-      continue
-    }
-    // SuperOne async poll, or Grok native video tools that return a finished path.
-    if (!isMediaVideoStatusTool(block.toolName) && !isGrokVideoGenTool(block.toolName)) continue
-    for (const item of toVideoStatusItems(result)) byId.set(item.id, item)
-  }
-  return [...byId.values()]
+/** The same image entries whose successful tool rows are hidden. */
+export function collectGeneratedImages(content: ContentBlock[], results: Map<string, string>): ImageGenerationItem[] {
+  return collectGeneratedMedia(content, results).filter((item): item is ImageGenerationItem => item.type === 'image_generation')
+}
+
+export function collectGeneratedVideos(content: ContentBlock[], results: Map<string, string>): VideoGenerationItem[] {
+  return collectGeneratedMedia(content, results).filter((item): item is VideoGenerationItem => item.type === 'video_generation')
 }

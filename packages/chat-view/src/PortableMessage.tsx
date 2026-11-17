@@ -22,13 +22,12 @@ import { PortableToolRow } from './PortableToolRow'
 import { PortableTurnFooter } from './PortableTurnFooter'
 import {
   PortableTurn,
-  PortableImageGallery,
   PortableTurnProvider,
-  PortableVideoGallery,
   portableToolBlocks,
   portableToolResultText,
 } from './PortableTurnAdapters'
-import { collectGeneratedImages, collectGeneratedVideos } from './presenters/tool-display'
+import { collectGeneratedMedia } from './presenters/tool-display'
+import { PortableGeneratedMediaGallery } from './PortableMediaGalleries'
 import type { ReductionProjection } from './protocol'
 import { useUserMessageMenu } from './use-user-message-menu'
 import { SendFailureResendButton } from './presenters/SendFailureResendButton'
@@ -78,13 +77,10 @@ function UserToolBlock({ block, index, message }: { block: ContentBlock; index: 
  */
 function useGeneratedMedia(message: ChatMessage, isUser: boolean) {
   return useMemo(() => {
-    if (isUser) return { images: [], videos: [] }
+    if (isUser) return []
     const blocks = portableToolBlocks(message.content)
     const results = portableToolResultText(message.content)
-    return {
-      images: collectGeneratedImages(blocks, results),
-      videos: collectGeneratedVideos(blocks, results),
-    }
+    return collectGeneratedMedia(blocks, results)
   }, [isUser, message.content])
 }
 
@@ -244,11 +240,8 @@ export const PortableMessage = memo(function PortableMessage({
           body={body}
           userBubbleProps={userMenu.bubbleProps}
           userMenu={userMenu.menu}
-          imageGallery={generated.images.length > 0
-            ? <PortableImageGallery items={generated.images} />
-            : undefined}
-          videoGallery={generated.videos.length > 0
-            ? <PortableVideoGallery items={generated.videos} />
+          mediaGallery={generated.length > 0
+            ? <PortableGeneratedMediaGallery items={generated} projectPath={projectPath} />
             : undefined}
           interrupted={message.status === 'interrupted'}
           interruptedLabel={t('chat.interrupted')}

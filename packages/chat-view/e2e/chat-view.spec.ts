@@ -882,9 +882,13 @@ test('42 renders Codex images as a turn-end gallery whose tap carries the genera
   await send(page, { type: 'hydrate', messages: [CODEX_IMAGE_GALLERY_RECORDING] })
 
   const turn = page.locator('[data-turn-id="recording-codex-image-gallery"]')
-  const gallery = turn.locator('[data-portable-image-gallery]')
-  // Same caption as the desktop block: no frame, no title, just the count.
-  await expect(gallery).toContainText('2 images generated')
+  const gallery = turn.getByRole('region', { name: 'Generated Media 2' })
+  await expect(gallery.getByRole('listitem')).toHaveCount(2)
+  await gallery.getByRole('button', { name: 'Collapse List' }).click()
+  await expect(gallery.getByRole('listitem')).toHaveCount(0)
+  await expect(gallery.getByRole('button', { name: 'Expand List' })).toContainText('concept-a.png')
+  await gallery.getByRole('button', { name: 'Expand List' }).click()
+  await expect(gallery.getByRole('listitem')).toHaveCount(2)
   await expect(gallery.locator('[data-native-widget]')).toHaveCount(0)
 
   // Each tile asks the host for its thumb; answer like the LAN host would.
@@ -897,10 +901,10 @@ test('42 renders Codex images as a turn-end gallery whose tap carries the genera
   for (const request of await readRequests()) {
     await send(page, { type: 'nativeActionResult', requestId: request.requestId, result: { ok: true, dataUri: pixel } })
   }
-  await expect(gallery.locator('[data-host-image="ready"] img')).toHaveCount(2)
+  await expect(gallery.locator('[data-host-image="ready"] img')).toHaveCount(1)
 
   // Tapping opens the bytes fullscreen, titled by file name, with the prompt riding along for the info panel.
-  await gallery.getByRole('button', { name: 'concept-a.png' }).click()
+  await gallery.locator('[data-generated-media-preview]').getByRole('button', { name: 'Preview concept-a.png' }).click()
   await expect.poll(() => page.evaluate(() => (
     globalThis as typeof globalThis & { __hostMessages: HostRequest[] }
   ).__hostMessages.some((item) => (

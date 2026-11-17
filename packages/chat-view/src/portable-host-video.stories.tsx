@@ -3,7 +3,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import type { VideoGenerationItem } from '@superone/shared/agent-types'
 import { installFakeNativeHost } from './fixtures/native-host'
 import { PortableHostVideo } from './PortableHostVideo'
-import { PortableVideoGallery } from './PortableMediaGalleries'
+import { PortableGeneratedMediaGallery } from './PortableMediaGalleries'
 import { PortableMarkdown } from './PortableMarkdown'
 import { PortableNativeGallery } from './PortableNativeGallery'
 import { PortableTurnProvider } from './PortableTurnAdapters'
@@ -127,13 +127,13 @@ const GENERATED = (id: string): VideoGenerationItem => ({
 
 export const Gallery: Story = {
   name: 'Turn-end gallery · one clip, as the desktop block lays it out',
-  render: () => <PortableVideoGallery items={[GENERATED('astronaut')]} />,
+  render: () => <PortableGeneratedMediaGallery items={[GENERATED('astronaut')]} />,
 }
 
 export const GalleryMany: Story = {
-  name: 'Turn-end gallery · tiles wrap; an in-flight clip has no tile yet',
+  name: 'Turn-end gallery · mixed states; an in-flight clip has a pending state',
   render: () => (
-    <PortableVideoGallery
+    <PortableGeneratedMediaGallery
       items={[GENERATED('take-a'), GENERATED('take-b'), GENERATED('take-c'), { id: 'pending', type: 'video_generation', status: 'in_progress' }]}
     />
   ),

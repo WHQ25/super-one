@@ -24,8 +24,6 @@ import {
 import { PortableMcpAppView } from './PortableMcpAppView'
 import { PortablePlanActions } from './PortablePlanActions'
 import { PortableMarkdown, PortableInsight, PlainCode } from './PortableMarkdown'
-import { PortableImageGallery, PortableVideoGallery } from './PortableMediaGalleries'
-export { PortableImageGallery, PortableVideoGallery } from './PortableMediaGalleries'
 import { PortableToolRow } from './PortableToolRow'
 import { TranscriptFoldPresenter, type TurnFoldPresenterProps } from './presenters/TranscriptFold'
 import {

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import type { CodexMcpToolCallItem } from '@superone/shared/agent-types'
+import type { CodexMcpToolCallItem, ContentBlock } from '@superone/shared/agent-types'
 import { codexItemsToContent } from '@superone/shared/codex-content'
 import {
   toImageGenerationItems,
@@ -14,7 +14,7 @@ import {
   nativeWidgetImages,
   nativeWidgetVideos,
 } from './media-generation'
-import { collectGeneratedImages, collectGeneratedVideos, isHiddenToolBlock } from './tool-display'
+import { collectGeneratedImages, collectGeneratedMedia, collectGeneratedVideos, isHiddenToolBlock } from './tool-display'
 
 /** A legacy Codex turn's gallery media, collected from its derived content as the turn does. */
 function codexTurnMedia(items: CodexMcpToolCallItem[]) {
@@ -607,4 +607,17 @@ describe('native widget galleries on a codex turn', () => {
   it('ignores a failed call so the error block explains instead of an empty card', () => {
     expect(collectCodexGeneratedImages([codexWidgetCall(NATIVE_IMAGES, { error: { message: 'boom' } })])).toEqual([])
   })
+})
+
+it('preserves mixed generation order and updates repeated video polls in place', () => {
+  const call = (toolName: string, toolUseId: string): ContentBlock => ({
+    type: 'tool_use', toolName, toolUseId, input: '{}',
+  })
+  const poll = 'mcp__superone__media_video_status'
+  const videoResult = (path: string) => JSON.stringify({ status: 'generated', generationId: 'clip', savedPaths: [path] })
+  const calls = [call(poll, 'video'), call(TOOL, 'image'), call(poll, 'repeat')]
+  const results = new Map([['video', videoResult('/tmp/old.mp4')], ['image', RESULT], ['repeat', videoResult('/tmp/clip.mp4')]])
+  expect(collectGeneratedMedia(calls, results).map(item => item.savedPath)).toEqual([
+    '/tmp/clip.mp4', '/tmp/out/36bd5ca1-0.jpg',
+  ])
 })

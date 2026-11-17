@@ -67,6 +67,27 @@ export function loadHostVideoPoster(root: string | undefined, path: string): Pro
   return promise
 }
 
+export function useHostVideoPoster(root: string | undefined, path: string): Phase {
+  const [phase, setPhase] = useState<Phase>(() => {
+    const cached = loaded.get(cacheKey(root, path))
+    return cached ? { kind: 'ready', poster: cached } : { kind: 'loading' }
+  })
+
+  useEffect(() => {
+    let live = true
+    const cached = loaded.get(cacheKey(root, path))
+    if (cached) {
+      setPhase({ kind: 'ready', poster: cached })
+    } else {
+      setPhase({ kind: 'loading' })
+      void loadHostVideoPoster(root, path).then((next) => { if (live) setPhase(next) })
+    }
+    return () => { live = false }
+  }, [root, path])
+
+  return phase
+}
+
 function basename(path: string): string {
   return path.split(/[\\/]/).pop() || path
 }
@@ -88,7 +109,7 @@ export function formatVideoDuration(durationMs: number): string {
  * relay) and plays it. A host that cannot cut a frame leaves the icon chip
  * in place, so the transcript is never worse than before.
  */
-export function PortableHostVideo({ path, root, label, className, tileClassName, inline = false }: {
+export function PortableHostVideo({ path, root, label, className, tileClassName, imageClassName, inline = false }: {
   path: string
   /** Session root the path belongs to; folds into the poster cache key. */
   root?: string
@@ -98,28 +119,14 @@ export function PortableHostVideo({ path, root, label, className, tileClassName,
   className?: string
   /** Applied to the tile once the poster is in, instead of `className`. */
   tileClassName?: string
+  imageClassName?: string
   /**
    * Render with phrasing elements only, for a host inside a paragraph (a
    * markdown image). The default block wrappers are invalid there.
    */
   inline?: boolean
 }) {
-  const [phase, setPhase] = useState<Phase>(() => {
-    const cached = loaded.get(cacheKey(root, path))
-    return cached ? { kind: 'ready', poster: cached } : { kind: 'loading' }
-  })
-
-  useEffect(() => {
-    let live = true
-    const cached = loaded.get(cacheKey(root, path))
-    if (cached) {
-      setPhase({ kind: 'ready', poster: cached })
-    } else {
-      setPhase({ kind: 'loading' })
-      void loadHostVideoPoster(root, path).then((next) => { if (live) setPhase(next) })
-    }
-    return () => { live = false }
-  }, [root, path])
+  const phase = useHostVideoPoster(root, path)
 
   const open = () => requestNative('previewFile', { path, ...(root ? { root } : {}) })
   const Box = inline ? 'span' : 'div'
@@ -151,7 +158,7 @@ export function PortableHostVideo({ path, root, label, className, tileClassName,
         title={path}
         data-host-video="ready"
       >
-        <img src={poster.dataUri} alt={label} width={poster.width} height={poster.height} className="block h-full w-auto max-w-full object-contain" />
+        <img src={poster.dataUri} alt={label} width={poster.width} height={poster.height} className={imageClassName ?? "block h-full w-auto max-w-full object-contain"} />
         <span aria-hidden className="absolute inset-0 flex items-center justify-center">
           <span className="flex size-11 items-center justify-center rounded-full bg-black/55 text-white backdrop-blur-sm">
             <Play className="ml-0.5 size-5 fill-current" />

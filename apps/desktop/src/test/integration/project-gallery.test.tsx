@@ -22,7 +22,7 @@ vi.mock('../../main/path-security', async original => ({
 
 import { readRemoteProjectFile } from '../../main/environment/remote-file-tree'
 import { startMediaServer, stopMediaServer, mediaServerUrl } from '../../main/media-server'
-import { ImageGalleryBlock } from '../../renderer/src/components/chat/ImageGalleryBlock'
+import { GeneratedMediaGalleryBlock } from '../../renderer/src/components/chat/GeneratedMediaGalleryBlock'
 
 const root = 'remote:gallery-node:/work/project'
 const image = '/work/project/output/image.png'
@@ -57,7 +57,7 @@ it('streams a node project image through the gallery, full viewer and native dow
     return file
   })
   window.app.saveFileAs = vi.fn(async () => ({ ok: false as const, canceled: true }))
-  const { container } = render(<ImageGalleryBlock projectPath={root} items={[
+  const { container } = render(<GeneratedMediaGalleryBlock projectPath={root} items={[
     { id: 'project-image', type: 'image_generation', status: 'completed', savedPath: image, revisedPrompt: 'Project image' },
   ]} />)
   await waitFor(() => expect(container.querySelector('img')).not.toBeNull())

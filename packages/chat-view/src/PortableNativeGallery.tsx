@@ -6,16 +6,11 @@ import { portableFileName } from './portable-native-widget'
 import { PortableHostImage } from './PortableHostImage'
 import { PortableHostVideo } from './PortableHostVideo'
 
-/**
- * A fixed-height strip the picture sizes itself into, like the desktop
- * `ImageGalleryBlock` tile but a step taller: a phone shows one tile per row
- * more often than not, and the desktop's 160px reads small at arm's length.
- */
 export const GALLERY_TILE = 'h-48 flex-none overflow-hidden rounded-md border border-border bg-muted/30'
 const GALLERY_CHIP = `${GALLERY_TILE} flex w-40 flex-col items-center justify-center gap-1.5 p-2 text-center`
 
 /** The generation facts the viewer's info panel shows; `undefined` when the item carries none. */
-function generationInfo(item: ImageGenerationItem) {
+export function generationInfo(item: ImageGenerationItem) {
   const { revisedPrompt, generationMs, params, referenceImagePaths, warnings } = item
   if (!revisedPrompt && generationMs === undefined && !params?.length && !referenceImagePaths?.length && !warnings?.length) return undefined
   return { revisedPrompt, generationMs, params, referenceImagePaths, warnings }
@@ -57,11 +52,7 @@ export function PortableGalleryHeader({ kind, children }: { kind: 'image' | 'vid
   )
 }
 
-/**
- * The gallery a `widget_show` native template or a turn-end media collection
- * renders into. Laid out like the desktop `ImageGalleryBlock` / `VideoGalleryBlock`:
- * no frame, a muted caption, and a row of fixed-height tiles that wraps.
- */
+/** Explicit native gallery tool output. */
 export function PortableNativeGallery(props: {
   payload: NativeWidgetPayload
   toolUseId?: string

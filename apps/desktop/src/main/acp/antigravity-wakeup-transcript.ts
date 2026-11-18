@@ -10,6 +10,7 @@ import {
   CANCELLED_TASK_OUTPUT_RE,
   COMMAND_EXIT_CODE_RE,
   extractBackgroundTaskLaunchFromText,
+  isSpawnableBackgroundStep,
   parseAntigravityTranscriptRecords,
   parseSystemMessageTaskResult,
   summarizeAntigravityTranscriptToolCall,
@@ -234,7 +235,9 @@ export function extractParentWakeupProgress(
         }
       }
 
-      const bgLaunch = extractBackgroundTaskLaunchFromText(contentStr)
+      const bgLaunch = isSpawnableBackgroundStep(targetCall.rawName, rec.status)
+        ? extractBackgroundTaskLaunchFromText(contentStr)
+        : null
       if (bgLaunch) {
         targetCall.backgroundTaskId = bgLaunch.taskId
         const isDaemon = targetCall.input.run_in_background === true || targetCall.input.IsDaemon === true

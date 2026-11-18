@@ -2,8 +2,9 @@ import { fileURLToPath } from 'node:url'
 import { normalizeTranscriptTool } from '@superone/shared/tool-ui'
 import { unwrapAntigravityToolOutputText } from './antigravity-protocol'
 
-const BACKGROUND_TASK_ID_RE = /Tool is running as a background task with task id:\s*([^\r\n]+)/
-const BACKGROUND_TASK_LOG_RE = /Task logs are available at:\s*([^\r\n]+)/
+const BACKGROUND_TASK_ID_RE =
+  /^(?:Created At:[^\r\n]*\r?\n)*Tool is running as a background task with task id:\s*([A-Za-z0-9._-]+\/task-\d+)(?=\r?\n|$)/
+const BACKGROUND_TASK_LOG_RE = /(?:^|\r?\n)Task logs are available at:\s*([^\r\n]+)/
 export const CANCELLED_TASK_OUTPUT_RE = /Task\s+"([^"]+)"\s+cancelled\./i
 const SYSTEM_MESSAGE_SENDER_RE = /\bsender=([^\s\r\n<]+)/
 const SYSTEM_MESSAGE_PRIORITY_RE = /\bpriority=MESSAGE_PRIORITY_(HIGH|LOW)\b/
@@ -116,10 +117,19 @@ function isDaemonTranscriptCall(rawName: string, args: Record<string, unknown>):
   return false
 }
 
+export function isSpawnableBackgroundStep(
+  rawName: string | undefined,
+  stepStatus: unknown,
+): boolean {
+  if (rawName === 'schedule') return true
+  if (rawName !== undefined && rawName !== 'run_command') return false
+  return stepStatus === 'RUNNING'
+}
+
 export function extractBackgroundTaskLaunchFromText(
   content: string,
 ): { taskId: string; logFile?: string } | null {
-  const idMatch = BACKGROUND_TASK_ID_RE.exec(content)
+  const idMatch = BACKGROUND_TASK_ID_RE.exec(content.trimStart())
   const taskId = idMatch?.[1]?.trim() ?? ''
   if (!taskId) return null
   const logMatch = BACKGROUND_TASK_LOG_RE.exec(content)
@@ -248,6 +258,7 @@ export function extractSpawnedBackgroundTasksFromTranscript(raw: string): {
         const existing = byTaskId.get(cancelledMatch[1].trim())
         if (existing) existing.cancelledInTurn = true
       }
+      if (!isSpawnableBackgroundStep(matchedCall?.rawName, rec.status)) continue
       const launch = extractBackgroundTaskLaunchFromText(content)
       if (!launch) continue
       const rawName = matchedCall?.rawName ?? 'run_command'

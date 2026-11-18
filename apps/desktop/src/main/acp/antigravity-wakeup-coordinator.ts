@@ -8,8 +8,8 @@ import {
 } from './antigravity-background-task'
 import { resolveAntigravityForegroundEndStepIndex } from './antigravity-background-task-transcript'
 import {
+  extractParentSubagentTranscriptState,
   extractParentWakeupProgress,
-  extractSpawnedSubagentsFromParentTranscript,
   type ParentWakeupProgress,
   type SpawnedSubagentRef,
 } from './antigravity-subagent-transcript'
@@ -18,6 +18,7 @@ import {
   findAntigravityTranscriptPath,
   flushRemainingWakeupToolResults,
   resolveWakeupStallTimeoutMs,
+  settleUnboundSwarmWorkersOnWakeup,
   syncTrackedSubagentEntries,
   type TrackedSubagent,
   type WakeupEmitContext,
@@ -73,6 +74,9 @@ export function settleWakeupWaiters(
   outcome: 'completed' | 'cancelled',
 ): void {
   state.subagentWakeupPending = false
+  for (const entry of state.trackedByToolUseId.values()) {
+    if (entry.completed) entry.wakeupRequired = false
+  }
   state.backgroundWatch = false
   state.parentTurnEnded = false
   state.foregroundEndStepIndex = null
@@ -82,7 +86,7 @@ export function settleWakeupWaiters(
   state.resumedInteractionStepIndex = null
   state.awaitingToolSinceMs = null
   state.hasExplicitStallTimeout = false
-  clearSettledWakeupBackgroundTasks(state.bgTasks)
+  clearSettledWakeupBackgroundTasks(state.bgTasks, state.emitEvent)
   const waiters = state.wakeupWaiters.splice(0, state.wakeupWaiters.length)
   for (const resolve of waiters) {
     resolve(outcome)
@@ -127,50 +131,6 @@ function wakeupHasUnseenSteps(
           (Boolean(call.resultPending) && !state.emittedWakeupToolUseIds.has(call.toolUseId)),
       ),
   )
-}
-
-function settleUnboundSwarmWorkersOnWakeup(
-  state: SessionSubagentState,
-  parentRaw: string,
-  now: number,
-): void {
-  if (!parentRaw) return
-  const hasUnboundSwarm = [...state.trackedByToolUseId.values()].some(
-    (entry) => entry.isSwarmWorker && !entry.conversationId && !entry.completed,
-  )
-  if (!hasUnboundSwarm) return
-  const afterStepIndex =
-    state.foregroundEndStepIndex ??
-    state.bgTasks.idleWatchStepIndex ??
-    state.activeWakeupMinSpawnStepIndex ??
-    0
-  const check = extractParentWakeupProgress(parentRaw, afterStepIndex)
-  if (!check.sawSystemMessage) return
-  for (const entry of state.trackedByToolUseId.values()) {
-    if (!entry.isSwarmWorker || entry.conversationId || entry.completed) continue
-    entry.completed = true
-    state.replayedBackgroundToolIds.add(entry.toolUseId)
-    const durationMs = Math.max(0, now - entry.startedAtMs)
-    state.emitEvent({
-      type: 'content_delta',
-      messageId: entry.messageId,
-      delta: {
-        type: 'tool_result',
-        toolUseId: entry.toolUseId,
-        summary: JSON.stringify({ subagent_id: entry.toolUseId, status: 'completed', provider: 'antigravity' }),
-        isError: false,
-      },
-    })
-    state.emitEvent({
-      type: 'task_notification',
-      toolUseId: entry.toolUseId,
-      taskId: entry.toolUseId,
-      taskStatus: 'completed',
-      outputFile: '',
-      summary: entry.description,
-      usage: { totalTokens: 0, toolUses: 0, durationMs },
-    })
-  }
 }
 
 function tryResumeWakeupInteraction(
@@ -280,11 +240,16 @@ export function syncSessionSubagents(state: SessionSubagentState): void {
   const parentTranscriptPath = findAntigravityTranscriptPath(state.parentSessionId, state.brainRoots, true)
   let parentRaw = ''
   let spawnedRefs: SpawnedSubagentRef[] = []
+  let killedAllAtStepIndex: number | undefined
+  let killedSwarmNames: ReadonlySet<string> | undefined
   if (parentTranscriptPath) {
     try {
       parentRaw = readFileSync(parentTranscriptPath, 'utf8')
       if (state.trackedByToolUseId.size > 0) {
-        spawnedRefs = extractSpawnedSubagentsFromParentTranscript(parentRaw)
+        const subState = extractParentSubagentTranscriptState(parentRaw)
+        spawnedRefs = subState.spawned
+        killedAllAtStepIndex = subState.killedAllAtStepIndex
+        killedSwarmNames = subState.killedSwarmNames
       }
     } catch {
       void 0
@@ -296,8 +261,16 @@ export function syncSessionSubagents(state: SessionSubagentState): void {
     state.lastWakeupActivityAtMs = now
   }
 
-  syncTrackedSubagentEntries(state, spawnedRefs, now)
-  settleUnboundSwarmWorkersOnWakeup(state, parentRaw, now)
+  syncTrackedSubagentEntries(state, spawnedRefs, now, {
+    ...(killedAllAtStepIndex !== undefined ? { killedAllAtStepIndex } : {}),
+    ...(killedSwarmNames ? { killedSwarmNames } : {}),
+  })
+  const swarmAfterStep =
+    state.foregroundEndStepIndex ??
+    state.bgTasks.idleWatchStepIndex ??
+    state.activeWakeupMinSpawnStepIndex ??
+    0
+  settleUnboundSwarmWorkersOnWakeup(state, parentRaw, swarmAfterStep, now)
 
   const anyActiveSubagentBefore = [...state.trackedByToolUseId.values()].some((e) => !e.completed)
   const bgSummary = parentRaw

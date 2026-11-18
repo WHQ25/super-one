@@ -1,12 +1,17 @@
 import { existsSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { AgentEvent, PermissionMode } from '@superone/shared/agent-types'
-import { isSubagentToolName, parseMcpToolName, SUPERONE_KNOWN_MCP_BARE_TOOLS } from '@superone/shared/tool-ui'
+import type { AgentEvent } from '@superone/shared/agent-types'
+import { isSubagentToolName } from '@superone/shared/tool-ui'
 import {
+  extractParentWakeupProgress,
   parseAntigravitySubagentTranscript,
   type ParentWakeupProgress,
+  type ParentWakeupToolCall,
   type SpawnedSubagentRef,
 } from './antigravity-subagent-transcript'
+import type { WakeupReplayContext } from './antigravity-wakeup-policy'
+
+export * from './antigravity-wakeup-policy'
 
 export interface TrackedSubagent {
   toolUseId: string
@@ -17,26 +22,23 @@ export interface TrackedSubagent {
   outputFile?: string
   spawnStepIndex?: number
   isSwarmWorker?: boolean
+  swarmName?: string
   lastRawLength: number
   emittedSavedImages?: boolean
+  killed?: boolean
+  wakeupRequired: boolean
   completed: boolean
 }
 
-export interface WakeupEmitContext {
+export interface WakeupEmitContext extends WakeupReplayContext {
   brainRoots: string[]
   boundConversationIds: Set<string>
   trackedByToolUseId: Map<string, TrackedSubagent>
   emittedWakeupStepIndices: Set<number>
   emittedWakeupToolUseIds: Set<string>
-  emittedWakeupToolResultIds: Set<string>
-  replayedBackgroundToolIds: Set<string>
   activeWakeupMinSpawnStepIndex: number | null
   subagentWakeupPending: boolean
   allWorkCompletedAtMs: number | null
-  unflushedWakeupReplay: boolean
-  stalledWakeupToolReplay: boolean
-  unlockedPostStallStream: boolean
-  streamedPreUserPostStall: boolean
   emitEvent: (event: AgentEvent) => void
   onWakeupToolUseEmitted?: (toolUseId: string, messageId: string) => void
 }
@@ -56,15 +58,52 @@ export function findAntigravityTranscriptPath(
   return null
 }
 
+export function emitStoppedTrackedSubagent(
+  ctx: Pick<WakeupEmitContext, 'replayedBackgroundToolIds' | 'emitEvent'>,
+  entry: TrackedSubagent,
+  opts?: { emitToolResult?: boolean },
+): void {
+  entry.completed = true
+  entry.killed = true
+  entry.wakeupRequired = false
+  ctx.replayedBackgroundToolIds.add(entry.toolUseId)
+  if (opts?.emitToolResult && entry.conversationId) {
+    ctx.emitEvent({
+      type: 'content_delta',
+      messageId: entry.messageId,
+      delta: {
+        type: 'tool_result',
+        toolUseId: entry.toolUseId,
+        summary: JSON.stringify({
+          subagent_id: entry.conversationId,
+          output_file: entry.outputFile ?? '',
+          status: 'killed',
+        }),
+        ...(entry.outputFile ? { outputPath: entry.outputFile } : {}),
+        isError: false,
+      },
+    })
+  }
+  ctx.emitEvent({
+    type: 'task_notification',
+    toolUseId: entry.toolUseId,
+    taskId: entry.conversationId ?? '',
+    taskStatus: 'stopped',
+    outputFile: entry.outputFile ?? '',
+    summary: entry.description,
+  })
+}
+
 export function syncTrackedSubagentEntries(
   ctx: WakeupEmitContext,
   spawnedRefs: SpawnedSubagentRef[],
   now: number,
+  killHints?: { killedAllAtStepIndex?: number; killedSwarmNames?: ReadonlySet<string> },
 ): void {
   for (const entry of ctx.trackedByToolUseId.values()) {
     if (entry.completed) continue
 
-    if (!entry.conversationId && spawnedRefs.length > 0) {
+    if (!entry.conversationId && spawnedRefs.length > 0 && !entry.isSwarmWorker) {
       const match = spawnedRefs.find(
         (ref) =>
           !ctx.boundConversationIds.has(ref.conversationId) &&
@@ -84,6 +123,10 @@ export function syncTrackedSubagentEntries(
           match.outputFile ||
           findAntigravityTranscriptPath(match.conversationId, ctx.brainRoots) ||
           join(ctx.brainRoots[0] ?? '', match.conversationId, '.system_generated', 'logs', 'transcript.jsonl')
+        if (match.killedAtStepIndex !== undefined) {
+          emitStoppedTrackedSubagent(ctx, entry, { emitToolResult: true })
+          continue
+        }
         ctx.emitEvent({
           type: 'task_started',
           toolUseId: entry.toolUseId,
@@ -94,6 +137,21 @@ export function syncTrackedSubagentEntries(
           isBackgrounded: true,
         })
       }
+    }
+
+    if (entry.conversationId) {
+      const ref = spawnedRefs.find((r) => r.conversationId === entry.conversationId)
+      if (ref?.killedAtStepIndex !== undefined) {
+        emitStoppedTrackedSubagent(ctx, entry, { emitToolResult: true })
+        continue
+      }
+    } else if (
+      entry.isSwarmWorker &&
+      (killHints?.killedAllAtStepIndex !== undefined ||
+        (entry.swarmName ? killHints?.killedSwarmNames?.has(entry.swarmName) : false))
+    ) {
+      emitStoppedTrackedSubagent(ctx, entry)
+      continue
     }
 
     if (!entry.outputFile || !existsSync(entry.outputFile)) continue
@@ -179,6 +237,86 @@ export function syncTrackedSubagentEntries(
       })
     }
   }
+
+  if (ctx.subagentWakeupPending && ![...ctx.trackedByToolUseId.values()].some((e) => e.wakeupRequired)) {
+    ctx.subagentWakeupPending = false
+  }
+}
+
+export function settleUnboundSwarmWorkersOnWakeup(
+  ctx: WakeupEmitContext,
+  parentRaw: string,
+  afterStepIndex: number,
+  now: number,
+): void {
+  if (!parentRaw) return
+  const hasUnboundSwarm = [...ctx.trackedByToolUseId.values()].some(
+    (entry) => entry.isSwarmWorker && !entry.conversationId && !entry.completed,
+  )
+  if (!hasUnboundSwarm) return
+  const check = extractParentWakeupProgress(parentRaw, afterStepIndex)
+  if (!check.sawSystemMessage) return
+  for (const entry of ctx.trackedByToolUseId.values()) {
+    if (!entry.isSwarmWorker || entry.conversationId || entry.completed) continue
+    entry.completed = true
+    ctx.replayedBackgroundToolIds.add(entry.toolUseId)
+    const durationMs = Math.max(0, now - entry.startedAtMs)
+    ctx.emitEvent({
+      type: 'content_delta',
+      messageId: entry.messageId,
+      delta: {
+        type: 'tool_result',
+        toolUseId: entry.toolUseId,
+        summary: JSON.stringify({ subagent_id: entry.toolUseId, status: 'completed', provider: 'antigravity' }),
+        isError: false,
+      },
+    })
+    ctx.emitEvent({
+      type: 'task_notification',
+      toolUseId: entry.toolUseId,
+      taskId: entry.toolUseId,
+      taskStatus: 'completed',
+      outputFile: '',
+      summary: entry.description,
+      usage: { totalTokens: 0, toolUses: 0, durationMs },
+    })
+  }
+}
+
+function emitWakeupToolCallEvents(
+  ctx: WakeupEmitContext,
+  targetMessageId: string,
+  tc: ParentWakeupToolCall,
+  ready: boolean,
+  notifyToolUse = false,
+): void {
+  ctx.emittedWakeupToolUseIds.add(tc.toolUseId)
+  if (notifyToolUse) ctx.onWakeupToolUseEmitted?.(tc.toolUseId, targetMessageId)
+  ctx.emitEvent({
+    type: 'content_delta',
+    messageId: targetMessageId,
+    delta: {
+      type: 'tool_use',
+      toolUseId: tc.toolUseId,
+      toolName: tc.toolName,
+      input: JSON.stringify(tc.input),
+      status: ready ? 'complete' : 'streaming',
+      ...(tc.summary ? { toolSummary: tc.summary } : {}),
+    },
+  })
+  if (ready) {
+    ctx.emittedWakeupToolResultIds.add(tc.toolUseId)
+    ctx.emitEvent({
+      type: 'content_delta',
+      messageId: targetMessageId,
+      delta: {
+        type: 'tool_result',
+        toolUseId: tc.toolUseId,
+        summary: tc.resultSummary ?? 'done',
+        isError: Boolean(tc.isError),
+      },
+    })
+  }
 }
 
 export function emitWakeupProgressSteps(
@@ -193,47 +331,11 @@ export function emitWakeupProgressSteps(
       for (const tc of step.toolCalls) {
         if (ctx.emittedWakeupToolResultIds.has(tc.toolUseId) || isSubagentToolName(tc.toolName)) continue
         if (tc.hasResult && !tc.resultPending) {
-          ctx.emittedWakeupToolUseIds.add(tc.toolUseId)
-          ctx.emittedWakeupToolResultIds.add(tc.toolUseId)
           ctx.unflushedWakeupReplay = true
-          ctx.emitEvent({
-            type: 'content_delta',
-            messageId: targetMessageId,
-            delta: {
-              type: 'tool_use',
-              toolUseId: tc.toolUseId,
-              toolName: tc.toolName,
-              input: JSON.stringify(tc.input),
-              status: 'complete',
-              ...(tc.summary ? { toolSummary: tc.summary } : {}),
-            },
-          })
-          ctx.emitEvent({
-            type: 'content_delta',
-            messageId: targetMessageId,
-            delta: {
-              type: 'tool_result',
-              toolUseId: tc.toolUseId,
-              summary: tc.resultSummary ?? 'done',
-              isError: Boolean(tc.isError),
-            },
-          })
+          emitWakeupToolCallEvents(ctx, targetMessageId, tc, true)
         } else if (tc.resultPending && !ctx.emittedWakeupToolUseIds.has(tc.toolUseId)) {
-          ctx.emittedWakeupToolUseIds.add(tc.toolUseId)
           ctx.unflushedWakeupReplay = true
-          ctx.onWakeupToolUseEmitted?.(tc.toolUseId, targetMessageId)
-          ctx.emitEvent({
-            type: 'content_delta',
-            messageId: targetMessageId,
-            delta: {
-              type: 'tool_use',
-              toolUseId: tc.toolUseId,
-              toolName: tc.toolName,
-              input: JSON.stringify(tc.input),
-              status: 'streaming',
-              ...(tc.summary ? { toolSummary: tc.summary } : {}),
-            },
-          })
+          emitWakeupToolCallEvents(ctx, targetMessageId, tc, false, true)
         }
       }
       continue
@@ -278,13 +380,22 @@ export function emitWakeupProgressSteps(
             typeof tc.input.description === 'string' && tc.input.description.trim()
               ? tc.input.description.trim()
               : tc.summary || 'Subagent'
+          const rawSwarmName =
+            typeof tc.input.name === 'string' && tc.input.name.trim()
+              ? tc.input.name.trim()
+              : typeof tc.input.subagent_type === 'string' && tc.input.subagent_type.trim()
+                ? tc.input.subagent_type.trim()
+                : undefined
           ctx.trackedByToolUseId.set(tc.toolUseId, {
             toolUseId: tc.toolUseId,
             messageId: targetMessageId,
             description: desc,
             startedAtMs: now,
-            ...(tc.input.isSwarmWorker === true ? { isSwarmWorker: true } : {}),
+            ...(tc.input.isSwarmWorker === true
+              ? { isSwarmWorker: true, ...(rawSwarmName ? { swarmName: rawSwarmName } : {}) }
+              : {}),
             lastRawLength: 0,
+            wakeupRequired: true,
             completed: false,
           })
           ctx.subagentWakeupPending = true
@@ -295,36 +406,8 @@ export function emitWakeupProgressSteps(
       }
 
       const ready = Boolean(tc.hasResult && !tc.resultPending)
-      if (!ready && !tc.resultPending) {
-        continue
-      }
-      ctx.emittedWakeupToolUseIds.add(tc.toolUseId)
-      ctx.onWakeupToolUseEmitted?.(tc.toolUseId, targetMessageId)
-      ctx.emitEvent({
-        type: 'content_delta',
-        messageId: targetMessageId,
-        delta: {
-          type: 'tool_use',
-          toolUseId: tc.toolUseId,
-          toolName: tc.toolName,
-          input: JSON.stringify(tc.input),
-          status: ready ? 'complete' : 'streaming',
-          ...(tc.summary ? { toolSummary: tc.summary } : {}),
-        },
-      })
-      if (ready) {
-        ctx.emittedWakeupToolResultIds.add(tc.toolUseId)
-        ctx.emitEvent({
-          type: 'content_delta',
-          messageId: targetMessageId,
-          delta: {
-            type: 'tool_result',
-            toolUseId: tc.toolUseId,
-            summary: tc.resultSummary ?? 'done',
-            isError: Boolean(tc.isError),
-          },
-        })
-      }
+      if (!ready && !tc.resultPending) continue
+      emitWakeupToolCallEvents(ctx, targetMessageId, tc, ready, true)
     }
 
     if (step.content) {
@@ -369,122 +452,7 @@ export function flushRemainingWakeupToolResults(
       ) {
         continue
       }
-      ctx.emittedWakeupToolUseIds.add(tc.toolUseId)
-      ctx.emittedWakeupToolResultIds.add(tc.toolUseId)
-      ctx.emitEvent({
-        type: 'content_delta',
-        messageId: targetMessageId,
-        delta: {
-          type: 'tool_use',
-          toolUseId: tc.toolUseId,
-          toolName: tc.toolName,
-          input: JSON.stringify(tc.input),
-          status: 'complete',
-          ...(tc.summary ? { toolSummary: tc.summary } : {}),
-        },
-      })
-      ctx.emitEvent({
-        type: 'content_delta',
-        messageId: targetMessageId,
-        delta: {
-          type: 'tool_result',
-          toolUseId: tc.toolUseId,
-          summary: tc.resultSummary ?? 'done',
-          isError: Boolean(tc.isError),
-        },
-      })
+      emitWakeupToolCallEvents(ctx, targetMessageId, tc, true)
     }
   }
-}
-
-const NON_INTERACTIVE_WAKEUP_TOOLS = new Set([
-  'read_file', 'view_file', 'view_file_outline', 'view_code_item', 'read_notebook',
-  'grep_search', 'find_by_name', 'list_dir', 'search_web', 'read_url_content',
-  'manage_task', 'manage_subagents', 'manage_inbox', 'schedule', 'define_subagent',
-  'send_message', 'list_resources', 'read_resource', 'command_status', 'task_output',
-  'wait', 'wait_5_seconds', 'swarm',
-])
-
-const ACCEPT_EDITS_MUTATION_TOOLS = new Set([
-  'write_file', 'write_to_file', 'create_file', 'edit_file',
-  'replace_file_content', 'multi_replace_file_content', 'edit_notebook', 'notebook_edit',
-])
-
-function isMcpWakeupTool(rawName: string | undefined, mappedName: string | undefined): boolean {
-  if (!rawName) return false
-  if (rawName === 'call_mcp_tool' || rawName.startsWith('mcp__') || SUPERONE_KNOWN_MCP_BARE_TOOLS.has(rawName)) {
-    return true
-  }
-  if (parseMcpToolName(rawName)) return true
-  return Boolean(mappedName && parseMcpToolName(mappedName))
-}
-
-export function resolveWakeupStallTimeoutMs(
-  wakeup: ParentWakeupProgress,
-  profile: 'standard' | 'auto' | 'bypass',
-  interactionStallTimeoutMs: number,
-  wakeupResponseTimeoutMs: number,
-  hasExplicitStallTimeout: boolean,
-  permissionMode?: PermissionMode | null,
-): number {
-  const rawName = wakeup.pendingToolRawName
-  if (rawName === 'ask_question' || wakeup.pendingToolName === 'AskUserQuestion') {
-    return interactionStallTimeoutMs
-  }
-  if (profile === 'bypass') return wakeupResponseTimeoutMs
-  if (profile === 'auto') {
-    if (rawName === 'run_command' && wakeup.pendingToolBypassSandbox) return interactionStallTimeoutMs
-    return wakeupResponseTimeoutMs
-  }
-  if (!hasExplicitStallTimeout) {
-    if (isMcpWakeupTool(rawName, wakeup.pendingToolName)) return wakeupResponseTimeoutMs
-    if (rawName && NON_INTERACTIVE_WAKEUP_TOOLS.has(rawName)) return wakeupResponseTimeoutMs
-    if (permissionMode === 'acceptEdits' && rawName && ACCEPT_EDITS_MUTATION_TOOLS.has(rawName)) {
-      return wakeupResponseTimeoutMs
-    }
-  }
-  if (hasExplicitStallTimeout || rawName !== 'run_command' || wakeup.pendingToolBypassSandbox) {
-    return interactionStallTimeoutMs
-  }
-  return Math.max(interactionStallTimeoutMs, (wakeup.pendingToolWaitMs ?? 1_500) + 2_000)
-}
-
-export function evaluateWakeupReplayDrop(
-  ctx: WakeupEmitContext | undefined,
-  update: { sessionUpdate: string; toolCallId?: string },
-): boolean {
-  if (!ctx?.unflushedWakeupReplay) return false
-  const kind = update.sessionUpdate
-  if (
-    kind !== 'agent_thought_chunk' &&
-    kind !== 'agent_message_chunk' &&
-    kind !== 'tool_call' &&
-    kind !== 'tool_call_update' &&
-    kind !== 'usage_update'
-  ) {
-    return false
-  }
-  if (!ctx.stalledWakeupToolReplay) return true
-  if (kind === 'tool_call' || kind === 'tool_call_update') {
-    const id = typeof update.toolCallId === 'string' ? update.toolCallId : ''
-    if (id && (ctx.emittedWakeupToolResultIds.has(id) || ctx.replayedBackgroundToolIds.has(id))) {
-      return true
-    }
-    ctx.unlockedPostStallStream = true
-    return false
-  }
-  if (!ctx.unlockedPostStallStream) return true
-  ctx.streamedPreUserPostStall = true
-  return false
-}
-
-export function resetWakeupReplayState(ctx: WakeupEmitContext | undefined): boolean {
-  if (!ctx) return false
-  const streamedPostStall = ctx.streamedPreUserPostStall
-  ctx.unflushedWakeupReplay = false
-  ctx.stalledWakeupToolReplay = false
-  ctx.unlockedPostStallStream = false
-  ctx.streamedPreUserPostStall = false
-  ctx.replayedBackgroundToolIds.clear()
-  return streamedPostStall
 }

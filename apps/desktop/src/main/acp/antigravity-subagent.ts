@@ -8,6 +8,7 @@ import {
 } from './antigravity-background-task'
 import { resolveAntigravityBrainRoots } from './antigravity-profile'
 import {
+  emitStoppedTrackedSubagent,
   evaluateWakeupReplayDrop,
   resetWakeupReplayState,
 } from './antigravity-wakeup-emitter'
@@ -143,6 +144,7 @@ export function noteAntigravitySubagentEvents(
 
     let description = 'Subagent'
     let isSwarmWorker = false
+    let swarmName: string | undefined
     try {
       const parsedIn = JSON.parse(event.delta.input) as Record<string, unknown>
       if (typeof parsedIn.description === 'string' && parsedIn.description.trim()) {
@@ -151,6 +153,17 @@ export function noteAntigravitySubagentEvents(
         description = parsedIn.subagent_type.trim()
       }
       isSwarmWorker = parsedIn.isSwarmWorker === true
+      if (isSwarmWorker) {
+        const rawName =
+          typeof parsedIn.name === 'string' && parsedIn.name.trim()
+            ? parsedIn.name.trim()
+            : typeof parsedIn.Name === 'string' && parsedIn.Name.trim()
+              ? parsedIn.Name.trim()
+              : typeof parsedIn.subagent_type === 'string' && parsedIn.subagent_type.trim()
+                ? parsedIn.subagent_type.trim()
+                : undefined
+        swarmName = rawName
+      }
     } catch {
       void 0
     }
@@ -160,8 +173,9 @@ export function noteAntigravitySubagentEvents(
       messageId,
       description,
       startedAtMs: Date.now(),
-      ...(isSwarmWorker ? { isSwarmWorker: true } : {}),
+      ...(isSwarmWorker ? { isSwarmWorker: true, ...(swarmName ? { swarmName } : {}) } : {}),
       lastRawLength: 0,
+      wakeupRequired: true,
       completed: false,
     })
 
@@ -175,7 +189,8 @@ export function noteAntigravitySubagentEvents(
   }
 
   const notedBg = noteBackgroundTaskMappedEvents(state.bgTasks, messageId, mappedEvents, state.emitEvent)
-  if (notedSubagent || notedBg || isEffectiveWakeupPending(state)) {
+  const anyActiveSubagent = [...state.trackedByToolUseId.values()].some((e) => !e.completed)
+  if (notedSubagent || notedBg || anyActiveSubagent || isEffectiveWakeupPending(state)) {
     syncSessionSubagents(state)
   }
 }
@@ -243,7 +258,11 @@ export function cancelAntigravitySubagentWakeupWait(parentSessionId: string): bo
   const state = sessionStates.get(parentSessionId)
   if (!state) return false
   const hadWaiters = state.wakeupWaiters.length > 0 || isEffectiveWakeupPending(state)
-  for (const entry of state.trackedByToolUseId.values()) entry.completed = true
+  for (const entry of state.trackedByToolUseId.values()) {
+    if (!entry.completed) {
+      emitStoppedTrackedSubagent(state, entry)
+    }
+  }
   stopPollingTimer(state)
   settleWakeupWaiters(state, 'cancelled')
   return hadWaiters

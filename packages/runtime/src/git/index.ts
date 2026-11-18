@@ -38,6 +38,12 @@ export {
   readBranchTips,
   readBranchTipsWithChanges,
   readBundleHaves,
+  readAncestryPage,
+  presentCommits,
+  newestHave,
+  findCommonAncestor,
+  ANCESTRY_PAGE,
+  MAX_ANCESTRY_PAGES,
   validObjectIds,
   type IncomingBranchInput,
 } from './branch-bundle'

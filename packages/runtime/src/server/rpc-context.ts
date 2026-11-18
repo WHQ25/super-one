@@ -181,6 +181,8 @@ export interface WorkspaceGitPort {
   ): Promise<unknown>
   branchTips(projectId: string): Promise<unknown>
   bundleHaves(projectId: string): Promise<unknown>
+  revList(projectId: string, branch: string, skip: number, maxCount: number): Promise<unknown>
+  presentCommits(projectId: string, commits: string[]): Promise<unknown>
   branchRelations(projectId: string, items: Array<{ localName: string; head: string }>): Promise<unknown>
   uploadBundle(projectId: string, input: { uploadId: string; offset: number; chunk: string }): unknown
   applyIncomingBranch(projectId: string, input: {

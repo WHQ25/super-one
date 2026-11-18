@@ -3,7 +3,7 @@ import { mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'n
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
-import { applyIncomingBranch, branchRelations, exportBranchBundle, readBranchTips, readBundleHaves } from './branch-bundle'
+import { ANCESTRY_PAGE, applyIncomingBranch, branchRelations, exportBranchBundle, findCommonAncestor, presentCommits, readAncestryPage, readBranchTips, readBundleHaves } from './branch-bundle'
 import { worktreeGit } from './worktree-ops'
 
 function git(cwd: string, args: string[]): string {
@@ -74,6 +74,43 @@ describe('branch bundle', () => {
     expect(prereqs).toContain('requires')
     expect(result).toEqual({ ok: true, branch: 'feat/x', head, status: 'created', snapshot: false })
     expect(git(local, ['rev-parse', 'refs/heads/feat/x'])).toBe(head)
+  })
+
+  it('cuts the bundle at the common ancestor when the receiver has moved ahead', async () => {
+    const base = git(local, ['rev-parse', 'main'])
+    const ahead = commit(local, 'ahead.txt', '1\n')
+    commit(local, 'ahead.txt', '2\n')
+    // Fetch moved every receiver tip past the commit the sender still has.
+    git(local, ['update-ref', 'refs/remotes/origin/main', ahead])
+    const head = commit(source, 'a.txt', 'one\n')
+
+    const tips = await readBundleHaves(g, local)
+    expect(tips).not.toContain(base)
+    const ancestor = await findCommonAncestor(
+      (skip, max) => readAncestryPage(g, source, 'feat/x', skip, max),
+      (commits) => presentCommits(g, local, commits),
+    )
+    expect(ancestor).toBe(base)
+
+    const exported = await exportBranchBundle(g, source, { haves: [ancestor!], includeWorkingTree: false })
+    if (!exported.ok || !exported.bundlePath) throw new Error('expected a bundle')
+    trash.push(join(exported.bundlePath, '..'))
+    expect(git(local, ['bundle', 'verify', exported.bundlePath])).toContain(base)
+    const result = await applyIncomingBranch(g, local, {
+      bundlePath: exported.bundlePath, localName: 'feat/x', head: exported.head, snapshot: null,
+    })
+    expect(result).toMatchObject({ ok: true, branch: 'feat/x', head, status: 'created' })
+  })
+
+  it('keeps walking pages until the receiver has a commit', async () => {
+    const missing = Array.from({ length: ANCESTRY_PAGE }, (_, index) => (index + 1).toString(16).padStart(40, '0'))
+    const base = 'b'.repeat(40)
+    const ancestor = await findCommonAncestor(
+      async (skip) => (skip === 0 ? missing : skip === ANCESTRY_PAGE ? [base, 'c'.repeat(40)] : []),
+      async (commits) => commits.filter((commit) => commit === base),
+    )
+    expect(ancestor).toBe(base)
+    expect(await findCommonAncestor(async () => null, async () => [])).toBeNull()
   })
 
   it('needs no bundle when the receiver already has the tip', async () => {

@@ -3,7 +3,7 @@ import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { execFileSync } from 'node:child_process'
-import { applyIncomingBranch, branchRelations, exportBranchBundle, gitRun, readBranchTips, readBundleHaves, worktreeGit } from '@superone/runtime/git'
+import { applyIncomingBranch, branchRelations, exportBranchBundle, gitRun, presentCommits, readAncestryPage, readBranchTips, readBundleHaves, worktreeGit } from '@superone/runtime/git'
 import type { CheckoutProgressPhase, CheckoutSource } from '@superone/shared/agent-types'
 import {
   checkoutFromSource,
@@ -75,6 +75,14 @@ describe('checkout sources', () => {
       },
       // The lab node as a target, as its service would answer.
       haves: async (folderPath) => { expect(folderPath).toBe(LAB); return readBundleHaves(g, lab) },
+      revList: async (folderPath, branch, skip, maxCount) => {
+        expect(folderPath).toBe(NODE.folderPath)
+        return readAncestryPage(g, node, branch, skip, maxCount)
+      },
+      present: async (folderPath, commits) => {
+        expect(folderPath).toBe(LAB)
+        return presentCommits(g, lab, commits)
+      },
       relations: async (_folderPath, items) => branchRelations(g, lab, items),
       land: async (_folderPath, incoming, control) => {
         if (incoming.bundlePath) control?.onProgress?.('uploading', 1, 1)
@@ -241,6 +249,29 @@ describe('checkout sources', () => {
     }, { signal: abort.signal, onProgress: (phase) => { if (phase === 'downloading') abort.abort() } })
     expect(result).toEqual({ ok: false, reason: 'cancelled' })
     expect(() => git(local, ['rev-parse', '--verify', '--quiet', 'refs/heads/feat/cancel'])).toThrow()
+  })
+
+  it('bundles against the ancestor when this checkout has moved ahead of the node', async () => {
+    const base = git(node, ['rev-parse', 'main'])
+    const ahead = commit(local, 'ahead.txt', '1\n')
+    git(local, ['update-ref', 'refs/remotes/origin/main', ahead])
+    git(node, ['switch', '-qc', 'feat/x'])
+    const head = commit(node, 'a.txt', 'one\n')
+    let haves: string[] = []
+    const bundled = deps.node.withBundle
+    deps.node.withBundle = async (input, use, control) => {
+      haves = input.haves
+      return bundled(input, use, control)
+    }
+    try {
+      const result = await checkoutFromSource(deps, {
+        folderPath: local, source: NODE, branch: { ref: 'feat/x', head }, localName: 'feat/x',
+      })
+      expect(result).toMatchObject({ ok: true, status: 'created', head })
+      expect(haves).toEqual([base])
+    } finally {
+      deps.node.withBundle = bundled
+    }
   })
 
   it('refuses a checkout as its own source', async () => {

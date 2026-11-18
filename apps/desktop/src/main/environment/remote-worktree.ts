@@ -302,6 +302,38 @@ export async function remoteBundleHaves(host: EnvironmentHost, folderPath: strin
   return (await node.gw.gitBundleHaves(node.projectId)).haves
 }
 
+/** `null` when the node is too old to walk history. Disconnects still throw. */
+async function nodeGitOrUnsupported(host: EnvironmentHost, folderPath: string, method: string) {
+  const node = await nodeGit(host, folderPath, method)
+  if (node.ok) return node
+  if (node.reason === 'unsupported') return null
+  throw Object.assign(new Error(node.error ?? 'environment is not connected'), { code: node.reason })
+}
+
+/** One newest-first page of a node's branch. `null` when the node cannot list it. */
+export async function remoteRevList(
+  host: EnvironmentHost,
+  folderPath: string,
+  branch: string,
+  skip: number,
+  maxCount: number,
+): Promise<string[] | null> {
+  const node = await nodeGitOrUnsupported(host, folderPath, 'git.revList')
+  if (!node) return null
+  return (await node.gw.gitRevList(node.projectId, branch, skip, maxCount)).commits
+}
+
+/** Which of `commits` a node checkout has. `null` when the node cannot answer. */
+export async function remotePresentCommits(
+  host: EnvironmentHost,
+  folderPath: string,
+  commits: string[],
+): Promise<string[] | null> {
+  const node = await nodeGitOrUnsupported(host, folderPath, 'git.presentCommits')
+  if (!node) return null
+  return (await node.gw.gitPresentCommits(node.projectId, commits)).present
+}
+
 /** Where incoming tips stand against a node checkout's branches. */
 export async function remoteBranchRelations(
   host: EnvironmentHost,

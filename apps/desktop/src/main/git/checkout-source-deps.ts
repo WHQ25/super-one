@@ -1,6 +1,6 @@
 import { ghRun } from '../git-run'
 import { getEnvironmentHost } from '../environment'
-import { landOnRemote, remoteBranchRelations, remoteBranchTips, remoteBundleHaves, withRemoteBranchBundle } from '../environment/remote-worktree'
+import { landOnRemote, remoteBranchRelations, remoteBranchTips, remoteBundleHaves, remotePresentCommits, remoteRevList, withRemoteBranchBundle } from '../environment/remote-worktree'
 import type { CheckoutSourceDeps } from './checkout-sources'
 import { resolveGitMentionCapabilities } from './mention-refs'
 import { localWorktreeGit } from './worktree-ops'
@@ -19,6 +19,8 @@ export function desktopCheckoutSourceDeps(): CheckoutSourceDeps {
       branchTips: (folderPath) => remoteBranchTips(host, folderPath),
       withBundle: (input, use, control) => withRemoteBranchBundle(host, input, use, control),
       haves: (folderPath) => remoteBundleHaves(host, folderPath),
+      revList: (folderPath, branch, skip, maxCount) => remoteRevList(host, folderPath, branch, skip, maxCount),
+      present: (folderPath, commits) => remotePresentCommits(host, folderPath, commits),
       relations: (folderPath, items) => remoteBranchRelations(host, folderPath, items),
       land: (folderPath, incoming, control) => landOnRemote(host, folderPath, incoming, control),
     },

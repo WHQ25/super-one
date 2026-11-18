@@ -14,9 +14,12 @@ import {
   checkoutHolding,
   exportBranchBundle,
   fetchRemoteCommands,
+  findCommonAncestor,
   gitErrorMessage,
   isGhMissingError,
   isGitRemoteName,
+  presentCommits,
+  readAncestryPage,
   readBranchTipsWithChanges,
   readBundleHaves,
   type WorktreeGit,
@@ -57,6 +60,10 @@ export interface CheckoutSourceDeps {
       control?: TransferControl,
     ): Promise<BranchImportResult>
     haves(folderPath: string): Promise<string[]>
+    /** Newest-first page of a branch. `null` when the node cannot walk history. */
+    revList(folderPath: string, branch: string, skip: number, maxCount: number): Promise<string[] | null>
+    /** Which of `commits` the node has. `null` when the node cannot answer. */
+    present(folderPath: string, commits: string[]): Promise<string[] | null>
     relations(folderPath: string, items: Array<{ localName: string; head: string }>): Promise<Relation[]>
     land(folderPath: string, incoming: Incoming, control?: TransferControl): Promise<BranchImportResult>
   }
@@ -276,6 +283,47 @@ async function recordSource(git: WorktreeGit, folderPath: string, branch: string
 
 const CANCELLED: BranchImportResult = { ok: false, reason: 'cancelled' }
 
+/** Newest-first page of the origin branch, or null when that side cannot walk. */
+async function sourceAncestry(
+  deps: CheckoutSourceDeps,
+  source: Extract<CheckoutSource, { kind: 'node' }>,
+  branch: string,
+  skip: number,
+  maxCount: number,
+): Promise<string[] | null> {
+  if (source.connectionId !== 'local') return deps.node.revList(source.folderPath, branch, skip, maxCount)
+  try {
+    return await readAncestryPage(deps.git, source.folderPath, branch, skip, maxCount)
+  } catch {
+    return null
+  }
+}
+
+/** Which of `commits` the target has, or null when that side cannot answer. */
+function targetPresent(deps: CheckoutSourceDeps, folderPath: string, commits: string[]): Promise<string[] | null> {
+  if (parseRemoteProjectKey(folderPath)) return deps.node.present(folderPath, commits)
+  return presentCommits(deps.git, folderPath, commits)
+}
+
+/**
+ * The newest commit of `branch` the target already has. Ref tips are the
+ * fallback: they miss the ancestor when the target has moved past every
+ * commit the origin still has.
+ */
+async function havesAgainstBranch(
+  deps: CheckoutSourceDeps,
+  source: Extract<CheckoutSource, { kind: 'node' }>,
+  folderPath: string,
+  branch: string,
+): Promise<string[]> {
+  const ancestor = await findCommonAncestor(
+    (skip, maxCount) => sourceAncestry(deps, source, branch, skip, maxCount),
+    (commits) => targetPresent(deps, folderPath, commits),
+  )
+  if (ancestor) return [ancestor]
+  return targetFor(deps, folderPath).haves()
+}
+
 /**
  * Bring one branch from `request.source` into `request.folderPath`. Progress
  * goes to `control`; cancelling stops between transfer chunks and before the
@@ -306,7 +354,7 @@ export async function checkoutFromSource(
     if (source.kind === 'node') {
       result = await environmentOrigin(deps, source).withBundle({
         branch: branch.ref,
-        haves: await target.haves(),
+        haves: await havesAgainstBranch(deps, source, folderPath, branch.ref),
         includeWorkingTree: request.includeWorkingTree === true,
       }, landing, control)
     } else {

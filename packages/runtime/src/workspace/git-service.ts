@@ -25,6 +25,8 @@ import {
   discardUpload,
   readBranchTipsWithChanges,
   readBundleHaves,
+  readAncestryPage,
+  presentCommits as commitsPresent,
   uploadedBundlePath,
   writeBundleChunk,
   samePath,
@@ -491,6 +493,18 @@ export class WorkspaceGitService {
   /** Commits this repository already has, for a sender to bundle against. */
   async bundleHaves(projectId: string): Promise<{ haves: string[] }> {
     return { haves: await readBundleHaves(this.git, this.root(projectId)) }
+  }
+
+  /** One newest-first page of commits on `branch`, for finding a shared ancestor. */
+  async revList(projectId: string, branch: string, skip: number, maxCount: number): Promise<{ commits: string[] }> {
+    const root = this.root(projectId)
+    const cwd = await checkoutHolding(this.git, root, branch)
+    return { commits: await readAncestryPage(this.git, cwd, branch, skip, maxCount) }
+  }
+
+  /** Which of `commits` this repository has. */
+  async presentCommits(projectId: string, commits: string[]): Promise<{ present: string[] }> {
+    return { present: await commitsPresent(this.git, this.root(projectId), commits) }
   }
 
   /** Where incoming tips stand against this repository's branches. */

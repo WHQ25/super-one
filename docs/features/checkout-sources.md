@@ -40,8 +40,12 @@ No shared git remote is involved, so unpushed work can move. This desktop
 relays every transfer. A move between two nodes therefore downloads the
 bundle from one and uploads it to the other.
 
-1. The target lists the commits it has (`git.bundleHaves` on a node).
-2. The origin bundles the branch against them (`git.exportBundle` on a
+1. The desktop walks the origin's branch from the tip until it finds a commit
+   the target already has (`git.revList` on a node origin, `git.presentCommits`
+   on a node target). That commit is the common ancestor. A node that cannot
+   list or check commits falls back to the target's ref tips
+   (`git.bundleHaves`).
+2. The origin bundles the branch against that ancestor (`git.exportBundle` on a
    node), so only missing commits travel. If the branch is checked out in a
    worktree there and "include uncommitted changes" is on, the origin commits
    the working tree as a WIP commit on top. It uses a temporary index and a

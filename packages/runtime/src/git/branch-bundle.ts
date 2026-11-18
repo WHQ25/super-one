@@ -19,8 +19,15 @@ import { writeWorkingTree, type WorktreeGit } from './worktree-ops'
 
 /** Trailer marking a WIP snapshot commit, so the next import may replace it. */
 export const SNAPSHOT_TRAILER = 'SuperOne-Snapshot'
-/** Branch tips the receiver offers as already-present history. */
+/** Branch tips the receiver offers when no common ancestor can be walked. */
 export const MAX_BUNDLE_HAVES = 512
+/**
+ * One page of `git rev-list` while walking a branch toward a commit the
+ * receiver already has. Small enough to pass as git arguments.
+ */
+export const ANCESTRY_PAGE = 512
+/** Stop the walk after this many pages; beyond it the bundle carries the whole branch. */
+export const MAX_ANCESTRY_PAGES = 200
 /** The receiver reads the bundle right away; nothing should outlive a slow transfer. */
 const BUNDLE_TTL_MS = 30 * 60_000
 
@@ -40,6 +47,64 @@ export function validObjectIds(values: unknown): string[] {
 export async function readBundleHaves(git: WorktreeGit, repoPath: string): Promise<string[]> {
   const out = await git.read(repoPath, ['for-each-ref', '--format=%(objectname)', 'refs/heads', 'refs/remotes'])
   return validObjectIds(out.split('\n').map((line) => line.trim()))
+}
+
+function objectIds(text: string): string[] {
+  return text.split('\n').map((line) => line.trim()).filter((line) => OBJECT_ID.test(line))
+}
+
+/**
+ * Newest-first commits on `branch`, one page at a time. Walking back from the
+ * tip lets a receiver that has moved past the sender's refs still name a
+ * shared ancestor.
+ */
+export async function readAncestryPage(
+  git: WorktreeGit,
+  repoPath: string,
+  branch: string,
+  skip: number,
+  maxCount: number,
+): Promise<string[]> {
+  const name = sanitizeGitRef(branch)
+  const count = Number.isSafeInteger(maxCount) ? Math.min(Math.max(maxCount, 0), ANCESTRY_PAGE) : 0
+  const skipN = Number.isSafeInteger(skip) && skip >= 0 ? skip : 0
+  if (!count || skipN > ANCESTRY_PAGE * MAX_ANCESTRY_PAGES) return []
+  const out = await git.read(repoPath, ['rev-list', `--max-count=${count}`, `--skip=${skipN}`, `refs/heads/${name}`])
+  return objectIds(out)
+}
+
+/** The subset of `commits` this repository actually has. */
+export async function presentCommits(git: WorktreeGit, repoPath: string, commits: readonly string[]): Promise<string[]> {
+  const ids = commits.filter((commit) => OBJECT_ID.test(commit)).slice(0, ANCESTRY_PAGE)
+  if (!ids.length) return []
+  return objectIds(await git.read(repoPath, ['rev-list', '--no-walk', '--ignore-missing', ...ids]))
+}
+
+/** First commit of a newest-first list that the receiver has. */
+export function newestHave(newestFirst: readonly string[], present: readonly string[]): string | null {
+  const have = new Set(present)
+  return newestFirst.find((commit) => have.has(commit)) ?? null
+}
+
+/**
+ * Newest commit on the sender's branch that the receiver already has.
+ * `null` from either side means the walk cannot run (an older node); an empty
+ * page means the histories never meet.
+ */
+export async function findCommonAncestor(
+  ancestry: (skip: number, maxCount: number) => Promise<string[] | null>,
+  present: (commits: string[]) => Promise<string[] | null>,
+): Promise<string | null> {
+  for (let page = 0; page < MAX_ANCESTRY_PAGES; page++) {
+    const commits = await ancestry(page * ANCESTRY_PAGE, ANCESTRY_PAGE)
+    if (!commits?.length) return null
+    const have = await present(commits)
+    if (!have) return null
+    const hit = newestHave(commits, have)
+    if (hit) return hit
+    if (commits.length < ANCESTRY_PAGE) return null
+  }
+  return null
 }
 
 async function snapshotIdentity(git: WorktreeGit, cwd: string): Promise<NodeJS.ProcessEnv> {

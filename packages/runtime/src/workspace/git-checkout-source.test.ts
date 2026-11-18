@@ -48,6 +48,13 @@ describe('WorkspaceGitService checkout-source methods', () => {
     expect(branches.find((tip) => tip.name === 'main')?.dirty).toBeUndefined()
   })
 
+  it('pages a branch and reports the commits this repository has', async () => {
+    const head = git(worktree, ['rev-parse', 'HEAD'])
+    expect(head).toBe(git(root, ['rev-parse', 'main']))
+    expect(await svc.revList('p1', 'feat/x', 0, 10)).toEqual({ commits: [head] })
+    expect(await svc.presentCommits('p1', [head, 'a'.repeat(40)])).toEqual({ present: [head] })
+  })
+
   it('bundles a named branch from the worktree that has it, carrying its WIP', async () => {
     const result = await svc.exportBundle('p1', { branch: 'feat/x', haves: [], includeWorkingTree: true })
     expect(result).toMatchObject({ ok: true, branch: 'feat/x' })

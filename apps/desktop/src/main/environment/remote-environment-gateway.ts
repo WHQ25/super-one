@@ -864,6 +864,14 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     return this.client.rpc('git.bundleHaves', { projectId })
   }
 
+  gitRevList(projectId: string, branch: string, skip: number, maxCount: number): Promise<{ commits: string[] }> {
+    return this.client.rpc('git.revList', { projectId, branch, skip, maxCount })
+  }
+
+  gitPresentCommits(projectId: string, commits: string[]): Promise<{ present: string[] }> {
+    return this.client.rpc('git.presentCommits', { projectId, commits })
+  }
+
   gitBranchRelations(
     projectId: string,
     items: Array<{ localName: string; head: string }>,

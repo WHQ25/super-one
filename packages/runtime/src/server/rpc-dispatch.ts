@@ -342,6 +342,8 @@ const HANDLERS: Readonly<Record<string, (payload: unknown, ctx: RpcContext, meth
   'git.exportBundle': (payload, ctx) => handleGitExportBundle(payload, ctx),
   'git.branchTips': (payload, ctx) => handleGitBranchTips(payload, ctx),
   'git.bundleHaves': (payload, ctx) => handleGitBundleHaves(payload, ctx),
+  'git.revList': (payload, ctx) => handleGitRevList(payload, ctx),
+  'git.presentCommits': (payload, ctx) => handleGitPresentCommits(payload, ctx),
   'git.branchRelations': (payload, ctx) => handleGitBranchRelations(payload, ctx),
   'git.uploadBundle': (payload, ctx) => handleGitUploadBundle(payload, ctx),
   'git.applyIncomingBranch': (payload, ctx) => handleGitApplyIncomingBranch(payload, ctx),
@@ -1611,6 +1613,40 @@ async function handleGitBundleHaves(payload: unknown, ctx: RpcContext): Promise<
   if (denied) return denied
   try {
     return { result: await ctx.workspaceGit.bundleHaves(String(asRecord(payload).projectId ?? '')) }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+/** Newest-first page of one branch, so a controller can walk to a shared ancestor. */
+async function handleGitRevList(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const skip = Number(p.skip)
+  const maxCount = Number(p.maxCount)
+  try {
+    return {
+      result: await ctx.workspaceGit.revList(
+        String(p.projectId ?? ''),
+        String(p.branch ?? ''),
+        Number.isSafeInteger(skip) ? skip : 0,
+        Number.isSafeInteger(maxCount) ? maxCount : 0,
+      ),
+    }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+/** Which of the offered commits this repository has. */
+async function handleGitPresentCommits(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const commits = Array.isArray(p.commits) ? p.commits.filter((commit): commit is string => typeof commit === 'string') : []
+  try {
+    return { result: await ctx.workspaceGit.presentCommits(String(p.projectId ?? ''), commits) }
   } catch (err) {
     return mapThrown(err)
   }

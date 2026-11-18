@@ -40,6 +40,37 @@ export function releaseFinishedScrollEdgeFade(
 export const TABLE_SCROLL_EDGE_SELECTOR =
   '[data-streamdown="table-wrapper"] > div:has(> [data-streamdown="table"])'
 
+/**
+ * Publishes the pinned column's width so the transposed table's mask can fade
+ * after that column. The pin itself stays at the inline start; shifting it
+ * uncovers the cell scrolling underneath. Also restarts a scroll timeline
+ * Chromium leaves finished once the overflow is gone.
+ */
+export function watchTransposedTableFade(scroller: HTMLElement): () => void {
+  const sync = () => {
+    const cell = scroller.querySelector<HTMLElement>('[data-streamdown="table"] tr > :first-child')
+    if (!cell) return
+    scroller.style.setProperty('--table-sticky-width', `${cell.getBoundingClientRect().width}px`)
+  }
+  sync()
+  const release = watchScrollEdgeFade(scroller)
+  if (typeof ResizeObserver === 'undefined') {
+    return () => {
+      release()
+      scroller.style.removeProperty('--table-sticky-width')
+    }
+  }
+  const observer = new ResizeObserver(sync)
+  observer.observe(scroller)
+  const table = scroller.querySelector('table')
+  if (table) observer.observe(table)
+  return () => {
+    release()
+    observer.disconnect()
+    scroller.style.removeProperty('--table-sticky-width')
+  }
+}
+
 /** Watches one scroll box for its overflow range collapsing. */
 export function watchScrollEdgeFade(
   scroller: HTMLElement,

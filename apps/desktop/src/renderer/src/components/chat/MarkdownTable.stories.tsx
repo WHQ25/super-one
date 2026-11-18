@@ -111,6 +111,12 @@ export const Wide: Story = {
         'Field', 'Alpha', 'Beta', 'Gamma', 'Delta', 'Epsilon', 'Zeta',
       ])
     })
+    const scroller = table.parentElement as HTMLElement
+    await waitFor(() => {
+      const width = Number.parseFloat(scroller.style.getPropertyValue('--table-sticky-width'))
+      expect(width).toBeGreaterThan(0)
+    })
+    expect(getComputedStyle(scroller).maskImage).toContain('linear-gradient')
     const owner = within(table).getByRole('cell', { name: 'Owner' })
     expect(owner).not.toHaveAttribute('data-table-mark')
     const column = [...table.querySelectorAll('tr')].map((row) => row.children[1]?.textContent)

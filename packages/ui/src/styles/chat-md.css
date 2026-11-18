@@ -184,12 +184,36 @@
 .chat-md [data-streamdown="table-row"]:nth-child(2n) {
   background-color: color-mix(in oklch, var(--muted), transparent 60%);
 }
-/* A transposed table pins the original column names in the first column, so
-   one record reads top to bottom. The scroll-edge fade would wash that column
-   out, and the mask lives on the scroll box rather than the cells. */
+/* A transposed table pins the original column names at the inline start.
+   The fade starts at that column's trailing edge (`--table-sticky-width`
+   from scroll-edge-fade.ts) so the names stay solid, and again at the far
+   edge. Shifting the pin would uncover the cell scrolling underneath.
+   Collapsed borders are painted on the table, so they scroll away and the
+   pin is left with a gap on each side. Separate borders belong to the cell
+   and stay with it. Right and bottom borders sit on every cell; the outer
+   top and left borders close the frame, so shared edges stay one pixel. */
+[data-table-transposed] table[data-streamdown="table"] {
+  border-collapse: separate;
+  border-spacing: 0;
+}
+[data-table-transposed] table[data-streamdown="table"] > * > [data-streamdown="table-row"] > :is([data-streamdown="table-cell"], [data-streamdown="table-header-cell"]) {
+  border-style: solid;
+  border-color: var(--border);
+  border-width: 0 1px 1px 0;
+}
+[data-table-transposed] table[data-streamdown="table"] > * > [data-streamdown="table-row"]:first-child > :is([data-streamdown="table-cell"], [data-streamdown="table-header-cell"]) {
+  border-top-width: 1px;
+}
 .chat-md [data-streamdown="table-wrapper"][data-table-transposed] > div:has(> [data-streamdown="table"]) {
-  mask-image: none;
-  animation-name: none;
+  mask-image: linear-gradient(
+    to right,
+    #000 0,
+    #000 var(--table-sticky-width, 0px),
+    transparent var(--table-sticky-width, 0px),
+    #000 calc(var(--table-sticky-width, 0px) + var(--scroll-fade-start)),
+    #000 calc(100% - var(--scroll-fade-end)),
+    transparent 100%
+  );
 }
 /* A cell that was a column header keeps the header mark after it moves into the body. */
 [data-table-mark] {
@@ -205,9 +229,10 @@
   z-index: 1;
   font-weight: 600;
   background-color: var(--muted);
+  background-clip: border-box;
   white-space: nowrap;
   max-width: none;
-  box-shadow: 1px 0 0 var(--border);
+  border-left-width: 1px;
 }
 [data-table-transposed] [data-streamdown="table-header"] > [data-streamdown="table-row"] > [data-streamdown="table-header-cell"]:first-child {
   z-index: 2;

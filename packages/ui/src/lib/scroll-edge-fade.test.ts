@@ -1,7 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { afterEach, describe, expect, it } from 'vitest'
-import { bindScrollEdgeFades, releaseFinishedScrollEdgeFade, watchScrollEdgeFade, watchScrollEdgeFades } from './scroll-edge-fade'
+import { bindScrollEdgeFades, releaseFinishedScrollEdgeFade, watchScrollEdgeFade, watchScrollEdgeFades, watchTransposedTableFade } from './scroll-edge-fade'
 
 function installAnimations(scroller: HTMLElement, playState: AnimationPlayState | null) {
   scroller.getAnimations = () => (playState ? [{ playState } as Animation] : [])
@@ -191,5 +191,31 @@ describe('scroll edge fade', () => {
     await Promise.resolve()
 
     expect(applied).toEqual(['none', ''])
+  })
+
+  it('publishes the pinned column width and clears it on stop', () => {
+    const scroller = document.createElement('div')
+    const table = document.createElement('table')
+    table.setAttribute('data-streamdown', 'table')
+    const cell = document.createElement('td')
+    const row = document.createElement('tr')
+    row.append(cell)
+    table.append(row)
+    scroller.append(table)
+    document.body.append(scroller)
+    const original = HTMLElement.prototype.getBoundingClientRect
+    HTMLElement.prototype.getBoundingClientRect = function () {
+      const width = this === cell ? 120 : 0
+      return { left: 0, right: width, top: 0, bottom: 0, width, height: 0, x: 0, y: 0, toJSON() { return {} } }
+    }
+    stops.push(() => {
+      HTMLElement.prototype.getBoundingClientRect = original
+      scroller.remove()
+    })
+
+    const stop = watchTransposedTableFade(scroller)
+    expect(scroller.style.getPropertyValue('--table-sticky-width')).toBe('120px')
+    stop()
+    expect(scroller.style.getPropertyValue('--table-sticky-width')).toBe('')
   })
 })

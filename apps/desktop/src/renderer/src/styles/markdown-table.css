@@ -33,3 +33,21 @@
 .md-table-full [data-streamdown="table-row"]:nth-child(2n) {
   background-color: color-mix(in oklch, var(--muted), transparent 60%);
 }
+/* Same edge fade as the inline transposed table (chat-md.css). The scroll box
+   here is the dialog, not the div wrapped around the table. */
+.md-table-full[data-table-transposed] {
+  mask-image: linear-gradient(
+    to right,
+    #000 0,
+    #000 var(--table-sticky-width, 0px),
+    transparent var(--table-sticky-width, 0px),
+    #000 calc(var(--table-sticky-width, 0px) + var(--scroll-fade-start)),
+    #000 calc(100% - var(--scroll-fade-end)),
+    transparent 100%
+  );
+  animation-name: scroll-edge-fade-x;
+  animation-duration: auto;
+  animation-timing-function: linear;
+  animation-fill-mode: both;
+  animation-timeline: scroll(self inline);
+}

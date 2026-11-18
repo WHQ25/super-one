@@ -1,4 +1,5 @@
 import { Children, forwardRef, isValidElement, useEffect, useImperativeHandle, useLayoutEffect, useMemo, useRef, useState, type ComponentProps, type ReactElement, type ReactNode, type Ref } from 'react'
+import { watchTransposedTableFade } from '@superone/ui/lib/scroll-edge-fade'
 import { useTranslation } from 'react-i18next'
 import { Check, Copy, Expand, RotateCcwSquare, RotateCwSquare } from 'lucide-react'
 import { tableDataToMarkdown } from 'streamdown'
@@ -230,12 +231,13 @@ function TransposeButton({ transposed, onToggle, className }: {
   )
 }
 
-function TableFullscreen({ open, onOpenChange, transposed, onTranspose, flipRef, children }: {
+function TableFullscreen({ open, onOpenChange, transposed, onTranspose, flipRef, scrollerRef, children }: {
   open: boolean
   onOpenChange: (open: boolean) => void
   transposed: boolean
   onTranspose: () => void
   flipRef: Ref<FlipHandle>
+  scrollerRef: Ref<HTMLDivElement>
   children: ReactNode
 }) {
   return (
@@ -245,7 +247,7 @@ function TableFullscreen({ open, onOpenChange, transposed, onTranspose, flipRef,
           <TransposeButton transposed={transposed} onToggle={onTranspose} />
           <Kbd>esc</Kbd> exit
         </div>
-        <div className="md-table-full flex-1 overflow-auto" data-table-transposed={transposed ? '' : undefined}>
+        <div ref={scrollerRef} className="md-table-full flex-1 overflow-auto" data-table-transposed={transposed ? '' : undefined}>
           <div className="flex min-h-full min-w-full items-center justify-center p-4 pt-0">
             <FlipTable ref={flipRef} transposed={transposed}>{children}</FlipTable>
           </div>
@@ -266,6 +268,8 @@ export function MarkdownTable({ node: _node, children, ...rest }: ComponentProps
   const [copied, setCopied] = useState(false)
   const [transposed, setTransposed] = useState(false)
   const rootRef = useRef<HTMLDivElement>(null)
+  const inlineScrollerRef = useRef<HTMLDivElement>(null)
+  const fullScrollerRef = useRef<HTMLDivElement>(null)
   const inlineFlip = useRef<FlipHandle>(null)
   const dialogFlip = useRef<FlipHandle>(null)
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined)
@@ -273,6 +277,16 @@ export function MarkdownTable({ node: _node, children, ...rest }: ComponentProps
   const shown = renderCells(matrix, transposed) ?? children
 
   useEffect(() => () => clearTimeout(copiedTimer.current), [])
+
+  useLayoutEffect(() => {
+    if (!transposed) return
+    const stops = [inlineScrollerRef.current, fullScrollerRef.current]
+      .filter((node): node is HTMLDivElement => node != null)
+      .map((node) => watchTransposedTableFade(node))
+    return () => {
+      for (const stop of stops) stop()
+    }
+  }, [transposed, open])
 
   function toggleTranspose() {
     inlineFlip.current?.capture()
@@ -323,10 +337,10 @@ export function MarkdownTable({ node: _node, children, ...rest }: ComponentProps
             <Expand className="size-3" />
           </IconButton>
         </div>
-        <div className="overflow-x-auto pt-5">
+        <div ref={inlineScrollerRef} className="overflow-x-auto pt-5">
           <FlipTable {...rest} ref={inlineFlip} transposed={transposed}>{shown}</FlipTable>
         </div>
-        <TableFullscreen open={open} onOpenChange={setOpen} transposed={transposed} onTranspose={toggleTranspose} flipRef={dialogFlip}>
+        <TableFullscreen open={open} onOpenChange={setOpen} transposed={transposed} onTranspose={toggleTranspose} flipRef={dialogFlip} scrollerRef={fullScrollerRef}>
           {shown}
         </TableFullscreen>
       </div>

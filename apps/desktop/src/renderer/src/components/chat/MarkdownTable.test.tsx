@@ -78,6 +78,15 @@ describe('markdown table actions', () => {
     expect(within(table).getAllByRole('columnheader').map((cell) => cell.textContent)).toEqual(['Name', 'Value'])
   })
 
+  it('measures the pinned column so the scroll fade can start after it', () => {
+    const { container } = render(<CopyableMarkdown text={TABLE} isStreaming={false} />)
+    fireEvent.click(within(container).getByRole('button', { name: 'Transpose Table' }))
+    const scroller = container.querySelector('[data-streamdown="table-wrapper"] > div:has(> table)') as HTMLElement
+    expect(scroller.style.getPropertyValue('--table-sticky-width')).toMatch(/px$/)
+    fireEvent.click(within(container).getByRole('button', { name: 'Original Layout' }))
+    expect(scroller.style.getPropertyValue('--table-sticky-width')).toBe('')
+  })
+
   it('keeps the header mark on cells that move, and marks the new column headers', () => {
     const { container } = render(<CopyableMarkdown text={TABLE} isStreaming={false} />)
     fireEvent.click(within(container).getByRole('button', { name: 'Transpose Table' }))

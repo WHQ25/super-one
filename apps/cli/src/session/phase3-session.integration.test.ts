@@ -80,7 +80,11 @@ describe('Phase 3 disconnect-safe remote Session', () => {
     const recovered = snap.sessions.find((s) => s.sessionId === session.sessionId)
     expect(recovered).toBeTruthy()
     expect(recovered!.status).toBe('idle')
-    expect(recovered!.transcript.some((t) => t.text.includes('one'))).toBe(true)
+    const recoveredDetail = (await client2.rpc('session.get', {
+      sessionId: session.sessionId,
+    })) as { transcript: Array<{ text: string }> } | null
+    expect(recoveredDetail).toBeTruthy()
+    expect(recoveredDetail!.transcript.some((t) => t.text.includes('one'))).toBe(true)
 
     const after = (await client2.rpc('session.events', { afterSequence: cursor })) as {
       events: Array<{ eventType: string; sequence: string }>

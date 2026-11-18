@@ -199,15 +199,15 @@ export function createRecapFocusController(opts: RecapFocusControllerOptions): R
   const fireAutoRecap = (sessionId: string, reason: string, alreadyDue: boolean): void => {
     if (disposed || !alreadyDue) return
     const tracker = trackerFor(sessionId)
-    // Claim in-flight before async work so concurrent poll/focus cannot double-send.
     if (!tracker.beginRecapRequest()) return
-    opts.onDispatch?.(sessionId, reason)
     void Promise.resolve(opts.requestAutoRecap(sessionId))
       .then((sent) => {
-        tracker.endRecapRequest(Boolean(sent))
+        const ok = Boolean(sent)
+        tracker.endRecapRequest(ok)
+        if (ok) opts.onDispatch?.(sessionId, reason)
       })
       .catch((err) => {
-        tracker.endRecapRequest(false)
+        tracker.endRecapRequest(true)
         opts.onError?.(sessionId, err)
       })
   }

@@ -4,11 +4,17 @@ vi.mock('../logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }))
 
+import log from '../logger'
+import { controlLeaseAuthority } from '../control-lease.test-fixtures'
+import { runWindowControl } from '../session/control-context'
+import { SessionLease } from '../session/session-lease'
 import {
+  AWAY_RECAP_POLL_MS,
   LOSE_DEBOUNCE_MS,
   claimAutoRecapDispatch,
   finishAutoRecapDispatch,
   installAcpRecapFocus,
+  notifySessionRecapForeground,
   notifySessionRecapReceived,
   type AcpRecapFocusController,
 } from './acp-recap-focus'
@@ -144,5 +150,33 @@ describe('installAcpRecapFocus (per-session)', () => {
     expect(claimAutoRecapDispatch('sid')).toBe(false)
     finishAutoRecapDispatch('sid', true)
     expect(claimAutoRecapDispatch('sid')).toBe(false)
+  })
+
+  it('detaches notifySessionRecapForeground timers from window ControlScope so away polls do not acquire or expire leases', async () => {
+    const authority = controlLeaseAuthority()
+    const lease = new SessionLease('sid-lease', authority)
+
+    controller?.dispose()
+    vi.mocked(log.info).mockClear()
+    controller = installAcpRecapFocus({
+      recapThresholdSecs: 0,
+      requestAutoRecap: async () => {
+        lease.assertMutation()
+        return false
+      },
+    })
+
+    runWindowControl(7, () => {
+      notifySessionRecapForeground('sid-lease', false)
+    })
+
+    await new Promise((resolve) => setTimeout(resolve, LOSE_DEBOUNCE_MS + 20))
+    runWindowControl(7, () => {
+      notifySessionRecapForeground('sid-lease', true)
+    })
+    await Promise.resolve()
+
+    expect(lease.current).toBeNull()
+    expect(log.info).not.toHaveBeenCalled()
   })
 })

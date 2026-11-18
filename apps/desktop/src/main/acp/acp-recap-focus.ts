@@ -4,6 +4,7 @@
  */
 
 import log from '../logger'
+import { runHostReaction } from '../session/control-context'
 import {
   createRecapFocusController,
   type RecapFocusController,
@@ -30,7 +31,9 @@ let installed: RecapFocusController | null = null
 
 /** Session UI foreground changed (wired from Session.setForeground transitions). */
 export function notifySessionRecapForeground(sessionId: string, visible: boolean): void {
-  installed?.onSessionForeground(sessionId, visible)
+  runHostReaction(() => {
+    installed?.onSessionForeground(sessionId, visible)
+  })
 }
 
 /**

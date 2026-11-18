@@ -28,6 +28,7 @@ import { hostPendingInteractions, trackHostInteraction } from './host-pending-in
 import { dispatchBackendSteer, isBackendSteerCommand } from './dispatch-backend-steer'
 import { broadcastSessionSettings } from './session-settings-broadcast'
 import { changeSessionPermissionMode } from './session-permission-mode'
+import { runSessionRecapRequest, supportsSessionRecapHarness } from './session-recap'
 import { requestSettingsPatch, selectionFieldsOf, sessionRequestSelection, voiceThreadSettings, withoutSupersededRequestSelections, withoutSupersededSelections, withSessionSelections, type PendingSessionRequest, type SelectionField } from './session-request-selection'
 import type {
   AgentEvent,
@@ -464,9 +465,7 @@ export class Session implements SessionContract {
     const next = this._foregroundRefCount
     if (prev === next) return
     if (next > 0) this.markSeen()
-    if (!isAcpProtocolHarness(this.harnessId)) return
-    // Empty drafts have nothing to summarize — never enter the away-recap poll
-    // (dev harness-switch spam used to fire x.ai/recap for every abandoned draft).
+    if (!supportsSessionRecapHarness(this.harnessId)) return
     if (this._messages.length === 0) {
       if (prev > 0 && next === 0) {
         notifySessionRecapSessionRemoved(this.id)
@@ -1150,28 +1149,14 @@ export class Session implements SessionContract {
   }
 
   async requestSessionRecap(auto: boolean): Promise<boolean> {
-    this.lease.assertMutation()
-    if (this._status === 'disposed') return false
-    if (!isAcpProtocolHarness(this.harnessId)) return false
-    // No transcript → nothing for the agent to recap (skip auto and manual).
-    if (this._messages.length === 0) return false
-    const busy =
-      this._status === 'streaming'
-      || this._status === 'starting'
-      || this._status === 'interrupting'
-    if (busy) return false
-    if (this.backend.getPendingInteractions().length > 0) return false
-    if (!this.backend.hasActiveRuntime()) return false
-    try {
-      return (await this.backend.requestSessionRecap?.(auto)) ?? false
-    } catch (err) {
-      log.debug(
-        '[Session] requestSessionRecap failed sid=%s: %s',
-        this.id,
-        err instanceof Error ? err.message : String(err),
-      )
-      return false
-    }
+    return runSessionRecapRequest(auto, {
+      id: this.id,
+      harnessId: this.harnessId,
+      status: this._status,
+      messageCount: this._messages.length,
+      lease: this.lease,
+      backend: this.backend,
+    })
   }
 
   async setPermissionMode(mode: PermissionMode): Promise<void> {

@@ -253,4 +253,47 @@ describe('createRecapFocusController', () => {
     expect(requests).toHaveBeenCalledTimes(1)
     expect(requests).toHaveBeenCalledWith('sid')
   })
+
+  it('applies retry backoff when requestAutoRecap rejects and only fires onDispatch when sent is true', async () => {
+    const onDispatch = vi.fn()
+    const onError = vi.fn()
+    controller?.dispose()
+    controller = createRecapFocusController({
+      requestAutoRecap: requests,
+      recapThresholdSecs: 0,
+      now: () => now,
+      onDispatch,
+      onError,
+    })
+    vi.useFakeTimers()
+    controller.onSessionForeground('sid', false)
+    vi.advanceTimersByTime(LOSE_DEBOUNCE_MS)
+
+    requests.mockImplementationOnce(async () => false)
+    controller.maybePregenerate()
+    await Promise.resolve()
+    expect(onDispatch).not.toHaveBeenCalled()
+    expect(controller.getTracker('sid').recapDue()).toBe(true)
+
+    requests.mockRejectedValueOnce(new Error('stale lease generation'))
+    controller.maybePregenerate()
+    await Promise.resolve()
+    await Promise.resolve()
+    expect(onError).toHaveBeenCalledTimes(1)
+    expect(onDispatch).not.toHaveBeenCalled()
+    expect(controller.getTracker('sid').recapDue()).toBe(false)
+
+    now += AWAY_RECAP_POLL_MS
+    vi.advanceTimersByTime(AWAY_RECAP_POLL_MS)
+    await Promise.resolve()
+    expect(requests).toHaveBeenCalledTimes(2)
+
+    now += AUTO_RECAP_RETRY_INTERVAL_MS
+    requests.mockResolvedValueOnce(true)
+    controller.maybePregenerate()
+    await Promise.resolve()
+    expect(requests).toHaveBeenCalledTimes(3)
+    expect(onDispatch).toHaveBeenCalledTimes(1)
+    expect(onDispatch).toHaveBeenCalledWith('sid', 'session-away-pregenerate')
+  })
 })

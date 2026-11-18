@@ -1,23 +1,46 @@
 import { afterEach, beforeEach, expect, it, jest } from '@jest/globals'
 import { act, fireEvent } from '@testing-library/react-native'
+import type { BarcodeScanningResult } from 'expo-camera'
 import { AppState, type AppStateStatus } from 'react-native'
 import { renderWithTheme } from '../test-render'
+import type { PickedQrImage } from './native-qr-scanner'
 import { QR_AUTO_SELECT_MS, QR_CANDIDATE_TTL_MS } from './qr-scanner-state'
 import { QrScanner } from './qr-scanner'
+
+const mockPickAndScanQrImage = jest.fn<() => Promise<PickedQrImage | null>>()
 
 jest.mock('expo-camera', () => {
   const { View } = require('react-native')
   return { CameraView: (props: object) => <View {...props} testID="scanner-camera" /> }
 })
 
-const detection = {
-  type: 'qr', data: 'https://example.com/any-qr', cornerPoints: [],
+jest.mock('./native-qr-scanner', () => ({
+  nativeAndroidQrCameraAvailable: false,
+  NativeQrCamera: () => null,
+  pickAndScanQrImage: () => mockPickAndScanQrImage(),
+}))
+
+const detection: BarcodeScanningResult = {
+  type: 'qr',
+  data: 'https://example.com/any-qr',
+  cornerPoints: [],
   bounds: { origin: { x: 20, y: 100 }, size: { width: 100, height: 100 } },
 }
-const neighbour = { ...detection, data: 'superone://pair?channel=other', bounds: { origin: { x: 200, y: 300 }, size: { width: 100, height: 100 } } }
+const neighbour: BarcodeScanningResult = {
+  ...detection,
+  data: 'superone://pair?channel=other',
+  bounds: { origin: { x: 200, y: 300 }, size: { width: 100, height: 100 } },
+}
 
-beforeEach(() => { AppState.currentState = 'active'; jest.useFakeTimers() })
-afterEach(() => { jest.useRealTimers(); jest.restoreAllMocks() })
+beforeEach(() => {
+  AppState.currentState = 'active'
+  mockPickAndScanQrImage.mockReset()
+  jest.useFakeTimers()
+})
+afterEach(() => {
+  jest.useRealTimers()
+  jest.restoreAllMocks()
+})
 
 const advance = (ms: number) => act(async () => { jest.advanceTimersByTime(ms) })
 
@@ -25,14 +48,17 @@ async function setup(locale: 'en' | 'zh' = 'en', theme: 'light' | 'dark' = 'dark
   const onSelect = jest.fn()
   const onCancel = jest.fn()
   const view = await renderWithTheme(<QrScanner onSelect={onSelect} onCancel={onCancel} />, theme, locale)
-  await act(async () => { fireEvent(view.getByTestId('qr-scanner'), 'layout', { nativeEvent: { layout: { width: 360, height: 640 } } }) })
+  await act(async () => {
+    fireEvent(view.getByTestId('qr-scanner'), 'layout', { nativeEvent: { layout: { width: 360, height: 640 } } })
+  })
   const scan = (...results: object[]) => act(async () => {
     for (const result of results) fireEvent(view.getByTestId('scanner-camera'), 'barcodeScanned', result)
   })
-  // A camera keeps reporting a code it can see, refreshing its expiry.
   const hold = async (...results: object[]) => {
-    await scan(...results); await advance(QR_AUTO_SELECT_MS / 2)
-    await scan(...results); await advance(QR_AUTO_SELECT_MS / 2)
+    await scan(...results)
+    await advance(QR_AUTO_SELECT_MS / 2)
+    await scan(...results)
+    await advance(QR_AUTO_SELECT_MS / 2)
   }
   return { view, onSelect, onCancel, scan, hold }
 }
@@ -70,7 +96,6 @@ it('restarts the window when several codes narrow to one', async () => {
   await scan(detection, neighbour)
   await advance(600)
   await scan(detection)
-  // The neighbour expires on the TTL sweep; the window starts from there.
   await advance(QR_CANDIDATE_TTL_MS - 600)
   expect(view.queryByLabelText('QR Code 1')).toBeNull()
   await scan(detection)
@@ -83,16 +108,66 @@ it('restarts the window when several codes narrow to one', async () => {
 })
 
 it('keeps the hint height fixed so a state change cannot resize the preview', async () => {
+  mockPickAndScanQrImage.mockResolvedValueOnce({ uri: 'file:///empty.png', width: 200, height: 200, barcodes: [] })
   const { view, scan } = await setup()
   const height = () => view.getByTestId('qr-scanner-hint').props.style.flat().reduce((h: number | undefined, s: { height?: number }) => s?.height ?? h, undefined)
   const empty = height()
+  await act(async () => { fireEvent.press(view.getByLabelText('Choose Photo')) })
+  const emptyPhoto = height()
   await scan(detection)
   const reading = height()
   await scan(neighbour)
   expect(view.getByLabelText('QR Code 2')).toBeTruthy()
-  expect([empty, reading, height()]).toEqual([empty, empty, empty])
+  expect([empty, emptyPhoto, reading, height()]).toEqual([empty, empty, empty, empty])
   expect(empty).toBeGreaterThan(0)
   expect(view.getByTestId('qr-scanner-hint').props.numberOfLines).toBe(2)
+})
+
+it('toggles camera zoom and flashlight controls', async () => {
+  const { view } = await setup()
+  expect(view.getByTestId('scanner-camera').props.autofocus).toBe('on')
+  expect(view.getByTestId('scanner-camera').props.zoom).toBe(0)
+  expect(view.getByTestId('scanner-camera').props.enableTorch).toBe(false)
+
+  await act(async () => { fireEvent.press(view.getByLabelText('Zoom In')) })
+  expect(view.getByTestId('scanner-camera').props.zoom).toBe(0.15)
+  expect(view.getByLabelText('Reset Zoom')).toBeTruthy()
+
+  await act(async () => { fireEvent.press(view.getByLabelText('Turn On Flashlight')) })
+  expect(view.getByTestId('scanner-camera').props.enableTorch).toBe(true)
+  expect(view.getByLabelText('Turn Off Flashlight')).toBeTruthy()
+})
+
+it('submits a single QR decoded from a chosen photo even if the camera failed', async () => {
+  mockPickAndScanQrImage.mockResolvedValueOnce({
+    uri: 'file:///pair.png',
+    width: 400,
+    height: 400,
+    barcodes: [detection],
+  })
+  const { view, onSelect } = await setup('zh')
+  await act(async () => { fireEvent(view.getByTestId('scanner-camera'), 'mountError', { message: 'camera unavailable' }) })
+  await act(async () => { fireEvent.press(view.getByLabelText('相册')) })
+  expect(onSelect).toHaveBeenCalledTimes(1)
+  expect(onSelect).toHaveBeenCalledWith(detection)
+})
+
+it('lets the user choose among multiple QR codes in a chosen photo or return to the camera', async () => {
+  mockPickAndScanQrImage.mockResolvedValueOnce({
+    uri: 'file:///two-codes.png',
+    width: 360,
+    height: 640,
+    barcodes: [detection, neighbour],
+  })
+  const { view, onSelect } = await setup()
+  await act(async () => { fireEvent.press(view.getByLabelText('Choose Photo')) })
+  expect(view.queryByTestId('scanner-camera')).toBeNull()
+  expect(view.getByText('Several QR codes found. Tap the one you want to use.')).toBeTruthy()
+  expect(view.getByText('Use Camera')).toBeTruthy()
+
+  await act(async () => { fireEvent.press(view.getByLabelText('QR Code 2')) })
+  expect(onSelect).toHaveBeenCalledTimes(1)
+  expect(onSelect).toHaveBeenCalledWith(neighbour)
 })
 
 it('does not submit a stale target even before the expiry timer paints', async () => {

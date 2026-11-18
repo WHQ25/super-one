@@ -1,12 +1,6 @@
 import type { BarcodeScanningResult } from 'expo-camera'
 
-// A lone code submits once this long has passed with no other code in view.
-// Each code in a frame arrives as its own event, so the first detection cannot
-// prove there is no neighbour.
 export const QR_AUTO_SELECT_MS = 1000
-// Android ML Kit can take longer than the settle window between hits, and Expo
-// also throttles identical results for 500 ms. Expiring at the same moment as
-// the commit cancels it, so a detection stays alive for twice the settle window.
 export const QR_CANDIDATE_TTL_MS = QR_AUTO_SELECT_MS * 2
 const MAX_CANDIDATES = 24
 
@@ -28,7 +22,6 @@ export function expireQrCandidates(candidates: QrCandidate[], now: number): QrCa
   return fresh.length === candidates.length ? candidates : fresh
 }
 
-/** Native coordinates are already in the camera view's logical points. */
 function visibleRect(result: BarcodeScanningResult, size: ScannerSize): ScannerRect | null {
   if (size.width <= 0 || size.height <= 0) return null
   const points = result.cornerPoints
@@ -53,7 +46,6 @@ function visibleRect(result: BarcodeScanningResult, size: ScannerSize): ScannerR
   return right > x && bottom > y ? { x, y, width: right - x, height: bottom - y } : null
 }
 
-/** Collect every QR without interpreting its payload or starting a business flow. */
 export function observeQrCandidate(
   candidates: QrCandidate[], result: BarcodeScanningResult, size: ScannerSize, now: number,
 ): QrCandidate[] {
@@ -61,8 +53,6 @@ export function observeQrCandidate(
   if (!result.data) return fresh
   const rect = visibleRect(result, size)
   if (!rect) return fresh
-  // Match by both content and location so identical printed codes can each be
-  // tapped, while small camera movements keep the same target number.
   const existing = fresh.find((candidate) => {
     if (candidate.result.type !== result.type || candidate.result.data !== result.data) return false
     const dx = Math.abs(candidate.rect.x + candidate.rect.width / 2 - rect.x - rect.width / 2)
@@ -74,7 +64,60 @@ export function observeQrCandidate(
   return [...fresh.slice(-(MAX_CANDIDATES - 1)), candidate]
 }
 
-/** Expand small targets without placing the touch surface outside the preview. */
+export function observeQrCandidates(
+  candidates: QrCandidate[], results: BarcodeScanningResult[], size: ScannerSize, now: number,
+): QrCandidate[] {
+  let next = expireQrCandidates(candidates, now)
+  for (const result of results) {
+    next = observeQrCandidate(next, result, size, now)
+  }
+  return next
+}
+
+export function mapImageQrCandidates(
+  image: { width: number; height: number; barcodes: BarcodeScanningResult[] },
+  size: ScannerSize,
+  now: number,
+): QrCandidate[] {
+  const valid = image.barcodes.filter((item) => Boolean(item.data))
+  if (valid.length === 0 || size.width <= 0 || size.height <= 0) return []
+  const scale = image.width > 0 && image.height > 0
+    ? Math.min(size.width / image.width, size.height / image.height)
+    : 1
+  const offsetX = image.width > 0 ? (size.width - image.width * scale) / 2 : 0
+  const offsetY = image.height > 0 ? (size.height - image.height * scale) / 2 : 0
+  return valid.slice(0, MAX_CANDIDATES).map((barcode, index) => {
+    const mapped: BarcodeScanningResult = {
+      ...barcode,
+      cornerPoints: barcode.cornerPoints?.map((point) => ({
+        x: point.x * scale + offsetX,
+        y: point.y * scale + offsetY,
+      })) ?? [],
+      bounds: barcode.bounds ? {
+        origin: {
+          x: barcode.bounds.origin.x * scale + offsetX,
+          y: barcode.bounds.origin.y * scale + offsetY,
+        },
+        size: {
+          width: barcode.bounds.size.width * scale,
+          height: barcode.bounds.size.height * scale,
+        },
+      } : {
+        origin: { x: 0, y: 0 },
+        size: { width: 0, height: 0 },
+      },
+    }
+    const fallbackSide = Math.min(88, Math.max(44, Math.min(size.width, size.height) * 0.2))
+    const rect = visibleRect(mapped, size) ?? {
+      x: Math.max(8, Math.min(size.width - fallbackSide - 8, 16 + (index % 3) * (fallbackSide + 12))),
+      y: Math.max(8, Math.min(size.height - fallbackSide - 8, (size.height - fallbackSide) / 2)),
+      width: fallbackSide,
+      height: fallbackSide,
+    }
+    return { id: index + 1, result: barcode, rect, seenAt: now }
+  })
+}
+
 export function qrTargetRect(rect: ScannerRect, size: ScannerSize): ScannerRect {
   const width = Math.min(size.width, Math.max(44, rect.width))
   const height = Math.min(size.height, Math.max(44, rect.height))

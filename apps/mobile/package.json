@@ -4,11 +4,6 @@
   "private": true,
   "main": "index.js",
   "expo": {
-    "autolinking": {
-      "android": {
-        "buildFromSource": ["expo-camera"]
-      }
-    },
     "doctor": {
       "reactNativeDirectoryCheck": {
         "listUnknownPackages": false,

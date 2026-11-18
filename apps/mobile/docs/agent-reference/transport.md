@@ -29,9 +29,9 @@ and reports input and bounded resize messages to RN.
 
 ## QR selection
 
-`screens/qr-scanner.tsx` collects QR detections. A lone code submits once no other
-code has appeared for `QR_AUTO_SELECT_MS` (cameras report each code in a frame as a
-separate event, so the first detection alone cannot prove there is no neighbour).
+`screens/qr-scanner.tsx` collects QR detections and supports choosing an image
+from the photo library as a fallback. A lone camera code submits once no other
+code has appeared for `QR_AUTO_SELECT_MS`; a lone photo code submits immediately.
 With several codes, numbered targets appear and the user taps one; when the scene
 drops back to one code, the window restarts. The scanner does not filter
 payloads by business purpose; its caller owns parsing and routing. Targets stay
@@ -39,19 +39,18 @@ alive for `QR_CANDIDATE_TTL_MS`, twice the settle window, so one Android detecti
 can still commit when the next frame is slow; they then clear on resize, camera
 failure or app backgrounding. Because a resize clears targets, nothing beside the
 preview may change size with the scanner state; the hint keeps a fixed two-line
-height. No QR payload appears in labels or logs.
+height, and camera controls (photo library, 1×/2× zoom, flashlight) float inside
+the preview. No QR payload appears in labels or logs.
 
-The pinned `expo-camera` Android patch reports every detected code and maps rotated
-image coordinates into the cropped preview. Barcode analysis is capped at 1080p
-(`BarcodeCoordinates.analysisSizes`); full-sensor frames make ML Kit miss codes or
-return them after the settle window, and the preview resolution is unchanged. It also
-skips the camera rebind when `barcodeScannerEnabled` is unchanged: Fabric on Android
-resends every prop on each render, so every detection would otherwise restart the
-preview. `package.json` explicitly builds `expo-camera` from source; its precompiled
-AAR would bypass the patch. Android needs a new native binary for this change. Camera
-geometry tests run with
-`./gradlew -I ../scripts/qr-scanner-android-tests.gradle :expo-camera:testDebugUnitTest --tests '*BarcodeCoordinatesTest'`
-from `apps/mobile/android`.
+On Android, the local `modules/qr-scanner` (`SuperOneQrScanner`) Expo module runs
+OpenCV's `wechat_qrcode` CNN detector and super-resolution engine (`WeChatQRCode`
+2.6.0) on a dedicated background executor over CameraX (`PreviewView` in
+`COMPATIBLE` mode with `Preview` + `ImageAnalysis` only, capped at 1080p, upright
+`toBitmap()` conversion, tap-to-focus, pinch/double-tap zoom, and periodic center
+AF/AE metering). Both Android (`WeChatQRCode`) and iOS (`Vision`) implement
+`scanImageAsync` for gallery QR decoding; iOS and older un-rebuilt dev clients
+fall back to `expo-camera`. Android geometry tests run with
+`./gradlew :superone-qr-scanner:testDebugUnitTest` from `apps/mobile/android`.
 
 ## Relay transport invariants
 

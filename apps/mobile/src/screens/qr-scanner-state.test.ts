@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'vitest'
 import type { BarcodeScanningResult } from 'expo-camera'
-import { expireQrCandidates, observeQrCandidate, QR_CANDIDATE_TTL_MS, qrTargetRect } from './qr-scanner-state'
+import {
+  expireQrCandidates,
+  mapImageQrCandidates,
+  observeQrCandidate,
+  observeQrCandidates,
+  QR_CANDIDATE_TTL_MS,
+  qrTargetRect,
+} from './qr-scanner-state'
 
 const size = { width: 360, height: 640 }
 const qr = (data: string, x = 20, y = 50): BarcodeScanningResult => ({
@@ -16,6 +23,13 @@ describe('QR candidates', () => {
       [1, 'https://example.com/app.apk'], [2, 'superone://pair?channel=chosen'],
     ])
     expect(candidates[0]!.rect.x).toBe(25)
+  })
+
+  it('observes a multi-code camera frame atomically', () => {
+    const candidates = observeQrCandidates([], [qr('first', 20), qr('second', 200)], size, 100)
+    expect(candidates.map(({ id, result }) => [id, result.data])).toEqual([
+      [1, 'first'], [2, 'second'],
+    ])
   })
 
   it('keeps identical codes at distinct positions separately selectable', () => {
@@ -45,6 +59,21 @@ describe('QR candidates', () => {
     expect(observeQrCandidate([], qr('invalid', NaN), size, 0)).toEqual([])
     expect(observeQrCandidate([], { ...qr('empty'), bounds: { origin: { x: 0, y: 0 }, size: { width: 0, height: 0 } } }, size, 0)).toEqual([])
     expect(observeQrCandidate([], qr('before layout'), { width: 0, height: 0 }, 0)).toEqual([])
+  })
+
+  it('maps letterboxed gallery image QR coordinates into preview space', () => {
+    const candidates = mapImageQrCandidates(
+      {
+        width: 720,
+        height: 720,
+        barcodes: [qr('img-1', 72, 72), qr('img-2', 432, 432)],
+      },
+      { width: 360, height: 640 },
+      50,
+    )
+    expect(candidates).toHaveLength(2)
+    expect(candidates[0]!.rect).toEqual({ x: 36, y: 176, width: 50, height: 50 })
+    expect(candidates[1]!.rect).toEqual({ x: 216, y: 356, width: 50, height: 50 })
   })
 
   it('keeps small touch targets inside the preview', () => {

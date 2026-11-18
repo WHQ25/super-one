@@ -1,15 +1,31 @@
 export const qrScannerEnglish: Record<string, string> = {
   'QR code': 'QR Code',
+  'Choose photo': 'Choose Photo',
+  'Use camera': 'Use Camera',
+  'Zoom in': 'Zoom In',
+  'Reset zoom': 'Reset Zoom',
+  'Turn on flashlight': 'Turn On Flashlight',
+  'Turn off flashlight': 'Turn Off Flashlight',
   'Point the camera at a QR code.': 'Point the camera at a QR code.',
   'Reading the QR code…': 'Reading the QR code…',
   'Several QR codes found. Tap the one you want to use.': 'Several QR codes found. Tap the one you want to use.',
+  'No QR code found in the selected image.': 'No QR code found in the selected image.',
+  'Could not read the selected image. Please try another photo.': 'Could not read the selected image. Please try another photo.',
   'Could not start the camera. Please try again.': 'Could not start the camera. Please try again.',
 }
 
 export const qrScannerChinese: Record<string, string> = {
   'QR code': '二维码',
+  'Choose photo': '相册',
+  'Use camera': '返回相机',
+  'Zoom in': '放大画面',
+  'Reset zoom': '重置缩放',
+  'Turn on flashlight': '打开手电筒',
+  'Turn off flashlight': '关闭手电筒',
   'Point the camera at a QR code.': '将相机对准二维码。',
   'Reading the QR code…': '正在识别二维码…',
   'Several QR codes found. Tap the one you want to use.': '发现多个二维码，请点击要使用的那个。',
+  'No QR code found in the selected image.': '所选图片中未识别到二维码。',
+  'Could not read the selected image. Please try another photo.': '无法读取所选图片，请换一张重试。',
   'Could not start the camera. Please try again.': '无法启动相机，请重试。',
 }

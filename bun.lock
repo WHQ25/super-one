@@ -53,7 +53,7 @@
     },
     "apps/desktop": {
       "name": "@superone/desktop",
-      "version": "0.81.0",
+      "version": "0.82.0",
       "dependencies": {
         "@agentclientprotocol/sdk": "^1.4.0",
         "@ai-sdk/elevenlabs": "^3.0.80",
@@ -914,7 +914,6 @@
     },
   },
   "patchedDependencies": {
-    "expo-camera@58.0.12": "patches/expo-camera@58.0.12.patch",
     "react-native-webview@14.0.1": "patches/react-native-webview@14.0.1.patch",
     "three@0.185.1": "patches/three@0.185.1.patch",
     "@xterm/addon-webgl@0.19.0": "patches/@xterm%2Faddon-webgl@0.19.0.patch",

@@ -55,7 +55,11 @@ export function PairingsScreen(props: {
   const [name, setName] = useState('')
   useEffect(() => setName(editing?.name ?? editing?.hostName ?? ''), [editing])
   if (props.scannerOpen) {
-    return <QrScanner onSelect={props.onBarcodeScanned} onCancel={props.onCancelScanner} />
+    return (
+      <View style={layout.scanner}>
+        <QrScanner onSelect={props.onBarcodeScanned} onCancel={props.onCancelScanner} />
+      </View>
+    )
   }
   if (props.code) return <PairingCode code={props.code} onCancel={props.onCancelPairing} />
   if (props.desktopPairing) {
@@ -187,6 +191,7 @@ function useLayoutStyles() {
     devices: { flexShrink: 1, gap: tokens.spacing.md },
     /** No grow: the list is as tall as its rows until the group runs out of room. */
     list: { flexGrow: 0, flexShrink: 1 },
+    scanner: { flex: 1, marginHorizontal: -tokens.spacing.md, marginTop: -tokens.spacing.sm, marginBottom: tokens.spacing.xs },
     settings: { position: 'absolute', top: 0, right: 0 },
   }), [tokens])
 }

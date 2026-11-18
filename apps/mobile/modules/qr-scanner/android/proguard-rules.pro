@@ -1,0 +1,2 @@
+-keep class org.opencv.** { *; }
+-keep class com.king.wechat.qrcode.** { *; }

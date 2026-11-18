@@ -4,17 +4,26 @@ import { SafeAreaView } from 'react-native-safe-area-context'
 import { StatusBar } from 'expo-status-bar'
 import { SvgXml } from 'react-native-svg'
 import { useMobileLocale } from '../i18n/context'
-import { QrScannerView } from '../screens/qr-scanner-view'
+import { QrScannerView, type QrScannerNotice } from '../screens/qr-scanner-view'
 import type { QrCandidate, ScannerSize } from '../screens/qr-scanner-state'
 import { useMobileTheme } from '../theme/context'
 import { Button } from '../ui'
 import { Text } from '../ui/text'
 import { qrScannerFixtures } from './qr-scanner-fixtures'
 
-/** Offline camera scene using the production picker; no pairing or URL side effects. */
-export function QrScannerFixture({ count = 2, error = false }: { count?: number; error?: boolean }) {
+export function QrScannerFixture({
+  count = 2,
+  error = false,
+  notice = null,
+}: {
+  count?: number
+  error?: boolean
+  notice?: QrScannerNotice
+}) {
   const [size, setSize] = useState<ScannerSize>({ width: 0, height: 0 })
   const [selected, setSelected] = useState<number | null>(null)
+  const [torch, setTorch] = useState(false)
+  const [zoomed, setZoomed] = useState(false)
   const { t } = useMobileLocale()
   const candidates: QrCandidate[] = qrScannerFixtures.slice(0, error ? 0 : count).map((fixture, index) => {
     const side = size.width * (index ? 0.28 : 0.48)
@@ -24,10 +33,20 @@ export function QrScannerFixture({ count = 2, error = false }: { count?: number;
     } }
   })
   return <View style={{ flex: 1 }}>
-    <QrScannerView size={size} candidates={candidates} error={error}
+    <QrScannerView
+      size={size}
+      candidates={candidates}
+      error={error}
+      torch={torch}
+      zoomed={zoomed}
+      notice={notice}
       onLayout={({ nativeEvent: { layout } }) => setSize(layout)}
       onSelect={(candidate) => setSelected(candidate.id)}
-      onCancel={() => setSelected(null)} onRetry={() => setSelected(null)}
+      onToggleTorch={() => setTorch((value) => !value)}
+      onToggleZoom={() => setZoomed((value) => !value)}
+      onPickPhoto={() => setSelected(1)}
+      onCancel={() => setSelected(null)}
+      onRetry={() => setSelected(null)}
       preview={<View style={[StyleSheet.absoluteFill, { backgroundColor: '#262626' }]}>
         {candidates.map(({ id, rect }) => <View key={id} style={{ position: 'absolute', left: rect.x, top: rect.y, width: rect.width, height: rect.height }}>
           <SvgXml xml={qrScannerFixtures[id - 1]!.svg} width="100%" height="100%" />

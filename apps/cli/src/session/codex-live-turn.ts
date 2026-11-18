@@ -1,5 +1,6 @@
 import type { McpAppsBinding } from '@superone/shared/mcp-apps'
 import type { AttachmentCodexInput } from '@superone/shared/attachment-turn'
+import type { TurnRunner } from '@superone/runtime/session'
 import { readCodexTurnProvenance } from '@superone/codex/protocol-v162'
 /**
  * Mid-turn-aware Codex run: starts turn/start, exposes turn id for steer,
@@ -15,6 +16,8 @@ import {
   resolveCodexPermissionProfile,
 } from '@superone/codex'
 import type { AgentEvent } from '@superone/shared/agent-types'
+
+export type SplitCodexAssistant = (nextMessageId: string, beforeUserId: string) => void
 
 function asRecord(value: unknown): Record<string, unknown> | null {
   return value && typeof value === 'object' && !Array.isArray(value)
@@ -89,10 +92,10 @@ export async function openTurnAndStream(opts: {
   onAgentEvent?: (event: AgentEvent) => void
   onDelta?: (text: string) => void
   signal: AbortSignal
-  onTurnStarted?: (turnId: string | null) => void
+  onTurnStarted?: (turnId: string | null, splitAssistant: SplitCodexAssistant) => void
   /** Called just before turn/start goes out (see `TurnRunner` `onInputAccepted`). */
   onInputAccepted?: () => void
-}): Promise<CodexAppServerTurnResult> {
+}): Promise<CodexAppServerTurnResult & Pick<Awaited<ReturnType<TurnRunner>>, 'assistantSegments'>> {
   if (opts.signal.aborted) throw new Error('Codex turn interrupted')
 
   const collaborationMode = normalizeCollaborationMode(
@@ -138,12 +141,13 @@ export async function openTurnAndStream(opts: {
 
   const turn = asRecord(turnStartResult.turn)
   const turnId = readString(turn?.id)
-  opts.onTurnStarted?.(turnId)
 
   let finalText = ''
+  let messageId = opts.messageId ?? `codex_${turnId ?? Date.now()}`
+  const sealed: Array<{ id: string; beforeUserId: string }> = []
   const agentEventMapper = opts.onAgentEvent
     ? createCodexAgentEventMapper({
-        messageId: opts.messageId ?? `codex_${turnId ?? Date.now()}`,
+        messageId,
         emit: opts.onAgentEvent,
         mcpAppBinding: opts.mcpAppBinding,
         model: opts.model,
@@ -153,6 +157,12 @@ export async function openTurnAndStream(opts: {
       })
     : null
   agentEventMapper?.start(opts.threadId)
+  opts.onTurnStarted?.(turnId, (nextMessageId, beforeUserId) => {
+    if (!opts.signal.aborted && agentEventMapper?.splitAssistant(nextMessageId)) {
+      sealed.push({ id: messageId, beforeUserId })
+      messageId = nextMessageId
+    }
+  })
 
   // Long tool work and compaction have no overall deadline. Poll only to
   // observe cancellation; connection failures still reject immediately.
@@ -208,7 +218,15 @@ export async function openTurnAndStream(opts: {
       if (!finalText && agentEventMapper) {
         finalText = deriveCodexFinalResponse(agentEventMapper.items())
       }
-      return { finalText, threadId: opts.threadId, turnId }
+      const assistantSegments = sealed.length && agentEventMapper
+        ? [...sealed, { id: messageId }].map(segment => ({
+            ...segment,
+            text: agentEventMapper.items(segment.id)
+              .flatMap(item => item.type === 'agent_message' && item.delivery !== 'async' ? [item.text] : [])
+              .join(''),
+          }))
+        : undefined
+      return { finalText, threadId: opts.threadId, turnId, assistantSegments }
     }
   }
 

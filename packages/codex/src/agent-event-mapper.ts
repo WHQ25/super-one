@@ -58,9 +58,10 @@ export interface CodexNotificationApplyResult {
 
 export interface CodexAgentEventMapper {
   start(threadId: string | null): void
+  splitAssistant(nextMessageId: string): boolean
   apply(notification: CodexAppServerNotification): CodexNotificationApplyResult
   fail(error: string, interrupted?: boolean): void
-  items(): CodexThreadItem[]
+  items(assistantId?: string): CodexThreadItem[]
   usage(): CodexUsageInfo | null
 }
 
@@ -389,6 +390,7 @@ export function createCodexAgentEventMapper(
   const startedAt = now()
   const order: string[] = []
   const itemMap = new Map<string, CodexThreadItem>()
+  const itemOwners = new Map<string, string>()
   const mcpServers = new Map<string, Omit<CodexMcpServerStartup, 'name'>>()
   const retriedErrors: string[] = []
   let currentUsage: CodexUsageInfo | null = null
@@ -396,6 +398,7 @@ export function createCodexAgentEventMapper(
   let currentTurnId: string | null = options.turnId ?? null
   let provenance = options.provenance ?? undefined
   let emittedProvenance: CodexTurnProvenance | undefined
+  let messageId = options.messageId
   let subagents: Record<string, CodexSubagentMetadata> | undefined
   const emitProvenance = (raw: unknown) => {
     if (!currentThreadId) return
@@ -405,7 +408,7 @@ export function createCodexAgentEventMapper(
     currentTurnId = next.turnId
     if (emittedProvenance?.threadId === provenance.threadId && emittedProvenance.turnId === provenance.turnId && emittedProvenance.rootTurnId === provenance.rootTurnId) return
     emittedProvenance = provenance
-    options.emit({ type: 'codex_turn_metadata', messageId: options.messageId, provenance,
+    options.emit({ type: 'codex_turn_metadata', messageId, provenance,
       ...(options.requestedProvenance && next.turnId === options.turnId ? { requestedProvenance: options.requestedProvenance } : {}) })
   }
   let lastItemCompletedAt = startedAt
@@ -416,18 +419,22 @@ export function createCodexAgentEventMapper(
   const completedCompactionItems = new Set<string>()
   const compactionTrigger: 'manual' | 'auto' = options.turnKind === 'compact' ? 'manual' : 'auto'
 
-  const upsert = (item: CodexThreadItem) => {
-    if (!itemMap.has(item.id)) order.push(item.id)
-    itemMap.set(item.id, item)
-  }
-  const items = () => order.map((id) => itemMap.get(id)).filter((item): item is CodexThreadItem => Boolean(item))
+  const items = (assistantId?: string) => order
+    .filter(id => assistantId === undefined || itemOwners.get(id) === assistantId)
+    .map(id => itemMap.get(id)!)
   // The turn is written as content; the item map stays to derive the final response and subagents.
   const contentStream = createCodexContentStream()
   const emitItem = (_phase: 'started' | 'updated' | 'completed', item: CodexThreadItem) => {
     if (item.type === 'mcp_tool_call' && currentThreadId && options.mcpAppBinding) item = attachCodexMcpApp(item, options.mcpAppBinding(item.server), currentThreadId)
-    upsert(item)
+    // A tool can finish after a steer. Update the bubble that owns its call.
+    const owner = itemOwners.get(item.id) ?? messageId
+    if (!itemMap.has(item.id)) {
+      order.push(item.id)
+      itemOwners.set(item.id, owner)
+    }
+    itemMap.set(item.id, item)
     for (const { delta, replace } of contentStream.update(item)) {
-      options.emit({ type: 'content_delta', messageId: options.messageId, delta, ...(replace ? { replace } : {}) })
+      options.emit({ type: 'content_delta', messageId: owner, delta, ...(replace ? { replace } : {}) })
     }
     if (item.type === 'todo_list') options.emit({ type: 'todos_updated', todos: codexTodoListTodos(item) })
   }
@@ -471,7 +478,7 @@ export function createCodexAgentEventMapper(
       preTokens: current.preTokens,
       ...(postTokens !== undefined && postTokens > 0 ? { postTokens } : {}),
       ...(completedAt >= current.startedAt ? { durationMs: completedAt - current.startedAt } : {}),
-      ...(compactionTrigger === 'manual' ? { messageId: options.messageId } : {}),
+      ...(compactionTrigger === 'manual' ? { messageId } : {}),
     })
     options.emit({ type: 'status_indicator', indicator: null, compactResult: 'success' })
     const completedTurnId = turnId ?? current.turnId
@@ -491,10 +498,10 @@ export function createCodexAgentEventMapper(
       options.emit({ type: 'status_indicator', indicator: null, compactResult: 'failed', compactError: error })
     }
     options.emit(interrupted
-      ? { type: 'message_interrupted', messageId: options.messageId }
+      ? { type: 'message_interrupted', messageId }
       : {
           type: 'message_error',
-          messageId: options.messageId,
+          messageId,
           error,
           errorInfo: buildAgentErrorInfo(error, {
             ...(retriedErrors.length > 0 ? { retries: { attempts: retriedErrors.length } } : {}),
@@ -504,26 +511,38 @@ export function createCodexAgentEventMapper(
     finishStatus()
   }
 
+  const startAssistant = () => options.emit({
+    type: 'message_start',
+    message: {
+      id: messageId,
+      role: 'assistant',
+      status: 'streaming',
+      content: [],
+      createdAt: new Date(now()).toISOString(),
+      providerId: 'codex',
+    },
+  })
   return {
     start(threadId) {
       if (started) return
       started = true
       currentThreadId = threadId
-      options.emit({
-        type: 'message_start',
-        message: {
-          id: options.messageId,
-          role: 'assistant',
-          status: 'streaming',
-          content: [],
-          createdAt: new Date(now()).toISOString(),
-          providerId: 'codex',
-        },
-      })
+      startAssistant()
       options.emit({ type: 'status_change', status: 'streaming' })
-      if (threadId) options.emit({ type: 'codex_thread_started', messageId: options.messageId, threadId })
+      if (threadId) options.emit({ type: 'codex_thread_started', messageId, threadId })
       if (provenance) emitProvenance({ id: provenance.turnId, rootTurnId: provenance.rootTurnId })
       if (options.turnKind === 'compact') startCompaction({})
+    },
+    splitAssistant(nextMessageId) {
+      if (!started || terminal) return false
+      options.emit({ type: 'message_complete', messageId, metadata: { queuedTurnCount: 1 } })
+      messageId = nextMessageId
+      startAssistant()
+      if (provenance) {
+        emittedProvenance = undefined
+        emitProvenance({ id: provenance.turnId, rootTurnId: provenance.rootTurnId })
+      }
+      return true
     },
 
     apply(note) {
@@ -541,7 +560,7 @@ export function createCodexAgentEventMapper(
           if (currentThreadId && threadId && threadId !== currentThreadId) break
           if (threadId && threadId !== currentThreadId) {
             currentThreadId = threadId
-            options.emit({ type: 'codex_thread_started', messageId: options.messageId, threadId })
+            options.emit({ type: 'codex_thread_started', messageId, threadId })
           }
           break
         }
@@ -553,7 +572,7 @@ export function createCodexAgentEventMapper(
             const activity = readCodexSubagentActivity(raw, currentThreadId, readString(params.turnId) ?? currentTurnId)
             if (activity) {
               subagents = applyCodexSubagentActivity(subagents, activity)
-              options.emit({ type: 'codex_subagent_activity', messageId: options.messageId, activity })
+              options.emit({ type: 'codex_subagent_activity', messageId, activity })
               break
             }
           }
@@ -674,7 +693,7 @@ export function createCodexAgentEventMapper(
             currentUsage = usage
             options.emit({
               type: 'message_usage',
-              messageId: options.messageId,
+              messageId,
               inputTokens: usage.lastInputTokens,
               outputTokens: usage.lastOutputTokens,
               codexUsage: usage,
@@ -699,7 +718,7 @@ export function createCodexAgentEventMapper(
           mcpServers.set(name, { status, ...(failureReason ? { failureReason } : {}) })
           options.emit({
             type: 'codex_mcp_startup',
-            messageId: options.messageId,
+            messageId,
             servers: [...mcpServers].map(([serverName, state]) => ({ name: serverName, ...state })),
           })
           break
@@ -752,10 +771,10 @@ export function createCodexAgentEventMapper(
           subagents = collectCodexCollabMetadata(finalItems, subagents)
           options.emit({
             type: 'message_complete',
-            messageId: options.messageId,
+            messageId,
             metadata: {
               codex: {
-                finalResponse: deriveCodexFinalResponse(finalItems),
+                finalResponse: deriveCodexFinalResponse(items(messageId)),
                 durationMs: now() - startedAt,
                 items: [],
                 threadId: currentThreadId,

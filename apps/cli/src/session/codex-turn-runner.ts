@@ -29,6 +29,7 @@ import {
   ensureCodexThread,
   openCodexAppServer,
   runCodexAppServerTurn,
+  steerCodexAppServerTurn,
   type CodexAppServerHandle,
   type CodexSpawnFn,
   type CodexTurnKind,
@@ -48,7 +49,7 @@ import type { ProviderStore } from '../provider/provider-store'
 import { buildHarnessEnvWithProxy, resolveHarnessService } from '../provider/resolve-service'
 import { buildCodexAttachmentInput } from '@superone/shared/attachment-turn'
 import { ensureMcpMerge, type McpMergeMode } from '@superone/runtime/fs'
-import { openTurnAndStream } from './codex-live-turn'
+import { openTurnAndStream, type SplitCodexAssistant } from './codex-live-turn'
 import { codexElicitationRequest } from '@superone/codex/elicitation'
 import { createCodexPromptPrediction, type CodexPromptPrediction } from '@superone/codex/prompt-prediction'
 import { randomUUID } from 'node:crypto'
@@ -165,8 +166,8 @@ function providerEnvKeyOf(env: NodeJS.ProcessEnv): string {
 interface LiveCodexConnection {
   client: CodexAppServerHandle
   threadId: string | null
-  /** Active turn id while a run is streaming (enables steer). */
-  activeTurnId: string | null
+  /** The provider turn and its current transcript stream share a lifetime. */
+  activeTurn: { id: string; splitAssistant: SplitCodexAssistant; steering: boolean } | null
   cwd: string
   /** See {@link providerEnvKeyOf}. */
   providerEnvKey: string
@@ -323,7 +324,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
       client,
       // threadId stays null until ensureCodexThread (start|resume) succeeds.
       threadId: null,
-      activeTurnId: null,
+      activeTurn: null,
       cwd,
       providerEnvKey,
       chain: Promise.resolve(),
@@ -429,7 +430,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
       throw new Error('Cannot resume Codex: the provider resume ID is missing. Saved chat history is unchanged; recover the original thread or start a new session explicitly.')
     }
     const { cwd, authEnv, threadConfig, mcpServers, customModelProvider } = await prepare(input)
-    let turnKind = parseTurnKind(input.turnKind)
+    const turnKind = parseTurnKind(input.turnKind)
 
     if (input.images?.length && turnKind !== 'run' && turnKind !== 'steer') {
       throw new Error('Attachment: attachments are supported on normal and steered turns only.')
@@ -439,27 +440,33 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
     const reasoningEffort = mapCodexReasoningEffort(input.effort)
 
     // Steer must hit the in-flight connection immediately (not serialized on chain).
-    if (turnKind === 'steer' || (turnKind === 'run' && liveBySession.get(sessionId)?.activeTurnId)) {
+    if (turnKind === 'steer' || (turnKind === 'run' && liveBySession.get(sessionId)?.activeTurn)) {
       const live = liveBySession.get(sessionId)
-      if (!live?.threadId || !live.activeTurnId) {
+      const activeTurn = live?.activeTurn
+      if (!live?.threadId || !activeTurn) {
         throw new Error('No active Codex turn to steer')
       }
+      const beforeUserId = turnKind === 'steer' ? input.clientMessageId : undefined
+      if (beforeUserId && activeTurn.steering) throw new Error('Another Codex steer is being submitted')
+      if (beforeUserId) activeTurn.steering = true
       live.busyCount += 1
       live.lastActivityAt = Date.now()
       try {
-        const result = await runCodexAppServerTurn({
+        const result = await steerCodexAppServerTurn({
           client: live.client,
           prompt,
           input: attachmentInput,
-          cwd: live.cwd,
           threadId: live.threadId,
-          turnKind: 'steer',
-          expectedTurnId: live.activeTurnId,
-          skipThreadSetup: true,
+          expectedTurnId: activeTurn.id,
           signal: input.signal,
           onInputAccepted: () => {
             input.beforeInput?.()
             input.onInputAccepted?.()
+          },
+          onSteered: () => {
+            if (beforeUserId && live.activeTurn === activeTurn && !input.signal.aborted) {
+              activeTurn.splitAssistant(input.messageId ?? randomUUID(), beforeUserId)
+            }
           },
         })
         return {
@@ -468,6 +475,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
           skipAssistantTranscript: true,
         }
       } finally {
+        if (beforeUserId) activeTurn.steering = false
         live.busyCount = Math.max(0, live.busyCount - 1)
         live.lastActivityAt = Date.now()
       }
@@ -475,11 +483,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
 
     const live = await openLive(sessionId, binary, authEnv, cwd, input.onPermissionResponse, customModelProvider)
 
-    const fullTurn = async (): Promise<{
-      finalText: string
-      providerResume: string | null
-      skipAssistantTranscript?: boolean
-    }> => {
+    const fullTurn = async (): ReturnType<TurnRunner> => {
       const conn = liveBySession.get(sessionId)
       if (!conn) throw new Error('Codex connection disposed')
       const interactionAbort = new AbortController()
@@ -547,16 +551,16 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
               configGeneration: 0, configFingerprint: mcpServerConfigFingerprint(mcpServers[server]) }),
             onDelta: input.onDelta,
             signal: input.signal,
-            onTurnStarted: (turnId) => {
-              conn.activeTurnId = turnId
+            onTurnStarted: (turnId, splitAssistant) => {
+              conn.activeTurn = turnId ? { id: turnId, splitAssistant, steering: false } : null
             },
             onInputAccepted,
           })
           if (result.threadId) conn.threadId = result.threadId
-          conn.activeTurnId = null
           return {
             finalText: result.finalText,
             providerResume: result.threadId ? `thread:${result.threadId}` : null,
+            assistantSegments: result.assistantSegments,
           }
         }
 
@@ -582,7 +586,6 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
           onInputAccepted,
         })
         if (result.threadId) conn.threadId = result.threadId
-        conn.activeTurnId = null
         return {
           finalText: result.finalText,
           providerResume: result.threadId ? `thread:${result.threadId}` : null,
@@ -590,13 +593,14 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
         }
       } catch (err) {
         conn.promptPrediction.invalidate()
-        conn.activeTurnId = null
+        conn.activeTurn = null
         const msg = err instanceof Error ? err.message : String(err)
         if (/closed|exited|broken pipe|spawn failed/i.test(msg)) {
           await disposeLive(sessionId)
         }
         throw err
       } finally {
+        conn.activeTurn = null
         input.signal.removeEventListener('abort', abortApprovals)
         interactionAbort.abort()
         if (conn.onElicitation === onElicitation) conn.onElicitation = undefined
@@ -648,7 +652,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
   runner.interruptSession = sessionId => {
     const live = liveBySession.get(sessionId)
     if (live) { const previous = live.nativeApprovalAbort; live.nativeApprovalAbort = new AbortController(); previous.abort() }
-    if (live?.threadId && live.activeTurnId) return live.client.request('turn/interrupt', { threadId: live.threadId, turnId: live.activeTurnId }).then(() => undefined)
+    if (live?.threadId && live.activeTurn) return live.client.request('turn/interrupt', { threadId: live.threadId, turnId: live.activeTurn.id }).then(() => undefined)
   }
   runner.disposeSession = async (sessionId) => {
     await disposeLive(sessionId)
@@ -669,7 +673,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
     if ((session.harnessId || 'codex') !== 'codex') return { ok: false }
     if (session.status === 'streaming') return { ok: true }
     const existing = liveBySession.get(session.sessionId)
-    if (existing?.activeTurnId || (existing && existing.busyCount > 0)) return { ok: true }
+    if (existing?.activeTurn || (existing && existing.busyCount > 0)) return { ok: true }
     const storedThread = session.providerResume?.startsWith('thread:')
       ? session.providerResume.slice('thread:'.length).trim()
       : ''
@@ -679,7 +683,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
     if (!binary) return { ok: false }
     const prepared = await prepare({ session, apiProviderId: session.apiProviderId })
     const live = await openLive(session.sessionId, binary, prepared.authEnv, prepared.cwd, undefined, prepared.customModelProvider)
-    if (live.activeTurnId || live.busyCount > 0) return { ok: true }
+    if (live.activeTurn || live.busyCount > 0) return { ok: true }
     live.onPromptSuggestion = suggestion => host.onEvent({ type: 'prompt_suggestion', suggestion })
     live.lastActivityAt = Date.now()
     if (!live.threadId || live.threadId !== knownThreadId) {
@@ -710,7 +714,7 @@ export function createNodeCodexTurnRunner(opts: NodeCodexRunnerOptions): TurnRun
     }
     if (mode !== 'conversation') return { canRewind: false, error: 'Invalid rewind mode' }
     const live = liveBySession.get(session.sessionId)
-    if (session.status === 'streaming' || live?.activeTurnId || (live && live.busyCount > 0)) {
+    if (session.status === 'streaming' || live?.activeTurn || (live && live.busyCount > 0)) {
       return { canRewind: false, error: 'Cannot rewind an active Codex turn' }
     }
     const beforeTurnId = codexBoundaryTurnId(host.messages ?? [], String(input.checkpointId ?? ''))

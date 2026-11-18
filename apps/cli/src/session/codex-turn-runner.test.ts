@@ -15,10 +15,16 @@ import { PassThrough } from 'node:stream'
 import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import type { CodexSpawnFn } from '@superone/codex'
 import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
+import type { SessionStreamMessage } from '@superone/shared/environment'
+import type { TranscriptWindowResult } from '@superone/shared/environment/transcript-window'
+import { mapNodeSessionEvents } from '@superone/shared/node-session-event-map'
+import { applyWindowResult, EMPTY_WINDOW_LOOKUP, materializeWindowMessage } from '@superone/shared/transcript-window/window-store'
 import { shutdownAll as shutdownAllProxies } from '@superone/runtime/llm-proxy'
 import { openNodeDatabase } from '../db/database'
 import { ProviderStore } from '../provider/provider-store'
 import { mcpServerConfigFingerprint } from '@superone/runtime/mcp-apps/identity'
+import { startNodeRuntime } from '../runtime'
+import { connectAuthedRpc } from '../test/ws-rpc'
 
 function session(over: Partial<NodeSessionRecord> = {}): NodeSessionRecord {
   return {
@@ -868,6 +874,121 @@ url = "https://mcp.linear.app/mcp"
     expect(result.providerResume).toBe('thread:t-c')
     rmSync(dir, { recursive: true, force: true })
   })
+
+  it('splits queued Codex steering in the live feed and in the transcript after reconnect', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'codex-steer-feed-'))
+    const nodeHome = join(dir, 'node')
+    const bin = join(dir, 'codex')
+    writeFileSync(bin, '#!/bin/sh\n', { mode: 0o755 })
+    const child = createFakeChild()
+    const write = (...messages: Record<string, unknown>[]) =>
+      child.stdout.write(messages.map(message => JSON.stringify({ jsonrpc: '2.0', ...message })).join('\n') + '\n')
+    const reply = (id: number, result: Record<string, unknown> = {}) => ({ id, result })
+    const note = (method: string, params: Record<string, unknown>) => ({ method, params: { threadId: 'thread', turnId: 'turn', ...params } })
+    const delta = (itemId: string, text: string) => note('item/agentMessage/delta', { itemId, delta: text })
+    const completed = note('turn/completed', { turn: { id: 'turn', status: 'completed' } })
+    const command = { type: 'commandExecution', id: 'command', command: 'echo fixture' }
+    const steers: number[] = []
+    const turnStarts: number[] = []
+    child.stdin.on('data', (data: Buffer) => {
+      for (const line of data.toString().trim().split('\n')) {
+        const { id, method } = JSON.parse(line) as { id?: number; method: string }
+        if (id === undefined) continue
+        switch (method) {
+          case 'thread/start':
+            write(reply(id, { thread: { id: 'thread' } }))
+            break
+          case 'turn/start':
+            turnStarts.push(id)
+            write(reply(id, { turn: { id: 'turn' } }), delta('before', 'Before steer'),
+              note('item/started', { item: { ...command, status: 'inProgress' } }))
+            break
+          case 'turn/steer':
+            steers.push(id)
+            break
+          default:
+            write(reply(id))
+        }
+      }
+    })
+    const turnRunner = createNodeCodexTurnRunner({
+      binaryPath: bin, resolveProjectPath: () => dir, spawnFn: () => asSpawnChild(child), mcpMergeMode: 'host-action-only',
+    })
+    let rt: Awaited<ReturnType<typeof startNodeRuntime>> | undefined
+    let client: Awaited<ReturnType<typeof connectAuthedRpc>> | undefined
+    try {
+      rt = await startNodeRuntime({ nodeHome, bindHost: '127.0.0.1', bindPort: 0, simulatedHarness: true, turnRunner })
+      const live = await connectAuthedRpc(rt)
+      client = live
+      const { projectId } = await live.rpc('project.open', { path: dir }) as { projectId: string }
+      const { sessionId } = await live.rpc('session.create', { projectId, harnessId: 'codex' }) as { sessionId: string }
+      const lease = await live.rpc('session.acquireControl', { sessionId, ttlMs: 30_000 }) as { leaseId: string; generation: string }
+      const frames: SessionStreamMessage['frame'][] = []
+      live.onMessage(message => {
+        if (message.type === 'stream' && message.subscriptionId === 'steer-feed') frames.push((message as unknown as SessionStreamMessage).frame)
+      })
+      await live.rpc('topic.subscribe', {
+        subscriptionId: 'steer-feed', afterSequence: '0', topics: [{ kind: 'session', sessionId, environmentId: live.environmentId }],
+      })
+      const events = () => mapNodeSessionEvents(frames.flatMap(frame => frame.events), { sessionId, providerId: 'codex' })
+      const textOutput = () => events().flatMap(event => event.type === 'content_delta' && event.delta.type === 'text'
+        ? [[event.messageId, event.delta.text]]
+        : [])
+
+      await live.rpc('session.send', { sessionId, text: 'First prompt', clientMessageId: 'first', ...lease })
+      await vi.waitFor(() => expect(textOutput()).toEqual([[expect.any(String), 'Before steer']]))
+      const firstAssistant = textOutput()[0]![0]!
+      await live.rpc('session.send', { sessionId, text: 'Steer prompt', clientMessageId: 'second', priority: 'next', ...lease })
+      const steer = live.rpc('session.steer', { sessionId, clientMessageId: 'second', ...lease })
+      await vi.waitFor(() => expect(steers).toHaveLength(1))
+      // The reply and the very first continuation arrive in one read from app-server.
+      write(reply(steers[0]!),
+        delta('after', 'After steer'),
+        note('item/completed', { item: { ...command, status: 'completed', aggregatedOutput: 'fixture\n', exitCode: 0 } }))
+      await steer
+      await vi.waitFor(() => expect(textOutput()).toHaveLength(2))
+      const continuation = textOutput()[1]![0]!
+      expect(continuation).not.toBe(firstAssistant)
+      expect(turnStarts).toHaveLength(1)
+      expect(events().flatMap(event => {
+        if (event.type === 'message_complete') return [[event.type, event.messageId]]
+        if (event.type === 'message_start' && event.message.id === continuation) return [[event.type, event.message.id]]
+        if (event.type === 'user_message_appended' && event.message.id === 'second') return [[event.type, event.message.id]]
+        return []
+      })).toEqual([
+        ['user_message_appended', 'second'],
+        ['message_complete', firstAssistant],
+        ['message_start', continuation],
+      ])
+      await vi.waitFor(() => expect(events().find(event => event.type === 'content_delta'
+        && event.delta.type === 'tool_result' && event.delta.toolUseId === command.id)).toMatchObject({ messageId: firstAssistant }))
+
+      live.close()
+      write(completed)
+      await vi.waitFor(() => expect(rt!.sessions.get(sessionId)?.status).toBe('idle'))
+      await rt.stop()
+      rt = await startNodeRuntime({ nodeHome, bindHost: '127.0.0.1', bindPort: 0, simulatedHarness: true })
+      client = await connectAuthedRpc(rt, 'reconnected')
+      const window = await client.rpc('session.transcriptWindow', { sessionId }) as TranscriptWindowResult
+      const restored = applyWindowResult(null, window, EMPTY_WINDOW_LOOKUP).state.messages.map(materializeWindowMessage)
+      expect(restored.map(message => [message.id, message.status, message.content.flatMap(block => block.type === 'text' ? [block.text] : [])]))
+        .toEqual([
+          ['first', 'complete', ['First prompt']],
+          [firstAssistant, 'complete', ['Before steer']],
+          ['second', 'complete', ['Steer prompt']],
+          [continuation, 'complete', ['After steer']],
+        ])
+      expect(restored[1]?.content).toContainEqual(expect.objectContaining({ type: 'bash_result', toolUseId: command.id }))
+      expect(rt.sessions.get(sessionId)?.transcript.map(({ id, text }) => [id, text])).toEqual([
+        ['first', 'First prompt'], [firstAssistant, 'Before steer'], ['second', 'Steer prompt'], [continuation, 'After steer'],
+      ])
+    } finally {
+      client?.close()
+      if (!child.killed) write(completed)
+      await rt?.stop()
+      rmSync(dir, { recursive: true, force: true })
+    }
+  }, 15_000)
 
   it.each(['steer', 'run'] as const)('turnKind=%s reuses an active connection and issues turn/steer', async turnKind => {
     const dir = mkdtempSync(join(tmpdir(), 'cbr-steer-'))

@@ -608,6 +608,8 @@ export async function steerCodexAppServerTurn(opts: {
   signal?: AbortSignal
   /** Called just before the input is sent (see `TurnRunner` `onInputAccepted`). */
   onInputAccepted?: () => void
+  /** Called as soon as app-server acknowledges the steer, while the turn is still streaming. */
+  onSteered?: () => void
 }): Promise<CodexAppServerTurnResult> {
   if (opts.signal?.aborted) throw new Error('Codex turn interrupted')
   opts.onInputAccepted?.()
@@ -616,6 +618,7 @@ export async function steerCodexAppServerTurn(opts: {
     input: opts.input ?? [{ type: 'text', text: opts.prompt }],
     ...(opts.expectedTurnId ? { expectedTurnId: opts.expectedTurnId } : {}),
   })
+  opts.onSteered?.()
   return {
     finalText: '',
     threadId: opts.threadId,

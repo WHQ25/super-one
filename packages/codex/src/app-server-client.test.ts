@@ -22,6 +22,7 @@ type FakeChild = {
   kill: (sig?: NodeJS.Signals | number) => boolean
   on: EventEmitter['on']
   once: EventEmitter['once']
+  removeListener: EventEmitter['removeListener']
   emit: EventEmitter['emit']
 }
 
@@ -43,6 +44,7 @@ function createFakeChild(): FakeChild {
     },
     on: ee.on.bind(ee),
     once: ee.once.bind(ee),
+    removeListener: ee.removeListener.bind(ee),
     emit: ee.emit.bind(ee),
   }
   return child

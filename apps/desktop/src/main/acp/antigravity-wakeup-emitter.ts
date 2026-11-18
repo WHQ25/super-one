@@ -350,6 +350,9 @@ export function emitWakeupProgressSteps(
     }
 
     if (step.thinking && !wireStreamed) {
+      ctx.emittedWakeupThinkingText = ctx.emittedWakeupThinkingText
+        ? `${ctx.emittedWakeupThinkingText}\n${step.thinking}`
+        : step.thinking
       ctx.emitEvent({
         type: 'content_delta',
         messageId: targetMessageId,
@@ -419,6 +422,9 @@ export function emitWakeupProgressSteps(
     }
 
     if (step.content && !wireStreamed) {
+      ctx.emittedWakeupMessageText = ctx.emittedWakeupMessageText
+        ? `${ctx.emittedWakeupMessageText}\n${step.content}`
+        : step.content
       ctx.emitEvent({
         type: 'content_delta',
         messageId: targetMessageId,

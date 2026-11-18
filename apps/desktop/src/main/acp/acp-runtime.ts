@@ -2113,7 +2113,12 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
           for (const event of events) turn.onEvent(event)
         }
         antigravitySteer?.dispose()
-        if (gen === promptGen && currentTurn === turn) currentTurn = null
+        if (gen === promptGen && currentTurn === turn) {
+          currentTurn = null
+          if (launch.agentId === 'antigravity') {
+            clearUnflushedAntigravityWakeupReplay(activeSession.sessionId)
+          }
+        }
         turn.agentMsgToLocal.clear()
         turn.openToolIds.clear()
         if (stopWaiter) {

@@ -300,7 +300,7 @@ export function hasUnflushedAntigravityWakeupReplay(parentSessionId: string): bo
 
 export function shouldDropAntigravityPreUserReplay(
   parentSessionId: string,
-  update: { sessionUpdate: string; toolCallId?: string },
+  update: { sessionUpdate: string; toolCallId?: string; content?: unknown },
 ): boolean {
   return evaluateWakeupReplayDrop(sessionStates.get(parentSessionId), update)
 }

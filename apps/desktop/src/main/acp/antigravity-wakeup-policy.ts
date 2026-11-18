@@ -3,6 +3,7 @@ import { parseMcpToolName, SUPERONE_KNOWN_MCP_BARE_TOOLS } from '@superone/share
 import type { ParentWakeupProgress } from './antigravity-subagent-transcript'
 
 export interface WakeupReplayContext {
+  emittedWakeupToolUseIds?: Set<string>
   emittedWakeupToolResultIds: Set<string>
   replayedBackgroundToolIds: Set<string>
   unflushedWakeupReplay: boolean
@@ -10,6 +11,8 @@ export interface WakeupReplayContext {
   unlockedPostStallStream: boolean
   streamedPreUserPostStall: boolean
   wireWakeupStreamed?: boolean
+  emittedWakeupThinkingText?: string
+  emittedWakeupMessageText?: string
 }
 
 const NON_INTERACTIVE_WAKEUP_TOOLS = new Set([
@@ -64,9 +67,14 @@ export function resolveWakeupStallTimeoutMs(
   return Math.max(interactionStallTimeoutMs, (wakeup.pendingToolWaitMs ?? 1_500) + 2_000)
 }
 
+function extractReplayChunkText(update: { content?: unknown }): string {
+  const c = update.content as { type?: unknown; text?: unknown } | undefined
+  return c?.type === 'text' && typeof c.text === 'string' ? c.text.trim() : ''
+}
+
 export function evaluateWakeupReplayDrop(
   ctx: WakeupReplayContext | undefined,
-  update: { sessionUpdate: string; toolCallId?: string },
+  update: { sessionUpdate: string; toolCallId?: string; content?: unknown },
 ): boolean {
   if (!ctx?.unflushedWakeupReplay) return false
   const kind = update.sessionUpdate
@@ -79,7 +87,34 @@ export function evaluateWakeupReplayDrop(
   ) {
     return false
   }
-  if (!ctx.stalledWakeupToolReplay) return true
+  if (!ctx.stalledWakeupToolReplay) {
+    if (kind === 'tool_call' || kind === 'tool_call_update') {
+      const id = typeof update.toolCallId === 'string' ? update.toolCallId : ''
+      if (
+        id &&
+        !ctx.emittedWakeupToolUseIds?.has(id) &&
+        !ctx.emittedWakeupToolResultIds.has(id) &&
+        !ctx.replayedBackgroundToolIds.has(id)
+      ) {
+        resetWakeupReplayState(ctx)
+        return false
+      }
+      return true
+    }
+    if (kind === 'agent_thought_chunk' || kind === 'agent_message_chunk') {
+      const text = extractReplayChunkText(update)
+      const recorded =
+        kind === 'agent_thought_chunk'
+          ? (ctx.emittedWakeupThinkingText ?? '')
+          : (ctx.emittedWakeupMessageText ?? '')
+      if (text && !recorded.includes(text)) {
+        resetWakeupReplayState(ctx)
+        return false
+      }
+      return true
+    }
+    return true
+  }
   if (kind === 'tool_call' || kind === 'tool_call_update') {
     const id = typeof update.toolCallId === 'string' ? update.toolCallId : ''
     if (id && (ctx.emittedWakeupToolResultIds.has(id) || ctx.replayedBackgroundToolIds.has(id))) {
@@ -101,6 +136,8 @@ export function resetWakeupReplayState(ctx: WakeupReplayContext | undefined): bo
   ctx.unlockedPostStallStream = false
   ctx.streamedPreUserPostStall = false
   ctx.wireWakeupStreamed = false
+  ctx.emittedWakeupThinkingText = undefined
+  ctx.emittedWakeupMessageText = undefined
   ctx.replayedBackgroundToolIds.clear()
   return streamedPostStall
 }

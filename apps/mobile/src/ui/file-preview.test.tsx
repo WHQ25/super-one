@@ -232,12 +232,31 @@ test('a mermaid page offers nothing to save or share', async () => {
   expect(calls).toEqual([])
 })
 
-test('the menu saves a picture to Photos and reports it', async () => {
-  const calls: string[] = []
-  await mount(IMAGE, { ports: createFakeMediaPorts({ onCall: (action) => calls.push(action) }) })
-  await runMenuAction('Save to Photos')
-  expect(await screen.findByText('Saved to Photos')).toBeTruthy()
-  expect(calls).toEqual(['save'])
+test('the menu saves a picture to Photos and reports it in a 1s HUD', async () => {
+  jest.useFakeTimers()
+  try {
+    let saved = 0
+    const ports: MediaPorts = {
+      save: async () => {
+        saved += 1
+        return { kind: 'saved', toPhotos: true }
+      },
+      share: async () => {},
+      openSettings: () => {},
+    }
+    await mount(IMAGE, { ports })
+    await act(async () => { fireEvent.press(screen.getByLabelText('More')) })
+    await act(async () => { fireEvent.press(screen.getByLabelText('Save to Photos')) })
+    expect(screen.getByTestId('file-preview-feedback-hud')).toBeTruthy()
+    expect(screen.getByText('Saved to Photos')).toBeTruthy()
+    expect(saved).toBe(1)
+    await act(async () => { jest.advanceTimersByTime(999) })
+    expect(screen.getByText('Saved to Photos')).toBeTruthy()
+    await act(async () => { jest.advanceTimersByTime(1) })
+    expect(screen.queryByTestId('file-preview-feedback-hud')).toBeNull()
+  } finally {
+    jest.useRealTimers()
+  }
 })
 
 test('a denied photo permission offers Settings', async () => {
@@ -257,10 +276,13 @@ test('the menu shares through the ports', async () => {
   expect(screen.queryByText('Saved')).toBeNull()
 })
 
-test('a share failure is shown in the chrome', async () => {
+test('a share failure is shown in the HUD and can be dismissed', async () => {
   await mount(IMAGE, { ports: createFakeMediaPorts({ share: 'throw' }) })
   await runMenuAction('Share')
   expect(await screen.findByText('Sharing is unavailable on this device')).toBeTruthy()
+  await act(async () => { fireEvent.press(screen.getByLabelText('Close')) })
+  expect(screen.queryByTestId('file-preview-feedback-hud')).toBeNull()
+  expect(screen.getByLabelText('Back')).toBeTruthy()
 })
 
 test('a remote URL disables both rows because there are no bytes on the phone', async () => {

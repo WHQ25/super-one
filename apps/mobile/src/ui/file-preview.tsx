@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
-import { ArrowLeft, CircleAlert, FileDown, FolderDown, ImageDown, MoreHorizontal, Share2 } from 'lucide-react-native'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { ArrowLeft, Check, CircleAlert, FileDown, FolderDown, ImageDown, MoreHorizontal, Share2, X } from 'lucide-react-native'
 import { ActivityIndicator, Animated, Modal, StyleSheet, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
 import { isMarkdownFileName } from '@superone/shared/file-preview'
@@ -54,8 +54,13 @@ export type FilePreviewModalProps = {
   documentPorts?: MarkdownDocumentPorts
 }
 
-/** How long a success line stays before the chrome goes quiet again. */
-const FEEDBACK_MS = 2500
+const FEEDBACK_MS = 1000
+
+type PreviewFeedback = {
+  message: string
+  tone: 'info' | 'error'
+  offerSettings?: boolean
+}
 
 /**
  * The one fullscreen surface every picture, mermaid diagram, and file on the
@@ -79,10 +84,20 @@ const FEEDBACK_MS = 2500
 export function FilePreviewModal({ state, covered = [], ports, onDismiss, onStartTransfer, onRetry, generationPorts, documentPorts }: FilePreviewModalProps) {
   const { tokens: { colors } } = useMobileTheme()
   const [chromeVisible, setChromeVisible] = useState(true)
+  const [feedback, setFeedback] = useState<PreviewFeedback | null>(null)
   const toggleChrome = useCallback(() => setChromeVisible((visible) => !visible), [])
   // Every new target arrives with its chrome up, whatever the last one was left at.
   const target = state?.kind === 'image' ? state.src : state?.kind === 'mermaid' ? state.svg : state?.kind === 'video' ? state.localUri : state?.path
-  useEffect(() => { setChromeVisible(true) }, [target])
+  useEffect(() => {
+    setChromeVisible(true)
+    setFeedback(null)
+  }, [target])
+
+  useEffect(() => {
+    if (!feedback || feedback.tone === 'error' || feedback.offerSettings) return
+    const handle = setTimeout(() => setFeedback(null), FEEDBACK_MS)
+    return () => clearTimeout(handle)
+  }, [feedback])
 
   return (
     <Modal
@@ -106,7 +121,10 @@ export function FilePreviewModal({ state, covered = [], ports, onDismiss, onStar
               <PreviewBody state={state} chromeVisible={chromeVisible} onToggleChrome={toggleChrome} onStartTransfer={onStartTransfer} onRetry={onRetry} generationPorts={generationPorts} />
             )}
             <EdgeSwipeArea onSwipe={onDismiss} />
-            <PreviewChrome state={state} ports={ports} onDismiss={onDismiss} visible={state.kind !== 'image' || chromeVisible} />
+            <PreviewChrome state={state} ports={ports} onDismiss={onDismiss} onFeedback={setFeedback} visible={state.kind !== 'image' || chromeVisible} />
+            {feedback ? (
+              <PreviewFeedbackHud feedback={feedback} onOpenSettings={ports.openSettings} onDismiss={() => setFeedback(null)} />
+            ) : null}
           </View>
         </MenuHost>
       ) : null}
@@ -293,36 +311,35 @@ function TransferProgress({ receivedBytes, size }: { receivedBytes: number; size
 }
 
 /** Back, title and the more menu, laid over the body inside the safe area. */
-function PreviewChrome({ state, ports, onDismiss, visible }: { state: FilePreviewState; ports: MediaPorts; onDismiss: () => void; visible: boolean }) {
+function PreviewChrome({ state, ports, onDismiss, onFeedback, visible }: {
+  state: FilePreviewState
+  ports: MediaPorts
+  onDismiss: () => void
+  onFeedback: (feedback: PreviewFeedback | null) => void
+  visible: boolean
+}) {
   const { tokens: { colors, spacing } } = useMobileTheme()
   const { t } = useMobileLocale()
   const insets = useSafeAreaInsets()
   const menu = useMenuAnchor()
   const opacity = useFade(visible)
   const [busy, setBusy] = useState(false)
-  const [feedback, setFeedback] = useState<{ message: string; tone: 'info' | 'error'; offerSettings?: boolean } | null>(null)
   const actions = filePreviewMenu(state)
   const iconName = previewChromeIconName(state)
   const title = state.kind === 'image'
     ? state.label ?? state.name
     : state.kind === 'mermaid' ? t(FILE_PREVIEW_TEXT.mermaid) : state.name
 
-  useEffect(() => {
-    if (!feedback || feedback.tone === 'error' || feedback.offerSettings) return
-    const handle = setTimeout(() => setFeedback(null), FEEDBACK_MS)
-    return () => clearTimeout(handle)
-  }, [feedback])
-
   const run = async (action: () => Promise<{ message: string; offerSettings: boolean } | null>) => {
     menu.close()
     if (busy) return
     setBusy(true)
-    setFeedback(null)
+    onFeedback(null)
     try {
       const result = await action()
-      if (result) setFeedback({ message: result.message, tone: result.offerSettings ? 'error' : 'info', offerSettings: result.offerSettings })
+      if (result) onFeedback({ message: result.message, tone: result.offerSettings ? 'error' : 'info', offerSettings: result.offerSettings })
     } catch (cause) {
-      setFeedback({ message: cause instanceof Error ? cause.message : String(cause), tone: 'error' })
+      onFeedback({ message: cause instanceof Error ? cause.message : String(cause), tone: 'error' })
     } finally {
       setBusy(false)
     }
@@ -367,12 +384,6 @@ function PreviewChrome({ state, ports, onDismiss, visible }: { state: FilePrevie
         <IconButton buttonRef={menu.ref} icon={MoreHorizontal} label={FILE_PREVIEW_TEXT.more} onPress={menu.open}
           chrome="plain" color={colors.foreground} spinning={busy} disabled={busy} />
       </View>
-      {feedback ? (
-        <View style={styles.feedbackRow}>
-          <Text style={[styles.feedback, { color: feedback.tone === 'error' ? colors.error : colors.mutedForeground }]}>{t(feedback.message)}</Text>
-          {feedback.offerSettings ? <Button label={FILE_PREVIEW_TEXT.openSettings} variant="secondary" onPress={ports.openSettings} /> : null}
-        </View>
-      ) : null}
       <AnchoredMenu anchor={menu.anchor} title={FILE_PREVIEW_TEXT.menuTitle} onDismiss={menu.close} width={240}>
         <MenuRow label={actions.save.toPhotos ? FILE_PREVIEW_TEXT.saveToPhotos : FILE_PREVIEW_TEXT.saveToFiles}
           leading={actions.save.toPhotos
@@ -383,6 +394,69 @@ function PreviewChrome({ state, ports, onDismiss, visible }: { state: FilePrevie
           disabled={!actions.share.enabled} onPress={() => void share()} />
       </AnchoredMenu>
     </Animated.View>
+  )
+}
+
+function PreviewFeedbackHud({ feedback, onOpenSettings, onDismiss }: {
+  feedback: PreviewFeedback
+  onOpenSettings: () => void
+  onDismiss: () => void
+}) {
+  const { tokens: { colors, radius, shadows } } = useMobileTheme()
+  const { t } = useMobileLocale()
+  const insets = useSafeAreaInsets()
+  const scale = useRef(new Animated.Value(0.94)).current
+  const isError = feedback.tone === 'error'
+  const accent = isError ? colors.error : colors.success
+
+  useEffect(() => {
+    scale.setValue(0.94)
+    const animation = Animated.spring(scale, { toValue: 1, useNativeDriver: true, speed: 24, bounciness: 6 })
+    animation.start()
+    return () => animation.stop()
+  }, [feedback, scale])
+
+  return (
+    <View
+      pointerEvents={isError ? 'box-none' : 'none'}
+      style={[StyleSheet.absoluteFill, styles.hudOverlay, {
+        paddingLeft: insets.left + 24,
+        paddingRight: insets.right + 24,
+      }]}
+    >
+      <Animated.View
+        testID="file-preview-feedback-hud"
+        accessibilityLiveRegion={isError ? 'assertive' : 'polite'}
+        style={[styles.hudCard, shadows.popover, {
+          backgroundColor: colors.surface,
+          borderColor: isError ? colors.error : colors.border,
+          borderRadius: radius.lg + 4,
+          transform: [{ scale }],
+        }]}
+      >
+        {isError ? (
+          <IconButton
+            icon={X}
+            label="Close"
+            iconSize={16}
+            hitSlop={8}
+            chrome="plain"
+            color={colors.mutedForeground}
+            onPress={onDismiss}
+            style={styles.hudClose}
+          />
+        ) : null}
+        <View style={[styles.hudBadge, { backgroundColor: `${accent}20`, borderRadius: radius.pill }]}>
+          {isError
+            ? <CircleAlert color={accent} size={22} />
+            : <Check color={accent} size={22} strokeWidth={2.5} />}
+        </View>
+        <Text style={[styles.hudMessage, { color: colors.foreground }]}>{t(feedback.message)}</Text>
+        {feedback.offerSettings ? (
+          <Button label={FILE_PREVIEW_TEXT.openSettings} variant="secondary" onPress={onOpenSettings} />
+        ) : null}
+      </Animated.View>
+    </View>
   )
 }
 
@@ -401,6 +475,9 @@ const styles = StyleSheet.create({
   titleRow: { flex: 1, minWidth: 0, flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 6 },
   titleIcon: { flexShrink: 0 },
   title: { flexShrink: 1, textAlign: 'center', fontSize: 14, fontWeight: '600' },
-  feedbackRow: { alignItems: 'center', gap: 8, paddingHorizontal: 16, paddingBottom: 8 },
-  feedback: { textAlign: 'center', fontSize: 12 },
+  hudOverlay: { alignItems: 'center', justifyContent: 'center', zIndex: 4 },
+  hudCard: { minWidth: 176, maxWidth: 280, paddingHorizontal: 24, paddingVertical: 18, borderWidth: 1, alignItems: 'center', gap: 10 },
+  hudClose: { position: 'absolute', top: 6, right: 6, width: 30, height: 30 },
+  hudBadge: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
+  hudMessage: { textAlign: 'center', fontSize: 15, fontWeight: '500', lineHeight: 21 },
 })

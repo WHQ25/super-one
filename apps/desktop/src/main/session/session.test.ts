@@ -839,6 +839,25 @@ describe('Session state machine', () => {
     expect(session.snapshot.selectedModel).toBe('grok-4.7')
   })
 
+  it('keeps the prewarm effort when the agent advertises its own default', () => {
+    ;({ session, backend } = makeSession({ harnessId: 'acp-antigravity', providerId: 'acp-antigravity', acpAgentId: 'antigravity' }))
+    session.prewarm({ model: 'gemini-4-hydrogen', effort: 'medium', acpAgentId: 'antigravity' })
+    backend.emit({
+      type: 'acp_modes',
+      agentId: 'antigravity',
+      configId: 'thought_level',
+      modes: [
+        { id: 'low', name: 'Low', description: '' },
+        { id: 'medium', name: 'Medium', description: '' },
+        { id: 'high', name: 'High', description: '' },
+        { id: 'xhigh', name: 'Extra', description: '' },
+      ],
+      selectedModeId: 'high',
+      status: 'ready',
+    })
+    expect(session.getUiSettings().selectedAcpModeId).toBe('medium')
+  })
+
   it('prewarm to another ACP agent drops empty-draft Grok context and resume id', () => {
     ;({ session, backend } = makeSession({ harnessId: 'acp-grok', providerId: 'acp-base', acpAgentId: 'grok-build' }))
     backend.emit({

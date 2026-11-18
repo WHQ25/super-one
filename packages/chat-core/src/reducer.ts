@@ -308,10 +308,14 @@ function reduceEvent(
       }
       if (status === 'loading') return patch
       let candidateModeId: string | null | undefined = session.selectedAcpModeId
+      const isEffortMode = isAcpEffortConfigId(event.configId)
       if (event.selectedModeId) {
-        if (!session.selectedAcpModeId || !event.modes.some((m) => m.id === session.selectedAcpModeId)) {
+        const currentListed = Boolean(
+          session.selectedAcpModeId && event.modes.some((m) => m.id === session.selectedAcpModeId),
+        )
+        if (!session.selectedAcpModeId || !currentListed) {
           candidateModeId = event.selectedModeId
-        } else if (event.selectedModeId !== session.selectedAcpModeId) {
+        } else if (!isEffortMode && event.selectedModeId !== session.selectedAcpModeId) {
           candidateModeId = event.selectedModeId
         }
       } else if (event.modes.length === 0) {
@@ -319,7 +323,7 @@ function reduceEvent(
       }
       const activeModel = session.acpModels.find((m) => m.id === session.selectedModel)
       if (
-        isAcpEffortConfigId(event.configId) &&
+        isEffortMode &&
         (activeModel?.supportsEffort !== undefined || activeModel?.supportedEffortLevels !== undefined)
       ) {
         const modeEfforts = acpModeCatalog({

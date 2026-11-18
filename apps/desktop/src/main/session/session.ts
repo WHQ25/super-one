@@ -1,4 +1,5 @@
 import { isAcpProtocolHarness } from '@superone/shared/acp-brand'
+import { isAcpEffortConfigId } from '@superone/shared/effort-labels'
 import { RealtimeVoiceInterest } from './realtime-voice-interest'
 import { extractSpokenSummary, visibleAssistantText } from '@superone/shared/voice-delegation'
 import { assertVoiceAccount } from '@superone/shared/realtime-voice'
@@ -1693,6 +1694,9 @@ export class Session implements SessionContract {
       this.model = hint.model
       this.mergeUiSettings({ selectedModel: hint.model })
     }
+    if (isAcpProtocolHarness(this.harnessId) && hint?.effort) {
+      this.mergeUiSettings({ selectedAcpModeId: hint.effort })
+    }
     const opts: BackendStartOptions = {
       sessionId: this.id,
       projectPath: this.projectPath,
@@ -2556,7 +2560,14 @@ export class Session implements SessionContract {
     } else if (tagged.type === 'acp_modes') {
       this._cachedAcpModes = tagged
       if (tagged.selectedModeId) {
-        this.mergeUiSettings({ selectedAcpModeId: tagged.selectedModeId })
+        const currentMode = this._uiSettings.selectedAcpModeId
+        const keepCurrentEffort =
+          Boolean(currentMode)
+          && isAcpEffortConfigId(tagged.configId)
+          && (tagged.modes.length === 0 || tagged.modes.some((m) => m.id === currentMode))
+        if (!keepCurrentEffort) {
+          this.mergeUiSettings({ selectedAcpModeId: tagged.selectedModeId })
+        }
       }
     } else if (tagged.type === 'acp_commands') {
       this._cachedAcpCommands = tagged

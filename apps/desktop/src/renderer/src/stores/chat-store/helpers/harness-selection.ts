@@ -2,7 +2,7 @@ import { acpAgentIdForHarness, isAcpProtocolHarness, isAntigravityAcpAgent, isGr
 import type { ModelOption, SlashCommandInfo } from '@superone/shared/agent-types'
 import { HARNESS_STRATEGIES } from '@/harness-ui/strategies'
 import { resetHostSession } from '@/lib/session-client'
-import { getCachedAcpCatalog, sessionPatchFromAcpCatalog, sessionUsesAcpHarness } from '../harness/acp-handler'
+import { getCachedAcpCatalog, resolveDefaultAcpModeId, sessionPatchFromAcpCatalog, sessionUsesAcpHarness } from '../harness/acp-handler'
 import { acpHarnessForAgent, acpResourcesFor, type AcpHarnessId } from '../harness/acp-slots'
 import type { ChatProvider, ChatStore } from '../types'
 import { clearContextUsageHold, holdContextUsageUntilAgent } from './context-usage-hold'
@@ -148,7 +148,12 @@ export function hydrateAcpCatalogForSession(
           ? {
               acpModes: catalog.modes,
               acpModeConfigId: catalog.modeConfigId,
-              selectedAcpModeId: current.selectedAcpModeId ?? catalog.selectedModeId,
+              selectedAcpModeId:
+                current.selectedAcpModeId
+                ?? resolveDefaultAcpModeId(catalog, {
+                  preferSelected: current.selectedModel || null,
+                  agentId,
+                }),
               acpModesStatus: 'ready' as const,
             }
           : {}),
@@ -250,7 +255,7 @@ export function setAcpAgentIdImpl(
           modelUserChosen: false,
         }),
     ...(session.acpAgentId !== canonical ? { selectedAcpContextWindow: null } : {}),
-    ...(switchingEmpty ? emptyDraftRuntimeReset() : {}),
+    ...(switchingEmpty ? { ...emptyDraftRuntimeReset(), effortUserChosen: false } : {}),
   })))
   const disposePriorMain: Promise<unknown> = switchingEmpty && activeProject && draftSid
     ? resetHostSession(activeProject, draftSid).catch(() => null)

@@ -58,7 +58,12 @@ export function applyAcpResources(
                 ? {
                     acpModes: catalog.modes,
                     acpModeConfigId: catalog.modeConfigId,
-                    selectedAcpModeId: session.selectedAcpModeId ?? catalog.selectedModeId,
+                    selectedAcpModeId:
+                      session.selectedAcpModeId
+                      ?? resolveDefaultAcpModeId(catalog, {
+                        preferSelected: session.selectedModel || null,
+                        agentId: session.acpAgentId,
+                      }),
                     acpModesStatus: 'ready' as const,
                   }
                 : {}),
@@ -310,6 +315,17 @@ export function getCachedAcpCatalog(
   const legacy = acp.modelsByAgentId?.[agentId]
   if (!legacy?.models?.length) return null
   return sessionCatalogFromLegacyModels(legacy)
+}
+
+export function resolveDefaultAcpModeId(
+  session: AcpSessionCatalog,
+  opts?: {
+    preferSelected?: string | null
+    preferModeId?: string | null
+    agentId?: string | null
+  },
+): string | null {
+  return resolveDefaultAcpModelAndMode(session, opts).selectedModeId
 }
 
 function resolveDefaultAcpModelAndMode(

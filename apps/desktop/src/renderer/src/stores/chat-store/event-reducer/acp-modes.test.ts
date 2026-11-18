@@ -103,4 +103,42 @@ describe('applyEventToSession: acp_modes', () => {
     })
     expect(patch.selectedAcpModeId).toBe('code')
   })
+
+  it('keeps existing valid effort when agent advertises its own default thought_level', () => {
+    const effortModes: ModelOption[] = [
+      { id: 'low', name: 'Low', description: '' },
+      { id: 'medium', name: 'Medium', description: '' },
+      { id: 'high', name: 'High', description: '' },
+      { id: 'xhigh', name: 'Extra', description: '' },
+    ]
+    const session = {
+      ...createDefaultPerSessionState(),
+      preferredProvider: 'acp-antigravity' as const,
+      sessionProvider: 'acp-antigravity' as const,
+      acpAgentId: 'antigravity',
+      acpModels: [
+        {
+          id: 'gemini-4-hydrogen',
+          name: 'Gemini 4 Hydrogen',
+          description: '',
+          supportsEffort: true,
+          supportedEffortLevels: ['low', 'medium', 'high', 'xhigh'],
+        },
+      ] as ModelOption[],
+      selectedModel: 'gemini-4-hydrogen',
+      acpModes: effortModes,
+      acpModeConfigId: 'thought_level',
+      selectedAcpModeId: 'medium',
+      acpModesStatus: 'ready' as const,
+    }
+    const patch = applyEventToSession(session, {
+      type: 'acp_modes',
+      agentId: 'antigravity',
+      modes: effortModes,
+      selectedModeId: 'high',
+      configId: 'thought_level',
+      status: 'ready',
+    })
+    expect(patch.selectedAcpModeId).toBeUndefined()
+  })
 })

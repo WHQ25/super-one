@@ -22,6 +22,7 @@ import {
 } from '../../usage-stats-service'
 import { resolveComputerUseGrant, rejectComputerUseGrant } from '../../computer-use/grant-request'
 import {
+  asEffortLevel,
   asGrokReasoningEffort,
   extractModelConfig,
   extractModelsFromAgentModelsField,
@@ -353,10 +354,14 @@ export class AcpBackend implements SessionBackend {
     if (!this.startOpts || !this.runtime) return
     const liveSessionId = this.runtime.sessionId?.trim()
     const liveModel = this.selectedModelId?.trim()
+    const liveEffort = isAcpEffortConfigId(this.modeConfigId)
+      ? asEffortLevel(this.grokReasoningEffort ?? this.lastModeConfig?.selectedModeId)
+      : undefined
     this.startOpts = {
       ...this.startOpts,
       ...(liveSessionId ? { providerSessionId: liveSessionId } : {}),
       ...(liveModel ? { model: liveModel } : {}),
+      ...(liveEffort ? { effort: liveEffort } : {}),
     }
   }
 
@@ -1707,13 +1712,16 @@ export class AcpBackend implements SessionBackend {
         try {
           const turnEffort =
             typeof request.effort === 'string' ? request.effort.trim() : ''
-          const alreadySelected =
-            isAntigravityAcpAgent(this.config.agentId) &&
-            !turnEffort &&
-            runtime.getModelConfig()?.selectedModelId === targetModel
-          if (!alreadySelected) {
+          const isAntigravity = isAntigravityAcpAgent(this.config.agentId)
+          const modelMatches = runtime.getModelConfig()?.selectedModelId === targetModel
+          if (isAntigravity && modelMatches) {
+            const desiredEffort = turnEffort || this.requestedEffort()
+            if (this.shouldApplyEffortToRuntime(runtime, desiredEffort)) {
+              await this.setSessionMode(desiredEffort)
+            }
+          } else if (!(isAntigravity && !turnEffort && modelMatches)) {
             await this.applyModel(runtime, targetModel, {
-              reasoningEffort: turnEffort || undefined,
+              reasoningEffort: turnEffort || (isAntigravity ? this.requestedEffort() : undefined) || undefined,
             })
           }
         } catch (err) {
@@ -1864,7 +1872,7 @@ export class AcpBackend implements SessionBackend {
     const agentId = this.config.agentId ?? null
     const preservedEffort = opts?.reasoningEffort?.trim()
       || (isAcpEffortConfigId(this.modeConfigId)
-        ? this.lastModeConfig?.selectedModeId?.trim()
+        ? (this.requestedEffort() ?? this.lastModeConfig?.selectedModeId?.trim())
         : '')
       || ''
     if (opts?.contextWindow != null && Number.isFinite(opts.contextWindow)) {
@@ -1938,20 +1946,38 @@ export class AcpBackend implements SessionBackend {
     this.persistConfigCache(null, { ...cfg, selectedModelId: model }, agentId)
   }
 
+  private requestedEffort(): string | undefined {
+    return (
+      asGrokReasoningEffort(this.grokReasoningEffort)
+      ?? asGrokReasoningEffort(typeof this.startOpts?.effort === 'string' ? this.startOpts.effort : null)
+    )
+  }
+
+  private shouldApplyEffortToRuntime(runtime: AcpRuntime, effort: string | undefined): effort is string {
+    if (!effort || !isAcpEffortConfigId(this.modeConfigId)) return false
+    const currentEffort = runtime.getModeConfig()?.selectedModeId ?? null
+    if (currentEffort === effort) return false
+    return !this.lastModeConfig || this.lastModeConfig.modes.some((m) => m.id === effort)
+  }
+
   /**
    * The host model (harness preference or picker) is not Grok's config default.
    * session/new advertises that default; apply the requested id before the turn.
    */
   private async applyRequestedModel(runtime: AcpRuntime): Promise<void> {
-    const model = this.startOpts?.model?.trim()
-    if (!model) return
-    if (runtime.getModelConfig()?.selectedModelId === model) return
-    const effort = asGrokReasoningEffort(this.grokReasoningEffort)
-      ?? asGrokReasoningEffort(typeof this.startOpts?.effort === 'string' ? this.startOpts.effort : null)
+    const model = this.startOpts?.model?.trim() || ''
+    const effort = this.requestedEffort()
+    const modelDiffers = Boolean(model && runtime.getModelConfig()?.selectedModelId !== model)
+    const effortDiffers = this.shouldApplyEffortToRuntime(runtime, effort)
+    if (!modelDiffers && !effortDiffers) return
     try {
-      await this.applyModel(runtime, model, effort ? { reasoningEffort: effort } : undefined)
+      if (modelDiffers) {
+        await this.applyModel(runtime, model, effort ? { reasoningEffort: effort } : undefined)
+      } else if (effortDiffers) {
+        await this.setSessionMode(effort)
+      }
     } catch (err) {
-      log.warn('[AcpBackend] apply start model %s failed:', model, err)
+      log.warn('[AcpBackend] apply start model %s failed:', model || '(default)', err)
     }
   }
 

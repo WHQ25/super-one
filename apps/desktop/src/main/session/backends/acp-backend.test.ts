@@ -883,6 +883,72 @@ describe('AcpBackend', () => {
     await backend.close()
   })
 
+  it('applies start effort when session/new matches host model but differs on thought_level', async () => {
+    let activeEffort = 'high'
+    const antigravityOptions = (effort: string) => [
+      {
+        id: 'model',
+        name: 'Model',
+        category: 'model',
+        type: 'select',
+        currentValue: 'gemini-4-hydrogen',
+        options: [{ value: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen' }],
+      },
+      {
+        id: 'thought_level',
+        name: 'Thinking Level',
+        category: 'thought_level',
+        type: 'select',
+        currentValue: effort,
+        options: [
+          { value: 'low', name: 'Low' },
+          { value: 'medium', name: 'Medium' },
+          { value: 'high', name: 'High' },
+          { value: 'xhigh', name: 'Extra' },
+        ],
+      },
+    ]
+    const setConfigOption = vi.fn(async (id: string, value: string) => {
+      if (id === 'thought_level') activeEffort = value
+      return antigravityOptions(activeEffort)
+    })
+    setAcpRuntimeFactory(async () => mockRuntime({
+      getConfigOptions: () => antigravityOptions(activeEffort),
+      getModelConfig: () => ({
+        configId: 'model',
+        selectedModelId: 'gemini-4-hydrogen',
+        models: [{ id: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen', description: '' }],
+      }),
+      getModeConfig: () => ({
+        configId: 'thought_level',
+        selectedModeId: activeEffort,
+        modes: [
+          { id: 'low', name: 'Low', description: '' },
+          { id: 'medium', name: 'Medium', description: '' },
+          { id: 'high', name: 'High', description: '' },
+          { id: 'xhigh', name: 'Extra', description: '' },
+        ],
+      }),
+      setConfigOption,
+    }))
+    const backend = new AcpBackend('acp-antigravity')
+    const events: AgentEvent[] = []
+    backend.onEvent((e) => events.push(e))
+    await backend.start({ ...startOpts({ agentId: 'antigravity' }), model: 'gemini-4-hydrogen', effort: 'medium' })
+    await new Promise((r) => setTimeout(r, 10))
+    expect(setConfigOption).toHaveBeenCalledWith('thought_level', 'medium')
+    const lastReadyMode = events
+      .filter((e): e is Extract<AgentEvent, { type: 'acp_modes' }> => e.type === 'acp_modes' && e.status === 'ready')
+      .at(-1)
+    expect(lastReadyMode?.selectedModeId).toBe('medium')
+
+    setConfigOption.mockClear()
+    activeEffort = 'high'
+    await backend.setPermissionMode('auto')
+    expect(setConfigOption).toHaveBeenCalledWith('thought_level', 'medium')
+    await backend.close()
+  })
+
   it('setModel uses session/set_model when model configId is null (Grok path)', async () => {
     const setModel = vi.fn(async () => {})
     const setConfigOption = vi.fn(async () => [])

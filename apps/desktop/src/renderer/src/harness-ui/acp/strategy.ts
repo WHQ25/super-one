@@ -6,9 +6,31 @@ import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
 import { callSession } from '@/lib/session-client'
 import { getCachedAcpCatalog, sessionPatchFromAcpCatalog } from '@/stores/chat-store/harness/acp-handler'
 import { acpHarnessForAgent, type AcpHarnessId } from '@/stores/chat-store/harness/acp-slots'
-import { defaultPrefsCache, sessionDefaultsFor } from '@/stores/chat-store/helpers/prefs-cache'
+import { defaultPrefsCache, sessionDefaultsFor, toEffortLevel } from '@/stores/chat-store/helpers/prefs-cache'
+import type { PerSessionState } from '@/stores/chat-store/types'
 import { neutralSelection } from '../neutral-selection'
 import type { HarnessStrategy } from '../strategy'
+
+function resolvedAcpMode(
+  session: Pick<PerSessionState, 'acpModels' | 'acpModes' | 'acpModeConfigId' | 'selectedAcpModeId' | 'selectedModel'>,
+): string | null {
+  const hasCatalog = session.acpModels.length > 0 || session.acpModes.length > 0
+  if (!hasCatalog || !isAcpEffortConfigId(session.acpModeConfigId)) {
+    return session.selectedAcpModeId
+  }
+  return clampAcpEffortForModel(
+    acpEffortOptionsForModel(
+      session.acpModels,
+      session.selectedModel,
+      acpModeCatalog({
+        modes: session.acpModes,
+        modeConfigId: session.acpModeConfigId,
+        selectedModeId: session.selectedAcpModeId,
+      }).efforts,
+    ),
+    session.selectedAcpModeId,
+  )
+}
 
 const acpSlash: HarnessStrategy['slash'] = {
   hostCommands: ['clear', 'workflows', 'mcp'],
@@ -71,23 +93,18 @@ function createAcpStrategy(harnessId: AcpHarnessId): HarnessStrategy {
           })
         : {}
     },
-    prewarmHint: (session) => ({ model: session.selectedModel || undefined, acpAgentId: session.acpAgentId ?? undefined }),
+    prewarmHint: (session) => {
+      const effort = isAcpEffortConfigId(session.acpModeConfigId)
+        ? toEffortLevel(resolvedAcpMode(session))
+        : undefined
+      return {
+        model: session.selectedModel || undefined,
+        ...(effort ? { effort } : {}),
+        acpAgentId: session.acpAgentId ?? undefined,
+      }
+    },
     draftSettings: (session) => {
-      const hasCatalog = session.acpModels.length > 0 || session.acpModes.length > 0
-      const mode = hasCatalog && isAcpEffortConfigId(session.acpModeConfigId)
-        ? clampAcpEffortForModel(
-            acpEffortOptionsForModel(
-              session.acpModels,
-              session.selectedModel,
-              acpModeCatalog({
-                modes: session.acpModes,
-                modeConfigId: session.acpModeConfigId,
-                selectedModeId: session.selectedAcpModeId,
-              }).efforts,
-            ),
-            session.selectedAcpModeId,
-          )
-        : session.selectedAcpModeId
+      const mode = resolvedAcpMode(session)
       return {
         ...(mode ? { mode } : {}),
         ...(session.selectedAcpContextWindow ? { contextWindow: session.selectedAcpContextWindow } : {}),

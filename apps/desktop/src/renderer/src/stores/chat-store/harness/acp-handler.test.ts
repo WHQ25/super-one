@@ -277,4 +277,74 @@ describe('sessionPatchFromAcpCatalog', () => {
     expect(updated?.acpSlashCommands.map((c) => c.name)).toEqual(['plan', 'superone-harness'])
     expect(updated?.acpSlashCommandsStatus).toBe('ready')
   })
+
+  it('uses configured defaultEffort instead of catalog selectedModeId when modes hydrate after models', async () => {
+    const { defaultPrefsCache } = await import('../helpers/prefs-cache')
+    const prevPrefs = defaultPrefsCache.agentPreference
+    defaultPrefsCache.agentPreference = {
+      'acp-antigravity': { defaultModel: 'gemini-4-hydrogen', defaultEffort: 'medium', defaultPermissionMode: 'default' },
+    } as unknown as typeof prevPrefs
+    try {
+      const antigravityResources: AcpResources = {
+        agents: [{ id: 'antigravity', name: 'Antigravity', installed: true, commandPreview: 'agy acp' }],
+        selectedAgentId: 'antigravity',
+        modelsByAgentId: {},
+        configByAgentId: {
+          antigravity: {
+            configOptions: [
+              {
+                id: 'model',
+                name: 'Model',
+                category: 'model',
+                type: 'select',
+                currentValue: 'gemini-4-hydrogen',
+                options: [{ value: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen', description: null }],
+              },
+              {
+                id: 'thought_level',
+                name: 'Thinking Level',
+                category: 'thought_level',
+                type: 'select',
+                currentValue: 'high',
+                options: [
+                  { value: 'low', name: 'Low', description: null },
+                  { value: 'medium', name: 'Medium', description: null },
+                  { value: 'high', name: 'High', description: null },
+                ],
+              },
+            ],
+            updatedAt: '2026-04-01T00:00:00.000Z',
+          },
+        },
+      }
+      const existingSession = {
+        preferredProvider: 'acp-antigravity',
+        sessionProvider: 'acp-antigravity',
+        acpAgentId: 'antigravity',
+        acpModels: [{ id: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen', description: '' }],
+        acpModelsStatus: 'ready',
+        acpModes: [],
+        acpModesStatus: 'idle',
+        acpSlashCommands: [],
+        acpSlashCommandsStatus: 'idle',
+        selectedModel: 'gemini-4-hydrogen',
+        selectedAcpModeId: null,
+      } as unknown as PerSessionState
+      const store = {
+        harnessResources: { 'acp-grok': null, 'acp-antigravity': null },
+        projectSessions: {
+          '/proj': {
+            _activeSessionId: 'sid-1',
+            _sessions: { 'sid-1': existingSession },
+          },
+        },
+      } as unknown as ChatStore
+
+      const result = applyAcpResources(store, antigravityResources)
+      const updated = result.projectSessions?.['/proj']?._sessions['sid-1']
+      expect(updated?.selectedAcpModeId).toBe('medium')
+    } finally {
+      defaultPrefsCache.agentPreference = prevPrefs
+    }
+  })
 })

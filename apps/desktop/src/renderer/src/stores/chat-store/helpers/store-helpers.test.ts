@@ -1,6 +1,7 @@
 /** @vitest-environment jsdom */
 
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
+import type { ModelOption } from '@superone/shared/agent-types'
 
 const mockPrewarm = vi.fn().mockResolvedValue(undefined)
 
@@ -202,6 +203,47 @@ describe('triggerPrewarm', () => {
       acpAgentId: 'opencode',
     })
     expect(hint.effort).toBeUndefined()
+  })
+
+  it('includes clamped effort in prewarm hint for antigravity sessions', () => {
+    const proj = createDefaultProjectState()
+    const sess = {
+      ...createDefaultPerSessionState(),
+      preferredProvider: 'acp-antigravity' as const,
+      sessionProvider: 'acp-antigravity' as const,
+      acpAgentId: 'antigravity',
+      acpModels: [
+        {
+          id: 'gemini-4-hydrogen',
+          name: 'Gemini 4 Hydrogen',
+          description: '',
+          supportsEffort: true,
+          supportedEffortLevels: ['low', 'medium', 'high', 'xhigh'],
+        },
+      ] as ModelOption[],
+      acpModes: [
+        { id: 'low', name: 'Low', description: '' },
+        { id: 'medium', name: 'Medium', description: '' },
+        { id: 'high', name: 'High', description: '' },
+        { id: 'xhigh', name: 'Extra', description: '' },
+      ],
+      acpModeConfigId: 'thought_level',
+      selectedModel: 'gemini-4-hydrogen',
+      selectedAcpModeId: 'medium',
+    }
+    proj._activeSessionId = 'sid-agy'
+    proj._sessions = { 'sid-agy': sess }
+    useChatStore.setState({ projectSessions: { '/p1': proj }, activeProject: '/p1' })
+
+    triggerPrewarm(useChatStore.getState())
+    expect(mockPrewarm).toHaveBeenCalledTimes(1)
+    const [, hint] = mockPrewarm.mock.calls[0]
+    expect(hint).toMatchObject({
+      provider: 'acp-antigravity',
+      model: 'gemini-4-hydrogen',
+      effort: 'medium',
+      acpAgentId: 'antigravity',
+    })
   })
 
   it('passes codex hint shape for codex sessions', () => {

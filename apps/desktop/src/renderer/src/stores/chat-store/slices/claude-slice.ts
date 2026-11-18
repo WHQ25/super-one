@@ -1,12 +1,6 @@
-import { toast } from 'sonner'
 import type { StateCreator } from 'zustand'
-import { shallow } from 'zustand/shallow'
 import type { EffortLevel, ModelOption } from '@superone/shared/agent-types'
 import { isAcpProtocolHarness } from '@superone/shared/acp-brand'
-import {
-  findCursorEffortParam,
-  normalizeEffortValue,
-} from '@superone/cursor/cursor-model-selection'
 import type { ChatStore, SessionWriteTarget } from '../types'
 import { getDefaultEffortForModel } from '../defaults'
 import {
@@ -19,14 +13,10 @@ import {
   updateProjectState,
 } from '../index'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
-import { patchSessionSettings, pushSettings } from '@/lib/session-client'
+import { pushSettings } from '@/lib/session-client'
 import { codexModelCacheKey } from '../helpers/codex-model-cache'
 import { resolveAcpModeForModelSwitch } from '../harness/acp-handler'
-import {
-  ensureCursorHarnessModelPrefsLoaded,
-  persistCursorHarnessModelParams,
-  resolveCursorHarnessModelParams,
-} from '../helpers/cursor-model-prefs'
+import { applyCursorModelSelection, resolveCursorEffortParamPatch } from './cursor-slice'
 
 /**
  * Claude-harness-specific user setters. None touch Codex state; they
@@ -46,13 +36,8 @@ export interface ClaudeSlice {
   /** Claude Ultracode for this session: every substantive turn runs as a multi-agent workflow. */
   setClaudeFastMode: (enabled: boolean, target?: SessionWriteTarget) => void
   setUltracode: (enabled: boolean, target?: SessionWriteTarget) => void
-  setCursorModelParams: (params: Record<string, string>, target?: SessionWriteTarget) => void
-  setCursorModelParam: (id: string, value: string, target?: SessionWriteTarget) => void
   setFastMode: (enabled: boolean) => void
-  setSelectedAcpMode: (modeId: string, target?: SessionWriteTarget) => void
-  setSelectedAcpContextWindow: (contextWindow: number, target?: SessionWriteTarget) => Promise<boolean>
   refreshClaudeResources: (force?: boolean) => Promise<void>
-  refreshCursorSlashItems: (projectPath?: string) => Promise<void>
   /** Load Claude models for a project (remote → node provider store; local → connectClaude). */
   loadClaudeModels: (projectPath: string, apiProviderId: string | null, force?: boolean) => Promise<ModelOption[]>
 }
@@ -266,34 +251,6 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
     }
   },
 
-  setSelectedAcpMode: (modeId, target) => {
-    const { projectPath, sessionId, session } = resolveWriteScope(get(), target)
-    if (!projectPath) return
-    const provider = session.sessionProvider ?? session.preferredProvider
-    if (!isAcpProtocolHarness(provider)) return
-    if (session.selectedAcpModeId === modeId) return
-    set((s) => commitPerSession(s, target, () => ({ selectedAcpModeId: modeId })))
-    pushSettings(projectPath, sessionId, session, { mode: modeId })
-  },
-
-  setSelectedAcpContextWindow: async (contextWindow, target) => {
-    const { projectPath, sessionId, session } = resolveWriteScope(get(), target)
-    if (!projectPath) return false
-    const provider = session.sessionProvider ?? session.preferredProvider
-    if (!isAcpProtocolHarness(provider)) return false
-    const previous = session.selectedAcpContextWindow ?? null
-    if (previous === contextWindow) return true
-    set((s) => commitPerSession(s, target, () => ({ selectedAcpContextWindow: contextWindow })))
-    try {
-      if (sessionId) await patchSessionSettings(projectPath, sessionId, session, { contextWindow })
-      return true
-    } catch (err) {
-      set((s) => commitPerSession(s, target, () => ({ selectedAcpContextWindow: previous })))
-      toast.error(err instanceof Error ? err.message : String(err))
-      return false
-    }
-  },
-
   setSelectedModel: (model, target) => {
     const state = get()
     const { projectPath: activeProject, sessionId, session } = resolveWriteScope(state, target)
@@ -310,42 +267,9 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
         contextWindow: null,
         ...(isAcpProtocolHarness(provider) && session.selectedModel !== model ? { selectedAcpContextWindow: null } : {}),
         ...(acpModeSwitch?.changed ? { selectedAcpModeId: acpModeSwitch.nextModeId } : {}),
-      }
-      if (provider === 'cursor') {
-        const cursorModels = state.harnessResources.cursor?.models ?? []
-        const cursorModel = cursorModels.find((m) => m.id === model)
-        // Persist outgoing session params into harness config before switching.
-        if (
-          session.selectedModel
-          && session.selectedModel !== model
-          && Object.keys(session.cursorModelParams).length > 0
-        ) {
-          persistCursorHarnessModelParams(session.selectedModel, session.cursorModelParams)
-        }
-        const applyResolved = () => {
-          const params = resolveCursorHarnessModelParams(model, cursorModel)
-          const effortParam = findCursorEffortParam(cursorModel?.parameters ?? [])
-          const nextEffort = effortParam
-            ? (normalizeEffortValue(params[effortParam.id] ?? '') ?? undefined)
-            : undefined
-          return { params, nextEffort }
-        }
-        const { params, nextEffort } = applyResolved()
-        patch.cursorModelParams = params
-        patch.selectedEffort = nextEffort
-        patch.effortUserChosen = true
-        void ensureCursorHarnessModelPrefsLoaded().then(() => {
-          const live = getScopedPerSession(get(), target)
-          if ((live.sessionProvider ?? live.preferredProvider) !== 'cursor') return
-          if (live.selectedModel !== model) return
-          const resolved = applyResolved()
-          set((s) => commitPerSession(s, target, () => ({
-            cursorModelParams: resolved.params,
-            selectedEffort: resolved.nextEffort,
-            effortUserChosen: true,
-          })))
-          if (resolved.nextEffort) pushSettings(activeProject, sessionId, live, { effort: resolved.nextEffort })
-        })
+        ...(provider === 'cursor'
+          ? applyCursorModelSelection(state, session, model, activeProject, sessionId, target, set, get)
+          : {}),
       }
       set((s) => commitPerSession(s, target, () => patch))
       pushSettings(activeProject, sessionId, session, {
@@ -388,20 +312,8 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
       effortUserChosen: true,
     }
     if (provider === 'cursor' && effort) {
-      const cursorModel = state.harnessResources.cursor?.models.find((m) => m.id === session.selectedModel)
-      const effortParam = findCursorEffortParam(cursorModel?.parameters ?? [])
-      if (effortParam) {
-        const raw = effortParam.values.find((v) =>
-          v.value === effort || normalizeEffortValue(v.value) === effort,
-        )?.value
-        if (raw) {
-          const nextParams = { ...session.cursorModelParams, [effortParam.id]: raw }
-          patch.cursorModelParams = nextParams
-          if (session.selectedModel) {
-            persistCursorHarnessModelParams(session.selectedModel, nextParams)
-          }
-        }
-      }
+      const nextParams = resolveCursorEffortParamPatch(state, session, effort)
+      if (nextParams) patch.cursorModelParams = nextParams
     }
     set((s) => commitPerSession(s, target, () => patch))
     pushSettings(activeProject, sessionId, session, { effort: effort ?? null })
@@ -424,62 +336,7 @@ export const createClaudeSlice: StateCreator<ChatStore, [], [], ClaudeSlice> = (
     pushSettings(activeProject, sessionId, session, { ultracode: enabled })
   },
 
-  setCursorModelParams: (params, target) => {
-    const state = get()
-    const { projectPath: activeProject, session } = resolveWriteScope(state, target)
-    if (!activeProject) return
-    // An identical map still mints a new object reference, which re-arms any
-    // effect that both depends on cursorModelParams and writes it. With an
-    // empty seed map (degraded Cursor catalog: params present, values missing)
-    // that effect never satisfies its own guard and storms React into #185.
-    if (shallow(session.cursorModelParams, params)) return
-    set((s) => commitPerSession(s, target, () => ({ cursorModelParams: params })))
-    if (session.selectedModel) {
-      persistCursorHarnessModelParams(session.selectedModel, params)
-    }
-  },
-
-  setCursorModelParam: (id, value, target) => {
-    const state = get()
-    const { projectPath: activeProject, sessionId, session } = resolveWriteScope(state, target)
-    if (!activeProject) return
-    const nextParams = { ...session.cursorModelParams, [id]: value }
-    const patch: Partial<import('../types').PerSessionState> = { cursorModelParams: nextParams }
-    const cursorModel = state.harnessResources.cursor?.models.find((m) => m.id === session.selectedModel)
-    const effortParam = findCursorEffortParam(cursorModel?.parameters ?? [])
-    if (effortParam && effortParam.id === id) {
-      const nextEffort = normalizeEffortValue(value)
-      if (nextEffort) {
-        patch.selectedEffort = nextEffort
-        patch.effortUserChosen = true
-      }
-    }
-    set((s) => commitPerSession(s, target, () => patch))
-    if (session.selectedModel) {
-      persistCursorHarnessModelParams(session.selectedModel, nextParams)
-    }
-    if (patch.selectedEffort) pushSettings(activeProject, sessionId, session, { effort: patch.selectedEffort })
-  },
-
   setFastMode: (enabled) => {
     void window.app.setFastMode(enabled)
-  },
-
-  refreshCursorSlashItems: async (projectPath) => {
-    const target = projectPath ?? get().activeProject
-    if (!target || parseRemoteProjectKey(target)) return
-    const current = get().projectSessions[target]
-    if (current?._cursorSlashItemsLoading) return
-    set((s) => updateProjectState(s, target, () => ({ _cursorSlashItemsLoading: true })))
-    try {
-      const items = await window.app.cursorListSlashItems(target)
-      set((s) => updateProjectState(s, target, () => ({
-        _cursorSlashItems: Array.isArray(items) ? items : [],
-        _cursorSlashItemsLoading: false,
-      })))
-    } catch (error) {
-      console.warn('[refreshCursorSlashItems] Failed:', error)
-      set((s) => updateProjectState(s, target, () => ({ _cursorSlashItemsLoading: false })))
-    }
   },
 })

@@ -33,7 +33,7 @@ const EQUALITY = new Set([
 const EXEMPT = [
   /^harness-ui\/(claude|codex|acp|opencode|cursor|dsh)\//,
   /^stores\/chat-store\/harness\//,
-  /^stores\/chat-store\/slices\/(codex|opencode)-slice\.ts$/,
+  /^stores\/chat-store\/slices\/(codex|opencode|acp|cursor)-slice\.ts$/,
 ]
 
 function sourceFiles(dir: string): string[] {

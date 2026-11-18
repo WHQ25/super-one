@@ -184,7 +184,7 @@
     "reason": "ACP model probe refresh, Codex cwd, ACP and OpenCode agent restore"
   },
   "stores/chat-store/slices/claude-slice.ts": {
-    "count": 6,
+    "count": 5,
     "reason": "model setter side effects: ACP context window, Cursor model params"
   },
   "stores/chat-store/slices/event-slice.ts": {

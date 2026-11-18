@@ -398,6 +398,8 @@ const harnessHandlers: HarnessHandlerMap = {
 
 import { createToolSlice } from './slices/tool-slice'
 import { createClaudeSlice } from './slices/claude-slice'
+import { createAcpSlice } from './slices/acp-slice'
+import { createCursorSlice } from './slices/cursor-slice'
 import { createCodexSlice } from './slices/codex-slice'
 import { createSessionSlice } from './slices/session-slice'
 import { createCoreSlice } from './slices/core-slice'
@@ -423,6 +425,8 @@ function projectDirsSink(
 export const useChatStore = create<ChatStore>((set, get, store) => ({
   ...createToolSlice(set, get, store),
   ...createClaudeSlice(set, get, store),
+  ...createAcpSlice(set, get, store),
+  ...createCursorSlice(set, get, store),
   ...createCodexSlice(set, get, store),
   ...createSessionSlice(set, get, store),
   ...createCoreSlice(set, get, store),

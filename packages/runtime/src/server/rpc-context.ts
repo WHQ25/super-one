@@ -306,7 +306,7 @@ export interface SessionHostPort {
    * collaboration channels (docs/features/session-continuation.md).
    */
   createOnHost?(input: SessionRuntimeInput<'create'> & SessionCreateSelections & { continuesFrom?: string }, options: { settings: NodeSessionSettings; assertCreate(): void }): Promise<NodeSessionRecord>
-  get(sessionId: string): NodeSessionRecord | null
+  get(sessionId: string, options?: { includeTranscript?: boolean }): NodeSessionRecord | null
   /**
    * Newest first; `limit`/`offset` paginate after sorting. No projectId spans
    * every project. `rootsOnly` pages parents and reports `childCount`.

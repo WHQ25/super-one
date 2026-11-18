@@ -13,7 +13,7 @@ import { boundaryCursor } from '@superone/shared/transcript-boundary'
 import { contentDigest, utf8Length } from '@superone/shared/transcript-window/content-digest'
 import { foldMessageFragments, foldRevision, selectFoldPage, type FoldedFragments } from '@superone/shared/transcript-window/folds'
 import { fragmentDigest, MessageFragmenter, textBody, type FragmentEntry, type MessageFragments } from '@superone/shared/transcript-window/fragment-message'
-import { selectTranscriptWindow, windowAnchor, type SelectedWindow, type WindowSource } from '@superone/shared/transcript-window/select-window'
+import { coverageMap, matchWindowCoverage, selectTranscriptWindow, windowAnchor, wireWindowFragment, type SelectedWindow, type WindowCoverageMap, type WindowSource } from '@superone/shared/transcript-window/select-window'
 import { planProcessFolds, type ProcessFoldPlan } from '@superone/chat-core/turn-process/process-folds'
 import { projectWindowMessage } from './window-projection'
 import { arrayTranscript, type TranscriptAccess } from './transcript-access'
@@ -138,11 +138,18 @@ class SessionFragments {
   }
 
   source(transcript: TranscriptAccess, folds = false, cuts?: ReadonlyMap<string, readonly ChatMessage[]>): WindowSource {
+    // One synchronous window read can revisit a streaming row for each fragment it selects.
+    const rows = new Map<number, MessageFragments>()
     return {
       count: transcript.count,
       at: (index) => {
-        const message = transcript.messageAt(index)
-        return this.of(message, folds, cuts?.get(message.id))
+        let row = rows.get(index)
+        if (!row) {
+          const message = transcript.messageAt(index)
+          row = this.of(message, folds, cuts?.get(message.id))
+          rows.set(index, row)
+        }
+        return row
       },
       indexOf: (messageId) => transcript.indexOf(messageId),
     }
@@ -213,7 +220,9 @@ export class WindowViews {
     const session = this.session(input.sessionId)
     session.fragments.bind(transcript)
     const cuts = boundaryCuts(input.messages ?? transcript.boundaryMessages?.() ?? [])
-    const selected = selectTranscriptWindow(session.fragments.source(transcript, folds, cuts), input.request, input.budget)
+    const source = session.fragments.source(transcript, folds, cuts)
+    const coverage = coverageMap(input.request.have)
+    const selected = selectTranscriptWindow(source, input.request, input.budget, coverage)
     const extend = input.request.anchor && input.request.direction !== 'around' ? input.request.direction ?? 'before' : null
     const previous = session.holders.get(input.holder)
     const held: HeldWindow = extend && previous?.folds === folds ? previous
@@ -225,11 +234,8 @@ export class WindowViews {
     // the live patch.
     const liveBudget = Math.min(input.budget.maxBytes, LIVE_MESSAGE_BUDGET.maxBytes)
     if (!extend) {
-      selected.messages = selected.messages.map((message) => {
-        const source = transcript.messageAt(message.index)
-        return clipWindowMessage(message, session.fragments.of(source, folds, cuts.get(source.id)), liveBudget)
-      })
-      selected.messages = withCuttingRows(selected.messages, transcript, session.fragments, folds, cuts)
+      selected.messages = selected.messages.map((message) => clipWindowMessage(message, source.at(message.index), liveBudget, coverage))
+      selected.messages = withCuttingRows(selected.messages, source, cuts, coverage)
       const first = selected.messages[0]
       const last = selected.messages[selected.messages.length - 1]
       if (first && last) {
@@ -238,11 +244,17 @@ export class WindowViews {
       }
     }
     for (const message of selected.messages) {
-      const source = transcript.messageAt(message.index)
-      const fragments = session.fragments.of(source, folds, cuts.get(source.id))
+      const fragments = source.at(message.index)
       // A joined message keeps the source the client last caught up with, so the next diff still sends what changed since.
-      if (!held.messages.has(message.id)) held.seen.set(message.id, source)
+      if (!held.messages.has(message.id)) held.seen.set(message.id, transcript.messageAt(message.index))
       recordMessage(held, message, fragments, extend === 'before' ? 'before' : extend === 'after' ? 'after' : null)
+      // Record the full manifest for subsequent patches before shortening this reply.
+      const have = coverage.get(message.id)
+      if (have?.matchesFragments && have.row && !message.meta && !message.omittedBefore && !message.omittedAfter) {
+        delete message.metaDigest
+        message.reuseRow = have.row[1]
+        message.fragments = []
+      }
     }
     const ids = selected.messages.map((message) => message.id)
     held.order = extend === 'before' ? [...ids, ...held.order.filter((id) => !ids.includes(id))]
@@ -422,7 +434,7 @@ function recordMessage(held: HeldWindow, message: TranscriptWindowMessage, fragm
     return
   }
   held.messages.set(message.id, {
-    metaDigest: message.metaDigest, keys: sent, fragments: record(sent),
+    metaDigest: fragments.metaDigest, keys: sent, fragments: record(sent),
     omittedBefore: message.omittedBefore, omittedAfter: message.omittedAfter,
   })
 }
@@ -581,15 +593,6 @@ function clipLive(current: MessageFragments, pin: number, maxBytes: number): { e
   }
 }
 
-function wireFragment(fragment: FragmentEntry): TranscriptWindowFragment {
-  return {
-    key: fragment.key,
-    digest: fragment.digest,
-    ...(fragment.contentKey ? { contentKey: fragment.contentKey } : {}),
-    body: fragment.body,
-  }
-}
-
 /**
  * Compact rows of a live-pinned reply that the budget walk never reached.
  * They are one fragment each and name the cuts. A settled tail does not pull
@@ -597,28 +600,26 @@ function wireFragment(fragment: FragmentEntry): TranscriptWindowFragment {
  */
 function withCuttingRows(
   messages: TranscriptWindowMessage[],
-  transcript: TranscriptAccess,
-  fragments: SessionFragments,
-  folds: boolean,
+  source: WindowSource,
   cuts: ReadonlyMap<string, readonly ChatMessage[]>,
+  coverage: WindowCoverageMap,
 ): TranscriptWindowMessage[] {
   const held = new Set(messages.map((message) => message.id))
   const added: TranscriptWindowMessage[] = []
   for (const message of messages) {
-    const source = transcript.messageAt(message.index)
-    if (!livePin(fragments.of(source, folds, cuts.get(source.id)))) continue
-    for (const cut of cuts.get(source.id) ?? []) {
+    if (!livePin(source.at(message.index))) continue
+    for (const cut of cuts.get(message.id) ?? []) {
       if (held.has(cut.id)) continue
-      const index = transcript.indexOf(cut.id)
+      const index = source.indexOf(cut.id)
       if (index < 0) continue
-      const row = transcript.messageAt(index)
-      const view = fragments.of(row, folds, cuts.get(row.id))
+      const view = source.at(index)
+      const have = matchWindowCoverage(coverage, view)
       added.push({
         id: view.id,
         index,
         metaDigest: view.metaDigest,
-        meta: view.meta,
-        fragments: view.fragments.map(wireFragment),
+        ...(have?.meta === view.metaDigest ? {} : { meta: view.meta }),
+        fragments: view.fragments.map((entry) => wireWindowFragment(entry, have?.f.get(entry.key))),
         omittedBefore: 0,
         omittedAfter: 0,
       })
@@ -630,11 +631,12 @@ function withCuttingRows(
 }
 
 /** A fresh tail replaces a streaming turn's selected slice with its closed prefix and live suffix. */
-function clipWindowMessage(message: TranscriptWindowMessage, fragments: MessageFragments, maxBytes: number): TranscriptWindowMessage {
+function clipWindowMessage(message: TranscriptWindowMessage, fragments: MessageFragments, maxBytes: number, coverage: WindowCoverageMap): TranscriptWindowMessage {
   const pin = livePin(fragments)
   if (!pin) return message
   const clip = clipLive(fragments, pin, maxBytes)
-  return { ...message, fragments: clip.entries.map(wireFragment), omittedBefore: clip.omittedBefore, omittedAfter: 0 }
+  const have = coverage.get(message.id)
+  return { ...message, fragments: clip.entries.map((entry) => wireWindowFragment(entry, have?.f.get(entry.key))), omittedBefore: clip.omittedBefore, omittedAfter: 0 }
 }
 
 function diffClipped(

@@ -1,4 +1,4 @@
-import { hostLinkOf, restoreSession, type RelayClient, type SavedPairing, type RestoredSession } from '@superone/relay-client'
+import { hostLinkOf, restoreSession, restoreWindowSession, TranscriptWindowUnsupportedError, type RestoredWindowSession, type CachedWindow, type RelayClient, type SavedPairing, type RestoredSession } from '@superone/relay-client'
 import type { LanAddress } from './device-discovery'
 import type { SessionRef } from '@superone/shared/environment/refs'
 import type { SessionLinkTarget, SessionLinkMetadataResult } from '@superone/shared/session-link'
@@ -13,7 +13,7 @@ export interface SessionLinkPreparation {
   pairing?: SavedPairing
   workspace?: Awaited<ReturnType<typeof readConnectionWorkspace>>
   target: SessionLinkTarget
-  restored: RestoredSession
+  restored: RestoredSession | RestoredWindowSession
   ingest(events: unknown[], epoch: number): void
   commit(): void
   adoptConnection(): void
@@ -43,6 +43,9 @@ type SessionLinkOptions = {
   ref: SessionRef
   client: RelayClient
   currentPairingId: string
+  activeEnvironmentId?: string | null
+  viewport?: { width: number; height: number }
+  cachedWindow?(pairingId: string, target: SessionLinkTarget): CachedWindow | null
   pairings: SavedPairing[]
   identity: { deviceId: string; deviceName: string }
   resolveLan(pairingId: string): Promise<LanAddress | null>
@@ -114,7 +117,20 @@ export async function resolveSessionLink(options: SessionLinkOptions): Promise<R
           if (route) throw new Error('Session link already restored')
           route = routedClient(base)
           options.onCandidate(route)
-          const restored = await restoreSession(route.client, hostPath, ref.sessionId)
+          // A window replaces this phone's previous holder on the same source.
+          // A side connection or a different source has an independent holder.
+          const source = options.activeEnvironmentId ?? options.client.followedSession?.()?.environmentId
+          const independent = connection || source !== ref.environmentId
+          let restored: SessionLinkPreparation['restored']
+          if (independent) {
+            try {
+              restored = await restoreWindowSession(route.client, hostPath, ref.sessionId,
+                options.cachedWindow?.(pairing?.id ?? options.currentPairingId, target) ?? null, { viewport: options.viewport })
+            } catch (error) {
+              if (!(error instanceof TranscriptWindowUnsupportedError)) throw error
+              restored = await restoreSession(route.client, hostPath, ref.sessionId)
+            }
+          } else restored = await restoreSession(route.client, hostPath, ref.sessionId)
           assertCurrent()
           if (restored.snapshot.sourceEnvironmentId !== ref.environmentId) throw new Error('Session owner mismatch')
           return {

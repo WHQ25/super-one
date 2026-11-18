@@ -7,6 +7,7 @@ import type { TranscriptWindowRequest, TranscriptWindowResult } from '@superone/
 import type { FoldRange } from '@superone/shared/transcript-window/folds'
 import { foldMessageFragments, selectFoldPage } from '@superone/shared/transcript-window/folds'
 import { fragmentMessage } from '@superone/shared/transcript-window/fragment-message'
+import { omitHeldRestoreData } from '@superone/shared/transcript-window/restore-data'
 import { selectTranscriptWindow } from '@superone/shared/transcript-window/select-window'
 import { applyWindowResult, EMPTY_WINDOW_LOOKUP } from '@superone/shared/transcript-window/window-store'
 import { TranscriptWindowSync } from '@superone/shared/transcript-window/window-sync'
@@ -40,6 +41,41 @@ function windowResult(
 }
 
 describe('loadRemoteTranscriptWindow', () => {
+  it('restores voice rows from the negotiated desktop projection and accepts a full legacy reply', async () => {
+    const input = { sessionId: 's' }
+    let segments = [{ text: 'talk '.repeat(100) }]
+    const read = async (request: TranscriptWindowRequest) => {
+      const result = windowResult([], request)
+      return { ...result, state: { ...result.state, realtimeSegments: segments } }
+    }
+    const cold = await loadRemoteTranscriptWindow(read, null, input)
+    const warm = await loadRemoteTranscriptWindow(async request => {
+      expect(request.haveRestore).toBeTruthy()
+      const reply = omitHeldRestoreData(await read(request), request.haveRestore)
+      expect(reply.state?.realtimeSegments).toBeUndefined()
+      return reply
+    }, cold.held, input)
+    expect(warm.snapshot.state.realtimeSegments).toEqual(segments)
+    segments = []
+    const changed = await loadRemoteTranscriptWindow(read, warm.held, input)
+    expect(changed.snapshot.state.realtimeSegments).toEqual([])
+  })
+
+  it('sizes a cold tail for a measured pane and preserves the older history anchor', async () => {
+    const messages = conversation(200)
+    const requests: TranscriptWindowRequest[] = []
+    const read = async (request: TranscriptWindowRequest & { holder: string }) => {
+      requests.push(request)
+      return windowResult(messages, request)
+    }
+    const narrow = await loadRemoteTranscriptWindow(read, null, { sessionId: 's', viewport: { width: 350, height: 600 } })
+    const full = await loadRemoteTranscriptWindow(read, null, { sessionId: 's' })
+    expect(requests[0].budget?.targetChars).toBeLessThan(DESKTOP_WINDOW_BUDGET.targetChars)
+    expect(narrow.snapshot.messages.length).toBeLessThan(full.snapshot.messages.length)
+    expect(narrow.snapshot.transcriptWindow?.older).toBeTruthy()
+    expect(narrow.snapshot.messages.at(-1)?.id).toBe(full.snapshot.messages.at(-1)?.id)
+  })
+
   it('sends coverage on the way back to a held session', async () => {
     const messages = conversation(4)
     const requests: TranscriptWindowRequest[] = []

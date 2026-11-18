@@ -9,6 +9,7 @@ import type { ChatMessage, ContentBlock, ProcessFold } from '@superone/shared/ag
 import { applyDescriptionPersonaLabel, isAlwaysHiddenToolName, isSuperoneMcpServerName, parseMcpToolName } from '@superone/shared/tool-ui'
 import { SUGGEST_TASK_TOOL_NAME, suggestedTaskIdFromResult } from '@superone/shared/suggested-task'
 import { resolveMcpServerIconFromMap } from '@superone/shared/mcp-server-icon'
+import { isRemoteToolHeader } from '@superone/shared/remote-tool-header'
 import { mcpAppToolFailed } from '@superone/shared/mcp-apps'
 import { isHiddenToolBlock } from './presenters/tool-display'
 import { resolveMarkdownFileLinks } from './presenters/markdown-file-links'
@@ -60,7 +61,7 @@ import { AgentProfileToolBlockPresenter, isAgentProfileToolName } from './presen
 import { ConfigApplyBlockPresenter } from './presenters/ConfigApplyBlock'
 import { MediaProvidersBlockPresenter } from './presenters/MediaProvidersBlock'
 import {
-  SessionArchiveToolBlockPresenter,
+  type SessionArchiveToolBlockPresenterProps,
   isSessionArchiveToolName,
 } from './presenters/SessionArchiveToolBlock'
 import {
@@ -209,17 +210,18 @@ function PortableClaudeToolRow(props: TurnToolPresenterProps & { trailing?: Reac
 }
 
 /**
- * Progressive-loading shell for a tool that has its own presenter. Fetches the
- * projected detail on mount so the dedicated row can show its real header
- * (`Sessions Listed`, `Settings Read`, …) instead of a generic MCP fallback.
+ * A dedicated presenter can draw a projected header immediately. Older hosts
+ * and tools whose visible UI needs the full result still load it on mount.
  */
 function DeferredDedicatedClaudeTool({
   brandIconSrc,
   ...props
 }: TurnToolPresenterProps & { brandIconSrc?: string }) {
   const complete = props.status !== 'streaming'
-  const { detail, text, error, status, retry } = useDeferredToolDetail(props.remoteDetail, true, complete, props.toolUseId)
-  const ready = Boolean(text) || Boolean(error)
+  const [expanded, setExpanded] = useState(false)
+  const hasHeader = isRemoteToolHeader(props.result)
+  const { detail, text, error, status, retry } = useDeferredToolDetail(props.remoteDetail, !hasHeader || expanded, complete, props.toolUseId)
+  const ready = hasHeader || Boolean(text) || Boolean(error)
   const merged: TurnToolPresenterProps = {
     ...props,
     ...detail,
@@ -230,8 +232,8 @@ function DeferredDedicatedClaudeTool({
   }
   return (
     <>
-      {renderDedicatedTool(merged, brandIconSrc)}
-      <DeferredDetailStatus status={error ? status : undefined} onRetry={retry} />
+      {renderDedicatedTool(merged, brandIconSrc, hasHeader ? { onExpandedChange: setExpanded, detailStatus: status, onDetailRetry: retry } : undefined)}
+      {!hasHeader && <DeferredDetailStatus status={error ? status : undefined} onRetry={retry} />}
     </>
   )
 }
@@ -241,7 +243,7 @@ function DeferredDedicatedClaudeTool({
  * none and must render as `PortableToolRow`. The deferred path uses that answer to choose
  * `DeferredDedicatedClaudeTool` (own chrome) vs `DeferredTool` (generic row, result in-place).
  */
-function renderDedicatedTool(props: TurnToolPresenterProps, brandIconSrc?: string): ReactNode | null {
+function renderDedicatedTool(props: TurnToolPresenterProps, brandIconSrc?: string, deferred?: SessionArchiveToolBlockPresenterProps['deferred']): ReactNode | null {
   const browserOp = portableBrowserOp(props.toolName, props.input)
   const computerOp = portableComputerOp(props.toolName)
   const deviceOp = portableDeviceOp(props.toolName)
@@ -352,6 +354,7 @@ function renderDedicatedTool(props: TurnToolPresenterProps, brandIconSrc?: strin
     const isDenied = Boolean(props.result?.startsWith('[denied] '))
     return (
       <PortableSessionArchive
+        deferred={deferred}
         toolName={collabToolName}
         params={parseRecord(props.input)}
         result={isDenied ? props.result?.slice('[denied] '.length) : props.result}

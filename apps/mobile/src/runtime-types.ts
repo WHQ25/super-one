@@ -28,6 +28,7 @@ export type ChatRuntimeHooks = {
   onSessionRecap?: (sessionId: string) => void
   transcripts?: SessionTranscriptCache
   pairingId?: () => string | null
+  cacheEnvironmentId?: string | null
   /** Open sessions as transcript windows on hosts that serve them, sized to this viewport. */
   transcriptWindow?: { viewport(): { width: number; height: number } | undefined }
 }

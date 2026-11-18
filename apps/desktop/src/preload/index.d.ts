@@ -1202,7 +1202,7 @@ export interface EnvironmentAPI extends MediaComposerAPI {
     provider?: string
     messageCount: number
   }>
-  getSession(connectionId: string, sessionId: string): Promise<unknown>
+  getSession(connectionId: string, sessionId: string, options?: { includeTranscript?: boolean }): Promise<unknown>
   /** Node-local AI provider store. */
   listRemoteCredentials(connectionId: string): Promise<unknown>
   /** Claude subscription accounts on that node. */
@@ -1251,6 +1251,7 @@ export interface EnvironmentAPI extends MediaComposerAPI {
       full?: boolean
       /** Chat open and history paging. Full reads and the realtime refresh omit it. */
       transcript?: boolean
+      viewport?: { width: number; height: number }
       anchor?: { messageId: string; key?: string }
       direction?: 'before' | 'after' | 'around'
     },

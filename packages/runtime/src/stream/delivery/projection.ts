@@ -1,3 +1,4 @@
+import { compactToolHeader } from './tool-header'
 import { compactMediaToolResult, revealTodoResults } from './remote-content'
 import { codexToolDetail, nestedCodexItem, deferTool, isFileMutationChild, projectCodexTool, projectTool, taskFileChanges, toolDetail } from './progressive-tools'
 import type { AgentEvent, BashEditDiff, ChatMessage, ContentBlock } from '@superone/shared/agent-types'
@@ -34,30 +35,39 @@ function projectBashEditDiff(diff: BashEditDiff): BashEditDiff {
 }
 
 export function projectProgressiveMessage(message: ChatMessage): ChatMessage {
-  const deferredIds = new Set(message.content.flatMap(block => 'toolName' in block && deferTool(block.toolName) ? [block.toolUseId] : []))
-  const bashIds = new Set(message.content.flatMap(block => 'toolName' in block && block.toolName === 'Bash' ? [block.toolUseId] : []))
+  return projectToolHeaders(message, false)
+}
+
+/** session.load readers still reduce the original input and result shapes. */
+export function projectToolHeaders(message: ChatMessage, windowHeaders: boolean): ChatMessage {
+  const deferredTools = new Map(message.content.flatMap(block => 'toolName' in block && deferTool(block.toolName) ? [[block.toolUseId, block] as const] : []))
   const containerIds = new Set(message.content.flatMap(block => isChildContainer(block) ? [block.toolUseId] : []))
-  const content = message.content.map((block, index): ContentBlock => block.type === 'thinking'
-    ? { ...block, thinking: '', remoteDetail: reference(message.id, 'thinking', index) }
-    : 'toolName' in block
-      ? (isSubagentToolName(block.toolName) ? projectContainer(message, block) : projectTool(block, reference(message.id, 'tool', block.toolUseId)))
-    : block.type === 'tool_result' && !block.app && deferredIds.has(block.toolUseId)
-      ? {
-        type: 'tool_result',
-        toolUseId: block.toolUseId,
-        // Screenshots are the visible UI of the row, same bargain as widget/media
-        // tools: keep the path in the summary so expand can load the image.
-        summary: compactMediaToolResult(block.summary) ?? '',
-        isError: block.isError,
-        ...(block.exitCode !== undefined ? { exitCode: block.exitCode } : {}),
-        parentToolUseId: block.parentToolUseId,
-        ...(bashIds.has(block.toolUseId) && block.bashEditDiff ? { bashEditDiff: projectBashEditDiff(block.bashEditDiff) } : {}),
-      } : block).filter(block => !('parentToolUseId' in block) || !block.parentToolUseId || !containerIds.has(block.parentToolUseId))
+  const content = message.content.map((block, index): ContentBlock => {
+    if (block.type === 'thinking') return { ...block, thinking: '', remoteDetail: reference(message.id, 'thinking', index) }
+    if ('toolName' in block) return isSubagentToolName(block.toolName)
+      ? projectContainer(message, block) : projectTool(block, reference(message.id, 'tool', block.toolUseId), windowHeaders)
+    if (block.type !== 'tool_result' || block.app) return block
+    const call = deferredTools.get(block.toolUseId)
+    if (!call) return block
+    const denied = windowHeaders && block.summary.startsWith('[denied] ')
+    const header = windowHeaders && !denied && !block.isError && !block.isTimedOut ? compactToolHeader(call.toolName, block.summary, call.input) : undefined
+    return {
+      type: 'tool_result',
+      toolUseId: block.toolUseId,
+      // A screenshot path and a dedicated header both affect the collapsed row.
+      summary: denied ? '[denied] ' : header ?? compactMediaToolResult(block.summary) ?? '',
+      ...(windowHeaders && block.isTimedOut ? { isTimedOut: true } : {}),
+      isError: block.isError,
+      ...(block.exitCode !== undefined ? { exitCode: block.exitCode } : {}),
+      parentToolUseId: block.parentToolUseId,
+      ...(call.toolName === 'Bash' && block.bashEditDiff ? { bashEditDiff: projectBashEditDiff(block.bashEditDiff) } : {}),
+    }
+  }).filter(block => !('parentToolUseId' in block) || !block.parentToolUseId || !containerIds.has(block.parentToolUseId))
   const codex = message.metadata?.codex
   return {
     ...message, content,
     ...(codex ? { metadata: { ...message.metadata, codex: { ...codex, items: codex.items.map(item => item.type === 'reasoning'
-      ? { ...item, text: '', remoteDetail: reference(message.id, 'reasoning', item.id) } : projectCodexTool(item, reference(message.id, 'item', item.id))) } } } : {}),
+      ? { ...item, text: '', remoteDetail: reference(message.id, 'reasoning', item.id) } : projectCodexTool(item, reference(message.id, 'item', item.id), windowHeaders)) } } } : {}),
   }
 }
 
@@ -165,7 +175,7 @@ function shellContainerOf(message: ChatMessage, parentId: string): Extract<Conte
 }
 
 /** Strip all entry points, including completion metadata and reconnect snapshots. */
-export function projectProgressiveEvent(event: AgentEvent, messages: readonly ChatMessage[]): AgentEvent | null {
+export function projectProgressiveEvent(event: AgentEvent, messages: readonly ChatMessage[], windowHeaders = false): AgentEvent | null {
   // Streamed output only changes an expanded row's detail (sent by `DetailViews`);
   // the collapsed shell is identical, so the delta itself is not worth a frame.
   if (event.type === 'content_delta' && 'toolName' in event.delta && event.delta.outputDelta !== undefined && deferTool(event.delta.toolName)) return null
@@ -188,11 +198,11 @@ export function projectProgressiveEvent(event: AgentEvent, messages: readonly Ch
     }
     if (messages.some(message => message.content.some(block => isChildContainer(block) && block.toolUseId === parentId))) return null
   }
-  return { ...projectEvent(event, messages), remoteView: 'summary' }
+  return { ...projectEvent(event, messages, windowHeaders), remoteView: 'summary' }
 }
-function projectEvent(event: AgentEvent, messages: readonly ChatMessage[]): AgentEvent {
+function projectEvent(event: AgentEvent, messages: readonly ChatMessage[], windowHeaders: boolean): AgentEvent {
   if (event.type === 'message_start' || event.type === 'user_message_appended') {
-    return { ...event, message: projectProgressiveMessage(event.message) }
+    return { ...event, message: projectToolHeaders(event.message, windowHeaders) }
   }
   // A nested agent's launch block stays behind its parent card's detail, so the
   // phone never holds it; left alone, its reducer would take the blockless task
@@ -213,17 +223,17 @@ function projectEvent(event: AgentEvent, messages: readonly ChatMessage[]): Agen
     return { ...event, delta: { ...delta, thinking: '', ...(index >= 0 ? { remoteDetail: reference(event.messageId, 'thinking', index) } : {}) } }
   }
   if (event.type === 'content_delta' && 'toolName' in event.delta) {
-    return { ...event, delta: projectTool(event.delta, reference(event.messageId, 'tool', event.delta.toolUseId)) }
+    return { ...event, delta: projectTool(event.delta, reference(event.messageId, 'tool', event.delta.toolUseId), windowHeaders) }
   }
   if (event.type === 'content_delta' && event.delta.type === 'tool_result' && message) {
     const toolUseId = event.delta.toolUseId
     const revealed = revealTodoResults(message)
-    const projected = projectProgressiveMessage(revealed).content.find(block =>
+    const projected = projectToolHeaders(revealed, windowHeaders).content.find(block =>
       (block.type === 'tool_result' || block.type === 'todo_result') && block.toolUseId === toolUseId)
     if (projected) return { ...event, delta: projected }
   }
   if ('metadata' in event && event.metadata?.codex) {
-    const projected = projectProgressiveMessage({ id: String(messageId), role: 'assistant', status: 'complete', createdAt: '', providerId: 'claude', content: [], metadata: event.metadata })
+    const projected = projectToolHeaders({ id: String(messageId), role: 'assistant', status: 'complete', createdAt: '', providerId: 'claude', content: [], metadata: event.metadata }, windowHeaders)
     return { ...event, metadata: projected.metadata }
   }
   return event

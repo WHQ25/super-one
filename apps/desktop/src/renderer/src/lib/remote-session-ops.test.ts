@@ -203,9 +203,8 @@ describe('hydrateRemoteSession', () => {
     expect(openRemoteSession).not.toHaveBeenCalled()
   })
 
-  it('reads the window beside session.get once the session is already known', async () => {
-    let releaseGet!: (value: unknown) => void
-    getSession.mockReturnValue(new Promise((resolve) => { releaseGet = resolve }))
+  it('opens a known session with the header returned at the window cursor', async () => {
+    getSession.mockClear()
     let releaseOpen!: (value: unknown) => void
     openRemoteSession.mockReturnValue(new Promise((resolve) => { releaseOpen = resolve }))
     const previous = { messages: [], status: 'idle', sessionProvider: 'claude', hostSessionOwned: true }
@@ -217,8 +216,9 @@ describe('hydrateRemoteSession', () => {
       providerId: 'claude',
       transcript: true,
     })
-    releaseGet({ sessionId: 's', harnessId: 'claude', status: 'idle', transcript: [] })
+    expect(getSession).not.toHaveBeenCalled()
     releaseOpen({
+      sessionRow: { sessionId: 's', harnessId: 'claude', title: 'Window header' },
       sessionId: 's',
       messages: [msg('a1', 'Hello')],
       state: { status: 'idle' },
@@ -228,12 +228,14 @@ describe('hydrateRemoteSession', () => {
       summarized: true,
     })
     const { hydrated } = await pending
+    expect(getSession).not.toHaveBeenCalled()
+    expect(hydrated._title).toBe('Window header')
     expect(hydrated.messages.map((message) => message.id)).toEqual(['a1'])
     expect(hydrated.transcriptWindow).toEqual({ older: { messageId: 'a0' }, newer: null, total: 40, summarized: true })
     expect(hydrated.transcriptResyncing).toBe(false)
   })
 
-  it('starts the window read beside session.get on first adopt', async () => {
+  it('uses a metadata-only fallback for an older host on first adopt', async () => {
     openRemoteSession.mockClear()
     openRemoteSession.mockResolvedValue({
       sessionId: 's', messages: [], state: { sessionProvider: 'acp-grok' }, before: null,
@@ -279,7 +281,7 @@ describe('hydrateRemoteSession', () => {
     expect(openRemoteSession).not.toHaveBeenCalled()
   })
 
-  it('observes the eager window read when the row read fails first', async () => {
+  it('surfaces a failed metadata check after a failed window open', async () => {
     getSession.mockRejectedValueOnce(new Error('row down'))
     openRemoteSession.mockReturnValueOnce(new Promise((_resolve, reject) => setTimeout(() => reject(new Error('window down')), 0)))
     const previous = { messages: [], status: 'idle', sessionProvider: 'claude', hostSessionOwned: true }

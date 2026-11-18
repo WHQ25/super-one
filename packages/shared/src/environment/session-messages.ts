@@ -114,6 +114,8 @@ export interface SessionRestoreFacts {
 
 /** `session.load`: a session's reduced state and newest messages at one position. */
 export interface SessionLoadResult {
+  /** Desktop header supplied by a transcript window. */
+  sessionRow?: Record<string, unknown>
   sessionId: string
   /**
    * The read model's session state (status, pending interactions, todos,

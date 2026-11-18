@@ -3,6 +3,8 @@
 import { act, fireEvent, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { PortableMessage } from '@superone/chat-view/PortableMessage'
+import { projectWindowMessage } from '@superone/runtime/stream/delivery/window-projection'
+import { toolDetail } from '@superone/runtime/stream/delivery/progressive-tools'
 import { withCodexContent } from '@superone/shared/codex-content'
 import { installFakeNativeHost } from '@superone/chat-view/fixtures/native-host'
 import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
@@ -165,6 +167,27 @@ describe('deferred tool rows on the phone', () => {
     )
     await waitFor(() => expect(resourceRender.container.textContent).toContain('mcp://context7/react'))
     expect(resourceRender.container.textContent).not.toContain('ReadMcpResource')
+  })
+
+  it('paints the session count without fetching its list, then fetches once on expand', async () => {
+    const message = deferredTurn('mcp__superone__session_list')
+    const sessions = [{ id: 's', title: 'Visible after expansion' }]
+    const result = JSON.stringify({ content: [{ type: 'text', text: JSON.stringify({ count: 1, sessions }) }] })
+    message.content.push({ type: 'tool_result', toolUseId: 'call-1', summary: result })
+    let subscriptions = 0
+    restore = installFakeNativeHost((request, reply) => {
+      if (request.action !== 'subscribeDetail') return
+      subscriptions++
+      queueMicrotask(() => reply({ result: { subscriptionId: request.payload?.subscriptionId, revision: 0,
+        offset: 0, text: toolDetail(message, 'call-1') } }))
+    })
+    const { container } = render(<PortableMessage message={projectWindowMessage(message)} scheme="dark" pendingPermission={null} />)
+    expect(container.textContent).toMatch(/Sessions Listed.*1 session/i)
+    expect(container.textContent).not.toContain(sessions[0].title)
+    expect(subscriptions).toBe(0)
+    await act(async () => { fireEvent.click(container.querySelector('.tool-node > div')!) })
+    await waitFor(() => expect(container.textContent).toContain(sessions[0].title))
+    expect(subscriptions).toBe(1)
   })
 
   it('renders session_list as the archive row, not a superone · session list shell', async () => {

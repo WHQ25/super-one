@@ -1,3 +1,4 @@
+import { omitHeldRestoreData, WindowRestoreCache } from '@superone/shared/transcript-window/restore-data'
 import { randomUUID } from 'node:crypto'
 import type { ControlLease, RpcError, SessionLoadResult, TopicSubscribeInput } from '@superone/shared/environment'
 import { isNodeMutatingCall } from '@superone/shared/environment/rpc-mutating-methods'
@@ -41,6 +42,7 @@ export function createPhoneRpcRouter(resolve: (environmentId: string) => Promise
       const actor = client.clientSessionId
       const owner: RoutedGrantOwner = { active: true }
       const views = new RoutedPhoneDelivery()
+      const restoreCache = new WindowRestoreCache()
       const deliveries = new Map<string, ConnectionDelivery>()
       const subscriptions = new Map<string, { environmentId: string; stream: RemoteTopicStream }>()
       const opening = new Map<string, { environmentId: string; active: boolean }>()
@@ -165,9 +167,16 @@ export function createPhoneRpcRouter(resolve: (environmentId: string) => Promise
             }
             if (method === TRANSCRIPT_WINDOW_METHOD) {
               // The source keeps this phone's window current under its own holder id on the shared feed.
-              const loaded = await target.client.rpc<TranscriptWindowResult>(method, { ...p, holder: actor }, environmentId)
+              // This hop and the phone receive different reader projections.
+              const auxiliary = restoreCache.view(environmentId, String(p.sessionId))
+              const { haveRestore, ...rest } = p
+              const upstream = await target.client.rpc<TranscriptWindowResult>(method, {
+                ...rest, holder: actor, ...(p.includeState !== false && auxiliary.revision ? { haveRestore: auxiliary.revision } : {}),
+              }, environmentId)
+              const loaded = auxiliary.read(upstream)
               if (closed) throw error('unavailable', 'Phone connection closed')
-              return { result: views.window(environmentId, loaded, deliveryFor(environmentId, ctx), actor) }
+              auxiliary.remember(upstream)
+              return { result: omitHeldRestoreData(views.window(environmentId, loaded, deliveryFor(environmentId, ctx), actor), haveRestore) }
             }
             if (method === 'session.load') {
               const loaded = await target.client.rpc<SessionLoadResult>(method, p, environmentId)

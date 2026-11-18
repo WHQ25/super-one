@@ -42,6 +42,7 @@ import {
 import { BashTerminalPresenter } from './tool-block-presenters/BashTerminalPresenter'
 import type { BashEditToolUse } from '@superone/shared/bash-edit-diff'
 import { mcpAppToolFailed } from '@superone/shared/mcp-apps'
+import { isRemoteToolHeader } from '@superone/shared/remote-tool-header'
 import { parsedCommandFromBashInput } from '@superone/shared/codex-command-actions'
 import { CodexCommandBlock } from './CodexCommandBlock'
 import { CodexMcpAuthAction } from './CodexMcpAuthAction'
@@ -391,12 +392,11 @@ export const ToolBlock = memo(function ToolBlock(props: ToolBlockProps) {
 
 /**
  * A summarized row (`remoteDetail`) in a desktop chat: the same desktop block,
- * hydrated from the session's detail. Generic and Bash rows load their body
- * when opened; a block with its own chrome loads when shown, because its
- * collapsed header reads the result.
+ * hydrated from the session's detail. A projected header can paint immediately.
+ * Other dedicated presenters fetch the result their collapsed header reads.
  */
 function DeferredToolBlock({ remoteDetail, ...props }: ToolBlockProps & { remoteDetail: string }) {
-  const onOpen = !hasDedicatedToolRow(props.toolName)
+  const onOpen = isRemoteToolHeader(props.result) || !hasDedicatedToolRow(props.toolName)
   const [expanded, setExpanded] = useState(false)
   const { detail, text, error, status, retry } = useDeferredToolDetail(remoteDetail, onOpen ? expanded : true, props.status !== 'streaming', props.toolUseId)
   const loaded = {

@@ -1,6 +1,7 @@
 import { parsedCommandFromBashInput, resolveCodexCommandActions } from '@superone/shared/codex-command-actions'
 import type { ChatMessage, ContentBlock, CodexFileUpdateChange, CodexMcpToolCallItem, CodexThreadItem, TaskFileChange } from '@superone/shared/agent-types'
 import { bashEditFileChanges } from '@superone/shared/bash-edit-diff'
+import { compactToolHeader, SHELL_INPUT_MAX } from './tool-header'
 import { fileMutationPath, isFileMutationTool } from '@superone/shared/file-mutation'
 import { sanitizeRemoteToolInput, shouldKeepRemoteToolInput } from '@superone/shared/remote-tool-input'
 import { isAlwaysHiddenToolName, isSubagentToolName, normalizeTranscriptTool } from '@superone/shared/tool-ui'
@@ -9,15 +10,13 @@ import { mcpAppMessageAttachments } from '@superone/shared/mcp-apps-state'
 import { isSuggestTaskTool } from '@superone/shared/suggested-task'
 import { compactMediaToolResult, computeToolLineDelta, computeToolMeta, remoteContentPorts, stripMessagesForRemote } from './remote-content'
 
-const SHELL_INPUT_MAX = 1024
-
 /**
  * The collapsed row's input. Past the cap the input is blanked, except that a
  * subagent's header (name, type, team, model, description) must survive: the
  * desktop draws the name tag without expanding, and only `prompt` is ever what
  * pushes an Agent call past the cap.
  */
-function shellInput(toolName: string, input: string): string {
+function shellInput(toolName: string, input: string, windowHeaders: boolean): string {
   // A patch's sanitized paths/counts are the collapsed multi-file header, not
   // source code. Keep them even when several paths exceed the generic 1 KB cap.
   if (isPatchToolName(toolName) || (toolName === 'Edit' && isPatchToolCall(toolName, parseInput(input) ?? {}))) return input
@@ -26,6 +25,14 @@ function shellInput(toolName: string, input: string): string {
   if (command) {
     return JSON.stringify({ command: command.command.slice(0, 160), ...(command.cwd ? { cwd: command.cwd } : {}),
       commandActions: resolveCodexCommandActions(command).map(action => ({ ...action, command: action.command?.slice(0, 160) })) })
+  }
+  if (windowHeaders && toolName === 'Bash') {
+    const params = parseInput(input)
+    // The displayed command preview or description already travels as toolSummary.
+    return JSON.stringify({
+      ...(typeof params?.timeout === 'number' ? { timeout: params.timeout } : {}),
+      ...(params?.run_in_background === true || params?.background === true ? { run_in_background: true } : {}),
+    })
   }
   if (input.length <= SHELL_INPUT_MAX) return input
   if (!isSubagentToolName(toolName)) return '{}'
@@ -154,12 +161,12 @@ function workflowShell(block: Extract<ContentBlock, { toolName: string }>): Part
   }
 }
 
-export function projectTool(block: ContentBlock, ref: string): ContentBlock {
+export function projectTool(block: ContentBlock, ref: string, windowHeaders = false): ContentBlock {
   if (!('toolName' in block) || block.app || !deferTool(block.toolName)) return block
   const input = sanitizeRemoteToolInput(block.toolName, block.input)
   const toolLineDelta = block.toolLineDelta ?? computeToolLineDelta(block.toolName, block.input)
   return { type: block.type, toolName: block.toolName, toolUseId: block.toolUseId,
-    input: shellInput(block.toolName, input), status: block.status, elapsedSeconds: block.elapsedSeconds,
+    input: shellInput(block.toolName, input, windowHeaders), status: block.status, elapsedSeconds: block.elapsedSeconds,
     parentToolUseId: block.parentToolUseId, startedAt: block.startedAt,
     toolSummary: projectedToolSummary(block), toolFilePath: block.toolFilePath,
     ...(toolLineDelta ? { toolLineDelta } : {}),
@@ -233,7 +240,7 @@ function fileChangeLineDelta(changes: CodexFileUpdateChange[]): { added: number;
   }
   return added > 0 || removed > 0 ? { added, removed } : undefined
 }
-export function projectCodexTool(item: CodexThreadItem, ref: string): CodexThreadItem {
+export function projectCodexTool(item: CodexThreadItem, ref: string, windowHeaders = false): CodexThreadItem {
   if (item.type === 'mcp_tool_call' && item.app) return item
   if (item.type === 'collab_tool_call') {
     // Keep only the App branches live; ordinary child detail remains lazy.
@@ -257,24 +264,25 @@ export function projectCodexTool(item: CodexThreadItem, ref: string): CodexThrea
     }) }
   }
   if (item.type === 'mcp_tool_call' && deferTool(item.tool)) {
+    const rawInput = typeof item.arguments === 'string' ? item.arguments : JSON.stringify(item.arguments ?? {})
     return {
       ...item,
       remoteDetail: ref,
-      arguments: sanitizeCodexMcpArguments(item),
-      result: compactCodexMcpResult(item.result),
+      arguments: sanitizeCodexMcpArguments(item, rawInput),
+      result: compactCodexMcpResult(item, rawInput, windowHeaders),
     }
   }
   return item
 }
 
-function sanitizeCodexMcpArguments(item: CodexMcpToolCallItem): unknown {
-  const raw = typeof item.arguments === 'string' ? item.arguments : JSON.stringify(item.arguments ?? {})
+function sanitizeCodexMcpArguments(item: CodexMcpToolCallItem, raw: string): unknown {
   const sanitized = sanitizeRemoteToolInput(`mcp__${item.server}__${item.tool}`, raw)
   if (!sanitized) return {}
   try { return JSON.parse(sanitized) } catch { return {} }
 }
 
-function compactCodexMcpResult(result: CodexMcpToolCallItem['result']): CodexMcpToolCallItem['result'] | undefined {
+function compactCodexMcpResult(item: CodexMcpToolCallItem, rawInput: string, windowHeaders: boolean): CodexMcpToolCallItem['result'] | undefined {
+  const result = item.result
   if (!result) return undefined
   const content = Array.isArray(result.content) ? result.content : []
   const texts = content.flatMap((entry) => {
@@ -282,7 +290,11 @@ function compactCodexMcpResult(result: CodexMcpToolCallItem['result']): CodexMcp
     const text = (entry as { text?: unknown }).text
     return typeof text === 'string' ? [text] : []
   })
-  const compact = compactMediaToolResult(texts.join('\n'))
+  const joined = texts.join('\n')
+  const header = windowHeaders && item.status === 'completed' && !item.error && !result.isError && !joined.startsWith('[denied] ')
+    && compactToolHeader(`mcp__${item.server}__${item.tool}`, joined, rawInput)
+  if (header) return { content: [{ type: 'text', text: header }], structuredContent: null }
+  const compact = compactMediaToolResult(joined)
   if (!compact) return undefined
   return { content: [{ type: 'text', text: compact }], structuredContent: result.structuredContent }
 }

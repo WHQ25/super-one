@@ -1,3 +1,4 @@
+import { omitHeldRestoreData } from '@superone/shared/transcript-window/restore-data'
 import { OPERATION_SCOPES } from '@superone/shared/environment'
 import {
   DESKTOP_WINDOW_HOLDER_PREFIX,
@@ -14,7 +15,7 @@ import { WindowViews } from '../stream/delivery/window-views'
 import { arrayTranscript } from '../stream/delivery/transcript-access'
 import type { RpcContext, RpcResult, TranscriptWindowView } from './rpc-context'
 import { asRecord, mapThrown, requireScopes } from './rpc-helpers'
-import { readSessionTarget } from './rpc-session-reads'
+import { readSessionRecord, readSessionTarget } from './rpc-session-reads'
 import { deliverLoad } from './session-delivery'
 import { unsupportedMethodError } from './unsupported'
 
@@ -27,7 +28,7 @@ const invalid = (message: string): RpcFailure => ({ error: { code: 'invalid_argu
  * the same position as its state and cursor. The connection records the
  * window so its live frames carry `transcript_window` patches for it.
  */
-export async function handleSessionTranscriptWindow(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
+export async function handleSessionTranscriptWindow(payload: unknown, ctx: RpcContext, historyNavigation?: boolean): Promise<RpcResult> {
   const denied = requireScopes(ctx.client, OPERATION_SCOPES.readSession)
   if (denied) return denied
   const sessions = ctx.sessions
@@ -39,7 +40,7 @@ export async function handleSessionTranscriptWindow(payload: unknown, ctx: RpcCo
   if ('error' in parsed) return parsed
   const { anchor, direction, viewport, budget, have, holder, folds } = parsed
   const includeState = parsed.includeState ?? !anchor
-  const request = { anchor, direction, have, folds }
+  const request = { anchor, direction, have, folds, haveRestore: typeof p.haveRestore === 'string' ? p.haveRestore : undefined, includeSessionRow: p.includeSessionRow === true && includeState }
   const limits = windowBudget({ budget, viewport })
   try {
     if (sessions.readTranscriptWindow) {
@@ -47,7 +48,7 @@ export async function handleSessionTranscriptWindow(payload: unknown, ctx: RpcCo
       return await sessions.readTranscriptWindow({
         sessionId: target.sessionId,
         includeState,
-        read: (view) => windowResult(ctx, target.sessionId, holder, request, limits, view, includeState),
+        read: (view) => windowResult(ctx, target.sessionId, holder, request, limits, view, includeState, historyNavigation),
       })
     }
     const loaded = await sessions.load({ sessionId: target.sessionId, includeState, full: true })
@@ -56,7 +57,7 @@ export async function handleSessionTranscriptWindow(payload: unknown, ctx: RpcCo
       state: loaded.state,
       restore: loaded.restore,
       cursor: loaded.cursor,
-    }, includeState)
+    }, includeState, historyNavigation)
   } catch (err) {
     return mapThrown(err)
   }
@@ -66,10 +67,11 @@ function windowResult(
   ctx: RpcContext,
   sessionId: string,
   holder: string,
-  request: Pick<TranscriptWindowRequest, 'anchor' | 'direction' | 'have' | 'folds'>,
+  request: Pick<TranscriptWindowRequest, 'anchor' | 'direction' | 'have' | 'folds' | 'includeSessionRow' | 'haveRestore'>,
   budget: TranscriptWindowBudget,
   view: TranscriptWindowView,
   includeState: boolean,
+  historyNavigation?: boolean,
 ): RpcResult {
   const delivery = ctx.streams?.delivery
   const selected = (delivery?.windows ?? new WindowViews()).serve({
@@ -83,7 +85,7 @@ function windowResult(
   // The view shells live rows only. `deliverLoad` does not summarize a direct
   // link, so the window result says so itself.
   const desktopWindow = Boolean(delivery) && holder.startsWith(DESKTOP_WINDOW_HOLDER_PREFIX)
-  if (desktopWindow) delivery?.views.open(sessionId, true)
+  if (desktopWindow && !delivery?.views.has(sessionId)) delivery?.views.open(sessionId, true)
   const shaped = deliverLoad({
     sessionId,
     state: view.state,
@@ -92,18 +94,32 @@ function windowResult(
     cursor: view.cursor,
     before: null,
   }, delivery)
+  const sessionRow = request.includeSessionRow ? chatSessionRow(ctx, sessionId) : null
   const result: TranscriptWindowResult = {
+    ...(sessionRow ? { sessionRow } : {}),
     sessionId,
     schema: TRANSCRIPT_WINDOW_SCHEMA,
+    compactRows: true,
     messages: selected.messages,
     older: selected.older,
     newer: selected.newer,
     total: selected.total,
     ...(includeState ? { state: shaped.state, ...(shaped.restore ? { restore: shaped.restore } : {}) } : {}),
     cursor: view.cursor,
+    ...(includeState && historyNavigation !== undefined ? { historyNavigation } : {}),
     ...(shaped.summarized || desktopWindow ? { summarized: true as const } : {}),
   }
-  return { result }
+  return { result: omitHeldRestoreData(result, request.haveRestore) }
+}
+
+/** Only the metadata the desktop uses to adopt a remote row. */
+function chatSessionRow(ctx: RpcContext, sessionId: string) {
+  const row = readSessionRecord(ctx, sessionId, false)
+  if (!row) return null
+  const { title, status, harnessId, providerId, acpAgentId, model, effort, permissionMode,
+    sandboxMode, apiProviderId, cwd, controlReleased, controlHolder, parentSessionId } = row
+  return { sessionId, title, status, harnessId, providerId, acpAgentId, model, effort,
+    permissionMode, sandboxMode, apiProviderId, cwd, controlReleased, controlHolder, parentSessionId }
 }
 
 /**

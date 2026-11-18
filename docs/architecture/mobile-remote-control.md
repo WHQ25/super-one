@@ -140,13 +140,30 @@ source session metadata, rather than another ownership authority.
 
 ## Atomic open, history and control
 
-`restoreSession` buffers events, resolves the authenticated project ref and
-reads `session.load` with its descriptor. The atomic load contains the newest
-8 projected messages, reducer state, active turn, host restore facts and an
-epoch/version cursor. Defaults omitted from compact wire state are restored
-with `createDefaultChatCoreSession`. Cached complete rows merge with the fresh
-tail; a bounded `session.load` after-anchor walk fills a reconnect gap, falling
-back to a newest page when the anchor is gone or the gap is too long.
+A phone opens a bounded `session.transcriptWindow` at a host cursor. The host
+includes the history-navigation capability in that response. A recent cached
+window can paint while the authoritative window is in flight. A desktop
+controller can request its session header (title, provider, control and
+settings) in the same window read. A measured desktop pane requests enough
+text for its viewport plus overscan; an unmeasured pane uses the default
+desktop budget. Both the CLI and desktop host implement this contract.
+
+On a return to the chat, cached whole fragments that still match can be
+referenced by digest. Hosts advertise compact row support on every window,
+including partial history pages. For a fully held, settled row the client sends
+its row manifest digest and the digest of its cached metadata. If only the
+metadata changed, the host returns fresh metadata and references to the cached
+fragments. The host sends a changed visible text fragment in
+full, then live updates continue from the snapshot cursor. Missing coverage
+causes a retry with full bodies. The paired desktop keeps its own projection
+separate from that of a phone it routes.
+
+The first authoritative window includes the current interactions, queue and
+restore facts. A returning reader with the same projection of the voice
+timeline and off-screen MCP App sources can reuse those arrays within the
+same session and host epoch. Interaction and control state are refreshed on
+each open. Older hosts use the existing descriptor and bounded
+`session.load` fallback with the newest eight projected messages.
 
 The phone explicitly acquires control, then subscribes to the session topic
 from the load cursor. It releases buffered events in order, dropping another
@@ -163,7 +180,8 @@ stopping an owned session releases its grant and topic stream. Takeover,
 expiry, removal and channel loss invalidate admitted proofs; async mutations
 recheck the exact proof before applying their result.
 
-Earlier pages and anchored jumps use `session.load` with `includeState: false`;
+Earlier pages and anchored jumps use the transcript window, or the legacy
+`session.load` path, with `includeState: false`;
 `session.historyIndex` supplies message ids, bounded question/reply previews
 and compact markers. The full index does not contain tool bodies. Sparse pages
 merge by index position and only a contiguous DOM window is mounted.
@@ -185,13 +203,24 @@ session and detail ref.
 
 `DetailScopeProvider` supplies the session's client to the rows. The phone
 uses `document-detail.ts` through RN's native bridge; the desktop uses its IPC
-detail client and existing presenters. Dedicated tools load when shown,
-expandable rows and subagent/workflow/collaboration cards load when opened.
+detail client and existing presenters. A collapsed Bash row can show a short
+summary and execution state. Supported list tools display their subject and
+result count, and request their rows when expanded. A completed turn with one
+closed process fold needs only its reply and aggregate tool, file and diff
+counts until that fold opens. Multiple folds retain the file information
+needed to count a shared path once. Cards with visible interactive content
+keep the fields their presenters need.
 
 A legacy Codex turn (stored `metadata.codex.items`) is projected item by item
 and its rows refer to `item`, `nested-item` or `reasoning` detail; the client
 reads an `{ item }` detail as the shared tool detail through `codexItemDetail`.
 Content-shaped Codex turns use the ordinary content refs.
+
+The desktop scripts `benchmark-remote-chat-open.ts`,
+`benchmark-mobile-payload.ts` and `benchmark-remote-tool-card.ts` exercise the
+open RPCs, cached windows and tool presenters respectively. The card script's
+`--browser` option measures when a production Chat View first displays the
+correct list count in a rendered frame.
 
 ## Attachments (phone → host)
 

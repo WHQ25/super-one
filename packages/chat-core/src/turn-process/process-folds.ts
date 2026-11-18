@@ -68,7 +68,16 @@ export function planProcessFolds(message: FoldMessage, context?: ProcessFoldCont
     return planStreamingCuts(message, cuts)
   }
   if (cuts.length > 0 && message.id && !isLegacyCodexMessage(message)) return planSliced(message, cuts)
-  return planContent(message, message.content)
+  const plan = planContent(message, message.content)
+  const range = plan.ranges.length === 1 ? plan.ranges[0] : undefined
+  // All edits belong to one closed range. Its initial header needs only the
+  // distinct count. Partial pages still name paths to deduplicate across the page edge.
+  if (range?.summary.files.length && !message.content.some((block, i) =>
+    (i < range.start || i > range.end) && 'toolName' in block)) {
+    const { files, moreFiles = 0 } = range.summary
+    return { ...plan, ranges: [{ ...range, summary: { ...range.summary, files: [], moreFiles: moreFiles + files.length } }] }
+  }
+  return plan
 }
 
 /** Plans for one closed prefix. The tail text grows every token; the prefix does not. */

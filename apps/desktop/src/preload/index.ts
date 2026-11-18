@@ -629,8 +629,8 @@ const environmentAPI = {
       provider?: string
       messageCount: number
     }>,
-  getSession: (connectionId: string, sessionId: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_GET_SESSION, connectionId, sessionId),
+  getSession: (connectionId: string, sessionId: string, options?: { includeTranscript?: boolean }) =>
+    ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_GET_SESSION, connectionId, sessionId, options),
   /** Node AI provider store (credentials masked). */
   listRemoteCredentials: (connectionId: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ENVIRONMENT_PROVIDER_LIST_CREDENTIALS, connectionId),
@@ -700,6 +700,7 @@ const environmentAPI = {
       full?: boolean
       /** Chat open and history paging. Full reads and the realtime refresh omit it. */
       transcript?: boolean
+      viewport?: { width: number; height: number }
       anchor?: { messageId: string; key?: string }
       direction?: 'before' | 'after' | 'around'
     },

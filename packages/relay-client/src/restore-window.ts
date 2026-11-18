@@ -1,3 +1,4 @@
+import { WindowRestoreCache } from '@superone/shared/transcript-window/restore-data'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { createDefaultChatCoreSession } from '@superone/chat-core'
 import type { ControlLease, MutatingControlContext } from '@superone/shared/environment/lease'
@@ -70,6 +71,8 @@ export class TranscriptWindowUnsupportedError extends Error {
   override name = 'TranscriptWindowUnsupportedError'
 }
 
+const restoreCaches = new WeakMap<RelayClient, WindowRestoreCache>()
+
 const HOST_REFUSALS = new Set(['not_found', 'forbidden', 'failed_precondition', 'lease_stale', 'lease_required', 'identity_conflict'])
 
 /**
@@ -108,32 +111,37 @@ export async function restoreWindowSession(
     const same = previous?.environmentId === session.environmentId && previous.sessionId === session.sessionId
     acquire = new SessionAcquire(client, session, same ? stopping : null, signal, () => stopFailed != null)
     const held = cached?.schema === TRANSCRIPT_WINDOW_SCHEMA ? cached.window : null
+    const cache = restoreCaches.get(client) ?? new WindowRestoreCache()
+    restoreCaches.set(client, cache)
+    const auxiliary = cache.view(project.environmentId, sessionId)
     const request = (have: boolean): TranscriptWindowRequest & { projectId: string } => ({
       sessionId, projectId: project.projectId, folds: true,
+      ...(auxiliary.revision ? { haveRestore: auxiliary.revision } : {}),
       ...(options.viewport ? { viewport: options.viewport } : {}),
       ...(options.budget ? { budget: options.budget } : {}),
-      ...(have && held ? { have: windowCoverage(held.messages) } : {}),
+      ...(have && held ? { have: windowCoverage(held.messages, held.compactRows) } : {}),
     })
     const readAt = performance.now()
-    const [first, descriptor] = await Promise.all([
-      readWindow(client, project, request(true), signal),
-      client.rpc<ExecutionEnvironmentDescriptor>('environment.descriptor', {}, { environmentId: project.environmentId, signal }),
-    ])
-    let result = first
-    let applied = applyWindowResult(null, result, windowLookup(held))
+    let result = await readWindow(client, project, request(true), signal)
+    let applied = applyWindowResult(held, result, windowLookup(held))
     // The cache lost a body it claimed: read again without claiming anything.
     if (applied.missing.length) {
       if (signal?.aborted) throw aborted()
       result = await readWindow(client, project, request(false), signal)
       applied = applyWindowResult(null, result, windowLookup(null))
     }
+    const received = result
+    result = auxiliary.read(received)
     const windowAt = performance.now()
     if (signal?.aborted) throw aborted()
     const state = result.state ?? {}
     const provider = typeof state.sessionProvider === 'string' ? state.sessionProvider : cached?.provider
-    const navigationAvailable = descriptor.capabilities.methods.includes('session.historyIndex')
+    // Earlier hosts advertise the rail only in their descriptor. That optional
+    // read may finish after the chat is visible and while the feed is acquired.
+    const navigation = result.historyNavigation ?? client.rpc<ExecutionEnvironmentDescriptor>('environment.descriptor', {}, { environmentId: project.environmentId, signal })
+      .then(descriptor => descriptor.capabilities.methods.includes('session.historyIndex')).catch(() => false)
     const snapshot = snapshotFromLoad({ sessionId, state, messages: [], before: null, cursor: result.cursor, ...(result.restore ? { restore: result.restore } : {}) }, project.environmentId)
-    options.onWindow?.({ window: applied.state, state: { ...createDefaultChatCoreSession(), ...state }, snapshot, provider, navigationAvailable })
+    options.onWindow?.({ window: applied.state, state: { ...createDefaultChatCoreSession(), ...state }, snapshot, provider, navigationAvailable: result.historyNavigation ?? cached?.navigationAvailable ?? false })
     await stopping
     if (stopFailed) throw stopFailed
     if (signal?.aborted) throw aborted()
@@ -141,6 +149,8 @@ export async function restoreWindowSession(
     if (signal?.aborted) throw aborted()
     followed = true
     await client.followSession({ session, projectPath, provider, cursor: result.cursor })
+    const navigationAvailable = await navigation
+    auxiliary.remember(received)
     const subscribedAt = performance.now()
     const { epoch, batches } = client.releaseBuffer()
     const liveBatches = batches.map(batch => batch.filter(value => {
@@ -150,6 +160,8 @@ export async function restoreWindowSession(
         && (event.seq == null || event.seq > result.cursor.version)
     })).filter(batch => batch.length)
     const fragments = result.messages.flatMap(message => message.fragments)
+    const compactIds = new Set(result.messages.filter(row => row.reuseRow).map(row => row.id))
+    const compactFragments = applied.state.messages.reduce((sum, row) => sum + (compactIds.has(row.id) ? row.fragments.length : 0), 0)
     return {
       window: applied.state,
       state: { ...createDefaultChatCoreSession(), ...state },
@@ -158,8 +170,8 @@ export async function restoreWindowSession(
         snapshotMs: windowAt - started, historyMs: 0, subscribeMs: subscribedAt - windowAt, totalMs: subscribedAt - started,
         stopMs, windowMs: windowAt - readAt, acquireMs: acquire.ms,
         historyBytes: new TextEncoder().encode(JSON.stringify(result.messages)).length,
-        snapshotBytes: new TextEncoder().encode(JSON.stringify(state)).length,
-        reusedFragments: fragments.filter(fragment => !fragment.body).length,
+        snapshotBytes: new TextEncoder().encode(JSON.stringify(received.state ?? {})).length,
+        reusedFragments: compactFragments + fragments.filter(fragment => !fragment.body).length,
         sentFragments: fragments.filter(fragment => fragment.body).length,
       },
     }

@@ -129,7 +129,7 @@ function ProgressiveSessionList() {
           offset: 0,
           text: JSON.stringify({
             input: JSON.stringify({ harness: 'acp' }),
-            result: JSON.stringify({ sessions: [], count: 0 }),
+            result: JSON.stringify({ sessions: [{ id: 's1', title: 'Fix transcript paging' }], count: 1 }),
           }),
         },
       })
@@ -154,6 +154,7 @@ function ProgressiveSessionList() {
               status: 'complete',
               remoteDetail: 'story-session-list',
             },
+            { type: 'tool_result', toolUseId: 'list', summary: JSON.stringify({ remoteRows: 1, count: 1 }) },
           ],
         }}
         scheme="dark"

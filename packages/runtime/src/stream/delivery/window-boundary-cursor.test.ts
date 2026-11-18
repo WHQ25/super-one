@@ -3,7 +3,7 @@ import type { ChatMessage, ContentBlock } from '@superone/shared/agent-types'
 import { buildCompactBoundaryMessage } from '@superone/shared/compact-boundary'
 import { utf8Length } from '@superone/shared/transcript-window/content-digest'
 import { MAX_META_BYTES } from '@superone/shared/transcript-window/fragment-message'
-import { applyWindowPatch, applyWindowResult, EMPTY_WINDOW_LOOKUP, materializeWindowMessage } from '@superone/shared/transcript-window/window-store'
+import { applyWindowPatch, applyWindowResult, EMPTY_WINDOW_LOOKUP, materializeWindowMessage, windowCoverage, windowLookup } from '@superone/shared/transcript-window/window-store'
 import { contentKeyStamp } from '@superone/shared/transcript-boundary'
 import { transcriptView } from '@superone/shared/transcript-segments'
 import { longReplyText, textMessage } from '@superone/shared/transcript-window/window-fixtures'
@@ -169,10 +169,16 @@ describe('compaction boundary cursor', () => {
     const middle: ChatMessage = { ...opened, content: [...opened.content, ...bashPairs(4)] }
     const second = buildCompactBoundaryMessage({ type: 'compact_boundary', trigger: 'auto', preTokens: 120 }, 'c2', '', middle, [first])
     const assistant: ChatMessage = { ...middle, content: [...middle.content, { type: 'text', text: `After both. ${longReplyText(80 * 1024)}` }] }
-    const served = new WindowViews().serve({
-      sessionId: 's', holder: 'phone', messages: [user, first, second, assistant], request: { folds: true },
+    const views = new WindowViews()
+    const read = (have?: ReturnType<typeof windowCoverage>) => views.serve({
+      sessionId: 's', holder: 'phone', messages: [user, first, second, assistant], request: { folds: true, have },
       budget: { maxBytes: 128 * 1024, maxFragments: 2, targetChars: 100 },
     })
+    const served = read()
+    const cached = applyWindowResult(null, served, EMPTY_WINDOW_LOOKUP).state
+    const reopened = read(windowCoverage(cached.messages, true))
+    expect(reopened.messages.every((row) => !row.meta && row.fragments.every((f) => !f.body && f.append === undefined))).toBe(true)
+    expect(applyWindowResult(null, reopened, windowLookup(cached)).state).toEqual(cached)
     expect(served.messages.map((row) => row.id)).toEqual(['c1', 'c2', 'turn'])
     expect(served.messages.find((row) => row.id === 'c1')?.meta?.metadata?.transcriptBoundary).toMatchObject({ cursor: true })
     const rows = transcriptView(applyWindowResult(null, served, EMPTY_WINDOW_LOOKUP).state.messages.map(materializeWindowMessage)).rows

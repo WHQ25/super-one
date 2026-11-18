@@ -28,11 +28,12 @@ import type {
 import { applyEventToSession, createDefaultChatCoreSession, failedMessageResend, pendingSlashCommandFrom, todosAllCompleted, withoutSendFailure } from '@superone/chat-core'
 import { AGENT_EVENT_BATCH_MS } from '@superone/shared/agent-event-batcher'
 import { sandboxInfoFromMode } from '@superone/shared/harness/harness-sandbox'
-import type { CachedTranscript, RelayClient } from '@superone/relay-client'
+import type { CachedTranscript, CachedWindow, RelayClient } from '@superone/relay-client'
 import type { VoiceCapability } from '@superone/shared/realtime-voice'
 import { restoreSession, restoreWindowSession, TranscriptWindowUnsupportedError, type RestoredSession, type RestoredWindowSession, type WindowRestorePreview } from '@superone/relay-client'
 import { TRANSCRIPT_FOLD_METHOD, TRANSCRIPT_WINDOW_METHOD, TRANSCRIPT_WINDOW_SCHEMA, type TranscriptFoldResult, type TranscriptWindowPatch, type TranscriptWindowResult } from '@superone/shared/environment/transcript-window'
-import { cacheableWindow, TranscriptWindowSync } from '@superone/shared/transcript-window/window-sync'
+import { cacheableWindow, TranscriptWindowSync, WINDOW_CACHE_BYTES } from '@superone/shared/transcript-window/window-sync'
+import { utf8Length } from '@superone/shared/transcript-window/content-digest'
 import { enqueueTranscriptWrite, flushTranscriptWrites, holdTranscriptCover } from './transcript-write-queue'
 import { randomId } from './ids'
 import { newMessageId } from '@superone/shared/message-id'
@@ -41,6 +42,15 @@ import { createSessionPayload } from './runtime-create-session'
 import { runtimeSessionRef, readRuntimeSession } from './runtime-session-rpc'
 import type { SessionLoadResult } from '@superone/shared/environment/session-messages'
 import type { SessionSendSelections } from '@superone/shared/environment/session-send'
+
+// Share warm windows only among runtimes of the same authenticated client.
+// Deferred writes replace the captured window with its 2 MiB disk form at idle.
+const recentWindows = new WeakMap<RelayClient, Map<string, CachedWindow>>()
+const MAX_RECENT_WINDOWS = 4
+
+// Expanded fold pages are immutable at their revision. Keep a separate byte
+// budget so a large fold cannot evict the cached first screens.
+const foldPages = new WeakMap<RelayClient, { pages: Map<string, { page: TranscriptFoldResult; bytes: number }>; bytes: number }>()
 
 type SessionState = ReturnType<typeof createDefaultChatCoreSession>
 
@@ -144,21 +154,25 @@ export class ChatRuntime {
     void this.control(method, payload).catch(error => this.hooks.onCommandError?.(error instanceof Error ? error.message : String(error)))
   }
 
-  async open(projectPath: string, sessionId: string, prepared?: import('@superone/relay-client').RestoredSession, signal?: AbortSignal): Promise<void> {
+  async open(projectPath: string, sessionId: string, prepared?: RestoredSession | RestoredWindowSession, signal?: AbortSignal): Promise<void> {
     const releaseCover = holdTranscriptCover()
     try {
     this.enqueueTranscript()
-    if (this.projectPath !== projectPath || this.sessionId !== sessionId) this.widgetComposers.releaseAll()
+    const sameSession = this.projectPath === projectPath && this.sessionId === sessionId
+    const retained = sameSession && !prepared ? this.window : null
+    if (!sameSession) this.widgetComposers.releaseAll()
     this.projectPath = projectPath
     this.sessionId = sessionId
-    this.realtimeVoice = undefined
-    this.appContexts.restore(undefined)
+    if (!retained) {
+      this.realtimeVoice = undefined
+      this.appContexts.restore(undefined)
+    }
     this.resolvedQuestionIds.clear()
     this.resolvedPermissionIds.clear()
     this.attachmentBytes.clear()
     this.historyRequest = null
     this.windowRequest = null
-    this.window = null
+    this.window = retained
     this.navigationIndex = null
     this.navigationRequest = null
     const generation = ++this.restoreGeneration
@@ -166,11 +180,14 @@ export class ChatRuntime {
       if (generation !== this.restoreGeneration || signal?.aborted) return
       const windowed = !prepared && this.windowEnabled(projectPath)
       const readStarted = performance.now()
-      const cachedWindow = windowed ? this.readWindow(projectPath, sessionId) : null
+      const cachedWindow = retained ? { schema: TRANSCRIPT_WINDOW_SCHEMA, window: retained.current, provider: this.provider,
+        navigationAvailable: this.navigationAvailable, mcpAppContexts: this.appContexts.snapshot() }
+        : windowed ? this.readWindow(projectPath, sessionId) : null
       const cached = cachedWindow ? null : this.readTranscript(projectPath, sessionId)
       const cacheReadMs = performance.now() - readStarted
       networkLedger.mark('open-session')
-      const cachedMessages = cachedWindow ? new TranscriptWindowSync(cachedWindow.window).messages() : cached?.messages ?? []
+      const cachedMessages = retained ? [] : cachedWindow ? new TranscriptWindowSync(cachedWindow.window).messages() : cached?.messages ?? []
+      let painted = retained !== null
       if (cachedMessages.length) {
         const source = cachedWindow ?? cached!
         this.appContexts.restore(source.mcpAppContexts)
@@ -180,6 +197,7 @@ export class ChatRuntime {
         if (source.provider) this.provider = source.provider
         this.dirty = true
         this.flush(true)
+        painted = true
         this.hooks.onCachedHydrate?.()
         networkLedger.checkpoint('cached-hydrate')
       }
@@ -191,7 +209,8 @@ export class ChatRuntime {
             viewport: this.hooks.transcriptWindow?.viewport(), signal,
             onWindow: (preview) => {
               if (generation !== this.restoreGeneration || signal?.aborted) return
-              this.paintWindow(preview)
+              this.paintWindow(preview, !painted)
+              painted = true
               releaseCover()
             },
           })
@@ -202,7 +221,10 @@ export class ChatRuntime {
         }
       } else restored = await restoreSession(this.client, projectPath, sessionId, cached, signal)
       if (generation !== this.restoreGeneration || signal?.aborted) return
-      this.window = 'window' in restored ? new TranscriptWindowSync(restored.window) : null
+      // Keep fold pages, local sends, and row identities from the early paint.
+      // A user can already have expanded a fold or sent while subscribe ran.
+      if ('window' in restored) this.window ??= new TranscriptWindowSync(restored.window)
+      else this.window = null
       this.sourceEnvironmentId = restored.snapshot.sourceEnvironmentId ?? null
       this.realtimeVoice = restored.snapshot.realtimeVoice
       this.restoreMetrics = { ...restored.metrics, cacheReadMs }
@@ -211,7 +233,7 @@ export class ChatRuntime {
       this.hasMoreHistory = 'window' in restored ? this.window!.hasOlder : restored.hasMore
       this.historyCursor = 'window' in restored ? null : restored.cursor
       let session = { ...createDefaultChatCoreSession(), ...restored.state } as SessionState
-      session.messages = 'window' in restored ? this.window!.messages() : [...restored.messages]
+      session.messages = 'window' in restored ? this.reconcileWindow(painted ? this.session.messages : []) : [...restored.messages]
       if (restored.provider) session.sessionProvider = restored.provider as SessionState['sessionProvider']
       if (restored.snapshot.permissionMode) {
         session.permissionMode = restored.snapshot.permissionMode as SessionState['permissionMode']
@@ -249,10 +271,7 @@ export class ChatRuntime {
       // Seeded before the replay below: the host persists a voice utterance before it
       // broadcasts it, so a buffered event is a duplicate of something already here
       // and the reducer needs the baseline present to recognise it as one.
-      session.realtimeSegments = restored.snapshot.realtimeSegments ?? []
-      session.realtimeThreadMessages = withCodexContents(restored.snapshot.realtimeThreadMessages ?? [])
-      session.realtimeHasTimeline = restored.snapshot.realtimeHasTimeline ?? session.realtimeSegments.length > 0
-      session.realtimeSessionId = restored.snapshot.activeRealtimeSessionId ?? null
+      this.restoreVoiceTimeline(session, restored.snapshot)
       const restoreEvents = [
         ...(restored.snapshot.pendingInteractions ?? []),
         ...restored.liveBatches.flat() as AgentEvent[],
@@ -271,8 +290,7 @@ export class ChatRuntime {
       this.eventEpoch = restored.epoch
       if (restored.provider) this.provider = restored.provider
       this.dirty = true
-      // Replayed history is a baseline, even when the connection epoch is unchanged.
-      this.flush(true)
+      this.flush(!painted)
       this.enqueueTranscript(true)
       networkLedger.checkpoint('restore-ready')
     })
@@ -289,21 +307,32 @@ export class ChatRuntime {
   }
 
   /** The host window is on the document. The cover drops before the lease and the subscription. */
-  private paintWindow(preview: WindowRestorePreview): void {
-    this.window = new TranscriptWindowSync(preview.window)
+  private paintWindow(preview: WindowRestorePreview, hydrate: boolean): void {
+    this.sourceEnvironmentId = preview.snapshot.sourceEnvironmentId ?? null
+    this.realtimeVoice = preview.snapshot.realtimeVoice
+    if (this.window) this.window.replace(preview.window)
+    else this.window = new TranscriptWindowSync(preview.window)
     const session = { ...createDefaultChatCoreSession(), ...preview.state } as SessionState
-    session.messages = this.hydrated(this.window.messages())
+    this.restoreVoiceTimeline(session, preview.snapshot)
+    this.appContexts.restore(preview.snapshot.mcpAppContexts)
+    session.messages = this.reconcileWindow(this.session.messages)
     if (preview.provider) {
       session.sessionProvider = preview.provider as SessionState['sessionProvider']
       this.provider = preview.provider
     }
     this.navigationAvailable = preview.navigationAvailable
     this.hasMoreHistory = this.window.hasOlder
-    this.appContexts.restore(preview.snapshot.mcpAppContexts)
     this.session = session
     this.dirty = true
-    this.flush(true)
+    this.flush(hydrate)
     this.hooks.onCachedHydrate?.()
+  }
+
+  private restoreVoiceTimeline(session: SessionState, snapshot: RestoredSession['snapshot']): void {
+    session.realtimeSegments = snapshot.realtimeSegments ?? []
+    session.realtimeThreadMessages = withCodexContents(snapshot.realtimeThreadMessages ?? [])
+    session.realtimeHasTimeline = snapshot.realtimeHasTimeline ?? session.realtimeSegments.length > 0
+    session.realtimeSessionId = snapshot.activeRealtimeSessionId ?? null
   }
 
   /** Messages entering from the host or the cache: legacy Codex rows read as content, App context restored. */
@@ -394,13 +423,16 @@ export class ChatRuntime {
     if (!sync) return Promise.reject(new Error('Transcript window unavailable'))
     const request = sync.foldRequest(messageId, key)
     if (!request) return Promise.reject(new Error('History changed'))
-    const id = JSON.stringify([messageId, key, request.after ?? null])
+    const id = JSON.stringify([this.pairingId(), this.sourceEnvironmentId, this.sessionId, messageId, key, request.revision, request.after ?? null])
     const inFlight = this.foldRequests.get(id)
     if (inFlight) return inFlight
     const generation = this.restoreGeneration
     const viewport = this.hooks.transcriptWindow?.viewport()
     const read = (async () => {
-      const page = await this.read<TranscriptFoldResult>(TRANSCRIPT_FOLD_METHOD, {
+      const cache = foldPages.get(this.client) ?? { pages: new Map<string, { page: TranscriptFoldResult; bytes: number }>(), bytes: 0 }
+      foldPages.set(this.client, cache)
+      const cached = cache.pages.get(id)
+      const page = cached?.page ?? await this.read<TranscriptFoldResult>(TRANSCRIPT_FOLD_METHOD, {
         messageId, fold: key, revision: request.revision,
         ...(request.after ? { after: request.after } : {}),
         ...(viewport ? { viewport } : {}),
@@ -410,6 +442,21 @@ export class ChatRuntime {
       })
       if (generation !== this.restoreGeneration || this.window !== sync) throw new Error('Session changed')
       if (!sync.applyFoldPage(page, request.after)) { this.resync(); throw new Error('History changed') }
+      if (cached) {
+        cache.pages.delete(id)
+        cache.pages.set(id, cached)
+      } else {
+        const bytes = utf8Length(JSON.stringify(page))
+        if (bytes <= WINDOW_CACHE_BYTES && !cache.pages.has(id)) {
+          cache.pages.set(id, { page, bytes })
+          cache.bytes += bytes
+          while (cache.bytes > WINDOW_CACHE_BYTES) {
+            const [oldest, entry] = cache.pages.entries().next().value!
+            cache.pages.delete(oldest)
+            cache.bytes -= entry.bytes
+          }
+        }
+      }
       this.session = { ...this.session, messages: this.reconcileWindow(this.session.messages) }
       this.dirty = true
       this.flush()
@@ -663,6 +710,14 @@ export class ChatRuntime {
   private readWindow(projectPath: string, sessionId: string) {
     const pairingId = this.pairingId()
     if (!pairingId || !this.hooks.transcripts?.getWindow) return null
+    const key = JSON.stringify([pairingId, this.hooks.cacheEnvironmentId, projectPath, sessionId])
+    const recent = recentWindows.get(this.client)
+    const hit = recent?.get(key)
+    if (hit) {
+      recent!.delete(key)
+      recent!.set(key, hit)
+      return hit
+    }
     return this.hooks.transcripts.getWindow(pairingId, projectPath, sessionId)
   }
 
@@ -678,7 +733,7 @@ export class ChatRuntime {
     if (!pairingId || !this.hooks.transcripts || !this.projectPath || !this.sessionId) return
     const projectPath = this.projectPath
     const sessionId = this.sessionId
-    const key = `${pairingId}\0${projectPath}\0${sessionId}`
+    const key = JSON.stringify([pairingId, this.hooks.cacheEnvironmentId, projectPath, sessionId])
     if (this.window) {
       if (!this.window.current.messages.length || !this.hooks.transcripts.putWindow) return
       // The state is immutable; trimming measures bodies, so it runs in the deferred write.
@@ -689,8 +744,16 @@ export class ChatRuntime {
         ...(this.appContexts.snapshot() ? { mcpAppContexts: this.appContexts.snapshot() } : {}),
       }
       this.transcriptDirty = false
+      const snapshot = { schema: TRANSCRIPT_WINDOW_SCHEMA, window: state, ...facts }
+      let recent = recentWindows.get(this.client)
+      if (!recent) recentWindows.set(this.client, recent = new Map())
+      recent.delete(key)
+      recent.set(key, snapshot)
+      if (recent.size > MAX_RECENT_WINDOWS) recent.delete(recent.keys().next().value!)
       enqueueTranscriptWrite(`${key}\0window`, () => {
-        this.hooks.transcripts?.putWindow?.(pairingId, projectPath, sessionId, { schema: TRANSCRIPT_WINDOW_SCHEMA, window: cacheableWindow(state), ...facts })
+        const trimmed = { ...snapshot, window: cacheableWindow(state) }
+        if (recent.get(key) === snapshot) recent.set(key, trimmed)
+        this.hooks.transcripts?.putWindow?.(pairingId, projectPath, sessionId, trimmed)
       })
       return
     }

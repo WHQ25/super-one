@@ -225,6 +225,7 @@ export function ExpandableToolRow({
   streaming = false,
   expandable,
   children,
+  onExpandedChange,
   tone = 'default',
 }: {
   icon: ReactNode
@@ -233,11 +234,12 @@ export function ExpandableToolRow({
   streaming?: boolean
   expandable?: boolean
   children?: ReactNode
+  onExpandedChange?: (expanded: boolean) => void
   tone?: ToolRowTone
 }) {
   const canExpand = Boolean(expandable && children)
   return (
-    <ToolRow icon={icon} tone={tone} expandable={canExpand} details={children}>
+    <ToolRow icon={icon} tone={tone} expandable={canExpand} details={children} onExpandedChange={onExpandedChange} mountDetails={onExpandedChange ? 'expanded' : 'always'}>
       <ToolName streaming={streaming} tone={tone}>{label}</ToolName>
       {summary ? <ToolSummary title={typeof summary === 'string' ? summary : undefined}>{summary}</ToolSummary> : null}
     </ToolRow>

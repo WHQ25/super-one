@@ -23,4 +23,13 @@ describe('loadMcpIcons', () => {
     await loadMcpIcons({ resolveProject: resolveTestProject, rpc: async () => ({ error: 'unsupported' }) })
     expect(mcpIconsSnapshot()).toEqual({})
   })
+
+  it('keeps icons for the latest project when a previous refresh finishes late', async () => {
+    let finish!: (reply: unknown) => void
+    const first = loadMcpIcons({ resolveProject: resolveTestProject, rpc: () => new Promise(resolve => { finish = resolve }) })
+    await loadMcpIcons({ resolveProject: resolveTestProject, rpc: async () => ({ icons: { tool: 'new' } }) })
+    finish({ icons: { tool: 'old' } })
+    await first
+    expect(mcpIconsSnapshot()).toEqual({ tool: 'new' })
+  })
 })

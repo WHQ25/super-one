@@ -4,6 +4,7 @@ import { act, fireEvent, render, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import i18n from 'i18next'
 import type { ChatMessage } from '@superone/shared/agent-types'
+import { isToolResultBlock } from '@superone/shared/content-delta'
 import { projectWindowMessage } from '@superone/runtime/stream/delivery/window-projection'
 import { DetailViews } from '@superone/runtime/stream/delivery/projection'
 import { createDetailClient, type DetailTransport } from '@superone/chat-core'
@@ -41,14 +42,18 @@ const runtime: TurnBodyPresenterRuntime = {
 }
 
 function renderRemote(surface: 'desktop' | 'phone', command: string, description?: string) {
-  const source: ChatMessage = {
+  return renderRemoteTurn(surface, {
     id: 'turn', role: 'assistant', providerId: 'claude', status: 'complete', createdAt: '',
     content: [
       { type: 'tool_use', toolName: 'Bash', toolUseId: 'bash', input: JSON.stringify({ command, description, timeout: 120000 }), status: 'complete' },
       { type: 'tool_result', toolUseId: 'bash', summary: 'Finished extracting assets' },
     ],
-  }
+  })
+}
+
+function renderRemoteTurn(surface: 'desktop' | 'phone', source: ChatMessage) {
   const projected = projectWindowMessage(source)
+  const toolResultMap = new Map(projected.content.filter(isToolResultBlock).map(block => [block.toolUseId, block.summary]))
   const tool = projected.content.find(block => 'toolName' in block)
   if (!tool || !('toolName' in tool)) throw new Error('Missing projected tool')
   const views = new DetailViews()
@@ -59,7 +64,7 @@ function renderRemote(surface: 'desktop' | 'phone', command: string, description
     {surface === 'phone'
       ? <PortableMessage message={projected} scheme="dark" pendingPermission={null} />
       : turnDisplayContent(projected).map((block, index) => <TurnBlockPresenter key={index} block={block} index={index}
-        isStreaming={false} parts={parts} runtime={runtime} />)}
+        toolResultMap={toolResultMap} isStreaming={false} parts={parts} runtime={runtime} />)}
   </DetailScopeProvider>)
   const header = view.container.querySelector('.tool-node > div') as HTMLElement
   return { ...view, tool, header, subscribe }
@@ -77,7 +82,7 @@ describe.each(['desktop', 'phone'] as const)('remote Bash summaries on %s', (sur
     const description = withDescription ? 'Extract native exit, information and ctrl-key logo' : undefined
     const summary = description ?? command.slice(0, 160)
     const { container, tool, header, subscribe } = renderRemote(surface, command, description)
-    expect(tool.input).toBe('{}')
+    expect(JSON.parse(tool.input)).toEqual({ timeout: 120000 })
     expect(tool.toolSummary).toBe(summary)
     expect(header).toHaveTextContent(summary)
     expect(subscribe).not.toHaveBeenCalled()
@@ -93,6 +98,26 @@ describe.each(['desktop', 'phone'] as const)('remote Bash summaries on %s', (sur
 
     await act(async () => { fireEvent.click(header) })
     expect(header).toHaveTextContent(summary)
+  })
+})
+
+describe.each(['desktop', 'phone'] as const)('remote list rows on %s', (surface) => {
+  it('draws a filtered archive row from the window and loads entries only on expand', async () => {
+    const toolName = 'mcp__superone__session_list'
+    const sessions = [{ id: 's1', title: 'Archive result title' }]
+    const { container, header, subscribe } = renderRemoteTurn(surface, {
+      id: 'turn', role: 'assistant', providerId: 'claude', status: 'complete', createdAt: '',
+      content: [
+        { type: 'tool_use', toolUseId: 't', toolName, input: '{"harness":"codex"}', status: 'complete' },
+        { type: 'tool_result', toolUseId: 't', summary: JSON.stringify({ content: [{ type: 'text', text: JSON.stringify({ count: 1, sessions }) }] }) },
+      ],
+    })
+    expect(header).toHaveTextContent(/1 session.*codex/i)
+    expect(container).not.toHaveTextContent(sessions[0].title)
+    expect(subscribe).not.toHaveBeenCalled()
+    await act(async () => { fireEvent.click(header) })
+    await waitFor(() => expect(container).toHaveTextContent(sessions[0].title))
+    expect(subscribe).toHaveBeenCalledTimes(1)
   })
 })
 

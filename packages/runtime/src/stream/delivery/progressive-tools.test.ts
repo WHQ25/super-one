@@ -4,10 +4,13 @@ vi.mock('./split-text-blocks', () => ({
 }))
 
 import { afterEach, describe, expect, it } from 'vitest'
-import { configureRemoteContent, remoteContentPorts } from './remote-content'
+import { configureRemoteContent, remoteContentPorts, stripMessagesForRemote } from './remote-content'
+import { projectProgressiveMessage } from './projection'
+import { projectWindowMessage } from './window-projection'
 import type { ChatMessage, CodexThreadItem } from '@superone/shared/agent-types'
 import { codexCommandPresentation } from '@superone/shared/codex-command-actions'
 import { codexToolDetail, projectCodexTool, projectTool, taskFileChanges, toolDetail } from './progressive-tools'
+import { compactToolHeader } from './tool-header'
 
 function assistant(content: ChatMessage['content']): ChatMessage {
   return { id: 'm', role: 'assistant', status: 'complete', createdAt: '', providerId: 'claude', content }
@@ -15,6 +18,36 @@ function assistant(content: ChatMessage['content']): ChatMessage {
 
 const contentPorts = remoteContentPorts()
 afterEach(() => configureRemoteContent(contentPorts))
+
+describe('remote dedicated tool headers', () => {
+  it('preserves the session.load Bash input and emits compact fields only for transcript windows', () => {
+    const input = JSON.stringify({ command: 'ls -la', description: 'Inspect files', timeout: 5000 })
+    const source = assistant([
+      { type: 'tool_use', toolUseId: 'b', toolName: 'Bash', status: 'complete', input },
+      { type: 'tool_result', toolUseId: 'b', summary: 'timed out', isError: true, exitCode: 124, isTimedOut: true },
+    ])
+    const [legacyTool, legacyResult] = stripMessagesForRemote([projectProgressiveMessage(source)])[0].content
+    expect(legacyTool).toMatchObject({ input })
+    expect(legacyResult).not.toHaveProperty('isTimedOut')
+    expect(legacyResult).not.toHaveProperty('exitCode')
+    const [windowTool, windowResult] = projectWindowMessage(source).content
+    expect(windowTool).toMatchObject({ input: '{"timeout":5000}', toolSummary: 'Inspect files' })
+    expect(windowResult).toMatchObject({ type: 'bash_result', isError: true, isTimedOut: true, exitCode: 124 })
+  })
+  it('carries the visible row count and total from a TOON archive without any row body', () => {
+    const result = 'count: 20\nsessions[1]{id,title}:\n  s,Private session'
+    expect(JSON.parse(compactToolHeader('mcp__superone__session_list', result, '{}')!)).toEqual({ remoteRows: 1, count: 20 })
+  })
+
+  it('keeps the existing detail path for an error, unexpected archive, or third-party tool', () => {
+    expect(compactToolHeader('mcp__superone__session_list', '{"status":"error","sessions":[]}', '{}')).toBeUndefined()
+    expect(compactToolHeader('mcp__superone__session_search', '{"sessions":[]}', '{}')).toBeUndefined()
+    expect(compactToolHeader('mcp__other__session_list', '{"sessions":[]}', '{}')).toBeUndefined()
+    expect(compactToolHeader('mcp__superone__session_list', '{"sessions":[]}', 'x'.repeat(1025))).toBeUndefined()
+    expect(compactToolHeader('mcp__superone__project_list', '{"projects":[]}', '{"query":"secret"}')).toBeUndefined()
+    expect(compactToolHeader('mcp__superone__miniapp_dev_preview', '{"screenshot":{"path":"/preview.png"}}', '{}')).toBeUndefined()
+  })
+})
 
 describe('progressive file-edit projection', () => {
   it('keeps every read path before truncating a long shell command and returns one complete command detail', () => {
@@ -256,10 +289,7 @@ describe('progressive file-edit projection', () => {
       toolName: 'Bash',
       toolSummary: 'List workspace files',
     })
-    expect(JSON.parse((projected as { input: string }).input)).toEqual({
-      command: 'ls -la',
-      description: 'List workspace files',
-    })
+    expect(JSON.parse((projected as { input: string }).input)).toEqual({ command: 'ls -la', description: 'List workspace files' })
   })
 
   it('puts a browser description on the collapsed summary', () => {

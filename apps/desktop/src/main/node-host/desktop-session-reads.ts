@@ -303,7 +303,7 @@ export abstract class DesktopSessionReads<Row extends DesktopSessionRow> impleme
     const sandboxInfo = includeState ? await this.reads.restore?.prepare?.(this.reads.sessions.getSession(sessionId)) : undefined
     // No awaits after this point: facts, rows and cursor cover the same session version.
     const all = this.messages(sessionId)
-    const snap = this.snapshotAt(sessionId, includeState, sandboxInfo, { todos: all, questions: all, history: all })
+    const snap = this.snapshotAt(sessionId, includeState, sandboxInfo, { todos: all, questions: all, history: all }, true)
     const { start, end } = sessionMessageRange(all, input)
     const messages = all.slice(start, end)
     if (!includeState) return {
@@ -354,15 +354,15 @@ export abstract class DesktopSessionReads<Row extends DesktopSessionRow> impleme
     todos: readonly ChatMessage[]
     questions: readonly ChatMessage[]
     history: readonly ChatMessage[]
-  }) {
+  }, includeStored = false) {
     const row = this.requireRow(sessionId)
     const live = this.reads.sessions.getSession(sessionId)
-    const replay = [...(live?.getReplayEvents() ?? []), ...(live?.getPendingInteractions() ?? [])]
-    let state: ChatCoreSession = createDefaultChatCoreSession()
-    for (const event of replay) state = { ...state, ...applyEventToSession(state, event) }
     const { events } = this.reads
     const cursor = { sequence: events.headSequence(), epoch: events.epoch, version: events.sessionVersion(sessionId) }
     if (!includeState) return { live, state: {} as Record<string, unknown>, restore: undefined as SessionRestoreFacts | undefined, cursor }
+    const replay = [...(live?.getReplayEvents() ?? []), ...(live?.getPendingInteractions() ?? [])]
+    let state: ChatCoreSession = createDefaultChatCoreSession()
+    for (const event of replay) state = { ...state, ...applyEventToSession(state, event) }
     state = withTranscriptTodos(state, sources.todos, replay.some((event) => event.type === 'todos_updated'))
     state.pendingAsyncQuestions = pendingCodexAsyncQuestions(sources.questions)
     const acpAgentId = isAcpProtocolHarness(row.harnessId)
@@ -373,7 +373,7 @@ export abstract class DesktopSessionReads<Row extends DesktopSessionRow> impleme
     }
     const facts = sessionRestoreFacts({ session: live, row, history: sources.history, environmentId: this.reads.environmentId, sandboxInfo, realtime: this.reads.restore?.realtime?.(sessionId) })
     const { restore, ...current } = facts
-    const stored = this.reads.restore?.stored?.(sessionId) ?? null
+    const stored = includeStored ? this.reads.restore?.stored?.(sessionId) : null
     const { messages: _messages, ...rest } = {
       ...state, ...current, cwd: live?.cwd ?? row.worktreePath ?? row.projectPath,
       _providerSessionId: row.providerSessionId, sessionProvider: row.harnessId, preferredProvider: row.harnessId,

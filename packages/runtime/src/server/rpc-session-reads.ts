@@ -12,8 +12,12 @@ export function handleSessionGet(payload: unknown, ctx: RpcContext): RpcResult {
   const body = asRecord(payload)
   const sessionId = String(body.sessionId ?? '')
   if (!ctx.sessions) return mapThrown(unsupportedMethodError('session.get'))
-  const session = ctx.sessions.get(sessionId)
-  if (!session) return { result: null }
+  return { result: readSessionRecord(ctx, sessionId, body.includeTranscript !== false) }
+}
+
+export function readSessionRecord(ctx: RpcContext, sessionId: string, includeTranscript: boolean) {
+  const session = ctx.sessions?.get(sessionId, { includeTranscript })
+  if (!session) return null
   const { transcript, acpAgentId: recordedAgentId, ...metadata } = session
   const configAgentId = session.harnessId === 'acp-grok' || session.harnessId === 'acp-antigravity' || session.harnessId === 'acp'
     ? (ctx.sessionProviders?.get(session.providerId)?.config as { agentId?: string } | undefined)?.agentId
@@ -21,11 +25,11 @@ export function handleSessionGet(payload: unknown, ctx: RpcContext): RpcResult {
   // A missing agent is omitted. Writing null here makes a controller replace
   // a brand it already holds (Grok drawn as generic ACP).
   const acpAgentId = namedAgent(recordedAgentId) ?? namedAgent(configAgentId)
-  return { result: {
+  return {
     ...metadata,
-    ...(body.includeTranscript === false ? {} : { transcript }),
+    ...(includeTranscript ? { transcript } : {}),
     ...(acpAgentId ? { acpAgentId } : {}),
-  } }
+  }
 }
 
 function namedAgent(value: unknown): string | undefined {
@@ -87,7 +91,7 @@ export function readSessionTarget(p: Record<string, unknown>, sessions: Pick<Ses
   if (!sessionId) return { error: { code: 'invalid_argument', message: 'sessionId required' } }
   if (p.projectId !== undefined) {
     if (typeof p.projectId !== 'string' || !p.projectId) return { error: { code: 'invalid_argument', message: 'projectId must be a non-empty string' } }
-    if (sessions.get(sessionId)?.projectId !== p.projectId) return { error: { code: 'not_found', message: 'session not found in project' } }
+    if (sessions.get(sessionId, { includeTranscript: false })?.projectId !== p.projectId) return { error: { code: 'not_found', message: 'session not found in project' } }
   }
   return { sessionId }
 }

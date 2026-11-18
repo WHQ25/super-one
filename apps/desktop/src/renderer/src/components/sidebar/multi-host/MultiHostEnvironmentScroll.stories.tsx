@@ -1,9 +1,12 @@
 import { useEffect, useState } from 'react'
 import type { Meta, StoryObj } from '@storybook/react-vite'
-import { expect } from 'storybook/test'
+import { expect, userEvent } from 'storybook/test'
 import { projectRef } from '@superone/shared/environment'
 import type { PinnedSessionEntry, SessionHistoryEntry } from '@superone/shared/agent-types'
 import type { EnvironmentBucket, HostCheckout, SidebarSort } from '@/lib/multi-host/types'
+import { PinnedSessionRow } from '@/components/sidebar/PinnedSessionRow'
+import { SidebarCollapse } from '@/components/sidebar/SidebarCollapse'
+import { SidebarSectionLabel } from '@/components/sidebar/SidebarSectionLabel'
 import { MultiHostEnvironmentScroll } from './MultiHostEnvironmentScroll'
 
 function makeCheckout(
@@ -142,6 +145,16 @@ interface HarnessProps {
   settledSessions?: PinnedSessionEntry[]
   settledCounts?: Record<string, number>
   sidebarHeight: number
+  withPinned?: boolean
+}
+
+const samplePin: PinnedSessionEntry = {
+  sessionId: 'pin-story-1',
+  title: '调研远程节点 Harness 独立登录方案',
+  folderPath: vensenaSuperOne.pathKey,
+  folderName: 'super-one',
+  lastActiveAt: '2026-11-12T05:40:00.000Z',
+  messageCount: 4,
 }
 
 function InteractiveSpaceHarness({
@@ -153,9 +166,11 @@ function InteractiveSpaceHarness({
   settledSessions,
   settledCounts,
   sidebarHeight,
+  withPinned = false,
 }: HarnessProps) {
   const [expanded, setExpanded] = useState<Set<string>>(() => new Set(initialExpandedProjects))
   const [collapsedEnvs, setCollapsedEnvs] = useState<string[]>(initialCollapsedEnvironments)
+  const [pinnedCollapsed, setPinnedCollapsed] = useState(true)
   const [sort, setSort] = useState<SidebarSort>('recent')
   const [activeSession, setActiveSession] = useState<{ folderPath: string; sessionId: string } | null>(null)
 
@@ -191,37 +206,64 @@ function InteractiveSpaceHarness({
     <div
       data-slot="sidebar-story-frame"
       style={{ height: sidebarHeight }}
-      className="w-72 resize-y overflow-hidden rounded-md border border-border bg-sidebar text-sidebar-foreground shadow-sm"
+      className="flex w-72 resize-y flex-col overflow-hidden rounded-md border border-border bg-sidebar text-sidebar-foreground shadow-sm"
     >
-      <MultiHostEnvironmentScroll
-        environments={environments}
-        groupBy="environment"
-        sort={sort}
-        expandedProjectKeys={expanded}
-        collapsedEnvironmentIds={collapsedEnvs}
-        folderSessions={folderSessions}
-        sessionsHasMore={sessionsHasMore}
-        settledSessions={settledSessions}
-        settledCounts={settledCounts}
-        loadingFolders={{}}
-        openingSession={activeSession}
-        onToggleProject={toggleProject}
-        onToggleEnvironment={toggleEnvironment}
-        onSwitchSession={(folderPath, sessionId) => setActiveSession({ folderPath, sessionId })}
-        onPinSession={() => {}}
-        onSettleSession={() => {}}
-        onRenameSession={() => {}}
-        onDeleteSession={() => {}}
-        onEditProject={() => {}}
-        onRemoveProject={() => {}}
-        onNewSession={() => {}}
-        onRefreshEnvironment={() => {}}
-        onToggleConnection={() => {}}
-        onAddProject={() => {}}
-        onSort={setSort}
-        connectionBusyId={null}
-        refreshingConnectionId={null}
-      />
+      {withPinned && (
+        <div className="flex min-w-0 shrink-0 flex-col px-2 pt-1 pb-1">
+          <SidebarSectionLabel
+            section="pinned"
+            count={1}
+            collapsed={pinnedCollapsed}
+            onToggle={() => setPinnedCollapsed((value) => !value)}
+          >
+            Pinned
+          </SidebarSectionLabel>
+          <SidebarCollapse open={!pinnedCollapsed}>
+            <PinnedSessionRow
+              session={samplePin}
+              isActive={false}
+              status=""
+              isUnseen={false}
+              onSwitchSession={() => {}}
+              onPinSession={() => {}}
+              onSettleSession={() => {}}
+              onRenameSession={() => {}}
+              onDeleteSession={() => {}}
+            />
+          </SidebarCollapse>
+        </div>
+      )}
+      <div className="min-h-0 min-w-0 flex-1">
+        <MultiHostEnvironmentScroll
+          environments={environments}
+          groupBy="environment"
+          sort={sort}
+          expandedProjectKeys={expanded}
+          collapsedEnvironmentIds={collapsedEnvs}
+          folderSessions={folderSessions}
+          sessionsHasMore={sessionsHasMore}
+          settledSessions={settledSessions}
+          settledCounts={settledCounts}
+          loadingFolders={{}}
+          openingSession={activeSession}
+          onToggleProject={toggleProject}
+          onToggleEnvironment={toggleEnvironment}
+          onSwitchSession={(folderPath, sessionId) => setActiveSession({ folderPath, sessionId })}
+          onPinSession={() => {}}
+          onSettleSession={() => {}}
+          onRenameSession={() => {}}
+          onDeleteSession={() => {}}
+          onEditProject={() => {}}
+          onRemoveProject={() => {}}
+          onNewSession={() => {}}
+          onRefreshEnvironment={() => {}}
+          onToggleConnection={() => {}}
+          onAddProject={() => {}}
+          onSort={setSort}
+          connectionBusyId={null}
+          refreshingConnectionId={null}
+        />
+      </div>
     </div>
   )
 }
@@ -325,5 +367,53 @@ export const TightPaneCapped: Story = {
       makeBucket('vensena', 'cli-vensena', 'VensenA', [vensenaSuperOne]),
     ],
     sidebarHeight: 420,
+  },
+}
+
+export const PinnedToggleKeepsLowerHostStill: Story = {
+  args: {
+    withPinned: true,
+    environments: [
+      makeBucket('mac', 'local', '25s-MacBook-Pro.local', [
+        ...macCheckouts,
+        makeCheckout('mac', 'local', 'mac-opencode', 'opencode'),
+        makeCheckout('mac', 'local', 'mac-magpie', 'magpie'),
+        makeCheckout('mac', 'local', 'mac-t3code', 't3code'),
+        makeCheckout('mac', 'local', 'mac-desktop', 'agent-desktop'),
+      ]),
+      makeBucket('vensena', 'cli-vensena', 'VensenA', [vensenaSuperOne]),
+    ],
+    initialExpandedProjects: [vensenaSuperOne.pathKey],
+    folderSessions: {
+      [vensenaSuperOne.pathKey]: [
+        ...vensenaSessions,
+        {
+          sessionId: 'ven-so-s-1',
+          title: '实现跨端只读代码审查小程序',
+          lastActiveAt: '2026-11-12T05:35:00.000Z',
+          messageCount: 3,
+          provider: 'claude',
+        },
+      ],
+    },
+    sidebarHeight: 620,
+  },
+  play: async ({ canvasElement }) => {
+    await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    const vensenaHeader = canvasElement.querySelector<HTMLElement>('[data-environment-id="vensena"] > [data-slot="environment-section-header"]')!
+    const initialTop = vensenaHeader.getBoundingClientRect().top
+    const pinnedToggle = canvasElement.querySelector<HTMLElement>('[data-sidebar-section="pinned"]')!
+    await userEvent.click(pinnedToggle)
+    const samples: number[] = []
+    for (let i = 0; i < 10; i++) {
+      await new Promise((resolve) => requestAnimationFrame(resolve))
+      samples.push(vensenaHeader.getBoundingClientRect().top)
+    }
+    await new Promise((resolve) => setTimeout(resolve, 180))
+    const finalTop = vensenaHeader.getBoundingClientRect().top
+    await expect(Math.abs(finalTop - initialTop)).toBeLessThanOrEqual(1)
+    for (const top of samples) {
+      await expect(Math.abs(top - initialTop)).toBeLessThanOrEqual(1)
+    }
   },
 }

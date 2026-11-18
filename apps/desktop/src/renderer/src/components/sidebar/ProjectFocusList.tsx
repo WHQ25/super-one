@@ -14,7 +14,7 @@ import { AutomationDialog } from '@/components/AutomationDialog'
 import { ProjectHistoryList, ProjectHistorySearch } from './ProjectHistoryList'
 import { SidebarCollapse } from './SidebarCollapse'
 import { SidebarSectionLabel } from './SidebarSectionLabel'
-import { projectFocusSessionListMaxHeights, type ProjectFocusListMax } from './session-list-scroll'
+import { projectFocusSessionListMaxHeights, syncProjectFocusHeightsToDom, type ProjectFocusListMax } from './session-list-scroll'
 import type { SidebarFocusViewProps } from './SidebarFocusView'
 import { cn } from '@superone/ui/lib/utils'
 
@@ -194,11 +194,24 @@ export function ProjectFocusList({
   const [automationTarget, setAutomationTarget] = useState<{ path: string; environmentId?: string } | null>(null)
   const paneRef = useRef<HTMLDivElement>(null)
   const [paneHeight, setPaneHeight] = useState(0)
+  const paneHeightRef = useRef(0)
+  const listSizesRef = useRef<Array<{ key: string; environmentId: string; sessionCount: number; hasMore: boolean }>>([])
   useLayoutEffect(() => {
     const node = paneRef.current
     if (!node) return
     const read = () => {
-      const next = node.clientHeight
+      const rectHeight = node.getBoundingClientRect().height
+      const next = rectHeight > 0 ? rectHeight : node.clientHeight
+      if (next === paneHeightRef.current) return
+      paneHeightRef.current = next
+      const sizes = listSizesRef.current
+      if (sizes.length > 0) {
+        syncProjectFocusHeightsToDom(
+          node,
+          sizes.map((item) => item.key),
+          projectFocusSessionListMaxHeights(sizes, next),
+        )
+      }
       setPaneHeight((current) => (current === next ? current : next))
     }
     read()
@@ -237,6 +250,7 @@ export function ProjectFocusList({
           hasMore: props.sessionsHasMore?.[checkout.pathKey] === true,
         }))
   ))
+  listSizesRef.current = listSizes
   const listMaxes = projectFocusSessionListMaxHeights(listSizes, paneHeight)
   const maxByPath = new Map(listSizes.map((list, index) => [list.key, listMaxes[index]!]))
   const listMax = (pathKey: string): ProjectFocusListMax => maxByPath.get(pathKey) ?? { kind: 'cap' }

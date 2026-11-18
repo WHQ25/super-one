@@ -1,4 +1,6 @@
 import { observeElementRect } from '@tanstack/react-virtual'
+import { environmentSections } from '@/lib/multi-host/group-projects'
+import type { EnvironmentBucket, SidebarSort } from '@/lib/multi-host/types'
 
 /** One line plus the row's vertical padding. `measureElement` corrects a wrap or an open child list. */
 export const SESSION_ROW_ESTIMATE = 32
@@ -8,11 +10,10 @@ export const SESSION_ROW_ESTIMATE = 32
  * scrollport is the capped box. `overscroll-contain` stops the browser from
  * chaining a wheel into the sidebar on its own; `chainSessionListWheel`
  * forwards that wheel once this viewport is already at the edge, including
- * past a nested list that is also at its edge. A new max height eases in with
- * the same 120ms as `SidebarCollapse`.
+ * past a nested list that is also at its edge.
  */
 const SESSION_LIST_SCROLL_BEHAVIOR =
-  'sidebar-scroll min-h-0 min-w-0 transition-[max-height] duration-[120ms] ease-out motion-reduce:transition-none [&_[data-slot=scroll-area-viewport]]:max-h-[inherit] [&_[data-slot=scroll-area-viewport]]:overscroll-contain [&_[data-slot=scroll-area-viewport]>div]:block!'
+  'sidebar-scroll min-h-0 min-w-0 [&_[data-slot=scroll-area-viewport]]:max-h-[inherit] [&_[data-slot=scroll-area-viewport]]:overscroll-contain [&_[data-slot=scroll-area-viewport]>div]:block!'
 
 /** Tailwind `max-h-64` at the default 16px root. Keep this aligned with that class. */
 export const SESSION_LIST_CAP_PX = 256
@@ -193,6 +194,164 @@ export function measureMultiHostSections(
     sizes.set(environmentId, { fixedPx: Math.ceil(content.getBoundingClientRect().height - boxesPx), sessions })
   }
   return sizes
+}
+
+const HEIGHT_TRANSITION_MS = 120
+
+export function heightSections(
+  environments: readonly EnvironmentBucket[],
+  sort: SidebarSort,
+  collapsedIds: ReadonlySet<string>,
+  measured: ReadonlyMap<string, MultiHostSectionMeasure>,
+): MultiHostSectionSize[] {
+  return environmentSections(environments, sort)
+    .filter(({ bucket }) => bucket.connection !== 'offline')
+    .map(({ bucket }) => {
+      const open = !collapsedIds.has(bucket.environmentId)
+      const size = open ? measured.get(bucket.environmentId) : undefined
+      return { environmentId: bucket.environmentId, open, fixedPx: size?.fixedPx ?? 0, sessions: size?.sessions ?? [] }
+    })
+}
+
+export function applyScrollMaxHeight(
+  element: HTMLElement,
+  maxHeight: number | undefined,
+  animations?: Map<string, Animation>,
+  key?: string,
+): void {
+  if (animations && key) {
+    const active = animations.get(key)
+    if (active) {
+      active.cancel()
+      animations.delete(key)
+    }
+  }
+  element.style.maxHeight = maxHeight != null ? `${maxHeight}px` : ''
+}
+
+export function syncMultiHostHeightsToDom(
+  viewport: HTMLElement,
+  heights: { projects: ReadonlyMap<string, ProjectFocusListMax>; sessions: ReadonlyMap<string, number> },
+  collapsedIds: ReadonlySet<string>,
+  animations?: Map<string, Animation>,
+): void {
+  for (const section of viewport.querySelectorAll<HTMLElement>('[data-environment-id]')) {
+    const environmentId = section.getAttribute('data-environment-id')
+    if (!environmentId || collapsedIds.has(environmentId)) continue
+    const list = section.querySelector<HTMLElement>('[data-environment-project-list]')
+    if (list) {
+      const max = heights.projects.get(environmentId)
+      applyScrollMaxHeight(list, max?.kind === 'px' ? max.maxHeight : undefined, animations, `env:${environmentId}`)
+    }
+    for (const project of section.querySelectorAll<HTMLElement>('[data-project-key]')) {
+      const projectKey = project.getAttribute('data-project-key')
+      const active = project.querySelector<HTMLElement>('[data-active-session-list]')
+      if (!projectKey || !active) continue
+      applyScrollMaxHeight(active, heights.sessions.get(projectKey), animations, `session:${projectKey}`)
+    }
+  }
+}
+
+export function snapshotMultiHostHeights(
+  viewport: HTMLElement,
+  renderedHeights: ReadonlyMap<string, number>,
+  animations: ReadonlyMap<string, Animation>,
+): Map<string, number> {
+  const snapshot = new Map(renderedHeights)
+  for (const [key, animation] of animations) {
+    if (animation.playState !== 'running') continue
+    if (key.startsWith('env:')) {
+      const id = key.slice(4)
+      for (const section of viewport.querySelectorAll<HTMLElement>('[data-environment-id]')) {
+        if (section.getAttribute('data-environment-id') !== id) continue
+        const list = section.querySelector<HTMLElement>('[data-environment-project-list]')
+        if (list) snapshot.set(key, list.getBoundingClientRect().height)
+        break
+      }
+    } else if (key.startsWith('session:')) {
+      const pathKey = key.slice(8)
+      for (const project of viewport.querySelectorAll<HTMLElement>('[data-project-key]')) {
+        if (project.getAttribute('data-project-key') !== pathKey) continue
+        const active = project.querySelector<HTMLElement>('[data-active-session-list]')
+        if (active) snapshot.set(key, active.getBoundingClientRect().height)
+        break
+      }
+    }
+  }
+  return snapshot
+}
+
+function animateElementMaxHeight(
+  element: HTMLElement,
+  key: string,
+  prevHeights: ReadonlyMap<string, number>,
+  renderedHeights: Map<string, number>,
+  animations: Map<string, Animation>,
+  skipAnimation: boolean,
+): void {
+  const active = animations.get(key)
+  const from = active?.playState === 'running'
+    ? element.getBoundingClientRect().height
+    : prevHeights.get(key)
+  if (active) {
+    active.cancel()
+    animations.delete(key)
+  }
+  const to = element.getBoundingClientRect().height
+  renderedHeights.set(key, to)
+  if (skipAnimation || from == null || !(from > 0) || !(to > 0) || Math.abs(from - to) < 0.5) return
+  if (typeof element.animate !== 'function' || window.matchMedia?.('(prefers-reduced-motion: reduce)').matches) return
+  const animation = element.animate(
+    [{ maxHeight: `${from}px` }, { maxHeight: `${to}px` }],
+    { duration: HEIGHT_TRANSITION_MS, easing: 'ease-out' },
+  )
+  animations.set(key, animation)
+  animation.onfinish = () => {
+    if (animations.get(key) === animation) animations.delete(key)
+  }
+  animation.oncancel = () => {
+    if (animations.get(key) === animation) animations.delete(key)
+  }
+}
+
+export function animateMultiHostHeightChanges(
+  viewport: HTMLElement,
+  collapsedIds: ReadonlySet<string>,
+  newlyOpenedIds: ReadonlySet<string>,
+  prevHeights: ReadonlyMap<string, number>,
+  renderedHeights: Map<string, number>,
+  animations: Map<string, Animation>,
+): void {
+  for (const section of viewport.querySelectorAll<HTMLElement>('[data-environment-id]')) {
+    const environmentId = section.getAttribute('data-environment-id')
+    if (!environmentId || collapsedIds.has(environmentId)) continue
+    const skip = newlyOpenedIds.has(environmentId)
+    const list = section.querySelector<HTMLElement>('[data-environment-project-list]')
+    if (list) {
+      animateElementMaxHeight(list, `env:${environmentId}`, prevHeights, renderedHeights, animations, skip)
+    }
+    for (const project of section.querySelectorAll<HTMLElement>('[data-project-key]')) {
+      const projectKey = project.getAttribute('data-project-key')
+      const active = project.querySelector<HTMLElement>('[data-active-session-list]')
+      if (!projectKey || !active) continue
+      animateElementMaxHeight(active, `session:${projectKey}`, prevHeights, renderedHeights, animations, skip)
+    }
+  }
+}
+
+export function syncProjectFocusHeightsToDom(
+  pane: HTMLElement,
+  keys: readonly string[],
+  maxes: readonly ProjectFocusListMax[],
+): void {
+  const byKey = new Map(keys.map((key, index) => [key, maxes[index]]))
+  for (const project of pane.querySelectorAll<HTMLElement>('[data-project-key]')) {
+    const key = project.getAttribute('data-project-key')
+    const active = project.querySelector<HTMLElement>('[data-active-session-list]')
+    if (!key || !active) continue
+    const max = byKey.get(key)
+    applyScrollMaxHeight(active, max?.kind === 'px' ? max.maxHeight : undefined)
+  }
 }
 
 /**

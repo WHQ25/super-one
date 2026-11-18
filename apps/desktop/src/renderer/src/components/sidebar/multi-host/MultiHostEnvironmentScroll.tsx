@@ -1,9 +1,17 @@
-import { useLayoutEffect, useRef, useState, type ComponentProps } from 'react'
+import { useCallback, useLayoutEffect, useRef, useState, type ComponentProps } from 'react'
 import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
 import { environmentSections } from '@/lib/multi-host/group-projects'
 import type { EnvironmentBucket } from '@/lib/multi-host/types'
-import { measureMultiHostSections, type MultiHostSectionMeasure } from '@/components/sidebar/session-list-scroll'
-import { EnvironmentHeader, MultiHostProjectList, OfflineEnvironmentGroup } from './MultiHostProjectList'
+import {
+  animateMultiHostHeightChanges,
+  heightSections,
+  measureMultiHostSections,
+  multiHostProjectListMaxHeights,
+  snapshotMultiHostHeights,
+  syncMultiHostHeightsToDom,
+  type MultiHostSectionMeasure,
+} from '@/components/sidebar/session-list-scroll'
+import { EnvironmentHeader, MultiHostListMountContext, MultiHostProjectList, OfflineEnvironmentGroup } from './MultiHostProjectList'
 
 type ListProps = ComponentProps<typeof MultiHostProjectList>
 
@@ -22,34 +30,103 @@ export function MultiHostEnvironmentScroll(props: ListProps) {
   const [obscuredIds, setObscuredIds] = useState<string[]>([])
   const [paneHeight, setPaneHeight] = useState(0)
   const [sectionSizes, setSectionSizes] = useState<ReadonlyMap<string, MultiHostSectionMeasure>>()
+  const paneHeightRef = useRef(0)
+  const sectionSizesRef = useRef<ReadonlyMap<string, MultiHostSectionMeasure> | undefined>(undefined)
+  const renderedHeightsRef = useRef(new Map<string, number>())
+  const animationsRef = useRef(new Map<string, Animation>())
+  const measureNowRef = useRef<((skipDomSync?: boolean) => ReadonlyMap<string, MultiHostSectionMeasure> | undefined) | null>(null)
+  const pendingOpenRef = useRef<{
+    prevHeights: Map<string, number>
+    newlyOpenedIds: Set<string>
+  } | null>(null)
+  const latestPropsRef = useRef(props)
+  latestPropsRef.current = props
+
+  const computeCurrentHeights = (
+    sizes: ReadonlyMap<string, MultiHostSectionMeasure> | undefined,
+    pane: number,
+  ) => {
+    const current = latestPropsRef.current
+    if (current.groupBy !== 'environment' || current.flat || !sizes) return null
+    const collapsed = new Set(current.collapsedEnvironmentIds)
+    return multiHostProjectListMaxHeights(
+      heightSections(current.environments, current.sort, collapsed, sizes),
+      pane,
+    )
+  }
 
   useLayoutEffect(() => {
     const viewport = viewportRef.current
     const content = viewport?.firstElementChild
     if (!viewport || !content || typeof ResizeObserver === 'undefined') return
     const tracked = new Set<Element>()
+    const observedBoxes = new Set<Element>()
     let lastKey = ''
-    const measure = () => {
+    const boxObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        const target = entry.target as HTMLElement
+        const height = entry.borderBoxSize?.[0]?.blockSize ?? entry.contentRect.height
+        if (target.hasAttribute('data-environment-project-list')) {
+          const envId = target.closest('[data-environment-id]')?.getAttribute('data-environment-id')
+          if (envId) renderedHeightsRef.current.set(`env:${envId}`, height)
+        } else if (target.hasAttribute('data-active-session-list')) {
+          const projectKey = target.closest('[data-project-key]')?.getAttribute('data-project-key')
+          if (projectKey) renderedHeightsRef.current.set(`session:${projectKey}`, height)
+        }
+      }
+    })
+    const syncBoxes = () => {
+      for (const element of observedBoxes) {
+        if (element.isConnected) continue
+        boxObserver.unobserve(element)
+        observedBoxes.delete(element)
+      }
+      for (const box of viewport.querySelectorAll('[data-environment-project-list], [data-active-session-list]')) {
+        if (observedBoxes.has(box)) continue
+        observedBoxes.add(box)
+        boxObserver.observe(box)
+      }
+    }
+    const measure = (skipDomSync = false) => {
       for (const element of tracked) {
         if (element.isConnected) continue
         observer.unobserve(element)
         tracked.delete(element)
       }
+      syncBoxes()
       const next = measureMultiHostSections(viewport, (element) => {
         if (tracked.has(element)) return
         tracked.add(element)
         observer.observe(element)
       })
       const key = JSON.stringify([...next])
-      if (key === lastKey) return
+      if (key === lastKey) return sectionSizesRef.current
       lastKey = key
+      sectionSizesRef.current = next
+      if (!skipDomSync) {
+        const heights = computeCurrentHeights(next, paneHeightRef.current)
+        if (heights) {
+          syncMultiHostHeightsToDom(
+            viewport,
+            heights,
+            new Set(latestPropsRef.current.collapsedEnvironmentIds),
+            animationsRef.current,
+          )
+        }
+      }
       setSectionSizes(next)
+      return next
     }
-    const observer = new ResizeObserver(measure)
+    measureNowRef.current = measure
+    const observer = new ResizeObserver(() => measure(true))
     tracked.add(content)
     observer.observe(content)
     measure()
-    return () => observer.disconnect()
+    return () => {
+      measureNowRef.current = null
+      observer.disconnect()
+      boxObserver.disconnect()
+    }
   }, [])
 
   useLayoutEffect(() => {
@@ -63,7 +140,20 @@ export function MultiHostEnvironmentScroll(props: ListProps) {
       const padding = style
         ? Math.ceil((parseFloat(style.paddingTop) || 0) + (parseFloat(style.paddingBottom) || 0))
         : 0
-      const next = Math.max(0, viewport.clientHeight - padding)
+      const rectHeight = viewport.getBoundingClientRect().height
+      const viewportHeight = rectHeight > 0 ? rectHeight : viewport.clientHeight
+      const next = Math.max(0, viewportHeight - padding)
+      if (next === paneHeightRef.current) return
+      paneHeightRef.current = next
+      const heights = computeCurrentHeights(sectionSizesRef.current, next)
+      if (heights) {
+        syncMultiHostHeightsToDom(
+          viewport,
+          heights,
+          new Set(latestPropsRef.current.collapsedEnvironmentIds),
+          animationsRef.current,
+        )
+      }
       setPaneHeight((current) => (current === next ? current : next))
     }
     read()
@@ -72,6 +162,83 @@ export function MultiHostEnvironmentScroll(props: ListProps) {
     observer.observe(viewport)
     return () => observer.disconnect()
   }, [])
+
+  const collapsedKey = props.collapsedEnvironmentIds.join('\0')
+  const prevCollapsedKeyRef = useRef<string | null>(null)
+
+  const finishEnvironmentToggle = useCallback((
+    viewport: HTMLElement,
+    nextSet: ReadonlySet<string>,
+    newlyOpenedIds: ReadonlySet<string>,
+    prevHeights: ReadonlyMap<string, number>,
+  ) => {
+    if (newlyOpenedIds.size > 0) {
+      const nextSizes = measureNowRef.current?.(true)
+      const heights = computeCurrentHeights(nextSizes, paneHeightRef.current)
+      if (heights) {
+        syncMultiHostHeightsToDom(viewport, heights, nextSet, animationsRef.current)
+      }
+    }
+    animateMultiHostHeightChanges(
+      viewport,
+      nextSet,
+      newlyOpenedIds,
+      prevHeights,
+      renderedHeightsRef.current,
+      animationsRef.current,
+    )
+  }, [])
+
+  const hasMountedLists = (viewport: HTMLElement, ids: ReadonlySet<string>) => {
+    if (ids.size === 0) return true
+    const mounted = new Set<string>()
+    for (const section of viewport.querySelectorAll<HTMLElement>('[data-environment-id]')) {
+      const id = section.getAttribute('data-environment-id')
+      if (id && section.querySelector('[data-environment-project-list]')) mounted.add(id)
+    }
+    return [...ids].every((id) => mounted.has(id))
+  }
+
+  useLayoutEffect(() => {
+    const viewport = viewportRef.current
+    if (!viewport) return
+    if (prevCollapsedKeyRef.current === null) {
+      prevCollapsedKeyRef.current = collapsedKey
+      return
+    }
+    if (prevCollapsedKeyRef.current === collapsedKey) return
+    const prevSet = new Set(prevCollapsedKeyRef.current ? prevCollapsedKeyRef.current.split('\0') : [])
+    const nextSet = new Set(props.collapsedEnvironmentIds)
+    prevCollapsedKeyRef.current = collapsedKey
+    const onlineIds = new Set(
+      props.environments.filter((bucket) => bucket.connection !== 'offline').map((bucket) => bucket.environmentId),
+    )
+    const newlyOpenedIds = new Set([...prevSet].filter((id) => !nextSet.has(id) && onlineIds.has(id)))
+    const prevHeights = snapshotMultiHostHeights(viewport, renderedHeightsRef.current, animationsRef.current)
+    if (!hasMountedLists(viewport, newlyOpenedIds)) {
+      pendingOpenRef.current = { prevHeights, newlyOpenedIds }
+      return
+    }
+    finishEnvironmentToggle(viewport, nextSet, newlyOpenedIds, prevHeights)
+  }, [collapsedKey, finishEnvironmentToggle])
+
+  const handleListMount = useCallback(() => {
+    const viewport = viewportRef.current
+    if (!viewport) return
+    const pending = pendingOpenRef.current
+    if (!pending) {
+      measureNowRef.current?.()
+      return
+    }
+    if (!hasMountedLists(viewport, pending.newlyOpenedIds)) return
+    pendingOpenRef.current = null
+    finishEnvironmentToggle(
+      viewport,
+      new Set(latestPropsRef.current.collapsedEnvironmentIds),
+      pending.newlyOpenedIds,
+      pending.prevHeights,
+    )
+  }, [finishEnvironmentToggle])
 
   const layoutKey = [
     props.groupBy,
@@ -162,7 +329,9 @@ export function MultiHostEnvironmentScroll(props: ListProps) {
     <div ref={frameRef} className="device-name-clip relative flex h-full min-h-0 min-w-0 flex-col pt-1">
       {/* The viewport's child is `display: table`, whose border-spacing leaves a sliver of scroll at both ends. */}
       <ScrollArea type="scroll" edgeFade viewportRef={viewportRef} className="sidebar-scroll min-h-0 min-w-0 flex-1 [&_[data-slot=scroll-area-viewport]>div]:block!">
-        <MultiHostProjectList {...props} obscuredEnvironmentIds={obscuredIds} paneHeight={paneHeight} sectionSizes={sectionSizes} />
+        <MultiHostListMountContext.Provider value={handleListMount}>
+          <MultiHostProjectList {...props} obscuredEnvironmentIds={obscuredIds} paneHeight={paneHeight} sectionSizes={sectionSizes} />
+        </MultiHostListMountContext.Provider>
       </ScrollArea>
       {offlineSections.length > 0 && (
         <OfflineEnvironmentGroup

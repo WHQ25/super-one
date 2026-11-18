@@ -1,7 +1,16 @@
 /** @vitest-environment jsdom */
 
-import { describe, expect, it } from 'vitest'
-import { chainSessionListWheel, measureMultiHostSections, multiHostProjectListMaxHeights, projectFocusSessionListMaxHeights, SESSION_LIST_CAP_PX } from './session-list-scroll'
+import { describe, expect, it, vi } from 'vitest'
+import {
+  animateMultiHostHeightChanges,
+  chainSessionListWheel,
+  measureMultiHostSections,
+  multiHostProjectListMaxHeights,
+  projectFocusSessionListMaxHeights,
+  SESSION_LIST_CAP_PX,
+  SESSION_LIST_SCROLL_CLASS,
+  syncMultiHostHeightsToDom,
+} from './session-list-scroll'
 
 function scrollport(
   metrics: { scrollHeight: number; clientHeight: number; scrollTop: number },
@@ -236,5 +245,86 @@ describe('chainSessionListWheel', () => {
     chainSessionListWheel(list, event)
     expect(sidebar.scrollTop).toBe(80)
     expect(stopped()).toBe(false)
+  })
+})
+
+describe('multi-host height sync and animation', () => {
+  it('omits CSS max-height transition so pane changes do not lag and bounce', () => {
+    expect(SESSION_LIST_SCROLL_CLASS).not.toContain('transition-[max-height]')
+  })
+
+  it('syncs open environment and session heights immediately while leaving collapsed ones untouched', () => {
+    const viewport = document.createElement('div')
+    viewport.innerHTML = `
+      <div data-environment-id="mac">
+        <div data-environment-project-list style="max-height: 440px">
+          <div data-project-key="/src/app"><div data-active-session-list style="max-height: 400px"></div></div>
+        </div>
+      </div>
+      <div data-environment-id="vensena">
+        <div data-environment-project-list style="max-height: 300px"></div>
+      </div>
+    `
+    const macList = viewport.querySelector<HTMLElement>('[data-environment-id="mac"] [data-environment-project-list]')!
+    const active = viewport.querySelector<HTMLElement>('[data-active-session-list]')!
+    const vensenaList = viewport.querySelector<HTMLElement>('[data-environment-id="vensena"] [data-environment-project-list]')!
+    const cancel = vi.fn()
+    const animations = new Map<string, Animation>([
+      ['env:mac', { cancel, playState: 'running' } as unknown as Animation],
+    ])
+
+    syncMultiHostHeightsToDom(
+      viewport,
+      {
+        projects: new Map([['mac', { kind: 'px', maxHeight: 380 }], ['vensena', { kind: 'cap' }]]),
+        sessions: new Map([['/src/app', 340]]),
+      },
+      new Set(['vensena']),
+      animations,
+    )
+
+    expect(cancel).toHaveBeenCalledTimes(1)
+    expect(macList.style.maxHeight).toBe('380px')
+    expect(active.style.maxHeight).toBe('340px')
+    expect(vensenaList.style.maxHeight).toBe('300px')
+  })
+
+  it('animates only sibling open environments and skips newly opened environments', () => {
+    const viewport = document.createElement('div')
+    viewport.innerHTML = `
+      <div data-environment-id="mac">
+        <div data-environment-project-list></div>
+      </div>
+      <div data-environment-id="vensena">
+        <div data-environment-project-list></div>
+      </div>
+    `
+    const macList = viewport.querySelector<HTMLElement>('[data-environment-id="mac"] [data-environment-project-list]')!
+    const vensenaList = viewport.querySelector<HTMLElement>('[data-environment-id="vensena"] [data-environment-project-list]')!
+    macList.getBoundingClientRect = () => ({ height: 408 } as DOMRect)
+    vensenaList.getBoundingClientRect = () => ({ height: 128 } as DOMRect)
+    const macAnimate = vi.fn(() => ({ playState: 'running', cancel: vi.fn() }) as unknown as Animation)
+    const vensenaAnimate = vi.fn()
+    macList.animate = macAnimate
+    vensenaList.animate = vensenaAnimate
+    const rendered = new Map<string, number>()
+    const animations = new Map<string, Animation>()
+
+    animateMultiHostHeightChanges(
+      viewport,
+      new Set(),
+      new Set(['vensena']),
+      new Map([['env:mac', 504]]),
+      rendered,
+      animations,
+    )
+
+    expect(macAnimate).toHaveBeenCalledWith(
+      [{ maxHeight: '504px' }, { maxHeight: '408px' }],
+      { duration: 120, easing: 'ease-out' },
+    )
+    expect(vensenaAnimate).not.toHaveBeenCalled()
+    expect(rendered.get('env:mac')).toBe(408)
+    expect(rendered.get('env:vensena')).toBe(128)
   })
 })

@@ -299,4 +299,41 @@ describe('environment sections', () => {
     expect(screen.getByText('beta')).toBeTruthy()
     expect(viewport?.contains(screen.getByText('alpha'))).toBe(false)
   })
+
+  it('freezes a collapsing environment maxHeight while SidebarCollapse folds out', () => {
+    const projects = Array.from({ length: 14 }, (_, index) => checkout({
+      environmentId: 'desktop',
+      connectionId: 'local',
+      projectId: `desktop-${index}`,
+      name: `desktop-${index}`,
+      pathKey: `/desktop/${index}`,
+      hostPath: `/desktop/${index}`,
+    }))
+    const baseProps = {
+      paneHeight: 640,
+      sectionSizes: new Map([
+        ['desktop', { fixedPx: 14 * 36, sessions: [] }],
+        ['node-1', { fixedPx: 36, sessions: [] }],
+      ]),
+      environments: [
+        bucket({ environmentId: 'desktop', connectionId: 'local', label: 'This Mac', kind: 'local', checkouts: projects }),
+        bucket({ environmentId: 'node-1', connectionId: 'cli-1', label: 'build', checkouts: [remote] }),
+      ],
+      groupBy: 'environment' as const,
+      sort: 'recent' as const,
+      expandedProjectKeys: new Set<string>(),
+      folderSessions: {},
+      loadingFolders: {},
+      openingSession: null,
+      ...callbacks,
+    }
+    const { rerender } = render(<MultiHostProjectList {...baseProps} collapsedEnvironmentIds={[]} />)
+
+    const list = document.querySelector<HTMLElement>('[data-environment-id="desktop"] [data-environment-project-list]')!
+    expect(list.style.maxHeight).toBe(`${640 - 36 * 2 - 36}px`)
+
+    rerender(<MultiHostProjectList {...baseProps} collapsedEnvironmentIds={['desktop']} />)
+
+    expect(list.style.maxHeight).toBe(`${640 - 36 * 2 - 36}px`)
+  })
 })

@@ -1,4 +1,4 @@
-import { useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createContext, useContext, useId, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useShallow } from 'zustand/react/shallow'
 import { toast } from 'sonner'
@@ -32,7 +32,9 @@ import { SessionHoverCardTrigger, sidebarHoverCardRowClass } from '@/components/
 import { SidebarHoverChevron, sidebarRowActionsClass } from '@/components/sidebar/hover-disclosure'
 import { EnvironmentSectionHeader } from './EnvironmentSectionHeader'
 import { focusEnvironment } from '@/components/sidebar/sidebar-focus'
-import { chainSessionListWheel, multiHostProjectListMaxHeights, SESSION_LIST_SCROLL_CLASS, type MultiHostSectionMeasure, type MultiHostSectionSize } from '@/components/sidebar/session-list-scroll'
+import { chainSessionListWheel, heightSections, multiHostProjectListMaxHeights, SESSION_LIST_SCROLL_CLASS, type MultiHostSectionMeasure, type ProjectFocusListMax } from '@/components/sidebar/session-list-scroll'
+
+export const MultiHostListMountContext = createContext<(() => void) | null>(null)
 
 const EMPTY_SESSIONS: SessionHistoryEntry[] = []
 const EMPTY_SETTLED_SESSIONS: PinnedSessionEntry[] = []
@@ -99,21 +101,6 @@ function preferredCheckout(checkouts: HostCheckout[]): HostCheckout {
   return checkouts.reduce((best, checkout) => (checkout.lastOpened > best.lastOpened ? checkout : best))
 }
 
-function heightSections(
-  environments: readonly EnvironmentBucket[],
-  sort: SidebarSort,
-  collapsedIds: ReadonlySet<string>,
-  measured: ReadonlyMap<string, MultiHostSectionMeasure>,
-): MultiHostSectionSize[] {
-  return environmentSections(environments, sort)
-    .filter(({ bucket }) => bucket.connection !== 'offline')
-    .map(({ bucket }) => {
-      const open = !collapsedIds.has(bucket.environmentId)
-      const size = open ? measured.get(bucket.environmentId) : undefined
-      return { environmentId: bucket.environmentId, open, fixedPx: size?.fixedPx ?? 0, sessions: size?.sessions ?? [] }
-    })
-}
-
 function ProjectLoadError({
   bucket,
   className,
@@ -145,6 +132,9 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
     environments, groupBy, sort, expandedProjectKeys, collapsedEnvironmentIds,
   } = props
   const collapsedIds = new Set(collapsedEnvironmentIds)
+  const frozenEnvironmentHeightsRef = useRef(
+    new Map<string, { projectMax?: ProjectFocusListMax; sessionMaxes: Map<string, number> }>(),
+  )
   const backgroundCloneTasks = useBackgroundCloneStore((s) => s.tasks).filter((task) => task.backgrounded)
   const inputPaths = useChatStore((state) => inputProjectPathKey(state.projectSessions))
   const inputPathSet = useMemo(() => new Set(inputPaths ? inputPaths.split('\n') : []), [inputPaths])
@@ -156,7 +146,14 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
       )
     : null
 
-  const checkoutRow = (checkout: HostCheckout, bucket: EnvironmentBucket, name?: string, sessionsOnly = false, forceCollapsed = false) => {
+  const checkoutRow = (
+    checkout: HostCheckout,
+    bucket: EnvironmentBucket,
+    name?: string,
+    sessionsOnly = false,
+    forceCollapsed = false,
+    frozenSessionMax?: number,
+  ) => {
     const folder = checkoutToRecentFolder(checkout, name)
     return (
       <ProjectSidebarRow
@@ -165,7 +162,7 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
         sessionsOnly={sessionsOnly}
         isExpanded={forceCollapsed ? false : expandedProjectKeys.has(checkout.pathKey)}
         onToggleExpand={forceCollapsed ? () => props.onToggleEnvironment(bucket.environmentId) : props.onToggleProject}
-        sessionListMaxHeight={environmentHeights?.sessions.get(checkout.pathKey)}
+        sessionListMaxHeight={forceCollapsed ? undefined : (frozenSessionMax ?? environmentHeights?.sessions.get(checkout.pathKey))}
         sessions={props.folderSessions[checkout.pathKey] ?? EMPTY_SESSIONS}
         sessionsHasMore={props.sessionsHasMore?.[checkout.pathKey] ?? false}
         onLoadMoreSessions={props.onLoadMoreSessions}
@@ -259,7 +256,16 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
         {unlistedRows}
         {sections.map(({ bucket, checkouts }) => {
           const collapsed = collapsedEnvironmentIds.includes(bucket.environmentId)
-          const projectMax = environmentHeights?.projects.get(bucket.environmentId)
+          const frozen = collapsed ? frozenEnvironmentHeightsRef.current.get(bucket.environmentId) : undefined
+          const projectMax = collapsed ? frozen?.projectMax : environmentHeights?.projects.get(bucket.environmentId)
+          if (!collapsed && environmentHeights) {
+            const sessionMaxes = new Map<string, number>()
+            for (const checkout of checkouts) {
+              const sessionMax = environmentHeights.sessions.get(checkout.pathKey)
+              if (sessionMax != null) sessionMaxes.set(checkout.pathKey, sessionMax)
+            }
+            frozenEnvironmentHeightsRef.current.set(bucket.environmentId, { projectMax, sessionMaxes })
+          }
           const cloningTasks = backgroundCloneTasks.filter((task) => task.connectionId === bucket.connectionId)
           const pierced: HostCheckout[] = []
           if (collapsed) {
@@ -305,7 +311,14 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
                     {cloningTasks.map((task) => (
                       <CloningProjectRow key={task.cloneId} name={task.directoryName} progress={task.progress} />
                     ))}
-                    {checkouts.map((checkout) => checkoutRow(checkout, bucket))}
+                    {checkouts.map((checkout) => checkoutRow(
+                      checkout,
+                      bucket,
+                      undefined,
+                      false,
+                      false,
+                      collapsed ? frozen?.sessionMaxes.get(checkout.pathKey) : undefined,
+                    ))}
                   </EnvironmentProjectScroll>
                 </SidebarCollapse>
                 {pierced.map((checkout) => checkoutRow(checkout, bucket, undefined, false, true))}
@@ -488,6 +501,12 @@ export function OfflineEnvironmentGroup({
 
 function EnvironmentProjectScroll({ children, maxHeight }: { children: ReactNode; maxHeight?: number }) {
   const viewportRef = useRef<HTMLDivElement>(null)
+  const onMount = useContext(MultiHostListMountContext)
+  const onMountRef = useRef(onMount)
+  onMountRef.current = onMount
+  useLayoutEffect(() => {
+    onMountRef.current?.()
+  }, [])
   return (
     <ScrollArea
       type="scroll"

@@ -1,6 +1,5 @@
 import { useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Kbd } from '@superone/ui/components/ui/kbd'
 import { cn } from '@superone/ui/lib/utils'
 import type {
   QuestionAnnotations,
@@ -96,7 +95,7 @@ export function AskUserQuestionResultPresenter({ text, params, renderPreview }: 
 
 function QuestionNoteBox({ label, text }: { label: string; text: string }) {
   return (
-    <div className="mt-2 flex items-baseline gap-2 rounded bg-muted px-2.5 py-1.5 text-xs text-foreground">
+    <div className="mt-2 flex items-baseline gap-2 rounded bg-muted/50 px-2 py-1 text-xs text-foreground">
       <span className="shrink-0 text-muted-foreground">{label}</span>
       <span className="min-w-0 break-words">{text}</span>
     </div>
@@ -105,14 +104,10 @@ function QuestionNoteBox({ label, text }: { label: string; text: string }) {
 
 function StatusBadge({ dismissed }: { dismissed: boolean }) {
   const { t } = useTranslation()
+  if (!dismissed) return null
   return (
-    <span
-      className={cn(
-        'shrink-0 rounded px-1.5 py-0.5 text-xs',
-        dismissed ? 'bg-muted text-muted-foreground' : 'bg-primary/10 text-primary',
-      )}
-    >
-      {dismissed ? t('chat.toolBlock.dismissed') : t('chat.askUser.answered')}
+    <span className="shrink-0 text-xs text-muted-foreground/80">
+      {t('chat.toolBlock.dismissed')}
     </span>
   )
 }
@@ -201,7 +196,7 @@ export function AskUserQuestionBlockPresenter({
         <div
           data-tool-use-id={toolUseId}
           data-ask-user-question-result={toolUseId}
-          className="@container my-0.5 flex min-w-0 items-center justify-between gap-2 rounded-lg border border-border/60 bg-card p-3 text-xs"
+          className="@container my-0.5 flex min-w-0 items-center justify-between gap-2 rounded-lg bg-muted/40 px-2.5 py-2 text-xs"
         >
           <div className="flex min-w-0 items-center gap-1.5">
             <ToolBrandIcon alt="" icon="message-circle" />
@@ -227,7 +222,7 @@ export function AskUserQuestionBlockPresenter({
       <div
         data-tool-use-id={toolUseId}
         data-ask-user-question-result={toolUseId}
-        className="@container my-0.5 flex min-w-0 flex-col rounded-lg border border-primary/30 bg-card p-3"
+        className="@container my-0.5 flex min-w-0 flex-col rounded-lg bg-muted/40 px-2.5 py-2"
       >
         {qaPairs.length > 1 ? (
           <QuestionTabs
@@ -243,7 +238,7 @@ export function AskUserQuestionBlockPresenter({
           {qaPairs.length === 1 && <StatusBadge dismissed={false} />}
         </div>
         <div className="flex flex-wrap gap-1.5">
-          <span className="rounded bg-primary px-2 py-1 text-xs text-primary-foreground">
+          <span className="rounded bg-primary/15 px-2 py-0.5 text-xs font-medium text-primary">
             {activePair.answer}
           </span>
         </div>
@@ -295,7 +290,7 @@ export function AskUserQuestionBlockPresenter({
 
   const optionButtons = (
     <div className={cn('flex flex-wrap gap-1.5', isPreview && !isHtml && '@[420px]:flex-col')}>
-      {options.map((opt, i) => {
+      {options.map((opt) => {
         const isSelected = selectedLabels.includes(opt.label)
         const isInspected = inspectedLabel === opt.label
         return (
@@ -308,16 +303,15 @@ export function AskUserQuestionBlockPresenter({
             data-inspected={isInspected ? 'true' : undefined}
             onClick={() => handleOptionClick(opt.label)}
             className={cn(
-              'rounded px-2 py-1 text-left text-xs whitespace-normal transition',
+              'rounded px-2 py-0.5 text-left text-xs whitespace-normal transition',
               anyOptionHasDetail ? 'cursor-pointer' : 'cursor-default',
               isSelected
-                ? cn('bg-primary text-primary-foreground', isInspected && 'ring-1 ring-primary-foreground/60')
+                ? cn('bg-primary/15 font-medium text-primary', isInspected && 'ring-1 ring-primary/40')
                 : isInspected
-                  ? 'bg-accent text-foreground ring-1 ring-primary/60'
-                  : cn('bg-muted text-foreground', anyOptionHasDetail && 'hover:bg-accent'),
+                  ? 'bg-accent text-foreground ring-1 ring-primary/40'
+                  : cn('bg-muted/50 text-muted-foreground', anyOptionHasDetail && 'hover:bg-muted hover:text-foreground'),
             )}
           >
-            <Kbd variant="square" className="mr-1.5">{i + 1}</Kbd>
             {opt.label}
           </button>
         )
@@ -337,6 +331,7 @@ export function AskUserQuestionBlockPresenter({
       options={options}
       labels={inspectedOpt ? [inspectedOpt.label] : selectedLabels}
       multiSelect={activeQuestion.multiSelect}
+      tone="quiet"
     />
   )
 
@@ -344,10 +339,7 @@ export function AskUserQuestionBlockPresenter({
     <div
       data-tool-use-id={toolUseId}
       data-ask-user-question-result={toolUseId}
-      className={cn(
-        '@container my-0.5 flex min-w-0 flex-col rounded-lg border bg-card p-3',
-        isDismissed ? 'border-border/60' : 'border-primary/30',
-      )}
+      className="@container my-0.5 flex min-w-0 flex-col rounded-lg bg-muted/40 px-2.5 py-2"
     >
       {questions.length > 1 && (
         <QuestionTabs

@@ -67,7 +67,7 @@ export function OptionDescriptionCallout({
   options: readonly UserQuestionOption[]
   labels: readonly string[]
   multiSelect: boolean
-  tone?: 'selected' | 'inspecting'
+  tone?: 'selected' | 'inspecting' | 'quiet'
 }) {
   if (labels.length === 0) return null
   const described = options.filter((o) => labels.includes(o.label) && o.description)
@@ -76,10 +76,12 @@ export function OptionDescriptionCallout({
   return (
     <div
       className={cn(
-        'mt-2 space-y-1 border-l-2 px-2.5 py-1.5 text-xs leading-snug',
-        tone === 'inspecting'
-          ? 'border-border bg-muted/60 text-muted-foreground'
-          : 'border-primary bg-primary/10 text-primary',
+        'mt-2 space-y-1 border-l-2 px-2.5 text-xs leading-snug',
+        tone === 'quiet'
+          ? 'border-border/60 py-0.5 text-muted-foreground'
+          : tone === 'inspecting'
+            ? 'border-border bg-muted/60 py-1.5 text-muted-foreground'
+            : 'border-primary bg-primary/10 py-1.5 text-primary',
       )}
     >
       {described.map((opt) => (

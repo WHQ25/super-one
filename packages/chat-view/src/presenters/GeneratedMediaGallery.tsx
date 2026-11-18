@@ -117,7 +117,7 @@ export function GeneratedMediaGallery({ items, renderPreview, renderThumbnail }:
           {carousel ? `${index + 1}/${items.length}` : items.length}
         </span>
       </div>
-      <div className="flex min-w-0 gap-2">
+      <div className="flex min-w-0 gap-2 @min-[520px]:rounded-lg @min-[520px]:bg-muted/40 @min-[520px]:p-2">
         <div
           className={cn('group/carousel relative h-[clamp(17rem,85cqw,23rem)] min-w-0 flex-1 rounded-lg @min-[520px]:h-[clamp(20rem,57cqw,25rem)]', carousel && 'touch-pan-y')}
           data-generated-media-carousel={carousel || undefined}

@@ -11,6 +11,7 @@ import {
 import { worktreeGit } from '@superone/runtime/git'
 import { getDb } from './database'
 import { listSessionDeliveries } from './db-session-deliveries'
+import { previewSyncZoneReclaim, sweepSyncZone, syncZoneUploadIssues } from './environment/session-zone-reclaim'
 import { canonicalClaimPath } from './environment/sync-zone-paths'
 import { gitRun } from './git-run'
 import { resolveHarnessHomeRoot } from './harness/home'
@@ -65,12 +66,18 @@ export function abandonGivenUpDeliveriesUnder(sessionId: string, dirPath: string
   }
 }
 
-export function getDesktopStorageInventory(): StorageInventory {
+export async function getDesktopStorageInventory(): Promise<StorageInventory> {
   try {
+    const [reclaimable, syncIssues] = await Promise.all([
+      previewSyncZoneReclaim(),
+      syncZoneUploadIssues(),
+    ])
     return measureStorageInventory({
       roots: storageRoots(),
       nodeEventStats: readDesktopNodeEventStats(),
       busyHarnessIds: busyHarnessInstallIds(),
+      reclaimableSyncSessions: new Set(reclaimable.removed),
+      syncIssues,
     })
   } catch (err) {
     log.error('[storage] inventory failed: %s', err instanceof Error ? err.stack ?? err.message : String(err))
@@ -89,6 +96,7 @@ export async function runDesktopStorageAction(action: unknown, harnessId: unknow
       busyHarnessIds: busyHarnessInstallIds(),
       isSyncDirProtected: hasActiveSyncDeliveriesUnder,
       onSyncDirCleared: abandonGivenUpDeliveriesUnder,
+      reclaimSyncZone: async () => (await sweepSyncZone()).freedBytes,
       compactNodeEvents: (vacuum) => compactDesktopNodeEventLog(vacuum),
       clearBrowserCache: () => browser.clearCache(),
       clearBrowserCodeCache: () => browser.clearCodeCaches({}),

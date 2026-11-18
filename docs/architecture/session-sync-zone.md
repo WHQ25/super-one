@@ -555,12 +555,12 @@ makes a manual sweep overlapping the scheduled one safe without a lock.
 
 **No size cap, by decision.** A cap would have to delete artifacts a live
 transcript names; the sweep already removes everything provably dead.
-Settings → General → Storage (`SessionStorageSection`,
-`packages/shared/src/environment/sync-zone-usage.ts`) shows the zone total,
-session count, bytes still owed to a node (live content-owning rows not given
-up), what a dry-run sweep would free, the retryable give-ups (**Retry Upload**)
-and the `committing` give-ups (*needs re-delivery*, no button; E090-3), with
-**Reclaim Now** and **Show in Folder**.
+Settings → Storage → Session Files (`StorageSettingsPage`,
+`packages/shared/src/desktop-storage.ts`) folds deleted-session leftovers into
+the optimizable space of `Attachments` and `Generated Media` (swept by
+one-click **Optimize**), and surfaces retryable give-ups (**Retry Upload**)
+and `committing` give-ups (*needs re-delivery*, no button; E090-3) inside the
+same section when any exist.
 
 ## 8. The delivery record
 

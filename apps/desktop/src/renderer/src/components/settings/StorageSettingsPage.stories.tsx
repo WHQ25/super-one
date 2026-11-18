@@ -32,8 +32,8 @@ export const storageInventoryFixture: StorageInventory = {
     { id: 'browser-code-cache', bytes: 337 * MB, path: `${ROOT}/Partitions/browser`, actions: ['clear-browser-code-cache', 'reveal'] },
     { id: 'browser-site-data', bytes: Math.round(3.6 * GB), path: `${ROOT}/Partitions/browser`, actions: ['clear-browser-site-data', 'reveal'] },
     { id: 'node-event-log', bytes: Math.round(2.5 * GB), path: `${ROOT}/node-host/node.db`, actions: ['compact-node-events', 'reveal'] },
-    { id: 'sync-attachments', bytes: Math.round(1.3 * GB), path: `${ROOT}/sync`, actions: ['clear-sync-attachments', 'reveal'] },
-    { id: 'sync-media', bytes: 360 * MB, path: `${ROOT}/sync`, actions: ['clear-sync-media', 'reveal'] },
+    { id: 'sync-attachments', bytes: Math.round(1.3 * GB), unusedBytes: 240 * MB, path: `${ROOT}/sync`, actions: ['clear-sync-attachments', 'reveal'] },
+    { id: 'sync-media', bytes: 360 * MB, unusedBytes: 80 * MB, path: `${ROOT}/sync`, actions: ['clear-sync-media', 'reveal'] },
     { id: 'app-cache', bytes: 820 * MB, path: `${ROOT}/Cache`, actions: ['clear-app-cache', 'reveal'] },
     { id: 'harness-runtimes', bytes: 900 * MB + 528 * 1024, unusedBytes: 200 * MB + 528 * 1024, path: '/Users/dev/.superone/harness', actions: ['reveal', 'clear-unused-harness-runtimes'] },
     { id: 'logs', bytes: 12 * MB, path: `${ROOT}/logs`, actions: ['clear-logs', 'reveal'] },
@@ -95,6 +95,13 @@ mockIpc('app', 'applyStorageAction', async (action: unknown) => {
   return { ...result, action }
 })
 mockIpc('app', 'revealFile', async () => undefined)
+mockIpc('app', 'retrySyncZoneHandoffs', async () => {
+  inventory = {
+    ...inventory,
+    syncIssues: { failedHandoffs: { files: 0, bytes: 0, lastError: null }, needsRedelivery: inventory.syncIssues?.needsRedelivery ?? { files: 0, bytes: 0 } },
+  }
+  return { retried: 2, recovered: 2 }
+})
 
 function seed(next: StorageInventory, options: SeedOptions = {}) {
   return (Story: () => ReactElement) => {
@@ -230,3 +237,13 @@ export const LongPath: Story = { decorators: [seed(longPathInventory)] }
 export const Dark: Story = { decorators: [seed(storageInventoryFixture)], globals: { theme: 'dark' } }
 
 export const Chinese: Story = { decorators: [seed(storageInventoryFixture)], globals: { locale: 'zh' } }
+
+export const SyncUploadIssues: Story = {
+  decorators: [seed({
+    ...storageInventoryFixture,
+    syncIssues: {
+      failedHandoffs: { files: 2, bytes: 5 * MB, lastError: 'SQLITE_BUSY' },
+      needsRedelivery: { files: 1, bytes: 4 * MB },
+    },
+  })],
+}

@@ -33,6 +33,7 @@ export const STORAGE_ACTIONS = [
   'compact-node-events',
   'clear-sync-attachments',
   'clear-sync-media',
+  'reclaim-sync-zone',
   'clear-app-cache',
   'clear-unused-harness-runtimes',
   'clear-logs',
@@ -71,10 +72,16 @@ export interface StorageHarnessRuntime {
   path: string
 }
 
+export interface StorageSyncIssues {
+  failedHandoffs: { files: number; bytes: number; lastError: string | null }
+  needsRedelivery: { files: number; bytes: number }
+}
+
 export interface StorageInventory {
   categories: StorageCategory[]
   harnessRuntimes?: StorageHarnessRuntime[]
   nodeEvents: StorageNodeEvents | null
+  syncIssues?: StorageSyncIssues
 }
 
 export interface StorageCompactResult {

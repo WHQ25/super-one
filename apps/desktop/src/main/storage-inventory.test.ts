@@ -242,4 +242,28 @@ describe('unusedHarnessPaths', () => {
     const attachments = inventory.categories.find((item) => item.id === 'sync-attachments')
     expect(attachments?.bytes).toBe(12)
   })
+
+  it('marks sync files from reclaimable sessions as unusedBytes and preserves syncIssues', () => {
+    const paths = roots()
+    write(join(paths.userData, 'sync', 'live', 'attachment', 'keep.png'), 15)
+    write(join(paths.userData, 'sync', 'dead', 'attachment', 'old.png'), 25)
+    write(join(paths.userData, 'sync', 'dead', 'media-gen', 'gen.png'), 10)
+    const syncIssues = {
+      failedHandoffs: { files: 1, bytes: 4, lastError: 'SQLITE_BUSY' },
+      needsRedelivery: { files: 0, bytes: 0 },
+    }
+
+    const inventory = measureStorageInventory({
+      roots: paths,
+      reclaimableSyncSessions: new Set(['dead']),
+      syncIssues,
+    })
+    const attachments = inventory.categories.find((item) => item.id === 'sync-attachments')
+    const media = inventory.categories.find((item) => item.id === 'sync-media')
+    expect(attachments?.bytes).toBe(40)
+    expect(attachments?.unusedBytes).toBe(25)
+    expect(media?.bytes).toBe(10)
+    expect(media?.unusedBytes).toBe(10)
+    expect(inventory.syncIssues).toEqual(syncIssues)
+  })
 })

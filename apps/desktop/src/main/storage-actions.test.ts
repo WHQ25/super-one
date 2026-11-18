@@ -277,4 +277,11 @@ describe('applyStorageAction', () => {
     expect(existsSync(nestedDownload)).toBe(true)
     expect(cleared).toEqual(['s-idle'])
   })
+
+  it('delegates reclaim-sync-zone to the injected sweep handler', async () => {
+    const reclaimSyncZone = vi.fn(async () => 420)
+    const result = await applyStorageAction('reclaim-sync-zone', ctx(paths(), { reclaimSyncZone }))
+    expect(reclaimSyncZone).toHaveBeenCalledTimes(1)
+    expect(result).toEqual({ action: 'reclaim-sync-zone', removedBytes: 420 })
+  })
 })

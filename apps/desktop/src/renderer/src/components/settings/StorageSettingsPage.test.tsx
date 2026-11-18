@@ -60,8 +60,15 @@ function stub(options: { inventory?: StorageInventory; result?: StorageActionRes
   const revealFile = vi.fn().mockResolvedValue(undefined)
   // The worktree section loads on its own; its states are covered in WorktreeStorageSection.test.tsx.
   const getStorageWorktrees = vi.fn().mockResolvedValue([])
-  Object.assign(window.app, { getStorageInventory, applyStorageAction, revealFile, getStorageWorktrees })
-  return { getStorageInventory, applyStorageAction, revealFile }
+  const retrySyncZoneHandoffs = vi.fn().mockResolvedValue({ retried: 2, recovered: 2 })
+  Object.assign(window.app, {
+    getStorageInventory,
+    applyStorageAction,
+    revealFile,
+    getStorageWorktrees,
+    retrySyncZoneHandoffs,
+  })
+  return { getStorageInventory, applyStorageAction, revealFile, retrySyncZoneHandoffs }
 }
 
 function row(id: string) {
@@ -386,5 +393,54 @@ describe('storage settings', () => {
     await screen.findByTestId('storage-app-cache')
     await userEvent.click(row('app-cache').getByRole('button', { name: 'Clear' }))
     expect(await screen.findByTestId('storage-error')).toBeInTheDocument()
+  })
+
+  it('counts deleted-session sync leftovers as optimizable and sweeps them during optimize', async () => {
+    const withSyncUnused: StorageInventory = {
+      ...full,
+      categories: full.categories.map((category) => (
+        category.id === 'sync-attachments'
+          ? { ...category, unusedBytes: 200 * MB }
+          : category.id === 'sync-media'
+            ? { ...category, unusedBytes: 50 * MB }
+            : category
+      )),
+    }
+    const { applyStorageAction } = stub({ inventory: withSyncUnused })
+    render(<StorageSettingsPage />)
+    expect(await screen.findByTestId('storage-section-sync')).toHaveTextContent('250.0 MB')
+    expect(screen.getByTestId('storage-sync-attachments')).toHaveTextContent('200.0 MB')
+    expect(screen.getByTestId('storage-sync-media')).toHaveTextContent('50.0 MB')
+    expect(screen.queryByTestId('session-storage-stuck')).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /retry upload/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /clean up/i })).not.toBeInTheDocument()
+
+    await userEvent.click(screen.getByTestId('storage-optimize'))
+    await waitFor(() => expect(applyStorageAction).toHaveBeenCalledWith('reclaim-sync-zone'))
+    expect(applyStorageAction.mock.calls.filter((call) => call[0] === 'reclaim-sync-zone')).toHaveLength(1)
+  })
+
+  it('shows sync upload failures inside Session Files and retries handoffs without touching committing files', async () => {
+    const { retrySyncZoneHandoffs, getStorageInventory } = stub({
+      inventory: {
+        ...full,
+        syncIssues: {
+          failedHandoffs: { files: 2, bytes: 5 * MB, lastError: 'SQLITE_BUSY' },
+          needsRedelivery: { files: 1, bytes: 3 * MB },
+        },
+      },
+    })
+    render(<StorageSettingsPage />)
+    expect(await screen.findByTestId('session-storage-stuck')).toHaveTextContent(/5\.0 MB in 2 files/)
+    expect(screen.getByTestId('session-storage-stuck')).toHaveTextContent(/SQLITE_BUSY/)
+    const redelivery = screen.getByTestId('session-storage-needs-redelivery')
+    expect(redelivery).toHaveTextContent(/3\.0 MB in 1 files/)
+    expect(redelivery).toHaveTextContent(/re-run the action/i)
+
+    const retryButtons = screen.getAllByRole('button', { name: /retry upload/i })
+    expect(retryButtons).toHaveLength(1)
+    await userEvent.click(retryButtons[0])
+    await waitFor(() => expect(retrySyncZoneHandoffs).toHaveBeenCalledTimes(1))
+    await waitFor(() => expect(getStorageInventory).toHaveBeenCalledTimes(2))
   })
 })

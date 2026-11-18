@@ -35,6 +35,8 @@ const OPTIMIZE_STEPS: readonly { id: StorageCategoryId; action: StorageApplyActi
   { id: 'app-cache', action: 'clear-app-cache' },
   { id: 'backup', action: 'delete-backups' },
   { id: 'recovery-leftovers', action: 'delete-leftovers' },
+  { id: 'sync-attachments', action: 'reclaim-sync-zone' },
+  { id: 'sync-media', action: 'reclaim-sync-zone' },
   { id: 'harness-runtimes', action: 'clear-unused-harness-runtimes' },
   { id: 'node-event-log', action: 'compact-node-events' },
 ]
@@ -86,7 +88,7 @@ export function optimizePlan(inventory: StorageInventory): StorageApplyAction[] 
       if (category.bytes > 0 || (inventory.nodeEvents?.rows ?? 0) > 0) plan.push(step.action)
       continue
     }
-    if (deletableBytes(category, step.action) > 0) plan.push(step.action)
+    if (deletableBytes(category, step.action) > 0 && !plan.includes(step.action)) plan.push(step.action)
   }
   return plan
 }
@@ -100,7 +102,9 @@ function categoryById(inventory: StorageInventory, id: StorageCategoryId): Stora
 }
 
 function deletableBytes(category: StorageCategory, action: StorageApplyAction): number {
-  if (action === 'clear-unused-harness-runtimes' || action === 'trim-extra-backups') return Math.max(0, category.unusedBytes ?? 0)
+  if (action === 'clear-unused-harness-runtimes' || action === 'trim-extra-backups' || action === 'reclaim-sync-zone') {
+    return Math.max(0, category.unusedBytes ?? 0)
+  }
   if (action === 'clear-app-cache') return Math.max(0, category.unusedBytes ?? category.bytes)
   return Math.max(0, category.bytes)
 }

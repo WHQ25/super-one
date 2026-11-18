@@ -19,6 +19,7 @@ export interface StorageActionContext {
   busyHarnessIds?: ReadonlySet<string>
   isSyncDirProtected?: (sessionId: string, dirPath: string) => boolean
   onSyncDirCleared?: (sessionId: string, dirPath: string) => void
+  reclaimSyncZone?: () => Promise<number> | number
   compactNodeEvents: (vacuum: boolean) => Promise<StorageCompactResult> | StorageCompactResult
   clearBrowserCache: () => Promise<void> | void
   clearBrowserCodeCache: () => Promise<void> | void
@@ -49,6 +50,8 @@ export async function applyStorageAction(action: StorageApplyAction, ctx: Storag
       return removed(action, clearSyncTargets(syncProducerDirs(join(ctx.roots.userData, 'sync')).attachments, ctx))
     case 'clear-sync-media':
       return removed(action, clearSyncTargets(syncProducerDirs(join(ctx.roots.userData, 'sync')).media, ctx))
+    case 'reclaim-sync-zone':
+      return removed(action, await (ctx.reclaimSyncZone?.() ?? 0))
     case 'clear-app-cache':
       return removed(action, await clearMeasured(() => appCacheUsage(ctx.roots.userData).clearable, async () => {
         await ctx.clearAppCache()

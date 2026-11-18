@@ -1,5 +1,6 @@
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { FolderOpen, Loader2, Trash2, Wand } from 'lucide-react'
+import { FolderOpen, Loader2, RefreshCw, Trash2, Wand } from 'lucide-react'
 import { Button } from '@superone/ui/components/ui/button'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Skeleton } from '@superone/ui/components/ui/skeleton'
@@ -11,6 +12,7 @@ import type {
   StorageCategory,
   StorageCategoryId,
   StorageInventory,
+  StorageSyncIssues,
 } from '@superone/shared/desktop-storage'
 import { SettingsRow } from './SettingsSection'
 import {
@@ -217,6 +219,74 @@ export function SpacePair({ optimizable, occupied, testId }: { optimizable: numb
         {formatBytes(optimizable)}
       </span>
     </p>
+  )
+}
+
+export function SyncUploadIssuesRow({ issues, locked, onRetried }: {
+  issues: StorageSyncIssues
+  locked: boolean
+  onRetried: () => Promise<void>
+}) {
+  const { t } = useTranslation()
+  const [retrying, setRetrying] = useState(false)
+  const [error, setError] = useState(false)
+  const stuck = issues.failedHandoffs.files > 0
+  const needsRedelivery = issues.needsRedelivery.files > 0
+  if (!stuck && !needsRedelivery) return null
+
+  async function retryHandoffs() {
+    setRetrying(true)
+    setError(false)
+    try {
+      await window.app.retrySyncZoneHandoffs()
+      await onRetried()
+    } catch {
+      setError(true)
+    } finally {
+      setRetrying(false)
+    }
+  }
+
+  return (
+    <SettingsRow
+      label={t('settings.general.storage.uploadLabel')}
+      description={(
+        <div className="space-y-0.5">
+          {stuck && (
+            <p className="text-warning" data-testid="session-storage-stuck">
+              {t('settings.general.storage.stuck', {
+                bytes: formatBytes(issues.failedHandoffs.bytes),
+                count: issues.failedHandoffs.files,
+                error: issues.failedHandoffs.lastError ?? '',
+              })}
+            </p>
+          )}
+          {needsRedelivery && (
+            <p className="text-warning" data-testid="session-storage-needs-redelivery">
+              {t('settings.general.storage.needsRedelivery', {
+                bytes: formatBytes(issues.needsRedelivery.bytes),
+                count: issues.needsRedelivery.files,
+              })}
+            </p>
+          )}
+          {error && <p className="text-destructive">{t('storageSettings.unreadable')}</p>}
+        </div>
+      )}
+    >
+      {stuck && (
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7"
+          disabled={retrying || locked}
+          onClick={() => void retryHandoffs()}
+        >
+          {retrying ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
+          {t(retrying ? 'settings.general.storage.retrying' : 'settings.general.storage.stuckRetry')}
+        </Button>
+      )}
+    </SettingsRow>
   )
 }
 

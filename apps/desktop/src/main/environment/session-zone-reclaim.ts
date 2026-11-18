@@ -212,6 +212,10 @@ export async function sweepSyncZone(): Promise<SyncZoneReclaimResult> {
   return runSyncZoneReclaim()
 }
 
+export async function previewSyncZoneReclaim(): Promise<SyncZoneReclaimResult> {
+  return runSyncZoneReclaim({ dryRun: true })
+}
+
 /**
  * The numbers Settings shows: what the zone holds, what is still to be
  * uploaded, and what a sweep would free. Looking never frees anything —
@@ -249,6 +253,13 @@ export async function syncZoneUsage(): Promise<SyncZoneUsage> {
     failedHandoffs: givenUp.failedHandoffs,
     needsRedelivery: givenUp.needsRedelivery,
   }
+}
+
+export async function syncZoneUploadIssues(): Promise<{
+  failedHandoffs: { files: number; bytes: number; lastError: string | null }
+  needsRedelivery: { files: number; bytes: number }
+}> {
+  return givenUpUsage()
 }
 
 /**

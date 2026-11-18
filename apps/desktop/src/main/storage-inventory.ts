@@ -13,6 +13,7 @@ import {
   type StorageCategoryId,
   type StorageInventory,
   type StorageNodeEvents,
+  type StorageSyncIssues,
 } from '@superone/shared/desktop-storage'
 import { listBackups, type BackupEntry } from './db-backup'
 import {
@@ -37,6 +38,8 @@ export interface StorageMeasureOptions {
   roots: StorageRoots
   nodeEventStats?: StorageNodeEvents | null
   busyHarnessIds?: ReadonlySet<string>
+  reclaimableSyncSessions?: ReadonlySet<string>
+  syncIssues?: StorageSyncIssues
 }
 
 export interface SyncProducerTarget {
@@ -134,8 +137,8 @@ export function measureStorageInventory(options: StorageMeasureOptions): Storage
 
   const syncRoot = join(userData, 'sync')
   const sync = syncProducerDirs(syncRoot)
-  categories.push(syncCategory('sync-attachments', sync.attachments, syncRoot, 'clear-sync-attachments'))
-  categories.push(syncCategory('sync-media', sync.media, syncRoot, 'clear-sync-media'))
+  categories.push(syncCategory('sync-attachments', sync.attachments, syncRoot, 'clear-sync-attachments', options.reclaimableSyncSessions))
+  categories.push(syncCategory('sync-media', sync.media, syncRoot, 'clear-sync-media', options.reclaimableSyncSessions))
 
   const appCache = appCacheUsage(userData)
   const appCachePath = appCacheDirs(userData).find((path) => exists(path))
@@ -181,6 +184,7 @@ export function measureStorageInventory(options: StorageMeasureOptions): Storage
     categories,
     harnessRuntimes,
     nodeEvents: options.nodeEventStats ?? null,
+    ...(options.syncIssues ? { syncIssues: options.syncIssues } : {}),
   }
 }
 
@@ -392,10 +396,19 @@ function syncCategory(
   dirs: SyncProducerTarget[],
   syncRoot: string,
   action: StorageCategory['actions'][number],
+  reclaimableSessions?: ReadonlySet<string>,
 ): StorageCategory {
+  let bytes = 0
+  let unusedBytes = 0
+  for (const entry of dirs) {
+    const size = directoryBytes(entry.path)
+    bytes += size
+    if (reclaimableSessions?.has(entry.sessionId)) unusedBytes += size
+  }
   return {
     id,
-    bytes: dirs.reduce((sum, entry) => sum + directoryBytes(entry.path), 0),
+    bytes,
+    ...(reclaimableSessions ? { unusedBytes } : {}),
     ...(exists(syncRoot) ? { path: syncRoot } : {}),
     count: dirs.length,
     actions: [action, ...(exists(syncRoot) ? ['reveal' as const] : [])],

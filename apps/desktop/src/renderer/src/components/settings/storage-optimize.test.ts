@@ -113,4 +113,21 @@ describe('storage optimize plan', () => {
     expect(optimizePlan(disk)).toEqual([])
     expect(reclaimableBytes(disk)).toBe(0)
   })
+
+  it('includes reclaim-sync-zone once when deleted sessions left attachments or media behind', () => {
+    const disk = inventory()
+    disk.categories = disk.categories.map((category) => (
+      category.id === 'sync-attachments'
+        ? { ...category, unusedBytes: 2 * MB }
+        : category.id === 'sync-media'
+          ? { ...category, unusedBytes: 1 * MB }
+          : category
+    ))
+    const plan = optimizePlan(disk)
+    expect(plan.filter((action) => action === 'reclaim-sync-zone')).toHaveLength(1)
+    expect(plan).not.toContain('clear-sync-attachments')
+    expect(plan).not.toContain('clear-sync-media')
+    expect(sectionOptimizableBytes(disk, 'sync')).toBe(3 * MB)
+    expect(reclaimableBytes(disk)).toBe(17 * MB)
+  })
 })

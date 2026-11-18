@@ -27,7 +27,6 @@ import { SpeechModelRow } from '@/components/settings/SpeechModelRow'
 import { SpeechVoiceRow } from '@/components/settings/SpeechVoiceRow'
 import { EditorSettingsSection } from '@/components/settings/EditorSettingsSection'
 import { NotificationSettingsSection } from '@/components/settings/NotificationSettingsSection'
-import { SessionStorageSection } from '@/components/settings/SessionStorageSection'
 import { DoubaoVoiceSetting } from '@/components/settings/DoubaoVoiceSetting'
 import { JevFastLoopSetting } from '@/components/settings/JevFastLoopSetting'
 import { settingsSelectTriggerClassName } from '@/components/settings/select-trigger-class'
@@ -226,8 +225,6 @@ export function AppSettingsPage() {
       </SettingsSection>
 
       <NotificationSettingsSection />
-
-      <SessionStorageSection />
 
       <SettingsSection title={t('settings.general.privacy')}>
         <SettingsRow

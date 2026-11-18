@@ -22,7 +22,7 @@ import {
   STORAGE_SECTIONS,
   storageTotalBytes,
 } from './storage-optimize'
-import { CategoryRow, SpacePair, StorageLoading, StorageSummary } from './StorageSettingsComponents'
+import { CategoryRow, SpacePair, StorageLoading, StorageSummary, SyncUploadIssuesRow } from './StorageSettingsComponents'
 import { WorktreeStorageSection } from './WorktreeStorageSection'
 
 type State =
@@ -204,6 +204,13 @@ export function StorageSettingsPage() {
                 onAction={(action) => ask(action, runtime.id)}
               />
             ))}
+            {section.id === 'sync' && inventory.syncIssues && (
+              <SyncUploadIssuesRow
+                issues={inventory.syncIssues}
+                locked={locked}
+                onRetried={load}
+              />
+            )}
           </SettingsSection>
         )
       })}

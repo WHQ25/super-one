@@ -16,7 +16,6 @@ vi.mock('./TerminalSettingsPage', () => ({ TerminalSettingsPage: () => null }))
 vi.mock('./AgentProfilesPage', () => ({ AgentProfilesPage: () => <div>Profile Manager Content</div> }))
 vi.mock('./providers/DefaultProviderRow', () => ({ DefaultProviderRow: () => null }))
 vi.mock('./settings/NotificationSettingsSection', () => ({ NotificationSettingsSection: () => null }))
-vi.mock('./settings/SessionStorageSection', () => ({ SessionStorageSection: () => null }))
 vi.mock('./settings/JevFastLoopSetting', () => ({ JevFastLoopSetting: () => null }))
 vi.mock('./settings/DoubaoVoiceSetting', () => ({ DoubaoVoiceSetting: () => null }))
 

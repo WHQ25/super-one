@@ -14,7 +14,7 @@ interface GalleryProps {
 }
 
 const SIDEBAR_MIN_WIDTH = 520
-const NAV_ARROW = 'pointer-events-none size-8 rounded-full border border-border/50 bg-background/80 opacity-0 shadow-sm backdrop-blur-sm focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/carousel:pointer-events-auto group-hover/carousel:opacity-100 disabled:invisible'
+const NAV_ARROW = 'pointer-events-none opacity-0 focus-visible:pointer-events-auto focus-visible:opacity-100 group-hover/carousel:pointer-events-auto group-hover/carousel:opacity-100 disabled:invisible'
 
 function mediaKey(item: GeneratedMediaItem) {
   return JSON.stringify([item.type, item.id])
@@ -176,7 +176,8 @@ export function GeneratedMediaGallery({ items, renderPreview, renderThumbnail }:
           {carousel && (
             <div data-carousel-navigation className="pointer-events-none absolute inset-x-2 top-1/2 flex -translate-y-1/2 justify-between">
               <IconButton
-                size="md"
+                variant="overlay"
+                size="lg"
                 aria-label={t('generatedMedia.previous')}
                 disabled={index === 0}
                 className={NAV_ARROW}
@@ -185,7 +186,8 @@ export function GeneratedMediaGallery({ items, renderPreview, renderThumbnail }:
                 <ChevronLeft />
               </IconButton>
               <IconButton
-                size="md"
+                variant="overlay"
+                size="lg"
                 aria-label={t('generatedMedia.next')}
                 disabled={index === items.length - 1}
                 className={NAV_ARROW}

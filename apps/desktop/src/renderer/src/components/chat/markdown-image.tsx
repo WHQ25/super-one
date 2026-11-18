@@ -1,13 +1,13 @@
 import { useState, type ComponentProps } from 'react'
 import { Download, Loader2 } from 'lucide-react'
-import { Button } from '@superone/ui/components/ui/button'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import { toMediaUrl } from '@/lib/path-utils'
 import { isRemoteMediaUrl } from '@/lib/remote-media-url'
 import { useResolvedMediaSrc } from '@/hooks/use-resolved-media-src'
 import { ImageInteractive, useImageMenuItems } from './image-shared'
 import { mediaStyleFor } from './markdown-media-style'
-import { ImageLightbox, lightboxButtonClass } from './image-lightbox'
+import { ImageLightbox, lightboxButtonPosition } from './image-lightbox'
 
 const isWindows = window.app.platform === 'win32'
 
@@ -73,17 +73,17 @@ function MarkdownImageLightbox({ src, alt, savedPath, open, onOpenChange }: Ligh
       onOpenChange={onOpenChange}
       menuItems={menuItems}
     >
-      <Button
-        variant="ghost"
-        size="icon-xs"
+      <IconButton
+        variant="overlay"
+        size="xl"
         style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-        className={lightboxButtonClass('second')}
+        className={lightboxButtonPosition('second')}
         onClick={handleDownload}
         disabled={downloading}
         aria-label="Download image"
       >
         {downloading ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
-      </Button>
+      </IconButton>
       {downloadStatus && (
         <div className={cn(
           "absolute right-3 z-20 max-w-70 truncate rounded-md border border-border/50 bg-background/90 px-3 py-1.5 text-xs text-muted-foreground shadow-sm backdrop-blur-sm",

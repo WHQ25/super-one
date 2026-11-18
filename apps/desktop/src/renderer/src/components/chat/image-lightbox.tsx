@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { MessageSquarePlus, Pencil, X } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@superone/ui/components/ui/button'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '@superone/ui/components/ui/dialog'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
@@ -13,19 +13,23 @@ import { ImageAnnotationEditor } from './image-editor/ImageAnnotationEditor'
 
 const isWindows = window.app.platform === 'win32'
 
-export type LightboxButtonOffset = 'close' | 'second' | 'third' | 'fourth'
+export type LightboxButtonOffset = 'close' | 'second' | 'third' | 'fourth' | 'fifth'
 
 const OFFSET_CLASS: Record<LightboxButtonOffset, string> = {
   close: 'right-3',
   second: 'right-[60px]',
   third: 'right-[108px]',
   fourth: 'right-[156px]',
+  fifth: 'right-[204px]',
 }
 
-/** Round floating button in the lightbox corner; `offset` stacks extra ones left of Close. */
-export function lightboxButtonClass(offset: LightboxButtonOffset): string {
+/**
+ * Corner slot for an `overlay` IconButton in a full-window viewer; `offset` stacks
+ * extra buttons left of Close.
+ */
+export function lightboxButtonPosition(offset: LightboxButtonOffset): string {
   return cn(
-    'absolute z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground',
+    'absolute z-20',
     OFFSET_CLASS[offset],
     isWindows ? 'top-12' : 'top-3',
   )
@@ -150,41 +154,41 @@ export function ImageLightbox({
             {menuItems ? <AdaptiveContextMenu items={menuItems}>{preview}</AdaptiveContextMenu> : preview}
             {children}
             {canQuickAddFileToChat && (
-              <Button
-                variant="ghost"
-                size="icon-xs"
+              <IconButton
+                variant="overlay"
+                size="xl"
                 style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-                className={lightboxButtonClass(addToChatOffset)}
+                className={lightboxButtonPosition(addToChatOffset)}
                 onClick={() => void handleQuickAddToChat()}
                 title={`${t('chat.image.addToChat')} (⌘↵)`}
                 aria-label={t('chat.image.addToChat')}
                 data-testid="image-lightbox-add-to-chat-button"
               >
                 <MessageSquarePlus className="size-4" />
-              </Button>
+              </IconButton>
             )}
-            <Button
-              variant="ghost"
-              size="icon-xs"
+            <IconButton
+              variant="overlay"
+              size="xl"
               style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-              className={lightboxButtonClass(editOffset)}
+              className={lightboxButtonPosition(editOffset)}
               onClick={() => setEditing(true)}
               title={t('chat.image.edit')}
               aria-label={t('chat.image.edit')}
               data-testid="image-lightbox-edit-button"
             >
               <Pencil className="size-4" />
-            </Button>
+            </IconButton>
             <DialogClose asChild>
-              <Button
-                variant="ghost"
-                size="icon-xs"
+              <IconButton
+                variant="overlay"
+                size="xl"
                 style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-                className={lightboxButtonClass('close')}
+                className={lightboxButtonPosition('close')}
                 aria-label="Close"
               >
                 <X className="size-4" />
-              </Button>
+              </IconButton>
             </DialogClose>
           </>
         )}

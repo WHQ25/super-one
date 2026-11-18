@@ -226,19 +226,20 @@ export function FilesPreviewer({ payload }: FilesPreviewerProps) {
 function NavArrow({ side, disabled, onClick, label }: { side: 'left' | 'right'; disabled: boolean; onClick: () => void; label: string }) {
   const Icon = side === 'left' ? ChevronLeft : ChevronRight
   return (
-    <button
-      type="button"
+    <IconButton
+      variant="overlay"
+      size="lg"
       aria-label={label}
       disabled={disabled}
       onClick={(e) => { e.stopPropagation(); onClick() }}
       data-previewer-control
       className={cn(
-        'absolute top-1/2 z-10 flex size-8 -translate-y-1/2 items-center justify-center rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm transition-opacity hover:bg-muted hover:text-foreground disabled:opacity-30',
+        'absolute top-1/2 z-10 -translate-y-1/2 transition-opacity disabled:opacity-30',
         'opacity-0 group-hover/previewer:opacity-100 focus-visible:opacity-100 @max-[480px]:opacity-100',
         side === 'left' ? 'left-2' : 'right-2',
       )}
     >
-      <Icon className="size-4" />
-    </button>
+      <Icon />
+    </IconButton>
   )
 }

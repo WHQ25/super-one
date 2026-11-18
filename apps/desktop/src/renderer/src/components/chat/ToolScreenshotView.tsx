@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Download, Loader2, MessageSquarePlus, Pencil, X } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@superone/ui/components/ui/button'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
 import {
   Dialog,
   DialogClose,
@@ -14,6 +14,7 @@ import { ToolScreenshotViewPresenter } from '@superone/chat-view/presenters/Tool
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import { ImagePreview } from '@/components/coding/ImagePreview'
 import { chatInputAPI } from './chat-input-api'
+import { lightboxButtonPosition } from './image-lightbox'
 import { ImageAnnotationEditor } from './image-editor/ImageAnnotationEditor'
 import {
   ImageInteractive,
@@ -152,65 +153,53 @@ export function ToolScreenshotView({
                 </div>
               </AdaptiveContextMenu>
 
-              <Button
-                variant="ghost"
-                size="icon"
+              <IconButton
+                variant="overlay"
+                size="xl"
                 style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-                className={cn(
-                  'absolute right-[156px] z-20 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground',
-                  isWindows ? 'top-12' : 'top-3',
-                )}
+                className={lightboxButtonPosition('fourth')}
                 onClick={() => void handleQuickAddToChat()}
                 title={`${t('chat.image.addToChat')} (⌘↵)`}
                 aria-label={t('chat.image.addToChat')}
               >
                 <MessageSquarePlus />
-              </Button>
+              </IconButton>
 
-              <Button
-                variant="ghost"
-                size="icon"
+              <IconButton
+                variant="overlay"
+                size="xl"
                 style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-                className={cn(
-                  'absolute right-[108px] z-20 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground',
-                  isWindows ? 'top-12' : 'top-3',
-                )}
+                className={lightboxButtonPosition('third')}
                 onClick={() => setEditing(true)}
                 title={t('chat.image.edit')}
                 aria-label={t('chat.image.edit')}
                 data-testid="tool-screenshot-edit-button"
               >
                 <Pencil />
-              </Button>
+              </IconButton>
 
-              <Button
-                variant="ghost"
-                size="icon"
+              <IconButton
+                variant="overlay"
+                size="xl"
                 style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-                className={cn(
-                  'absolute right-[60px] z-20 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground',
-                  isWindows ? 'top-12' : 'top-3',
-                )}
+                className={lightboxButtonPosition('second')}
                 onClick={handleDownload}
                 disabled={downloading}
                 aria-label={t('chat.image.download')}
               >
                 {downloading ? <Loader2 className="animate-spin" /> : <Download />}
-              </Button>
+              </IconButton>
 
               <DialogClose asChild>
-                <Button
-                  variant="ghost"
-                  size="icon"
+                <IconButton
+                  variant="overlay"
+                  size="xl"
                   style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-                  className={cn(
-                    'absolute right-3 z-20 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground',
-                    isWindows ? 'top-12' : 'top-3',
-                  )}
+                  className={lightboxButtonPosition('close')}
                   aria-label={t('common.close')}
                 >
                   <X />
-                </Button>
+                </IconButton>
               </DialogClose>
 
               {downloadStatus && (

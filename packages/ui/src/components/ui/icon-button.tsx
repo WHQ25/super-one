@@ -20,12 +20,15 @@ const iconButtonVariants = cva(
         ghost: "hover:text-foreground",
         destructive: "hover:bg-muted hover:text-destructive",
         nested: "hover:text-foreground",
+        /** Round translucent control floating over media (viewer corners, carousel arrows). */
+        overlay: "rounded-full border border-border/50 bg-background/80 shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground",
       },
       size: {
         xs: "size-5 [&_svg:not([class*='size-'])]:size-3",
         sm: "size-6 [&_svg:not([class*='size-'])]:size-3.5",
         md: "size-7 [&_svg:not([class*='size-'])]:size-4",
         lg: "size-8 [&_svg:not([class*='size-'])]:size-4",
+        xl: "size-9 [&_svg:not([class*='size-'])]:size-4",
       },
     },
     defaultVariants: {

@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { Download, Loader2, X, Info, ChevronLeft, ChevronRight, Copy, FolderOpen, MessageSquarePlus, ClipboardCopy, ImageIcon, Pencil, Save } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { useTranslation } from 'react-i18next'
-import { Button } from '@superone/ui/components/ui/button'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
@@ -14,6 +13,7 @@ import { mediaUrlFor } from '@/lib/path-utils'
 import { useMediaServerPort, useMediaUrl } from '@/hooks/use-media-server-port'
 import { SelectionContextMenuZone } from './SelectionContextMenu'
 import { chatInputAPI } from './chat-input-api'
+import { lightboxButtonPosition } from './image-lightbox'
 import { ImageAnnotationEditor } from './image-editor/ImageAnnotationEditor'
 import { useAppStore } from '@/stores/app'
 import type { ImageGenerationItem, MediaProviderStatus } from '@superone/shared/agent-types'
@@ -499,28 +499,28 @@ export function ImageViewer({ items, index, open, onOpenChange, onIndexChange }:
 
             {multi && (
               <>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
+                <IconButton
+                  variant="overlay"
+                  size="xl"
                   disabled={!hasPrev}
                   onClick={() => onIndexChange(index - 1)}
                   style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-                  className="absolute left-3 top-1/2 z-20 size-10 -translate-y-1/2 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground disabled:opacity-30"
+                  className="absolute left-3 top-1/2 z-20 size-10 -translate-y-1/2 disabled:opacity-30"
                   aria-label="Previous image"
                 >
                   <ChevronLeft className="size-5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon-xs"
+                </IconButton>
+                <IconButton
+                  variant="overlay"
+                  size="xl"
                   disabled={!hasNext}
                   onClick={() => onIndexChange(index + 1)}
                   style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-                  className="absolute right-3 top-1/2 z-20 size-10 -translate-y-1/2 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground disabled:opacity-30"
+                  className="absolute right-3 top-1/2 z-20 size-10 -translate-y-1/2 disabled:opacity-30"
                   aria-label="Next image"
                 >
                   <ChevronRight className="size-5" />
-                </Button>
+                </IconButton>
                 <div className={cn(
                   "absolute left-1/2 z-20 -translate-x-1/2 rounded-full border border-border/50 bg-background/80 px-3 py-1 text-xs text-muted-foreground shadow-sm backdrop-blur-sm",
                   isWindows ? "top-12" : "top-3"
@@ -531,83 +531,68 @@ export function ImageViewer({ items, index, open, onOpenChange, onIndexChange }:
             )}
 
             {fullPath && (
-              <Button
-                variant="ghost"
-                size="icon-xs"
+              <IconButton
+                variant="overlay"
+                size="xl"
                 style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-                className={cn(
-                  "absolute right-[204px] z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground",
-                  isWindows ? "top-12" : "top-3"
-                )}
+                className={lightboxButtonPosition('fifth')}
                 onClick={() => void handleQuickAddToChat()}
                 title={`${t('chat.image.addToChat')} (⌘↵)`}
                 aria-label={t('chat.image.addToChat')}
               >
                 <MessageSquarePlus className="size-4" />
-              </Button>
+              </IconButton>
             )}
 
             {activeSrc && (
-              <Button
-                variant="ghost"
-                size="icon-xs"
+              <IconButton
+                variant="overlay"
+                size="xl"
                 style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-                className={cn(
-                  "absolute right-[156px] z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground",
-                  isWindows ? "top-12" : "top-3"
-                )}
+                className={lightboxButtonPosition('fourth')}
                 onClick={() => setEditing(true)}
                 title={t('chat.image.edit')}
                 aria-label={t('chat.image.edit')}
                 data-testid="image-viewer-edit-button"
               >
                 <Pencil className="size-4" />
-              </Button>
+              </IconButton>
             )}
 
-            <Button
-              variant="ghost"
-              size="icon-xs"
+            <IconButton
+              variant="overlay"
+              size="xl"
               style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-              className={cn(
-                "absolute right-[108px] z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground",
-                isWindows ? "top-12" : "top-3"
-              )}
+              className={lightboxButtonPosition('third')}
               onClick={() => setInfoOpen((v) => !v)}
               aria-label="Image info"
               aria-expanded={infoOpen}
             >
               <Info className="size-4" />
-            </Button>
+            </IconButton>
 
-            <Button
-              variant="ghost"
-              size="icon-xs"
+            <IconButton
+              variant="overlay"
+              size="xl"
               style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-              className={cn(
-                "absolute right-[60px] z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground",
-                isWindows ? "top-12" : "top-3"
-              )}
+              className={lightboxButtonPosition('second')}
               onClick={handleDownload}
               disabled={downloading}
               aria-label="Download image"
             >
               {downloading ? <Loader2 className="size-4 animate-spin" /> : <Download className="size-4" />}
-            </Button>
+            </IconButton>
 
             <DialogClose asChild>
-              <Button
-                variant="ghost"
-                size="icon-xs"
+              <IconButton
+                variant="overlay"
+                size="xl"
                 style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}
-                className={cn(
-                  "absolute right-3 z-20 size-9 rounded-full border border-border/50 bg-background/80 text-muted-foreground shadow-sm backdrop-blur-sm hover:bg-muted hover:text-foreground",
-                  isWindows ? "top-12" : "top-3"
-                )}
+                className={lightboxButtonPosition('close')}
                 aria-label="Close"
               >
                 <X className="size-4" />
-              </Button>
+              </IconButton>
             </DialogClose>
 
             {infoOpen && (

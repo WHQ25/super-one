@@ -120,7 +120,7 @@ function FileTreeActions({
           size="sm"
           onClick={onRefresh}
           disabled={refreshing}
-          tooltip={t('sidebar.refreshFiles')}
+          aria-label={t('sidebar.refreshFiles')}
         >
           <RefreshCw className={refreshing ? 'animate-spin' : undefined} />
         </IconButton>
@@ -129,7 +129,7 @@ function FileTreeActions({
         <>
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
-              <IconButton size="sm" tooltip={t('sidebar.newEntry')} data-testid="file-tree-new">
+              <IconButton size="sm" aria-label={t('sidebar.newEntry')} data-testid="file-tree-new">
                 <Plus />
               </IconButton>
             </DropdownMenuTrigger>
@@ -150,11 +150,11 @@ function FileTreeActions({
             data-testid="file-tree-changes-only"
             className={changesOnly ? 'bg-sidebar-accent text-sidebar-accent-foreground' : undefined}
             onClick={onToggleChanges}
-            tooltip={t('sidebar.showChangedFiles')}
+            aria-label={t('sidebar.showChangedFiles')}
           >
             <GitCompare />
           </IconButton>
-          <IconButton size="sm" onClick={onSearch} tooltip={t('sidebar.search.placeholder')}>
+          <IconButton size="sm" onClick={onSearch} aria-label={t('sidebar.search.placeholder')}>
             <Search />
           </IconButton>
         </>

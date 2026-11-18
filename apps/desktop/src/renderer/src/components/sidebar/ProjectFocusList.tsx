@@ -54,10 +54,10 @@ export function FocusEnvironmentGroup({
         chevronWhenExpanded
         actions={(onSearch || onNewAutomation || onNewSession) && bucket.connection === 'connected' && !upgradingLabel ? (
           <>
-          {onSearch && <IconButton size="xs" variant="nested" tooltip={t('sidebar.contextMenu.searchSessions')} tooltipSideOffset={8} onClick={onSearch}><Search /></IconButton>}
-          {onNewAutomation && <IconButton size="xs" variant="nested" tooltip={t('tooltips.newAutomation')} tooltipSideOffset={8} onClick={onNewAutomation}><CalendarClock /></IconButton>}
+          {onSearch && <IconButton size="xs" variant="nested" aria-label={t('sidebar.contextMenu.searchSessions')} onClick={onSearch}><Search /></IconButton>}
+          {onNewAutomation && <IconButton size="xs" variant="nested" aria-label={t('tooltips.newAutomation')} onClick={onNewAutomation}><CalendarClock /></IconButton>}
           {onNewSession && (
-          <IconButton size="xs" variant="nested" tooltip={t('tooltips.newSession')} tooltipSideOffset={8} onClick={onNewSession}>
+          <IconButton size="xs" variant="nested" aria-label={t('tooltips.newSession')} onClick={onNewSession}>
             <SquarePen />
           </IconButton>
           )}

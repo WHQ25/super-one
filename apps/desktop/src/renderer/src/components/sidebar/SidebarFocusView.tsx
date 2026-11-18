@@ -435,13 +435,13 @@ function FocusResidentActions({
   if (target.kind === 'project') {
     return (
       <>
-        <IconButton size="sm" variant="nested" tooltip={t('sidebar.contextMenu.searchSessions')} tooltipSideOffset={8} onClick={() => projectActionsRef.current?.openHistory()}>
+        <IconButton size="sm" variant="nested" aria-label={t('sidebar.contextMenu.searchSessions')} onClick={() => projectActionsRef.current?.openHistory()}>
           <Search />
         </IconButton>
-        <IconButton size="sm" variant="nested" tooltip={t('tooltips.newAutomation')} tooltipSideOffset={8} onClick={() => projectActionsRef.current?.openAutomation()}>
+        <IconButton size="sm" variant="nested" aria-label={t('tooltips.newAutomation')} onClick={() => projectActionsRef.current?.openAutomation()}>
           <CalendarClock />
         </IconButton>
-        <IconButton size="sm" variant="nested" tooltip={t('tooltips.newSession')} tooltipSideOffset={8} onClick={() => props.onNewSession(target.folderPath)}>
+        <IconButton size="sm" variant="nested" aria-label={t('tooltips.newSession')} onClick={() => props.onNewSession(target.folderPath)}>
           <SquarePen />
         </IconButton>
       </>

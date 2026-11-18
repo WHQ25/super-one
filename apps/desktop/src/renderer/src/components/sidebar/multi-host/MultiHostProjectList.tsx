@@ -727,8 +727,7 @@ function RepoGroupHeader({
             <IconButton
               size="sm"
               variant="nested"
-              tooltip={t('sidebar.contextMenu.searchSessions')}
-              tooltipSideOffset={8}
+              aria-label={t('sidebar.contextMenu.searchSessions')}
               onClick={(event) => {
                 event.stopPropagation()
                 setHistory(true)
@@ -739,8 +738,7 @@ function RepoGroupHeader({
             <IconButton
               size="sm"
               variant="nested"
-              tooltip={t('tooltips.newAutomation')}
-              tooltipSideOffset={8}
+              aria-label={t('tooltips.newAutomation')}
               onClick={(event) => {
                 event.stopPropagation()
                 setAutomationOpen(true)
@@ -751,8 +749,7 @@ function RepoGroupHeader({
             <IconButton
               size="sm"
               variant="nested"
-              tooltip={t('tooltips.newSession')}
-              tooltipSideOffset={8}
+              aria-label={t('tooltips.newSession')}
               onClick={(event) => {
                 event.stopPropagation()
                 onNewSession()

@@ -61,7 +61,9 @@ describe('FileTree manual refresh', () => {
     expect(await screen.findByText('a.ts')).toBeInTheDocument()
     getGitStatusFiles.mockClear()
 
-    fireEvent.click(screen.getByRole('button', { name: 'Refresh file tree' }))
+    const refresh = screen.getByRole('button', { name: 'Refresh file tree' })
+    expect(refresh.closest('[data-slot="tooltip-trigger"]')).toBeNull()
+    fireEvent.click(refresh)
 
     await waitFor(() => expect(listDir).toHaveBeenCalledWith('remote:conn-1:/root/workspace/proj', ''))
     await waitFor(() => expect(getGitStatusFiles).toHaveBeenCalledWith('remote:conn-1:/root/workspace/proj'))
@@ -73,6 +75,9 @@ describe('FileTree manual refresh', () => {
     await waitFor(() => expect(listDir).toHaveBeenCalled())
 
     expect(screen.queryByRole('button', { name: 'Refresh file tree' })).not.toBeInTheDocument()
+    for (const name of ['New', 'Only Changed Files', 'Search files...']) {
+      expect(screen.getByRole('button', { name }).closest('[data-slot="tooltip-trigger"]')).toBeNull()
+    }
   })
 })
 

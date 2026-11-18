@@ -94,6 +94,7 @@ describe('sidebar hover disclosure', () => {
     expect(actions?.querySelector('[aria-label="Search sessions…"]')).not.toBeNull()
     expect(actions?.querySelector('[aria-label="New Automation"]')).not.toBeNull()
     expect(actions?.querySelector('[aria-label="New Session"]')).not.toBeNull()
+    expect(actions?.querySelector('[data-slot="tooltip-trigger"]')).toBeNull()
   })
 
   it('uses the same slot for a host section', () => {
@@ -150,6 +151,7 @@ describe('sidebar hover disclosure', () => {
     expect(actions?.getAttribute('class')).toContain('opacity-0')
     expect(actions?.querySelector('[aria-label="New Session"]')).not.toBeNull()
     expect(actions?.querySelector('[aria-label="Search sessions…"]')).not.toBeNull()
+    expect(actions?.querySelector('[data-slot="tooltip-trigger"]')).toBeNull()
   })
 
   it('keeps a disconnected environment and its project collapsed', () => {

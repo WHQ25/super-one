@@ -711,8 +711,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                 <IconButton
                   size="sm"
                   variant="nested"
-                  tooltip={t('sidebar.contextMenu.searchSessions')}
-                  tooltipSideOffset={8}
+                  aria-label={t('sidebar.contextMenu.searchSessions')}
                   onClick={(e) => {
                     e.stopPropagation()
                     openHistory()
@@ -723,8 +722,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                 <IconButton
                   size="sm"
                   variant="nested"
-                  tooltip={t('tooltips.newAutomation')}
-                  tooltipSideOffset={8}
+                  aria-label={t('tooltips.newAutomation')}
                   onClick={openCreateDialog}
                 >
                   <CalendarClock />
@@ -732,8 +730,7 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
                 <IconButton
                   size="sm"
                   variant="nested"
-                  tooltip={t('tooltips.newSession')}
-                  tooltipSideOffset={8}
+                  aria-label={t('tooltips.newSession')}
                   onClick={(e) => {
                     e.stopPropagation()
                     onNewSession(folder.path)

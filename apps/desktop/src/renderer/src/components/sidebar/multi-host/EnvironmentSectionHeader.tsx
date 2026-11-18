@@ -71,7 +71,7 @@ export function EnvironmentRowActions({
       {catalog && onSort && (
         <DropdownMenu open={sortOpen} onOpenChange={setSortOpen}>
           <DropdownMenuTrigger asChild>
-            <IconButton size="sm" variant="nested" tooltip={t('sidebar.sort.title')}>
+            <IconButton size="sm" variant="nested" aria-label={t('sidebar.sort.title')}>
               <ArrowDownUp />
             </IconButton>
           </DropdownMenuTrigger>
@@ -86,7 +86,7 @@ export function EnvironmentRowActions({
         </DropdownMenu>
       )}
       {catalog && onAddProject && (
-        <IconButton size="sm" variant="nested" tooltip={t('sidebar.addProject.title')} onClick={onAddProject}>
+        <IconButton size="sm" variant="nested" aria-label={t('sidebar.addProject.title')} onClick={onAddProject}>
           <Plus />
         </IconButton>
       )}
@@ -94,7 +94,7 @@ export function EnvironmentRowActions({
         <IconButton
           size="sm"
           variant="nested"
-          tooltip={t('common.refresh')}
+          aria-label={t('common.refresh')}
           disabled={refreshing}
           onClick={onRefresh}
         >
@@ -104,6 +104,7 @@ export function EnvironmentRowActions({
       {remote && !upgrading && onToggleConnection && (
         <HostConnectionToggle
           variant="nested"
+          showTooltip={false}
           connected={!offline && (connection === 'connected' || connection === 'needs-upgrade' || connection === 'connecting')}
           busy={connectionBusy}
           spinning={connection === 'connecting'}

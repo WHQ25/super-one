@@ -97,9 +97,9 @@ function barModel(target: SidebarFocus): {
 function projectActions() {
   return (
     <>
-      <IconButton size="sm" variant="nested" tooltip="Search sessions…"><Search /></IconButton>
-      <IconButton size="sm" variant="nested" tooltip="New Automation"><CalendarClock /></IconButton>
-      <IconButton size="sm" variant="nested" tooltip="New Session"><SquarePen /></IconButton>
+      <IconButton size="sm" variant="nested" aria-label="Search sessions…"><Search /></IconButton>
+      <IconButton size="sm" variant="nested" aria-label="New Automation"><CalendarClock /></IconButton>
+      <IconButton size="sm" variant="nested" aria-label="New Session"><SquarePen /></IconButton>
     </>
   )
 }

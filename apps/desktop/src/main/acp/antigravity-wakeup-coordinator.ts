@@ -75,7 +75,7 @@ export function settleWakeupWaiters(
   state.allWorkCompletedAtMs = null
   state.awaitingToolSinceMs = null
   state.hasExplicitStallTimeout = false
-  clearSettledWakeupBackgroundTasks(state.bgTasks)
+  clearSettledWakeupBackgroundTasks(state.bgTasks, outcome === 'cancelled' ? state.emitEvent : undefined)
   const waiters = state.wakeupWaiters.splice(0, state.wakeupWaiters.length)
   for (const resolve of waiters) {
     resolve(outcome)

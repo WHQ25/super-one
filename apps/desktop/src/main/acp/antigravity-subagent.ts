@@ -224,7 +224,19 @@ export function cancelAntigravitySubagentWakeupWait(parentSessionId: string): bo
   const state = sessionStates.get(parentSessionId)
   if (!state) return false
   const hadWaiters = state.wakeupWaiters.length > 0 || isEffectiveWakeupPending(state)
-  for (const entry of state.trackedByToolUseId.values()) entry.completed = true
+  for (const entry of state.trackedByToolUseId.values()) {
+    if (!entry.completed && entry.conversationId) {
+      state.emitEvent({
+        type: 'task_notification',
+        toolUseId: entry.toolUseId,
+        taskId: entry.conversationId,
+        taskStatus: 'stopped',
+        outputFile: entry.outputFile ?? '',
+        summary: entry.description,
+      })
+    }
+    entry.completed = true
+  }
   stopPollingTimer(state)
   settleWakeupWaiters(state, 'cancelled')
   return hadWaiters

@@ -1,6 +1,7 @@
 import { cleanAntigravityStepContent } from '@superone/shared/antigravity-chunks'
 import { normalizeTranscriptTool } from '@superone/shared/tool-ui'
 import {
+  parseAntigravityTranscriptRecords,
   stripAntigravityFileUri,
   summarizeAntigravityTranscriptToolCall,
   unwrapAntigravityTranscriptArgs,
@@ -17,6 +18,7 @@ export interface SpawnedSubagentRef {
   outputFile: string
   stepIndex: number
   createdAtMs?: number
+  killedAtStepIndex?: number
 }
 
 export interface ParsedAntigravitySubagentTranscript {
@@ -44,16 +46,72 @@ const CREATED_SUBAGENTS_MARKERS = [
   'Created the following subagents:',
   'Created the following subagent:',
 ] as const
+const KILLED_SUBAGENTS_OUTPUT_RE = /Successfully killed\s+\d+\s+subagent/i
+
+function pickSubagentKillAction(args: Record<string, unknown>): {
+  action: 'kill' | 'kill_all'
+  conversationIds: string[]
+} | null {
+  const rawAction = typeof args.Action === 'string' ? args.Action : typeof args.action === 'string' ? args.action : ''
+  const action = rawAction.trim().toLowerCase()
+  if (action !== 'kill' && action !== 'kill_all') return null
+  const rawIds = args.ConversationIds ?? args.conversationIds ?? args.conversation_ids
+  const conversationIds = Array.isArray(rawIds)
+    ? rawIds.filter((v): v is string => typeof v === 'string' && v.trim().length > 0).map((v) => v.trim())
+    : []
+  return { action, conversationIds }
+}
 
 export function extractSpawnedSubagentsFromParentTranscript(raw: string): SpawnedSubagentRef[] {
   const out: SpawnedSubagentRef[] = []
-  const lines = raw.split('\n')
-  for (let i = 0; i < lines.length; i += 1) {
-    const line = lines[i]?.trim()
-    if (!line || !line.includes('Created the following subagent')) continue
+  const byId = new Map<string, SpawnedSubagentRef>()
+  const records = parseAntigravityTranscriptRecords(raw)
+  let pendingPlannerCalls: Array<{ rawName: string; args: Record<string, unknown> }> = []
+  let pendingCallIdx = 0
+
+  for (const { stepIndex, rec } of records) {
+    if (rec.type === 'PLANNER_RESPONSE') {
+      const rawCalls = Array.isArray(rec.tool_calls) ? rec.tool_calls : []
+      pendingPlannerCalls = []
+      for (const tc of rawCalls) {
+        if (!tc || typeof tc !== 'object') continue
+        const tcObj = tc as Record<string, unknown>
+        const rawName = typeof tcObj.name === 'string' && tcObj.name ? tcObj.name : 'tool'
+        const args = unwrapAntigravityTranscriptArgs(tcObj.args)
+        pendingPlannerCalls.push({ rawName, args })
+      }
+      pendingCallIdx = 0
+      continue
+    }
+
+    const matchedCall = rec.type === 'GENERIC' ? pendingPlannerCalls[pendingCallIdx] : undefined
+    if (rec.type === 'GENERIC' && pendingCallIdx < pendingPlannerCalls.length) {
+      pendingCallIdx += 1
+    }
+
+    const content = typeof rec.content === 'string' ? rec.content : ''
+    if (
+      rec.type === 'GENERIC' &&
+      rec.status !== 'ERROR' &&
+      matchedCall &&
+      (matchedCall.rawName === 'manage_subagents' || matchedCall.rawName === 'ManageSubagents') &&
+      KILLED_SUBAGENTS_OUTPUT_RE.test(content)
+    ) {
+      const killSpec = pickSubagentKillAction(matchedCall.args)
+      if (killSpec?.action === 'kill_all') {
+        for (const existing of out) {
+          existing.killedAtStepIndex ??= stepIndex
+        }
+      } else if (killSpec?.action === 'kill') {
+        for (const id of killSpec.conversationIds) {
+          const existing = byId.get(id)
+          if (existing) existing.killedAtStepIndex ??= stepIndex
+        }
+      }
+    }
+
+    if (!content.includes('Created the following subagent')) continue
     try {
-      const rec = JSON.parse(line) as Record<string, unknown>
-      const content = typeof rec.content === 'string' ? rec.content : ''
       let markerIdx = -1
       let markerLen = 0
       for (const marker of CREATED_SUBAGENTS_MARKERS) {
@@ -81,7 +139,6 @@ export function extractSpawnedSubagentsFromParentTranscript(raw: string): Spawne
           candidates = [JSON.parse(jsonSlice.slice(firstBrace, endBrace + 1))]
         }
       }
-      const stepIndex = typeof rec.step_index === 'number' ? rec.step_index : i
       const createdAtMs = typeof rec.created_at === 'string' ? Date.parse(rec.created_at) : Number.NaN
       for (const item of candidates) {
         if (!item || typeof item !== 'object' || Array.isArray(item)) continue
@@ -90,12 +147,14 @@ export function extractSpawnedSubagentsFromParentTranscript(raw: string): Spawne
         const logUri = typeof parsed.logAbsoluteUri === 'string' ? parsed.logAbsoluteUri.trim() : ''
         if (!conversationId) continue
         const outputFile = logUri ? stripAntigravityFileUri(logUri) : ''
-        out.push({
+        const ref: SpawnedSubagentRef = {
           conversationId,
           outputFile,
           stepIndex,
           ...(Number.isFinite(createdAtMs) ? { createdAtMs } : {}),
-        })
+        }
+        out.push(ref)
+        byId.set(conversationId, ref)
       }
     } catch {
       continue

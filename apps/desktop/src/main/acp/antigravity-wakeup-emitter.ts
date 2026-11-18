@@ -18,6 +18,7 @@ export interface TrackedSubagent {
   spawnStepIndex?: number
   lastRawLength: number
   emittedSavedImages?: boolean
+  killed?: boolean
   completed: boolean
 }
 
@@ -83,6 +84,12 @@ export function syncTrackedSubagentEntries(
           match.outputFile ||
           findAntigravityTranscriptPath(match.conversationId, ctx.brainRoots) ||
           join(ctx.brainRoots[0] ?? '', match.conversationId, '.system_generated', 'logs', 'transcript.jsonl')
+        if (match.killedAtStepIndex !== undefined) {
+          entry.completed = true
+          entry.killed = true
+          ctx.replayedBackgroundToolIds.add(entry.toolUseId)
+          continue
+        }
         ctx.emitEvent({
           type: 'task_started',
           toolUseId: entry.toolUseId,
@@ -92,6 +99,39 @@ export function syncTrackedSubagentEntries(
           ...(entry.outputFile ? { outputFile: entry.outputFile } : {}),
           isBackgrounded: true,
         })
+      }
+    }
+
+    if (entry.conversationId) {
+      const ref = spawnedRefs.find((r) => r.conversationId === entry.conversationId)
+      if (ref?.killedAtStepIndex !== undefined) {
+        entry.completed = true
+        entry.killed = true
+        ctx.replayedBackgroundToolIds.add(entry.toolUseId)
+        ctx.emitEvent({
+          type: 'content_delta',
+          messageId: entry.messageId,
+          delta: {
+            type: 'tool_result',
+            toolUseId: entry.toolUseId,
+            summary: JSON.stringify({
+              subagent_id: entry.conversationId,
+              output_file: entry.outputFile ?? '',
+              status: 'killed',
+            }),
+            ...(entry.outputFile ? { outputPath: entry.outputFile } : {}),
+            isError: false,
+          },
+        })
+        ctx.emitEvent({
+          type: 'task_notification',
+          toolUseId: entry.toolUseId,
+          taskId: entry.conversationId,
+          taskStatus: 'stopped',
+          outputFile: entry.outputFile ?? '',
+          summary: entry.description,
+        })
+        continue
       }
     }
 
@@ -177,6 +217,14 @@ export function syncTrackedSubagentEntries(
         usage: { totalTokens: parsed.totalTokens, toolUses: parsed.toolUses, durationMs },
       })
     }
+  }
+
+  if (
+    ctx.subagentWakeupPending &&
+    ctx.trackedByToolUseId.size > 0 &&
+    [...ctx.trackedByToolUseId.values()].every((e) => Boolean(e.killed))
+  ) {
+    ctx.subagentWakeupPending = false
   }
 }
 

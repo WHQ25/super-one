@@ -15,7 +15,9 @@ import {
   extractAntigravityApiRetryEvent,
   isAntigravityCancelledChunk,
 } from '@superone/shared/antigravity-chunks'
+import { MonitorSessionHold } from '@superone/shared/monitor-session-hold'
 import {
+  cancelAntigravitySubagentWakeupWait,
   clearUnflushedAntigravityWakeupReplay,
   disposeAntigravitySubagentTracker,
   extractParentWakeupProgress,
@@ -811,5 +813,357 @@ describe('antigravity invoke_subagent normalization and transcript lifecycle', (
 
     clearUnflushedAntigravityWakeupReplay(parentSid)
     expect(hasUnflushedAntigravityWakeupReplay(parentSid)).toBe(false)
+  })
+
+  it('releases MonitorSessionHold and stops pending wakeup when a subagent is killed via manage_subagents (#214)', async () => {
+    const brainRoot = makeTempBrainRoot()
+    const parentSid = '4ec9c100-0000-4000-8000-000000000214'
+    const subSid = 'a9383a2e-0000-4000-8000-000000000214'
+    const nowIso = new Date().toISOString()
+
+    const parentLogsDir = join(brainRoot, parentSid, '.system_generated', 'logs')
+    const subLogsDir = join(brainRoot, subSid, '.system_generated', 'logs')
+    mkdirSync(parentLogsDir, { recursive: true })
+    mkdirSync(subLogsDir, { recursive: true })
+
+    const parentFullTranscriptPath = join(parentLogsDir, 'transcript_full.jsonl')
+    const subTranscriptPath = join(subLogsDir, 'transcript.jsonl')
+
+    // Child subagent ran a tool and ended on GENERIC without a closing PLANNER_RESPONSE
+    writeFileSync(
+      subTranscriptPath,
+      [
+        JSON.stringify({ step_index: 1, type: 'USER_INPUT', status: 'DONE', created_at: nowIso, content: 'Implement phase 1' }),
+        JSON.stringify({
+          step_index: 2,
+          type: 'PLANNER_RESPONSE',
+          status: 'DONE',
+          created_at: nowIso,
+          tool_calls: [{ name: 'read_file', args: { Path: '/tmp/a.ts' } }],
+        }),
+        JSON.stringify({ step_index: 3, type: 'GENERIC', status: 'DONE', created_at: nowIso, content: 'file contents' }),
+      ].join('\n') + '\n',
+      'utf8',
+    )
+
+    const initialParentLines = [
+      JSON.stringify({ step_index: 176, type: 'USER_INPUT', status: 'DONE', created_at: nowIso, content: 'Start work' }),
+      JSON.stringify({
+        step_index: 177,
+        type: 'PLANNER_RESPONSE',
+        status: 'DONE',
+        created_at: nowIso,
+        tool_calls: [{ id: 'call_sub_kill_1', name: 'invoke_subagent', args: { TypeName: 'self', Role: 'Implementer', Prompt: 'Implement' } }],
+      }),
+      JSON.stringify({
+        step_index: 178,
+        type: 'GENERIC',
+        status: 'DONE',
+        created_at: nowIso,
+        content: `Created the following subagent:\n${JSON.stringify({
+          conversationId: subSid,
+          logAbsoluteUri: `file://${subTranscriptPath}`,
+        })}`,
+      }),
+    ]
+    writeFileSync(parentFullTranscriptPath, `${initialParentLines.join('\n')}\n`, 'utf8')
+
+    const hold = new MonitorSessionHold()
+    const emitted: AgentEvent[] = []
+    const record = (ev: AgentEvent) => {
+      emitted.push(ev)
+      hold.note(ev)
+    }
+
+    noteAntigravitySubagentEvents(
+      parentSid,
+      'msg-kill-1',
+      [
+        {
+          type: 'content_delta',
+          messageId: 'msg-kill-1',
+          delta: {
+            type: 'tool_use',
+            toolUseId: 'call_sub_kill_1',
+            toolName: 'Agent',
+            input: JSON.stringify({ subagent_type: 'self', description: 'Implementer', prompt: 'Implement', run_in_background: true }),
+          },
+        },
+      ],
+      record,
+      [brainRoot],
+    )
+
+    expect(hasPendingAntigravitySubagentWakeup(parentSid)).toBe(true)
+    expect(hold.adjust({ type: 'status_change', status: 'idle' })).toEqual({
+      type: 'status_change',
+      status: 'background',
+    })
+
+    // Parent kills the subagent via manage_subagents({ Action: "kill", ConversationIds: [subSid] })
+    const afterKillLines = [
+      ...initialParentLines,
+      JSON.stringify({
+        step_index: 188,
+        type: 'PLANNER_RESPONSE',
+        status: 'DONE',
+        created_at: nowIso,
+        tool_calls: [{ id: 'call_kill_188', name: 'manage_subagents', args: { Action: 'kill', ConversationIds: [subSid] } }],
+      }),
+      JSON.stringify({
+        step_index: 190,
+        type: 'GENERIC',
+        status: 'DONE',
+        created_at: nowIso,
+        content: 'Created At: 2026-11-17T07:26:18-08:00\nCompleted At: 2026-11-17T07:26:37-08:00\nSuccessfully killed 1 subagent(s) and their descendants.\nKilled roles: Implementer',
+      }),
+    ]
+    writeFileSync(parentFullTranscriptPath, `${afterKillLines.join('\n')}\n`, 'utf8')
+
+    expect(hasPendingAntigravitySubagentWakeup(parentSid)).toBe(false)
+    expect(
+      emitted.some(
+        (e) =>
+          e.type === 'task_notification' &&
+          e.taskId === subSid &&
+          e.toolUseId === 'call_sub_kill_1' &&
+          e.taskStatus === 'stopped',
+      ),
+    ).toBe(true)
+    expect(hold.followUp()).toEqual({ type: 'status_change', status: 'idle' })
+    expect(hold.adjust({ type: 'status_change', status: 'idle' })).toEqual({
+      type: 'status_change',
+      status: 'idle',
+    })
+  })
+
+  it('emits stopped task_notification for active subagents and background bash tasks on cancelAntigravitySubagentWakeupWait (#214)', () => {
+    const brainRoot = makeTempBrainRoot()
+    const parentSid = '4ec9c100-0000-4000-8000-000000000215'
+    const subSid = 'a9383a2e-0000-4000-8000-000000000215'
+    const bgTaskId = `${parentSid}/task-99`
+    const nowIso = new Date().toISOString()
+
+    const parentLogsDir = join(brainRoot, parentSid, '.system_generated', 'logs')
+    const subLogsDir = join(brainRoot, subSid, '.system_generated', 'logs')
+    mkdirSync(parentLogsDir, { recursive: true })
+    mkdirSync(subLogsDir, { recursive: true })
+
+    const parentFullTranscriptPath = join(parentLogsDir, 'transcript_full.jsonl')
+    const subTranscriptPath = join(subLogsDir, 'transcript.jsonl')
+    writeFileSync(subTranscriptPath, `${JSON.stringify({ step_index: 1, type: 'USER_INPUT', status: 'DONE', created_at: nowIso, content: 'Run' })}\n`, 'utf8')
+    writeFileSync(
+      parentFullTranscriptPath,
+      [
+        JSON.stringify({ step_index: 1, type: 'USER_INPUT', status: 'DONE', created_at: nowIso, content: 'Run both' }),
+        JSON.stringify({
+          step_index: 2,
+          type: 'PLANNER_RESPONSE',
+          status: 'DONE',
+          created_at: nowIso,
+          tool_calls: [
+            { id: 'call_sub_cancel', name: 'invoke_subagent', args: { TypeName: 'self', Role: 'Worker', Prompt: 'Go' } },
+            { id: 'call_bash_cancel', name: 'run_command', args: { CommandLine: 'sleep 30', WaitMsBeforeAsync: 500 } },
+          ],
+        }),
+        JSON.stringify({
+          step_index: 3,
+          type: 'GENERIC',
+          status: 'DONE',
+          created_at: nowIso,
+          content: `Created the following subagent:\n${JSON.stringify({ conversationId: subSid, logAbsoluteUri: `file://${subTranscriptPath}` })}`,
+        }),
+        JSON.stringify({
+          step_index: 4,
+          type: 'GENERIC',
+          status: 'RUNNING',
+          created_at: nowIso,
+          content: `Created At: ${nowIso}\nTool is running as a background task with task id: ${bgTaskId}`,
+        }),
+      ].join('\n') + '\n',
+      'utf8',
+    )
+
+    const hold = new MonitorSessionHold()
+    const emitted: AgentEvent[] = []
+    const record = (ev: AgentEvent) => {
+      emitted.push(ev)
+      hold.note(ev)
+    }
+
+    noteAntigravitySubagentEvents(
+      parentSid,
+      'msg-cancel-1',
+      [
+        {
+          type: 'content_delta',
+          messageId: 'msg-cancel-1',
+          delta: {
+            type: 'tool_use',
+            toolUseId: 'call_sub_cancel',
+            toolName: 'Agent',
+            input: JSON.stringify({ subagent_type: 'self', description: 'Worker', prompt: 'Go', run_in_background: true }),
+          },
+        },
+        {
+          type: 'content_delta',
+          messageId: 'msg-cancel-1',
+          delta: {
+            type: 'tool_use',
+            toolUseId: 'call_bash_cancel',
+            toolName: 'Bash',
+            input: JSON.stringify({ command: 'sleep 30' }),
+          },
+        },
+        {
+          type: 'content_delta',
+          messageId: 'msg-cancel-1',
+          delta: {
+            type: 'tool_result',
+            toolUseId: 'call_bash_cancel',
+            summary: `Tool is running as a background task with task id: ${bgTaskId}`,
+            isError: false,
+          },
+        },
+      ],
+      record,
+      [brainRoot],
+    )
+
+    expect(hold.adjust({ type: 'status_change', status: 'idle' })).toEqual({
+      type: 'status_change',
+      status: 'background',
+    })
+
+    cancelAntigravitySubagentWakeupWait(parentSid)
+
+    expect(emitted.some((e) => e.type === 'task_notification' && e.taskId === subSid && e.taskStatus === 'stopped')).toBe(true)
+    expect(emitted.some((e) => e.type === 'task_notification' && e.taskId === bgTaskId && e.taskStatus === 'stopped')).toBe(true)
+    expect(hold.followUp()).toEqual({ type: 'status_change', status: 'idle' })
+    expect(hold.adjust({ type: 'status_change', status: 'idle' })).toEqual({
+      type: 'status_change',
+      status: 'idle',
+    })
+  })
+
+  it('releases MonitorSessionHold when manage_subagents kill_all and manage_task kill terminate active tasks (#214)', () => {
+    const brainRoot = makeTempBrainRoot()
+    const parentSid = '4ec9c100-0000-4000-8000-000000000216'
+    const subSid = 'a9383a2e-0000-4000-8000-000000000216'
+    const bgTaskId = `${parentSid}/task-77`
+    const nowIso = new Date().toISOString()
+
+    const parentLogsDir = join(brainRoot, parentSid, '.system_generated', 'logs')
+    const subLogsDir = join(brainRoot, subSid, '.system_generated', 'logs')
+    mkdirSync(parentLogsDir, { recursive: true })
+    mkdirSync(subLogsDir, { recursive: true })
+
+    const parentFullTranscriptPath = join(parentLogsDir, 'transcript_full.jsonl')
+    const subTranscriptPath = join(subLogsDir, 'transcript.jsonl')
+    writeFileSync(subTranscriptPath, `${JSON.stringify({ step_index: 1, type: 'USER_INPUT', status: 'DONE', created_at: nowIso, content: 'Run' })}\n`, 'utf8')
+
+    const initialLines = [
+      JSON.stringify({ step_index: 1, type: 'USER_INPUT', status: 'DONE', created_at: nowIso, content: 'Start tasks' }),
+      JSON.stringify({
+        step_index: 2,
+        type: 'PLANNER_RESPONSE',
+        status: 'DONE',
+        created_at: nowIso,
+        tool_calls: [
+          { id: 'call_sub_killall', name: 'invoke_subagent', args: { TypeName: 'self', Role: 'Worker', Prompt: 'Go' } },
+          { id: 'call_bash_kill', name: 'run_command', args: { CommandLine: 'sleep 60', WaitMsBeforeAsync: 500 } },
+        ],
+      }),
+      JSON.stringify({
+        step_index: 3,
+        type: 'GENERIC',
+        status: 'DONE',
+        created_at: nowIso,
+        content: `Created the following subagent:\n${JSON.stringify({ conversationId: subSid, logAbsoluteUri: `file://${subTranscriptPath}` })}`,
+      }),
+      JSON.stringify({
+        step_index: 4,
+        type: 'GENERIC',
+        status: 'RUNNING',
+        created_at: nowIso,
+        content: `Created At: ${nowIso}\nTool is running as a background task with task id: ${bgTaskId}`,
+      }),
+    ]
+    writeFileSync(parentFullTranscriptPath, `${initialLines.join('\n')}\n`, 'utf8')
+
+    const hold = new MonitorSessionHold()
+    const emitted: AgentEvent[] = []
+    const record = (ev: AgentEvent) => {
+      emitted.push(ev)
+      hold.note(ev)
+    }
+
+    noteAntigravitySubagentEvents(
+      parentSid,
+      'msg-killall-1',
+      [
+        {
+          type: 'content_delta',
+          messageId: 'msg-killall-1',
+          delta: {
+            type: 'tool_use',
+            toolUseId: 'call_sub_killall',
+            toolName: 'Agent',
+            input: JSON.stringify({ subagent_type: 'self', description: 'Worker', prompt: 'Go', run_in_background: true }),
+          },
+        },
+        {
+          type: 'content_delta',
+          messageId: 'msg-killall-1',
+          delta: {
+            type: 'tool_use',
+            toolUseId: 'call_bash_kill',
+            toolName: 'Bash',
+            input: JSON.stringify({ command: 'sleep 60' }),
+          },
+        },
+      ],
+      record,
+      [brainRoot],
+    )
+
+    expect(hold.adjust({ type: 'status_change', status: 'idle' })).toEqual({
+      type: 'status_change',
+      status: 'background',
+    })
+
+    const killedLines = [
+      ...initialLines,
+      JSON.stringify({
+        step_index: 5,
+        type: 'PLANNER_RESPONSE',
+        status: 'DONE',
+        created_at: nowIso,
+        tool_calls: [
+          { id: 'call_ms_killall', name: 'manage_subagents', args: { Action: 'kill_all' } },
+          { id: 'call_mt_kill', name: 'manage_task', args: { Action: 'kill', TaskId: bgTaskId } },
+        ],
+      }),
+      JSON.stringify({
+        step_index: 6,
+        type: 'GENERIC',
+        status: 'DONE',
+        created_at: nowIso,
+        content: 'Successfully killed 1 subagent(s) and their descendants.',
+      }),
+      JSON.stringify({
+        step_index: 7,
+        type: 'GENERIC',
+        status: 'DONE',
+        created_at: nowIso,
+        content: `Task "${bgTaskId}" cancelled.`,
+      }),
+    ]
+    writeFileSync(parentFullTranscriptPath, `${killedLines.join('\n')}\n`, 'utf8')
+
+    expect(hasPendingAntigravitySubagentWakeup(parentSid)).toBe(false)
+    expect(emitted.some((e) => e.type === 'task_notification' && e.taskId === subSid && e.taskStatus === 'stopped')).toBe(true)
+    expect(emitted.some((e) => e.type === 'task_notification' && e.taskId === bgTaskId && e.taskStatus === 'stopped')).toBe(true)
+    expect(hold.followUp()).toEqual({ type: 'status_change', status: 'idle' })
   })
 })

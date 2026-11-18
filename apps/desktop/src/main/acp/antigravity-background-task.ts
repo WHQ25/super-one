@@ -137,6 +137,22 @@ export function noteBackgroundTaskMappedEvents(
           entry.wakeupRequired = true
           entry.wireCompleted = false
           entry.completed = false
+          if (entry.toolName === 'Bash' && !entry.emittedTaskStarted) {
+            entry.emittedTaskStarted = true
+            emitEvent({
+              type: 'task_started',
+              taskType: 'local_bash',
+              toolUseId: entry.toolUseId,
+              taskId: entry.taskId,
+              description: entry.description,
+              ...(entry.logFile ? { outputFile: entry.logFile } : {}),
+              isBackgrounded: true,
+            })
+          }
+          if (entry.toolName === 'Bash' && entry.logFile && !entry.watchingLog) {
+            entry.watchingLog = true
+            watchBashOutput(entry.toolUseId, entry.logFile)
+          }
         }
         continue
       }
@@ -195,13 +211,25 @@ export function syncBackgroundTasks(
     }
   }
 
+  const spawnedById = new Map(spawnedTasks.map((t) => [t.taskId, t]))
   const currentTurnTasks = spawnedTasks.filter(
     (ref) => ref.stepIndex > lastUserStepIndex && !tracker.boundTaskIds.has(ref.taskId),
   )
 
   for (const entry of tracker.tasksByToolUseId.values()) {
     if (entry.completed && !entry.wakeupRequired) continue
-    if (entry.taskId) continue
+    if (entry.taskId) {
+      const boundRef = spawnedById.get(entry.taskId)
+      if (boundRef) {
+        entry.spawnStepIndex ??= boundRef.stepIndex
+        if (!entry.logFile && boundRef.logFile) entry.logFile = boundRef.logFile
+        if (entry.toolName === 'Bash' && entry.logFile && !entry.watchingLog && !entry.completed) {
+          entry.watchingLog = true
+          watchBashOutput(entry.toolUseId, entry.logFile)
+        }
+      }
+      continue
+    }
     const isSchedule = entry.toolName.toLowerCase() === 'schedule'
     if (entry.wireCompleted && !isSchedule) continue
 
@@ -328,6 +356,26 @@ export function syncBackgroundTasks(
   for (const entry of tracker.tasksByToolUseId.values()) {
     if (!entry.taskId || entry.completed) continue
 
+    if (spawnedById.get(entry.taskId)?.cancelledInTurn) {
+      entry.completed = true
+      entry.wakeupRequired = false
+      if (entry.watchingLog) {
+        unwatchBashOutput(entry.toolUseId)
+        entry.watchingLog = false
+      }
+      if (entry.emittedTaskStarted) {
+        emitEvent({
+          type: 'task_notification',
+          toolUseId: entry.toolUseId,
+          taskId: entry.taskId,
+          taskStatus: 'stopped',
+          outputFile: entry.logFile ?? '',
+          summary: entry.description,
+        })
+      }
+      continue
+    }
+
     const completedResult = completedMap.get(entry.taskId)
     if (!completedResult) continue
 
@@ -437,11 +485,24 @@ export function reconcileForegroundCompletedBackgroundTasks(
   }
 }
 
-export function clearSettledWakeupBackgroundTasks(tracker: BackgroundTaskTrackerState): void {
+export function clearSettledWakeupBackgroundTasks(
+  tracker: BackgroundTaskTrackerState,
+  emitStopped?: (event: AgentEvent) => void,
+): void {
   for (const entry of tracker.tasksByToolUseId.values()) {
     if (entry.watchingLog) {
       unwatchBashOutput(entry.toolUseId)
       entry.watchingLog = false
+    }
+    if (emitStopped && !entry.completed && entry.emittedTaskStarted && entry.taskId) {
+      emitStopped({
+        type: 'task_notification',
+        toolUseId: entry.toolUseId,
+        taskId: entry.taskId,
+        taskStatus: 'stopped',
+        outputFile: entry.logFile ?? '',
+        summary: entry.description,
+      })
     }
     entry.completed = true
     entry.wakeupRequired = false

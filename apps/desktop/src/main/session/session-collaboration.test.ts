@@ -1969,16 +1969,19 @@ describe('child session project attribution', () => {
   it('does not register a managed ~/.worktrees path when main-dir lookup fails', async () => {
     const { homedir } = await import('os')
     const managedWt = mkdtempSync(join(homedir(), '.worktrees', 'collab-managed-'))
-    state.projects = [{ path: TEST_CWD }]
-    // Simulate a stale / unreadable worktree: no main-dir mapping.
-    const parent = fakeSession('parent', { cwd: managedWt, projectPath: TEST_CWD })
-    const { host, createSession } = fakeHost(parent)
+    try {
+      state.projects = [{ path: TEST_CWD }]
+      // Simulate a stale / unreadable worktree: no main-dir mapping.
+      const parent = fakeSession('parent', { cwd: managedWt, projectPath: TEST_CWD })
+      const { host, createSession } = fakeHost(parent)
 
-    await startChild(managedWt, host, parent)
+      await startChild(managedWt, host, parent)
 
-    expect(state.projects.map((p) => p.path)).toEqual([TEST_CWD])
-    expect(createSession.mock.calls[0][0].projectPath).toBe(TEST_CWD)
-    rmSync(managedWt, { recursive: true, force: true })
+      expect(state.projects.map((p) => p.path)).toEqual([TEST_CWD])
+      expect(createSession.mock.calls[0][0].projectPath).toBe(TEST_CWD)
+    } finally {
+      rmSync(managedWt, { recursive: true, force: true })
+    }
   })
 
   it('cuts a child worktree while parent is already in a worktree without registering either', async () => {
@@ -2069,26 +2072,29 @@ describe('child session project attribution', () => {
     const managedRoot = join(homedir(), '.worktrees')
     mkdirSync(managedRoot, { recursive: true })
     const existingWt = mkdtempSync(join(managedRoot, 'agent-cwd-wt-'))
-    state.projects = [{ path: TEST_CWD }]
-    state.mainWorktreeByPath.set(existingWt, TEST_CWD)
-    const parent = fakeSession('parent')
-    const { host, createSession } = fakeHost(parent)
+    try {
+      state.projects = [{ path: TEST_CWD }]
+      state.mainWorktreeByPath.set(existingWt, TEST_CWD)
+      const parent = fakeSession('parent')
+      const { host, createSession } = fakeHost(parent)
 
-    await startChild(existingWt, host, parent)
+      await startChild(existingWt, host, parent)
 
-    expect(state.projects.map((p) => p.path)).toEqual([TEST_CWD])
-    expect(createSession.mock.calls[0][0].projectPath).toBe(TEST_CWD)
-    expect(createSession.mock.calls[0][0].cwd).toBe(existingWt)
-    // DB row: project = main, is_worktree + worktree_path even without worktree.enabled
-    const row = state.db!.prepare(`
-      SELECT p.path AS project_path, s.is_worktree, s.worktree_path
-      FROM sessions s JOIN projects p ON p.id = s.project_id
-      WHERE s.id != ?
-    `).get('parent') as { project_path: string; is_worktree: number; worktree_path: string | null }
-    expect(row.project_path).toBe(TEST_CWD)
-    expect(row.is_worktree).toBe(1)
-    expect(row.worktree_path).toBe(existingWt)
-    rmSync(existingWt, { recursive: true, force: true })
+      expect(state.projects.map((p) => p.path)).toEqual([TEST_CWD])
+      expect(createSession.mock.calls[0][0].projectPath).toBe(TEST_CWD)
+      expect(createSession.mock.calls[0][0].cwd).toBe(existingWt)
+      // DB row: project = main, is_worktree + worktree_path even without worktree.enabled
+      const row = state.db!.prepare(`
+        SELECT p.path AS project_path, s.is_worktree, s.worktree_path
+        FROM sessions s JOIN projects p ON p.id = s.project_id
+        WHERE s.id != ?
+      `).get('parent') as { project_path: string; is_worktree: number; worktree_path: string | null }
+      expect(row.project_path).toBe(TEST_CWD)
+      expect(row.is_worktree).toBe(1)
+      expect(row.worktree_path).toBe(existingWt)
+    } finally {
+      rmSync(existingWt, { recursive: true, force: true })
+    }
   })
 
   it('restores the active session of the project it actually joined', async () => {

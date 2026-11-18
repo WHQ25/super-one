@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { homedir, tmpdir } from 'node:os'
+import { basename, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent, RecentFolder, TerminalEvent, TerminalSnapshot } from '@superone/shared/agent-types'
 import type { ControlLease, EnvironmentEventEnvelope, ExecutionEnvironmentDescriptor, ProjectSnapshot } from '@superone/shared/environment'
@@ -90,7 +90,10 @@ beforeEach(() => {
 afterEach(async () => {
   for (const m of managers.splice(0)) m.disconnectAll()
   for (const h of hosts.splice(0)) await stopDesktopNode(h)
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+  for (const dir of dirs.splice(0)) {
+    rmSync(join(homedir(), '.worktrees', basename(dir)), { recursive: true, force: true })
+    rmSync(dir, { recursive: true, force: true })
+  }
   electron.store.clear()
 })
 

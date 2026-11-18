@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeEach, afterEach } from 'vitest'
 import { chmodSync, mkdtempSync, writeFileSync, rmSync, existsSync } from 'node:fs'
-import { join } from 'node:path'
+import { basename, join } from 'node:path'
 import { tmpdir, homedir } from 'node:os'
 import { execFileSync } from 'node:child_process'
 import { gitRun } from '@superone/runtime/git'
@@ -67,6 +67,7 @@ describe('WorkspaceGitService worktree activate', () => {
   })
 
   afterEach(() => {
+    rmSync(join(homedir(), '.worktrees', basename(dir)), { recursive: true, force: true })
     rmSync(dir, { recursive: true, force: true })
   })
 

@@ -1,7 +1,7 @@
 import { execFileSync } from 'node:child_process'
 import { existsSync, mkdtempSync, rmSync } from 'node:fs'
-import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { homedir, tmpdir } from 'node:os'
+import { basename, join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { Client } from '@modelcontextprotocol/sdk/client/index.js'
 import { StreamableHTTPClientTransport } from '@modelcontextprotocol/sdk/client/streamableHttp.js'
@@ -22,7 +22,10 @@ afterEach(async () => {
   while (clients.length) await clients.pop()!.close().catch(() => {})
   while (runtimes.length) await runtimes.pop()!.stop().catch(() => {})
   for (const { root, path } of worktrees.splice(0)) { if (!existsSync(path)) continue; try { execFileSync('git', ['-C', root, 'worktree', 'remove', '--force', path]) } catch {} }
-  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+  for (const dir of dirs.splice(0)) {
+    rmSync(join(homedir(), '.worktrees', basename(dir)), { recursive: true, force: true })
+    rmSync(dir, { recursive: true, force: true })
+  }
 })
 const folder = () => { const dir = mkdtempSync(join(tmpdir(), 'suggested-task-node-')); dirs.push(dir); return dir }
 const INPUT = { title: 'Fix node-local issue', tldr: 'A separate issue on this node.', prompt: 'Fix the issue in this execution environment.' }

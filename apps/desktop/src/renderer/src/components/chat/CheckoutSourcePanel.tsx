@@ -78,7 +78,7 @@ export function CheckoutSourceMenu({ options, selectedId, onSelect }: {
     <div role="menu" className="border-t bg-muted/40 pb-1">
       {groups.map((group) => (
         <div key={group}>
-          <div className="px-3 pb-0.5 pt-1.5 text-[11px] text-muted-foreground">{t(GROUP_LABEL[group])}</div>
+          <div className="px-3 pb-0.5 pt-1.5 text-xs text-muted-foreground">{t(GROUP_LABEL[group])}</div>
           {options.filter((option) => option.group === group).map((option) => (
             <button
               key={option.id}
@@ -92,7 +92,7 @@ export function CheckoutSourceMenu({ options, selectedId, onSelect }: {
               <span className="flex min-w-0 flex-1 flex-col">
                 <span className="truncate">{option.label}</span>
                 {(option.disabled || option.detail) && (
-                  <span className="truncate text-[11px] text-muted-foreground">
+                  <span className="truncate text-xs text-muted-foreground">
                     {option.disabled ? t(DISABLED_LABEL[option.disabled]) : option.detail}
                   </span>
                 )}
@@ -173,7 +173,7 @@ export function RelationPill({ relation, behind, children }: { relation: BranchR
   const { t } = useTranslation()
   const label = relation === 'behind' && !behind ? t('chat.git.relationUpdate') : t(RELATION_LABEL[relation], { count: behind })
   return (
-    <span className={`inline-flex max-w-32 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-1.5 text-[11px] ${RELATION_STYLE[relation]}`}>
+    <span className={`inline-flex max-w-32 shrink-0 items-center gap-1 whitespace-nowrap rounded-full border px-1.5 text-xs ${RELATION_STYLE[relation]}`}>
       <span>{label}</span>
       {children}
     </span>
@@ -305,7 +305,7 @@ function rowDetail(branch: CheckoutSourceBranch, group: CheckoutSourceGroup, loc
   }
   if (!parts.length && !branch.dirty) return null
   return (
-    <span className="truncate text-[11px] text-muted-foreground">
+    <span className="truncate text-xs text-muted-foreground">
       {parts.map((part, index) => <span key={index}>{index > 0 && ' · '}{part}</span>)}
       {branch.dirty && <span>{parts.length > 0 && ' · '}<DiffStat stat={branch.dirty} /></span>}
     </span>
@@ -505,7 +505,7 @@ export function CheckoutSourcePanel({ folderPath, options, selected, onSelectSou
         {selected.group === 'remote' && (
           <>
             {list.status === 'ready' && (
-              <span className="shrink-0 text-[11px] text-muted-foreground">
+              <span className="shrink-0 text-xs text-muted-foreground">
                 {refreshing
                   ? t('chat.git.sourceFetching', { source: selected.label })
                   : fetchedAge ? t('chat.git.sourceFetchedAt', { age: fetchedAge }) : list.fetchedAt ? t('chat.git.sourceFetchedNow') : null}
@@ -634,7 +634,7 @@ function BranchActions({ branch, localName, onLocalName, carry, onCarry, localDi
         </button>
       )}
       {localDirty && localDirty.files > 0 && (
-        <p className="text-[11px] text-muted-foreground">{t('chat.git.sourceLocalDirtyHint')}</p>
+        <p className="text-xs text-muted-foreground">{t('chat.git.sourceLocalDirtyHint')}</p>
       )}
       <div className="flex gap-1.5">
         <button type="button" disabled={isNew && !localName.trim()} className={`${primaryClass} flex-1`} onClick={() => onRun(true)}>{primary}</button>

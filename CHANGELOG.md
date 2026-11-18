@@ -15,6 +15,72 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
+- Check out or sync branches in the location popover from another environment's checkout, a git remote, or a GitHub pull request, carrying uncommitted work if chosen and relaying incremental git bundles between hosts.
+- Generated images, video, and audio in a thread appear in a collapsible media gallery with a sidebar on wide panes, a carousel on narrow panes, and a vertical volume control.
+- Repositories with `.superone/worktree.json` narrow new worktrees via sparse-checkout and link shared ignored paths from the main checkout. Settings → Storage lists `~/.worktrees` and removes unused worktrees while keeping branches and commits in the repository.
+- Dragging the chat pane past its minimum width pops it into Float Chat.
+- Mobile file preview actions show a centered HUD card for save confirmations and dismissible errors.
+
+### Changed
+
+- Queued Enter sends dispatch after 100ms while a second Enter within 400ms steers the active turn.
+- Soften in-chat `AskUserQuestion` result styling.
+
+### Fixed
+
+- Android QR scanning uses an OpenCV WeChat QRCode detector over CameraX with tap-to-focus, zoom, torch, and gallery fallback, and mobile photo saves stage sanitized ASCII filenames.
+- Antigravity wakeups track background tasks and swarm workers without stalling, release session holds when tasks or subagents stop (#214, #215), prevent away auto-recap lease leaks, and keep cached model catalogs on transient startup failures.
+- Claude mod themes tint panels, borders, and the bottom terminal consistently across light and dark schemes.
+- Codex remote replies split at the steer boundary, and remote turns apply the selected speed tier.
+- Remote sessions preserve scheduled sends across reconnects (#206), retain first-send drafts and attachments on failure (#212), retry collaboration spawns without orphaning worktrees (#205), resolve remote changed files via `git.status` RPC, and restore large tool bodies from cache or chunks.
+- Transposed table scroll fade aligns with the sticky column, sidebar level menu steps back from parent-session focus to its project, ask-user answers keep tabs across tool aliases, and suggested task launch choices persist across remounts.
+
+### Performance
+
+- Remote chats paint the visible transcript window before fetching expanded tool details and reuse cached fragments across reopen.
+
+## [0.83.0-alpha] - 2026-11-18
+
+### Added
+
+- Check out or sync branches in the location popover from another environment's checkout, a git remote, or a GitHub pull request, with optional uncommitted work carry-over, conflict backup/save-as, progress reporting, and incremental git bundle transfers between hosts.
+- Unify generated images, video, and audio into a collapsible media gallery blended into the transcript, with a sidebar on wide panes, a carousel on narrow panes, and a vertical volume control.
+- Narrow new worktrees with `.superone/worktree.json` sparse-checkout rules and shared ignored path links, and list or remove unused `~/.worktrees` directories in Settings → Storage.
+- Drag the chat pane past its minimum width to pop it into Float Chat.
+- Show a centered HUD card for mobile file preview save confirmations and dismissible error states.
+
+### Changed
+
+- Dispatch queued Enter sends after a 100ms delay while keeping double-Enter steer within the 400ms window.
+- Soften in-chat `AskUserQuestion` result styling.
+
+### Fixed
+
+- Replace the Android QR camera with an OpenCV WeChat QRCode scanner over CameraX (with tap-to-focus, zoom, torch, and gallery fallback), and stage sanitized ASCII filenames with MIME-derived extensions when saving photos.
+- Fix Antigravity wakeup stalls after background tasks, release session holds when Antigravity subagents, swarms, or wakeup waits are stopped or cancelled (#214, #215), ignore non-launch background task patterns in transcripts, prevent away auto-recap lease leaks and retry log spam, and prevent transient startup failures from overwriting cached model catalogs.
+- Draw Claude mod themes from live answers across light and dark schemes, tinting panels, borders, and the bottom terminal consistently.
+- Split Codex remote replies at the steer boundary and pass Codex service tier selections and per-turn overrides to remote node turns.
+- Restore large remote tool bodies from cache or on-demand chunks while keeping the 32 KiB fragment budget.
+- Keep remote worktree checkouts on `session.snapshot` deadlines so collaboration spawn retries reuse the grant without orphaning or failing on an existing branch. (#205)
+- Persist and deliver scheduled sends on remote nodes, publishing schedule changes and reconciling pending rows after reconnect. (#206)
+- Preserve remote first-send drafts and original attachments in local SQLite across session switches and restarts on send failure. (#212)
+- Resolve remote git status files via `git.status` RPC for the changed file tree.
+- Keep transposed table scroll fade aligned with the sticky column.
+- Step back from parent-session focus to its project via the sidebar level menu.
+- Show tabbed ask-user answers across tool aliases in compact and expanded views, and preserve suggested task launch choices across remounts.
+
+### Performance
+
+- Reduce remote transcript payload on open and restore by painting the visible window before fetching expanded tool details and reusing cached fragments across metadata changes.
+
+### Tests
+
+- Stop schedulers in the node crash fixture and read recovered transcripts via `session.get` in `phase3-session.integration.test.ts`.
+
+## [0.82.0] - 2026-11-16
+
+### Added
+
 - Control the user's Chrome, and each other connected Chromium browser, through that build's unpacked extension. A mention drives only the browser that has connected. One that has not connected stays on Computer Use when that is on. Settings walks through loading the folder. Stable copies it to `~/.superone/chrome-extension` and stays unpacked until a Chrome Web Store listing exists.
 - Cursor local sessions compact with `/compact`, steer a queued message into the running turn, and accept extra workspace folders. Cloud Cursor sessions still compact on their own and do not take extra folders. A Computer Use call shows as Computer.
 - Codex suggests the next prompt from the thread.
@@ -64,76 +130,6 @@ Every alpha release keeps its own notes on its GitHub Release.
 ### Performance
 
 - Streaming deltas update only the changed block and memoized segment chunk so live-turn rendering cost no longer grows with the number of tool calls. (#201)
-
-## [0.82.0-alpha.2] - 2026-11-16
-
-### Fixed
-
-- A remote session replaces its feed after the node reconnects, so a dropped stream no longer blocks open and send.
-- The new-session harness list uses the saved order on the first paint, and stays on the loading row until that order is known.
-- Antigravity effort choices follow each model. Hydrogen keeps four levels, other reasoning models keep three, and orchestrator and gpt-oss hide the control. Desktop, profiles, remote info, and the phone share that list.
-- An Antigravity wakeup keeps watching through its tool calls and later waves, including background tasks the wakeup started.
-
-## [0.82.0-alpha.1] - 2026-11-16
-
-### Added
-
-- Markdown videos have the same file context menu (copy path, Save As, Add to Chat, reveal in folder), file drag-out, and whole-block selection that quotes the video's markdown instead of the player controls.
-- Each stretch between compactions keeps its own Detail toggle, indicator, and tool statistics instead of sharing one collapse across the whole turn. (#202)
-
-### Performance
-
-- Streaming deltas update only the changed block and memoized segment chunk so live-turn rendering cost no longer grows with the number of tool calls. (#201)
-
-### Fixed
-
-- Consuming a priority-next steer during a live Claude reply (on desktop and remote nodes) closes the current assistant bubble before the steer user row and streams the continuation into a new bubble.
-- Claude mod themes paint only when their light or dark scheme matches the window, switch window appearance on preview and apply, render their backdrop across the full chat shell including the title bar, and keep placed cards inline without dropping the backdrop.
-
-## [0.82.0-alpha] - 2026-11-15
-
-### Added
-
-- Control the user's Chrome, and each other connected Chromium browser, through that build's unpacked extension. A mention drives only the browser that has connected. One that has not connected stays on Computer Use when that is on. Settings walks through loading the folder. Stable copies it to `~/.superone/chrome-extension` and stays unpacked until a Chrome Web Store listing exists.
-- Cursor local sessions compact with `/compact`, steer a queued message into the running turn, and accept extra workspace folders. Cloud Cursor sessions still compact on their own and do not take extra folders. A Computer Use call shows as Computer.
-- Codex suggests the next prompt from the thread.
-- Float Chat opens as the collapsed bubble. A click still expands it. An agent that asks for floating chat stays expanded.
-- Step back from a focused folder through the level menu. Hover cards list the work still running and the tabs that session opened.
-- Doubao and Gemini calls work on remote sessions.
-- Claude mods support themes, backdrops, a placed composer, and inline command output. A theme stays inside that session's panes.
-- Background a running Claude task.
-- Settings lists what SuperOne keeps on this computer and can reclaim caches, leftover chat snapshots, unused harness copies, and compact the node event log. (#194)
-- Add a project by cloning a repository, or pick an existing local folder with the system picker.
-- A dev desktop deploys its checkout to its own remote node (`~/.superone/dev`, port 7792) instead of the alpha node. (#195)
-
-### Changed
-
-- The Cursor SDK pin is 1.3.1.
-- Codex runtime 0.169.0.
-- Queued messages have one Steer action. Cursor delivers queued text into the running local turn, on the desktop and on the phone.
-- The app drawer no longer repeats a Mini Apps heading under Apps.
-- Remote node install goes through the host's npm. The tarball upload path is gone. An existing `<root>/current` install is still found and upgraded. (#195)
-- A collapsed project keeps the sessions that are waiting on you. A running turn stays inside until you open the project or it needs a person.
-- Scroll-edge fades are a mask. A folder expands after a 100ms hover and opens within 400ms.
-
-### Removed
-
-- Cursor local agents no longer have a `superone_session_info` tool. Session id and project directory stay with the bound SuperOne MCP and the Cursor workspace.
-
-### Fixed
-
-- A lone Android QR code still commits when the next camera frame is slow. Barcode analysis is capped at 1080p. That cap ships in the new Android binary.
-- A Cursor compact that starts on its own during another turn no longer removes that turn's reply or a queued `/compact`. A remote Cursor session does not offer `/compact` or extra folders, and `/compact` is not sent to the model as text.
-- Cursor's slash menu lists skills from project and user `.cursor/skills` and `.agents/skills`, including skill folders that are symlinks. User-level names are listed before project names.
-- Antigravity follows a background task until it finishes, and accepts the xhigh effort level.
-- MCP tool calls accept a JSON string for an object or array argument. (#199)
-- Reply-comment chips stay on remote user messages.
-- The packaged app starts when the electron-vite `__dirname` shim is stripped out of the main chunk.
-- The sidebar shows a spinner while a session settles.
-- The settings model list and effort follow the default provider.
-- Task stop stays hidden when that harness cannot stop a task. A compaction failure stays on one line.
-- A remote subagent opens in the full view. (#197)
-- A Grok background shell (`block_until_ms: 0`) or subagent stays in the activity row after the parent turn ends.
 
 ## [0.81.0] - 2026-11-13
 

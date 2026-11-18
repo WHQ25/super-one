@@ -51,6 +51,33 @@ describe('restoreWindowSession', () => {
     expect(restored.liveBatches.flat()).toEqual([expect.objectContaining({ type: 'transcript_window', seq: 13 })])
   })
 
+  it('receives rail support with the window and avoids a separate descriptor read', async () => {
+    const remote = host(conversation(2))
+    const rpc = remote.rpc.getMockImplementation()!
+    remote.rpc.mockImplementation(async (method, payload) => ({
+      ...(await rpc(method, payload) as object), historyNavigation: false,
+    }))
+    const preview = vi.fn()
+    const result = await restoreWindowSession(remote as never, '/p', 's', null, { onWindow: preview })
+    expect(remote.order).not.toContain('environment.descriptor')
+    expect(preview).toHaveBeenCalledWith(expect.objectContaining({ navigationAvailable: false }))
+    expect(result.navigationAvailable).toBe(false)
+  })
+
+  it('paints and follows before a legacy rail capability probe resolves', async () => {
+    const remote = host(conversation(2))
+    const rpc = remote.rpc.getMockImplementation()!
+    let release!: (value: unknown) => void
+    remote.rpc.mockImplementation((method, payload) => method === 'environment.descriptor'
+      ? new Promise(resolve => { release = resolve }) : rpc(method, payload))
+    const preview = vi.fn()
+    const pending = restoreWindowSession(remote as never, '/p', 's', null, { onWindow: preview })
+    await vi.waitFor(() => expect(remote.followSession).toHaveBeenCalledOnce())
+    expect(preview).toHaveBeenCalledOnce()
+    release({ capabilities: { methods: ['session.historyIndex'] } })
+    expect((await pending).navigationAvailable).toBe(true)
+  })
+
   it('claims cached fragments so only new content is sent', async () => {
     const before = conversation(6)
     const first = await restoreWindowSession(host(before) as never, '/p', 's', null)

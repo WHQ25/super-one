@@ -50,7 +50,7 @@ export class ConnectionDelivery {
    */
   event(event: AgentEvent, sessionId: string, messages: readonly ChatMessage[]): AgentEvent[] {
     if (!this.views.has(sessionId)) return this.shape(event)
-    const projected = projectProgressiveEvent(event, messages)
+    const projected = projectProgressiveEvent(event, messages, this.windows.has(sessionId))
     return projected ? this.shape(projected).filter((shaped) => shaped.type !== 'tool_input_delta') : []
   }
 

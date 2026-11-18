@@ -2,6 +2,7 @@ import { projectRpc, type ProjectRpcClient } from './project-rpc'
 
 let icons: Record<string, string> = {}
 let revision = 0
+let requestGeneration = 0
 
 export function mcpIconsSnapshot(): Record<string, string> {
   return icons
@@ -23,12 +24,13 @@ function sameMap(a: Record<string, string>, b: Record<string, string>): boolean 
 }
 
 export async function loadMcpIcons(client: ProjectRpcClient, projectPath?: string): Promise<void> {
+  const generation = ++requestGeneration
   try {
     const reply = await (projectPath ? projectRpc(client, projectPath, 'mcp.icons') : client.rpc('mcp.icons')) as {
       icons?: Record<string, string>
       error?: string
     } | null
-    if (!reply || reply.error || !reply.icons || typeof reply.icons !== 'object') return
+    if (generation !== requestGeneration || !reply || reply.error || !reply.icons || typeof reply.icons !== 'object') return
     const next: Record<string, string> = {}
     for (const [name, src] of Object.entries(reply.icons)) {
       if (typeof name === 'string' && name && typeof src === 'string' && src) next[name] = src

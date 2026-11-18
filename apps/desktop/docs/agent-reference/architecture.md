@@ -135,9 +135,11 @@ A session switch remounts every hook that reads host-level data, and over the
 relay each RPC to the host costs about 0.55 s. Data that follows the host or
 the project, not the session, is therefore cached in main and shared, so a
 switch between open sessions of a remote project sends the host only
-`session.get`, `session.transcriptWindow`, `session.list`, `git.status` and the
-scheduled-send reads. Opening a remote session starts the window read beside
-`session.get` (`hydrateRemoteSession`, `lib/remote-session-ops.ts`).
+`session.transcriptWindow`, `session.list`, `git.status` and the scheduled-send
+reads. The chat window includes the remote session header on supported hosts.
+A renderer-only draft uses a metadata-only `session.get`. On a connected host
+whose descriptor predates window headers, the metadata and window reads run
+in parallel (`hydrateRemoteSession`, `lib/remote-session-ops.ts`).
 
 | Read | Cached in | Kept | Dropped by |
 |---|---|---|---|

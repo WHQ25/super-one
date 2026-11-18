@@ -103,6 +103,19 @@ export class SessionReadModel {
     return this.load(sessionId).core.messages
   }
 
+  detailMessage(sessionId: string, messageId: string): ChatMessage | null {
+    const loaded = this.sessions.get(sessionId)
+    if (loaded) return loaded.core.messages.find(message => message.id === messageId) ?? null
+    const checkpoint = this.db.prepare('SELECT applied_version FROM session_read_models WHERE session_id = ?')
+      .get(sessionId) as { applied_version: number } | undefined
+    if (!checkpoint || this.log.hasSessionEventsAfter(sessionId, checkpoint.applied_version)) {
+      return this.messages(sessionId).find(message => message.id === messageId) ?? null
+    }
+    const row = this.db.prepare('SELECT message_json FROM session_messages WHERE session_id = ? AND message_id = ?')
+      .get(sessionId, messageId) as { message_json: string } | undefined
+    return row ? JSON.parse(row.message_json) as ChatMessage : null
+  }
+
   /** Metadata uses the same projection as history, without loading cold message bodies. */
   messageCount(sessionId: string): number {
     const loaded = this.sessions.get(sessionId)
@@ -195,7 +208,7 @@ export class SessionReadModel {
     const checkpoint = this.sessions.has(sessionId) ? undefined : this.db
       .prepare(`SELECT applied_version, state_json FROM session_read_models WHERE session_id = ?`)
       .get(sessionId) as { applied_version: number; state_json: string } | undefined
-    const current = checkpoint && !this.log.listForSession(sessionId, Number.MAX_SAFE_INTEGER, checkpoint.applied_version).length
+    const current = checkpoint && !this.log.hasSessionEventsAfter(sessionId, checkpoint.applied_version)
     if (!checkpoint || !current) {
       const session = this.load(sessionId)
       return {

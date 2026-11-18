@@ -17,6 +17,11 @@ function client(failRestore = false, ownTarget = target, host = 'desktop') {
     if (method === 'project.list') return [{ path: '/app', name: 'App', projectId: 'p' }]
     if (method === 'harness.options') return { options: [] }
     if (method === 'environment.descriptor') return { capabilities: { methods: [] } }
+    if (method === 'session.transcriptWindow') {
+      if (failRestore) throw Object.assign(new Error('Session locked'), { code: 'failed_precondition' })
+      return { sessionId: ownTarget.ref.sessionId, schema: 1, messages: [], total: 0, older: null, newer: null,
+        cursor: { sequence: '0', epoch: 'e', version: 0 }, historyNavigation: true, state: {} }
+    }
     if (method === 'session.load') {
       if (failRestore) throw Object.assign(new Error('Session locked'), { code: 'failed_precondition' })
       return sessionLoadFixture({ restore: { sourceEnvironmentId: ownTarget.ref.environmentId, mcpAppContexts: [], isWorktree: false, worktreePath: null, gitBranch: null, worktreeMissing: false } })
@@ -55,11 +60,19 @@ describe('native mobile session link preparation', () => {
     expect(result.restored.epoch).toBe(3); expect(result.target.projectPath).toBe('remote:connection:/app')
     expect(base.startBuffering).not.toHaveBeenCalled(); expect(base.stopSession).not.toHaveBeenCalled()
     expect(base.activateSessionView).not.toHaveBeenCalled(); expect(base.disconnect).not.toHaveBeenCalled()
-    expect(base.rpc).toHaveBeenCalledWith('session.load', { sessionId: 'same', projectId: 'p', limit: 8 }, { environmentId: 'node' })
+    expect(base.rpc).toHaveBeenCalledWith('session.transcriptWindow', expect.objectContaining({ sessionId: 'same', projectId: 'p', folds: true }), expect.objectContaining({ environmentId: 'node' }))
+    expect(result.restored).toHaveProperty('window')
     expect(base.subscribeTopics).toHaveBeenCalledWith(expect.objectContaining({ topics: [{ kind: 'session', ...target.ref }] }), expect.any(Object))
     result.commit(); expect(base.activateSessionView).toHaveBeenCalledOnce()
     await result.client.controlledRpc(target.ref, 'session.interrupt')
     expect(base.controlledRpc).toHaveBeenCalledWith(target.ref, 'session.interrupt')
+  })
+  it('keeps the source window held while preparing a link on its own host', async () => {
+    const base = client()
+    const prepared = await prepareSessionLink({ ...options(base), activeEnvironmentId: target.ref.environmentId })
+    expect(base.rpc).toHaveBeenCalledWith('session.load', expect.anything(), expect.anything())
+    expect(prepared.restored).not.toHaveProperty('window')
+    prepared.retire()
   })
   it('cleans up only a failed target and preserves source traffic', async () => {
     const base = client(true), opts = options(base)

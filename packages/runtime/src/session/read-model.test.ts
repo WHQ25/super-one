@@ -398,6 +398,8 @@ describe('SessionReadModel', () => {
     db.close()
 
     const second = boot(path)
+    expect(second.runtime.detailMessage(session.sessionId, 'extra-10')?.id).toBe('extra-10')
+    expect(second.runtime.detailMessage(session.sessionId, 'absent')).toBeNull()
     const total = stored.n + 300
     const cold = await second.runtime.readTranscriptWindow({
       sessionId: session.sessionId,

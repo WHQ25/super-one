@@ -299,7 +299,7 @@ type ContentBlockData =
   | { type: 'tool_use' } & ToolUseBase & ToolMeta & AgentTaskData & WorkflowData
   | { type: RemoteToolType } & ToolUseBase & ToolMeta & AgentTaskData & WorkflowData
   | { type: 'tool_result'; toolUseId: string; app?: ToolAppAttachment; summary: string; outputPath?: string; isTimedOut?: boolean; isError?: boolean; /** Process exit code of a command; non-zero is an outcome, not a tool error. */ exitCode?: number; parentToolUseId?: string | null; outputTokens?: DiffTokenLine[]; todoToolName?: string; toolTodos?: TodoToolItem[]; bashEditDiff?: BashEditDiff; /** Title of the page an Artifact call names, from the structured result the model never sees. */ resultTitle?: string; /** Files an MCP tool returned by reference. */ resourceLinks?: McpResourceLink[] }
-  | { type: 'bash_result'; toolUseId: string; summary: string; parentToolUseId?: string | null; outputTokens?: DiffTokenLine[]; bashEditDiff?: BashEditDiff }
+  | { type: 'bash_result'; toolUseId: string; summary: string; isError?: boolean; isTimedOut?: boolean; exitCode?: number; parentToolUseId?: string | null; outputTokens?: DiffTokenLine[]; bashEditDiff?: BashEditDiff }
   | { type: 'todo_result'; toolUseId: string; summary: string; parentToolUseId?: string | null; todoToolName?: string; toolTodos?: TodoToolItem[] }
   /** A proposed plan the agent wrote in plan mode; approval is the harness's own decision flow. */
   | { type: 'plan'; id: string; text: string; parentToolUseId?: string | null }

@@ -1131,12 +1131,19 @@ export function MobileApp() {
         await activeClient.followWorkspace()
         setComposerConnection(activeClient, true)
         invalidateGitResources(activeClient)
-        await remoteDraftsRef.current.reconnect().catch((error) => setStatus(error instanceof Error ? error.message : 'Could not restore drafts'))
+        const runtime = runtimeRef.current
+        const refreshDrafts = remoteDraftsRef.current.reconnect().catch((error) => {
+          if (connectGeneration === connectGenerationRef.current) setStatus(error instanceof Error ? error.message : 'Could not restore drafts')
+        })
         markHarnessResourcesStale(activeClient)
         refreshProjects(activeClient)
-        await loadMcpIcons(activeClient, runtimeRef.current?.projectPath)
-        const runtime = runtimeRef.current
-        if (!runtime) return activeClient.releaseBuffer().epoch
+        void loadMcpIcons(activeClient, runtime?.projectPath).then(() => {
+          if (runtime && runtimeRef.current === runtime) syncSheets(runtime)
+        })
+        if (!runtime) {
+          await refreshDrafts
+          return activeClient.releaseBuffer().epoch
+        }
         try {
           await runtime.reopen()
         } catch (error) {
@@ -1396,7 +1403,7 @@ export function MobileApp() {
     setPaste(result.data)
     void onPair(result.data)
   }
-  const openProject = async (p: Project, parkDraft = true, transitionOwned = false) => {
+  const openProject = async (p: Project, parkDraft = true, transitionOwned = false, forSession = false) => {
     if (!transitionOwned) sessionTransitionRef.current.assertIdle()
     const navigation = ++sessionLinkGenerationRef.current
     restoreWorkspaceRoute(p.path)
@@ -1411,7 +1418,17 @@ export function MobileApp() {
     if (p.path !== project?.path) {
       setBranches([]); setCheckedOutBranches([]); setWorktreeInfo(null); setWorktreeDirty({})
     }
-    // Independent reads overlap latency. Only the selected harness is loaded.
+    if (forSession) {
+      setProject(p)
+      setSessions(cache.get(p.path)?.rows ?? [])
+      // The chat restores the selected harness and Git state once its transcript is up.
+      // The drawer can use the cached page and fetch missing rows when it opens.
+      void loadMcpIcons(client, p.path).then(() => {
+        const runtime = runtimeRef.current
+        if (runtime && runtime.projectPath === p.path && clientRef.current === client) syncSheets(runtime)
+      })
+      return
+    }
     const [, , page] = await Promise.all([
       preloadHarnessResources(client, p.path, [suggestionHarnessKey(selectedProvider, selectedAcpAgentId)]),
       loadMcpIcons(client, p.path),
@@ -1556,6 +1573,7 @@ export function MobileApp() {
         putWindow: (pairingId, path, sid, window) => sessionTranscriptCache.putWindow!(pairingId, JSON.stringify([environmentId, path]), sid, window),
       } : sessionTranscriptCache,
       pairingId: () => pairingId,
+      cacheEnvironmentId: environmentId,
       transcriptWindow: { viewport: () => viewportRef.current },
     })
     return runtime
@@ -1676,7 +1694,7 @@ export function MobileApp() {
     const p = targetProject
     if (!client || !p) return
     if (p.path !== project?.path) {
-      await openProject(p, true, true)
+      await openProject(p, true, true, true)
       if (signal.aborted) return
     }
     restoreWorkspaceRoute(p.path)
@@ -1744,6 +1762,10 @@ export function MobileApp() {
       try {
         resolved = await resolveSessionLink({ ref, client: sourceClient, currentPairingId: activePairingIdRef.current ?? '', pairings,
           identity: { deviceId: deviceId || await loadOrCreateMobileId(), deviceName: getMobileDeviceName() },
+          activeEnvironmentId: sourceRuntime?.sourceEnvironmentId ?? sourceClient.environmentId,
+          viewport: viewportRef.current,
+          cachedWindow: (pairingId, target) => sessionTranscriptCache.getWindow!(pairingId,
+            target.connectionId ? JSON.stringify([target.ref.environmentId, target.projectPath]) : target.projectPath, target.ref.sessionId),
           resolveLan: pairingId => discovery.resolveLan(pairingId),
           onCandidate: candidate => { sessionLinkCandidateRef.current = candidate },
           isCurrent,

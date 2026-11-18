@@ -42,6 +42,7 @@ export function useTranscriptSync(web: RefObject<WebView | null>, voice?: Mobile
   }, [web])
   const activeRuntime = useRef<ChatRuntime | null>(null)
   const lastFacts = useRef<Facts>({})
+  const lastView = useRef<ConversationView>('thread')
   const previousSpeech = useRef<ChatMessage[]>([])
   const streamingInputs = useMemo(() => new StreamingInputProjection(), [])
   const threadCache = useRef<{ messages: ChatMessage[]; canonical: ChatMessage[]; merged: ChatMessage[] } | null>(null)
@@ -96,12 +97,15 @@ export function useTranscriptSync(web: RefObject<WebView | null>, voice?: Mobile
     }) : null
     const messages = projected ? keepUnchangedSpeech(previousSpeech.current, projected.messages) : threadMessages
     if (projected) previousSpeech.current = messages
+    const conversationView = showingVoice ? 'realtime' : 'thread'
+    const viewChanged = lastView.current !== conversationView
+    lastView.current = conversationView
     delivery.publish({ ...lastFacts.current, messages: streamingInputs.project(messages, session._streamingToolInputPreviews),
       pendingAsyncQuestions: session.pendingAsyncQuestions ?? null,
-      emptyState, conversationView: showingVoice ? 'realtime' : 'thread', realtimeActivities: projected?.activities ?? [],
+      emptyState, conversationView, realtimeActivities: projected?.activities ?? [],
       ...(showingVoice ? { hasMoreHistory: false, historyNavigation: false, transcriptWindow: false, hasNewerHistory: false, queuedMessages: [], pendingTurn: null,
         isCompacting: false, compactError: null, isRecapping: false, apiRetry: null } : {}),
-    }, hydrate || changed)
+    }, hydrate || changed || viewChanged)
   }
   const setView = (next: ConversationView, jump?: string) => {
     const runtime = activeRuntime.current
@@ -128,7 +132,7 @@ export function useTranscriptSync(web: RefObject<WebView | null>, voice?: Mobile
       viewRef.current = 'thread'
       pendingJump.current = null
       jumpReceipt.current = null
-      paint(runtime, lastFacts.current, true)
+      paint(runtime, lastFacts.current)
     },
     publish: paint,
     receive(message: HostOutbound): boolean {

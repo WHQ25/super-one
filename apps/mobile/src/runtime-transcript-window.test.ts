@@ -1,7 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { CachedWindow } from '@superone/relay-client'
 import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
-import type { TranscriptWindowPatch, TranscriptWindowRequest } from '@superone/shared/environment/transcript-window'
+import type { TranscriptWindowPatch, TranscriptWindowRequest, TranscriptWindowResult } from '@superone/shared/environment/transcript-window'
+import { omitHeldRestoreData } from '@superone/shared/transcript-window/restore-data'
 import { fragmentDigest, fragmentMessage, MessageFragmenter } from '@superone/shared/transcript-window/fragment-message'
 import { DEFAULT_WINDOW_BUDGET, selectTranscriptWindow } from '@superone/shared/transcript-window/select-window'
 import { conversation, longReplyText, processTurn, textMessage, windowSource } from '@superone/shared/transcript-window/window-fixtures'
@@ -26,7 +27,7 @@ function windowHost(transcript: { current: ChatMessage[] }, options: { windows?:
       if (options.windows === false) throw Object.assign(new Error('unknown method: session.transcriptWindow'), { code: 'not_found' })
       windows.push(call as unknown as TranscriptWindowRequest)
       const selected = selectTranscriptWindow(windowSource(transcript.current), call as unknown as TranscriptWindowRequest, DEFAULT_WINDOW_BUDGET)
-      const result = { sessionId: 's', schema: 1, ...selected, total: transcript.current.length,
+      const result = { sessionId: call.sessionId, schema: 1, ...selected, total: transcript.current.length,
         ...(call.includeState === false ? {} : { state: { status: 'idle', sessionProvider: 'claude' } }),
         cursor: { sequence: '1', epoch: 'epoch', version: 1 } }
       await options.hold?.(call as unknown as TranscriptWindowRequest)
@@ -99,6 +100,33 @@ function foldingHost(reply: ChatMessage) {
 }
 
 describe('ChatRuntime transcript windows', () => {
+  it('paints the whole voice timeline before follow, including on a conditional reopen', async () => {
+    const { client, windows } = windowHost({ current: [] })
+    const rpc = client.dispatch.getMockImplementation()!
+    const segments = [{ id: 'spoken', realtimeSessionId: 'voice', role: 'user', text: 'speech '.repeat(90), localOrder: 1 }]
+    const thread = [textMessage('delegation', 'assistant', 'activity')]
+    client.dispatch.mockImplementation(async call => {
+      if (call.method !== 'session.transcriptWindow') return rpc(call)
+      const full = await rpc(call) as TranscriptWindowResult
+      return omitHeldRestoreData({ ...full, state: { ...full.state, realtimeSegments: segments, realtimeSessionId: 'voice' },
+        restore: { sourceEnvironmentId: 'desktop', mcpAppContexts: [], isWorktree: false, worktreePath: null, gitBranch: null,
+          worktreeMissing: false, realtimeHasTimeline: true, realtimeThreadMessages: thread } }, call.haveRestore)
+    })
+    const runtime = new ChatRuntime(client as never, () => {}, cache().hooks)
+    await runtime.open('/p', 's')
+    let release!: () => void
+    client.followSession.mockImplementation(() => new Promise<void>(resolve => { release = resolve }))
+    const reopening = runtime.open('/p', 's')
+    await vi.waitFor(() => expect(client.followSession).toHaveBeenCalledTimes(2))
+    expect(windows.at(-1)?.haveRestore).toBeTruthy()
+    expect(runtime.session.realtimeThreadMessages).toEqual(thread)
+    expect(runtime.session.realtimeSegments).toEqual(segments)
+    expect(runtime.session.realtimeSessionId).toBe('voice')
+    release()
+    await reopening
+    runtime.dispose()
+  })
+
   it('asks for folds and pages one in on demand, a read at a time', async () => {
     const reply = processTurn('a', 12)
     const { client, folds } = foldingHost(reply)
@@ -124,6 +152,40 @@ describe('ChatRuntime transcript windows', () => {
     runtime.dispose()
   })
 
+  it('reuses an expanded fold page at the same revision across runtime switches', async () => {
+    const { client, folds } = foldingHost(processTurn('a', 12))
+    const hooks = cache().hooks
+    for (let i = 0; i < 2; i++) {
+      const runtime = new ChatRuntime(client as never, () => {}, hooks)
+      await runtime.open('/p', 's')
+      const fold = runtime.messages[1].content.find(block => block.type === 'notice' && block.fold)
+      if (fold?.type !== 'notice' || !fold.fold) throw new Error('Expected a fold')
+      await runtime.loadFold('a', fold.fold.key)
+      expect(runtime.messages[1].content.some(block => block.type === 'notice' && block.fold?.after)).toBe(true)
+      runtime.dispose()
+    }
+    expect(folds).toHaveLength(1)
+    flushTranscriptWrites()
+  })
+
+  it('preserves the mounted document and its expanded page on same-session reconnect', async () => {
+    const { client, folds } = foldingHost(processTurn('a', 12))
+    const paint = vi.fn()
+    const runtime = new ChatRuntime(client as never, paint, cache().hooks)
+    await runtime.open('/p', 's')
+    const fold = runtime.messages[1].content.find(block => block.type === 'notice' && block.fold)
+    if (fold?.type !== 'notice' || !fold.fold) throw new Error('Expected a fold')
+    await runtime.loadFold('a', fold.fold.key)
+    const expanded = runtime.messages[1].content
+    paint.mockClear()
+    await runtime.reopen()
+    expect(paint.mock.calls.map(([, hydrate]) => hydrate)).toEqual([false, false])
+    expect(runtime.messages[1].content).toEqual(expanded)
+    expect(folds).toHaveLength(1)
+    runtime.dispose()
+    flushTranscriptWrites()
+  })
+
   it('drops the cover when the window arrives and before subscribe finishes', async () => {
     const transcript = { current: [textMessage('u', 'user', 'Hi')] }
     const { client } = windowHost(transcript)
@@ -141,6 +203,23 @@ describe('ChatRuntime transcript windows', () => {
     await opening
     expect(client.followSession).toHaveBeenCalledOnce()
     runtime.dispose()
+  })
+
+  it('paints a warm window from the pending write once and patches it through follow', async () => {
+    const { client } = windowHost({ current: [textMessage('a', 'assistant', 'Hi')] })
+    const { hooks } = cache()
+    const disk = vi.spyOn(hooks.transcripts, 'getWindow')
+    const first = new ChatRuntime(client as never, () => {}, hooks)
+    await first.open('/p', 's')
+    first.dispose()
+    const paint = vi.fn()
+    const second = new ChatRuntime(client as never, paint, hooks)
+    await second.open('/p', 's')
+    expect(disk).toHaveBeenCalledTimes(1)
+    expect(paint.mock.calls.map(([, hydrate]) => hydrate)).toEqual([true, false, false])
+    expect(paint.mock.calls[2][0].messages[0]).toBe(paint.mock.calls[1][0].messages[0])
+    second.dispose()
+    flushTranscriptWrites()
   })
 
   it('opens as a window and follows appended text without whole-message events', async () => {

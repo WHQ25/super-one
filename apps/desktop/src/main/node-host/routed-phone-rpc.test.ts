@@ -1,6 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { SessionLoadResult, SessionStreamFrame } from '@superone/shared/environment'
 import type { RpcStreamHandlers } from '@superone/shared/environment/rpc-connection'
+import type { TranscriptWindowResult } from '@superone/shared/environment/transcript-window'
+import { WindowRestoreCache, omitHeldRestoreData } from '@superone/shared/transcript-window/restore-data'
 import { ConnectionDelivery, deliveryPolicy } from '@superone/runtime/stream'
 import type { AuthenticatedClient, RpcContext } from '@superone/runtime/server'
 import { createPhoneRpcRouter } from './routed-phone-rpc'
@@ -27,6 +29,35 @@ function fixture() {
 }
 
 describe('routed phone subscription cancellation', () => {
+  it('keeps the routed voice cache independent for every phone and negotiates separately on each hop', async () => {
+    const f = fixture()
+    const full: TranscriptWindowResult = { schema: 1, sessionId: 's', messages: [], total: 0, older: null, newer: null,
+      state: { realtimeSegments: [{ id: '1', text: 'voice '.repeat(200) }] }, cursor: { epoch: 'e', sequence: '1', version: 1 } }
+    f.target.client.rpc.mockImplementation(async (_method, payload) => omitHeldRestoreData(full, payload.haveRestore))
+    const router = createPhoneRpcRouter(() => f.target)
+    try {
+      const alice = router.open(f.client), bob = router.open({ ...f.client, clientSessionId: 'phone:b' })
+      const read = async (route: typeof alice, haveRestore?: string) => {
+        const reply = await route.dispatch('node', 'session.transcriptWindow', { sessionId: 's', haveRestore }, f.ctx)
+        expect(reply.error).toBeUndefined()
+        return reply.result as TranscriptWindowResult
+      }
+      const cache = new WindowRestoreCache()
+      cache.view('node', 's').remember(await read(alice))
+      const held = cache.view('node', 's')
+      expect(held.revision).toBeTruthy()
+      const warm = await read(alice, held.revision)
+      expect(held.read(warm).state?.realtimeSegments).toEqual(full.state!.realtimeSegments)
+      expect(f.target.client.rpc.mock.calls[1]![1]).toHaveProperty('haveRestore')
+      const cold = await read(bob)
+      expect(f.target.client.rpc.mock.calls[2]![1]).not.toHaveProperty('haveRestore')
+      expect(cold.state?.realtimeSegments).toEqual(full.state!.realtimeSegments)
+      const legacy = await read(alice)
+      expect(f.target.client.rpc.mock.calls[3]![1]).toHaveProperty('haveRestore')
+      expect(legacy.state?.realtimeSegments).toEqual(full.state!.realtimeSegments)
+    } finally { router.close() }
+  })
+
   it('retires an intent before target resolution and does not resolve the target to unsubscribe', async () => {
     const f = fixture()
     const gate = deferred<typeof f.target>()

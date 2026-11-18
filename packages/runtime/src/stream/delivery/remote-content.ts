@@ -568,7 +568,7 @@ const ROOT_IDENTITY_KEYS = ['app', 'bundleId', 'title'] as const
 const MCP_ENVELOPE_KEYS = new Set(['content', 'isError', 'structuredContent', '_meta'])
 
 /** Claude stores MCP outcomes as the reply envelope; the image path lives inside `content`. */
-function unwrapMcpEnvelope(summary: string): string {
+export function unwrapMcpEnvelope(summary: string): string {
   if (summary.charCodeAt(0) !== 123 /* { */) return summary
   let data: unknown
   try { data = JSON.parse(summary) } catch { return summary }
@@ -733,7 +733,7 @@ function appendRemoteErrorText(msg: ChatMessage): ChatMessage {
  * `splitText: false` keeps text blocks whole and unhighlighted, as live text
  * deltas arrive: transcript windows cut the text themselves.
  */
-export function stripMessagesForRemote(messages: ChatMessage[], projectPath?: string, options: { splitText?: boolean } = {}): ChatMessage[] {
+export function stripMessagesForRemote(messages: ChatMessage[], projectPath?: string, options: { splitText?: boolean; windowHeaders?: boolean } = {}): ChatMessage[] {
   const splitText = options.splitText ?? true
   // A picture rides along as a thumbnail; the phone asks for the bytes when it
   // is opened (`get_attachment`). Before the Codex early return: user messages
@@ -796,6 +796,10 @@ export function stripMessagesForRemote(messages: ChatMessage[], projectPath?: st
             )
           }
           const stripped = stripContentBlock(b, bashCmds, agentIds, projectPath)
+          if (options.windowHeaders && stripped.type === 'bash_result' && b.type === 'tool_result') {
+            return { ...stripped, ...(b.isTimedOut ? { isTimedOut: true } : {}), ...(b.isError ? { isError: true } : {}),
+              ...(b.exitCode !== undefined ? { exitCode: b.exitCode } : {}) }
+          }
           if (b.type === 'tool_use' && b.toolName === 'Workflow') {
             const agents = workflowAgentsById.get(b.toolUseId)
             if (agents) return { ...stripped, workflowAgents: agents } as ContentBlock

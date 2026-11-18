@@ -2217,9 +2217,9 @@ function registerIpcHandlers(): void {
   )
   sessionIpc.handle(
     AgentIpcChannels.ENVIRONMENT_GET_SESSION,
-    async (_e, connectionId: string, sessionId: string) => {
+    async (_e, connectionId: string, sessionId: string, options?: { includeTranscript?: boolean }) => {
       const { getEnvironmentHost } = await import('./environment')
-      return getEnvironmentHost().getSession(connectionId, sessionId)
+      return getEnvironmentHost().getSession(connectionId, sessionId, options)
     },
   )
   /** Open a remote session in the chat: follow it and return its window, or `session.load` when that read does not apply. */
@@ -2236,6 +2236,7 @@ function registerIpcHandlers(): void {
         before?: number
         full?: boolean
         transcript?: boolean
+        viewport?: { width: number; height: number }
         anchor?: { messageId: string; key?: string }
         direction?: 'before' | 'after' | 'around'
       },

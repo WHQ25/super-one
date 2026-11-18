@@ -8,6 +8,8 @@ import type { AdvertisedHarnessId } from './harness-installation'
 export interface EnvironmentCapabilities {
   /** Every RPC method this environment serves. */
   methods: string[]
+  /** A transcript window can return the desktop session header in the same read. */
+  transcriptWindowHeader?: true
   /**
    * Harnesses this environment can host. Concrete ids only on the way out.
    * Incoming payloads may still list legacy `acp` (Grok unless an agent id says otherwise).

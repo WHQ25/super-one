@@ -1,5 +1,5 @@
 import type { AgentEvent, ChatMessage, MessageMetadata } from '@superone/shared/agent-types'
-import { projectProgressiveMessage } from './projection'
+import { projectToolHeaders } from './projection'
 import { revealTodoResults, stripMessagesForRemote } from './remote-content'
 
 /**
@@ -10,7 +10,7 @@ import { revealTodoResults, stripMessagesForRemote } from './remote-content'
  */
 export function projectWindowMessage(message: ChatMessage): ChatMessage {
   // Todo items come from the original call. Shelling first would blank that input, and the row would carry an empty list.
-  return stripMessagesForRemote([projectProgressiveMessage(revealTodoResults(message))], undefined, { splitText: false })[0]
+  return stripMessagesForRemote([projectToolHeaders(revealTodoResults(message), true)], undefined, { splitText: false, windowHeaders: true })[0]
 }
 
 /** Text-like deltas: their content reaches a window holder as fragment patches. */

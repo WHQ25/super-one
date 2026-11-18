@@ -201,6 +201,12 @@ export class EventLog {
     return rows.map((r) => this.rowToEnvelope(r))
   }
 
+  /** Whether a checkpoint needs durable replay, without parsing event bodies. */
+  hasSessionEventsAfter(sessionId: string, version: number): boolean {
+    return !!this.db.prepare(`SELECT 1 FROM environment_events
+      WHERE aggregate_type = 'session' AND aggregate_id = ? AND COALESCE(session_version, sequence) > ? LIMIT 1`).get(sessionId, version)
+  }
+
   /**
    * Session-scoped durable events in sequence order, above `afterVersion` when
    * given (read-model replay); unbounded by default for catalog projection.

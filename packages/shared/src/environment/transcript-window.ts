@@ -30,10 +30,12 @@ export interface TranscriptWindowAnchor {
 /** Fragments a client holds for one message, so the host can omit their bodies. */
 export interface TranscriptWindowCoverage {
   id: string
-  /** Digest of the held message meta. */
+  /** Digest of the held message meta. With `row`, also lets the host verify cached fragments across a metadata change. */
   meta?: string
   /** `[key, digest]` per held fragment. */
   f: Array<[string, string]>
+  /** A complete, settled row held at this fragment count and manifest digest. */
+  row?: [count: number, digest: string]
 }
 
 export interface TranscriptWindowRequest {
@@ -49,6 +51,10 @@ export interface TranscriptWindowRequest {
   have?: TranscriptWindowCoverage[]
   /** Restore state and facts; defaults to true for a tail window only. */
   includeState?: boolean
+  /** Digest of voice history and App contexts retained for this reader. */
+  haveRestore?: string
+  /** Include the desktop chat header at the same cursor as its transcript. */
+  includeSessionRow?: boolean
   /**
    * The client renders `fold` fragments: each run of process a settled turn
    * collapses under its compact Detail header comes as one fold, read on
@@ -96,10 +102,13 @@ export interface TranscriptWindowFragment {
 export type TranscriptWindowMeta = Omit<ChatMessage, 'content' | 'attachments'>
 
 export interface TranscriptWindowMessage {
+  /** The requested complete row matched. Its cached meta and fragments can be reused together. */
+  reuseRow?: string
   id: string
   /** Absolute position in the transcript. */
   index: number
-  metaDigest: string
+  /** A reused row's manifest already covers this digest. */
+  metaDigest?: string
   /** Absent when the client holds `metaDigest`. */
   meta?: TranscriptWindowMeta
   /** Contiguous, in content order. */
@@ -110,6 +119,9 @@ export interface TranscriptWindowMessage {
 }
 
 export interface TranscriptWindowResult {
+  /** This host recognizes a row manifest in coverage. */
+  compactRows?: true
+  sessionRow?: Record<string, unknown>
   sessionId: string
   schema: number
   /** Contiguous messages in transcript order. */
@@ -119,6 +131,10 @@ export interface TranscriptWindowResult {
   /** Where a newer window starts from; null when the window reaches the live tail. */
   newer: TranscriptWindowAnchor | null
   total: number
+  /** The host serves session.historyIndex for this reader. Included on a restore. */
+  historyNavigation?: boolean
+  /** Omitted auxiliary arrays match the exact haveRestore offered by this read. */
+  reusedRestore?: string
   state?: Record<string, unknown>
   restore?: SessionRestoreFacts
   cursor: SessionLoadCursor

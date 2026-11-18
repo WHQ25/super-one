@@ -8,10 +8,16 @@ import { nodeWireCompression } from '@superone/runtime/server/wire-compression'
 import { openLinkFrame, sealLinkFrame } from '@superone/relay-client/phone-link'
 import { acceptClientHello, issueChannelCredential, startClientHandshake } from '@superone/relay-client/secure-channel'
 import type { ChatMessage } from '@superone/shared/agent-types'
-import { applyWindowResult, EMPTY_WINDOW_LOOKUP, windowCoverage } from '@superone/shared/transcript-window/window-store'
+import { applyWindowResult, EMPTY_WINDOW_LOOKUP, windowCoverage, windowLookup } from '@superone/shared/transcript-window/window-store'
 import { windowBudget } from '@superone/shared/transcript-window/select-window'
 import { conversation, longReplyText, textMessage, toolTurn } from '@superone/shared/transcript-window/window-fixtures'
 import { projectProgressiveMessage, WindowViews } from '@superone/runtime/stream'
+import type { TranscriptWindowRequest, TranscriptWindowResult } from '@superone/shared/environment/transcript-window'
+import { buildCompactBoundaryMessage } from '@superone/shared/compact-boundary'
+import { handleSessionTranscriptWindow } from '@superone/runtime/server/rpc-session-window'
+import type { RpcContext } from '@superone/runtime/server/rpc-context'
+import { ConnectionDelivery } from '@superone/runtime/stream/delivery/connection-delivery'
+import { deliveryPolicy } from '@superone/runtime/stream/delivery-policy'
 import { stripMessagesForRemote } from '@superone/runtime/stream/delivery/remote-content'
 
 const credential = issueChannelCredential('0123456789abcdef'.repeat(4), 'benchmark-phone')
@@ -88,3 +94,53 @@ for (const [name, scenario] of Object.entries(scenarios)) {
   })
 }
 console.table(comparison)
+
+// Measure the RPC response before encryption. Copy this script to another checkout
+// to compare both revisions with the same request, fixtures, and codec.
+const beforeCompact: ChatMessage = {
+  ...textMessage('turn', 'assistant', '', 'streaming'),
+  content: Array.from({ length: 4 }, (_, i) => [
+    { type: 'tool_use' as const, toolName: 'Bash', toolUseId: 'b' + i, input: '{"command":"pwd"}', status: 'complete' as const },
+    { type: 'tool_result' as const, toolUseId: 'b' + i, summary: 'ok' },
+  ]).flat(),
+}
+const marker = buildCompactBoundaryMessage({ type: 'compact_boundary', trigger: 'auto', preTokens: 100 }, 'c1', '', beforeCompact)
+const compactText = longReplyText(81920)
+const resumeFixtures: Record<string, ChatMessage[]> = {
+  compaction: [marker, { ...beforeCompact, content: [...beforeCompact.content, { type: 'text', text: compactText }] }],
+  settled: [...conversation(20), textMessage('turn', 'assistant', 'answer')],
+}
+
+const restores = []
+for (const [fixture, messages] of Object.entries(resumeFixtures)) {
+  const version = 1
+  const ctx = {
+    client: { clientSessionId: 'c', scopes: ['session:read'] },
+    sessions: {
+      messages: () => messages,
+      load: () => ({ messages, state: { status: 'streaming' }, cursor: { sequence: String(version), epoch: 'e', version } }),
+    },
+    streams: { delivery: new ConnectionDelivery(deliveryPolicy('relay', 'phone')) },
+  } as unknown as RpcContext
+  const read = async (have?: TranscriptWindowRequest['have']) => {
+    const request = { sessionId: 's', folds: true, viewport, ...(have ? { have } : {}) }
+    const reply = await handleSessionTranscriptWindow(request, ctx)
+    if (reply.error) throw new Error(reply.error.message)
+    return { request, result: reply.result as TranscriptWindowResult }
+  }
+  const cold = await read()
+  const cache = applyWindowResult(null, cold.result, EMPTY_WINDOW_LOOKUP).state
+  const have = windowCoverage(cache.messages, cache.compactRows)
+  const unchanged = await read(have)
+  for (const [phase, { request, result }] of Object.entries({ cold, unchanged })) {
+    const decoded = applyWindowResult(null, result, windowLookup(cache))
+    if (decoded.missing.length) throw new Error(fixture + ' could not recover its cached rows')
+    const frames = encoder.encode({ type: 'rpc_result', requestId: 'r', result })
+    restores.push({
+      fixture, phase, requestBytes: utf8(request), resultBytes: utf8(result),
+      framedResultBytes: frames.reduce((sum, frame) => sum + frame.byteLength, 0),
+      bodies: result.messages.flatMap((m) => m.fragments).filter((f) => f.body).length,
+    })
+  }
+}
+console.table(restores)

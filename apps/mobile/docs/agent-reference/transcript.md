@@ -10,6 +10,24 @@ Paths below are relative to apps/mobile unless repository-qualified.
 | **Chat WebView** (`@superone/chat-view`) | DOM paint of reduction patches, scroll, expand | Re-reducing `AgentEvent`s |
 | **Terminal WebView** | xterm frames | Event ACK / seq |
 
+Current hosts return history-navigation support on the transcript window. A cached
+window, authoritative read and completed subscription share one document
+baseline. Later stages send complete changed rows over the acknowledged bridge.
+
+The authenticated client retains four recent session windows. Pending writes
+are immediately readable. Idle writes trim retained windows to the disk
+budget. Expanded process pages use a separate 2 MiB cache keyed by environment,
+session, fold revision and page position. A prepared session link uses a bounded
+window when its target has an independent host window holder. A candidate on
+the same holder retains the source transcript until the user switch commits.
+
+Voice timeline segments, their backing rows, and off-screen MCP App composer
+sources accompany the authoritative first window. A reader that still has the
+same projection can offer its digest on reopen. Each hop verifies the digest
+after shaping for its reader, and the client restores those arrays before
+painting. The active voice session and current controls travel on every open.
+The phone retains up to four auxiliary projections of at most 2 MiB each.
+
 Never nest the chat WebView in an RN `ScrollView`. Input is native, except the
 document's bottom dock (`BottomDock`): mod panes, a command's output and the
 pending AskUserQuestion form, pinned above the composer so a Claude mod can wrap
@@ -86,8 +104,10 @@ both directions while retaining a visible anchor and the 40-message DOM ceiling.
 
 ## Progressive loading
 
-Opening a session paints the newest turns first: `session.load` returns the newest eight projected messages,
-reducer state, the active turn and an epoch/version cursor atomically, and `loadEarlier` fetches one page at a time. Thinking,
+Opening a session starts with a viewport-sized `session.transcriptWindow`
+containing projected rows, reducer state and an epoch/version cursor. A host
+without that method supplies the newest eight projected rows, state and the
+active turn through `session.load`. Older rows arrive one page at a time. Thinking,
 tool inputs/results, commands and diffs arrive as opaque detail references and are
 fetched through `session.subscribeDetail` only when opened; collapsing unsubscribes.
 Streaming reasoning starts collapsed (`DeferredReasoning` in `@superone/chat-view`)

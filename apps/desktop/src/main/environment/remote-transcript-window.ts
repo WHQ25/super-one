@@ -1,3 +1,4 @@
+import { holdRestoreData, restoreHeldData, type HeldRestoreData } from '@superone/shared/transcript-window/restore-data'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import type { SessionLoadResult } from '@superone/shared/environment'
 import {
@@ -8,6 +9,7 @@ import {
   type TranscriptWindowRequest,
   type TranscriptWindowResult,
 } from '@superone/shared/environment/transcript-window'
+import { windowBudget } from '@superone/shared/transcript-window/select-window'
 import { TranscriptWindowSync } from '@superone/shared/transcript-window/window-sync'
 import {
   applyWindowResult,
@@ -37,10 +39,13 @@ export const DESKTOP_FOLD_BUDGET: TranscriptWindowBudget = {
 }
 
 export interface DesktopWindowOpen {
+  viewport?: { width: number; height: number }
   sessionId: string
   anchor?: TranscriptWindowAnchor
   direction?: 'before' | 'after' | 'around'
 }
+
+const auxiliaryByWindow = new WeakMap<TranscriptWindowSync, HeldRestoreData>()
 
 type WindowCall = (request: TranscriptWindowRequest & { holder: string }) => Promise<TranscriptWindowResult>
 
@@ -56,14 +61,21 @@ export async function loadRemoteTranscriptWindow(
   input: DesktopWindowOpen,
 ): Promise<{ snapshot: SessionLoadResult; held: TranscriptWindowSync }> {
   const placement = input.direction === 'before' ? 'older' : input.direction === 'after' ? 'newer' : 'replace'
+  const auxiliary = !input.anchor && held ? auxiliaryByWindow.get(held) : undefined
+  const { viewport } = input
+  const budget = !input.anchor && viewport && viewport.width > 0 && viewport.height > 0
+    ? { ...DESKTOP_WINDOW_BUDGET, targetChars: Math.min(DESKTOP_WINDOW_BUDGET.targetChars, windowBudget({ viewport }).targetChars) }
+    : DESKTOP_WINDOW_BUDGET
   const request = (have: boolean): TranscriptWindowRequest & { holder: string } => ({
     sessionId: input.sessionId,
     holder: desktopWindowHolder(input.sessionId),
-    budget: DESKTOP_WINDOW_BUDGET,
+    budget,
     includeState: !input.anchor,
+    ...(auxiliary ? { haveRestore: auxiliary.revision } : {}),
+    ...(!input.anchor ? { includeSessionRow: true } : {}),
     folds: true,
     ...(input.anchor ? { anchor: input.anchor, direction: input.direction } : {}),
-    ...(have && held && held.current.messages.length ? { have: windowCoverage(held.current.messages) } : {}),
+    ...(have && held && held.current.messages.length ? { have: windowCoverage(held.current.messages, held.current.compactRows) } : {}),
   })
   let result = await call(request(true))
   let applied = mergeDesktopWindow(held?.current ?? null, result, placement)
@@ -75,11 +87,18 @@ export async function loadRemoteTranscriptWindow(
   // Keep the sync the fold pages were loaded into. A new one would drop them.
   const sync = held ?? new TranscriptWindowSync(applied.state)
   if (held) sync.replace(applied.state)
+  if (!input.anchor) {
+    const next = result.reusedRestore ? auxiliary : holdRestoreData(result)
+    result = restoreHeldData(result, auxiliary)
+    if (next) auxiliaryByWindow.set(sync, next)
+    else auxiliaryByWindow.delete(sync)
+  }
   return {
     held: sync,
     snapshot: {
       sessionId: result.sessionId,
       state: result.state ?? {},
+      ...(result.sessionRow ? { sessionRow: result.sessionRow } : {}),
       messages: sync.messages(),
       before: null,
       cursor: result.cursor,
@@ -133,7 +152,7 @@ export function presentDesktopWindowPatch(
 
 function mergeDesktopWindow(
   held: TranscriptWindowState | null,
-  result: Pick<TranscriptWindowResult, 'messages' | 'older' | 'newer' | 'total'>,
+  result: Pick<TranscriptWindowResult, 'messages' | 'older' | 'newer' | 'total' | 'compactRows'>,
   placement: 'replace' | 'older' | 'newer',
 ): { state: TranscriptWindowState; missing: string[] } {
   const lookup = windowLookup(held)

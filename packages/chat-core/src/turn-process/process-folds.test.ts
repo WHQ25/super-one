@@ -36,9 +36,10 @@ describe('planProcessFolds', () => {
     const [range] = plan.ranges
     expect(range).toMatchObject({ start: 0, end: message.content.length - 2 })
     const header = loadedHeader(message)
-    expect({ toolCalls: range.summary.toolCalls, filesChanged: range.summary.files.length, added: range.summary.added, removed: range.summary.removed })
+    expect({ toolCalls: range.summary.toolCalls, filesChanged: range.summary.moreFiles, added: range.summary.added, removed: range.summary.removed })
       .toEqual(header)
-    expect(range.summary.files.sort()).toEqual(['/src/file2.ts', '/src/file5.ts'])
+    expect(range.summary.files).toEqual([])
+    expect(plan.summarize(7, range.end).files.sort()).toEqual(['/src/file2.ts', '/src/file5.ts'])
   })
 
   it('leaves streaming, user and barely collapsing turns whole', () => {
@@ -89,6 +90,19 @@ describe('planProcessFolds', () => {
     const rest = plan.summarize(7, plan.ranges[0].end)
     expect(rest.toolCalls).toBe(9)
     expect(rest.segments).toBeGreaterThan(0)
+  })
+
+  it('keeps the path when two closed folds edit the same file', () => {
+    const edit = (id: string) => [call('Edit', id, { file_path: '/shared.ts', old_string: 'a', new_string: 'b' }), result(id)]
+    const message = turn([
+      call('Bash', 'before'), result('before'), ...edit('first'),
+      { type: 'text', text: 'Intermediate finding' },
+      call('Bash', 'after'), result('after'), ...edit('second'),
+      { type: 'text', text: 'Done' },
+    ])
+    const { ranges } = planProcessFolds(message)
+    expect(ranges.map(range => range.summary.files)).toEqual([['/shared.ts'], ['/shared.ts']])
+    expect(loadedHeader(message)).toMatchObject({ filesChanged: 1, added: 2, removed: 2 })
   })
 
   it('folds a streaming turn only up to its latest compaction', () => {

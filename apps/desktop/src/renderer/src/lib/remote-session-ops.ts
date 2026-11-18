@@ -134,9 +134,22 @@ function catalogFromRemoteState(state: Partial<PerSessionState>): Partial<PerSes
   return patch
 }
 
+/** Dimensions of the largest mounted pane showing this session. An unmounted pane uses the desktop default. */
+function chatViewport(projectKey: string, sessionId: string): { width: number; height: number } | undefined {
+  if (typeof document === 'undefined') return
+  let largest: { width: number; height: number } | undefined
+  for (const pane of document.querySelectorAll<HTMLElement>('[data-scope-session]')) {
+    if (pane.dataset.scopeProject !== projectKey || pane.dataset.scopeSession !== sessionId) continue
+    const viewport = pane.querySelector<HTMLElement>('[data-slot="scroll-area-viewport"]') ?? pane
+    const width = viewport.clientWidth
+    const height = viewport.clientHeight
+    if (width && height && width * height > (largest ? largest.width * largest.height : 0)) largest = { width, height }
+  }
+  return largest
+}
+
 /**
- * Open one remote session: `session.get` for its row and `openRemoteSession`
- * for its state and messages, which main reads as a snapshot while it starts
+ * Open one remote session with its header, state and messages while main starts
  * following the session. The snapshot replaces what the chat held: every event
  * above it reaches the chat after this resolves, and one it already holds is
  * skipped by message `seq`.
@@ -154,31 +167,28 @@ export async function hydrateRemoteSession(
   if (!remote) {
     return { hydrated: previous ?? createDefaultPerSessionState(), snap: null }
   }
-  // The window read starts beside the row read for a session this desktop
-  // already follows and for a first adopt. The follow learns the harness from
-  // the window state if the row has not arrived yet. A draft the node has
-  // never seen (not an adopt, not already owned here) does not open.
-  const openInput = (providerId: string) => ({ sessionId, projectPath: projectKey, providerId, transcript: true as const })
-  const openPromise = opts?.adoptSession === true || previous?.hostSessionOwned === true
-    ? window.environment.openRemoteSession(
-        remote.connectionId,
-        openInput(previous?.sessionProvider || previous?.preferredProvider || 'claude'),
-      )
-    : null
-  // Observed now: if the row read throws first, nothing else awaits this read.
-  void openPromise?.catch(() => {})
-  const snap = (await window.environment.getSession(
-    remote.connectionId,
-    sessionId,
-  )) as NodeSessionSnapshot | null
+  const viewport = chatViewport(projectKey, sessionId)
+  const open = (providerId: string) => window.environment.openRemoteSession(remote.connectionId, {
+    sessionId, projectPath: projectKey, providerId, transcript: true, ...(viewport ? { viewport } : {}),
+  })
+  // A renderer-only draft first checks for its row; adopting or revisiting a
+  // known session takes its header and transcript at one host cursor.
+  const readRow = async () => await window.environment.getSession(remote.connectionId, sessionId, { includeTranscript: false }) as NodeSessionSnapshot | null
+  let loaded: SessionLoadResult | undefined
+  if (opts?.adoptSession || previous?.hostSessionOwned) {
+    try {
+      loaded = await open(previous?.sessionProvider || previous?.preferredProvider || 'claude')
+    } catch (error) {
+      // Electron can drop a remote error code. Check for a renderer-only draft
+      // without masking errors opening a session that still exists.
+      if (await readRow()) throw error
+      return { hydrated: applyRemoteSessionRow(remote, previous, null, opts), snap: null }
+    }
+  }
+  const snap = (loaded?.sessionRow ?? await readRow()) as NodeSessionSnapshot | null
   const hydrated = applyRemoteSessionRow(remote, previous, snap, opts)
-  // Draft session ids only exist in the renderer until first send. An adopt
-  // that raced the window read abandons it when the node has no such row.
   if (!snap?.sessionId) return { hydrated, snap }
-  const loaded = await (openPromise ?? window.environment.openRemoteSession(
-    remote.connectionId,
-    openInput(hydrated.sessionProvider || hydrated.preferredProvider || 'claude'),
-  ))
+  loaded ??= await open(hydrated.sessionProvider || hydrated.preferredProvider || 'claude')
   const state = loaded.state as Partial<PerSessionState>
   const derived = Object.fromEntries(SNAPSHOT_STATE_KEYS.filter((key) => key in state).map((key) => [key, state[key]]))
   const catalog = catalogFromRemoteState(state)

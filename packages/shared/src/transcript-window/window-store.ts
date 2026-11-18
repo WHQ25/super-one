@@ -11,7 +11,7 @@ import type {
 import { contentKeyStamp, stampContentKey } from '../transcript-boundary'
 import { utf8Length } from './content-digest'
 import { fragmentDigest } from './fragment-message'
-import { MAX_COVERAGE_PAIRS, windowAnchor } from './select-window'
+import { MAX_COVERAGE_PAIRS, windowAnchor, windowRowDigest } from './select-window'
 import { textContextPrefix } from './text-cuts'
 
 export interface WindowStoreFragment {
@@ -37,6 +37,7 @@ export interface WindowStoreMessage {
 
 /** The contiguous window a client holds. */
 export interface TranscriptWindowState {
+  compactRows?: true
   messages: WindowStoreMessage[]
   older: TranscriptWindowAnchor | null
   newer: TranscriptWindowAnchor | null
@@ -45,6 +46,7 @@ export interface TranscriptWindowState {
 
 /** Bodies a client kept from earlier windows (its cache), addressed by digest. */
 export interface WindowBodyLookup {
+  message?(id: string): WindowStoreMessage | undefined
   body(messageId: string, key: string, digest: string): TranscriptFragmentBody | undefined
   meta(messageId: string, digest: string): TranscriptWindowMeta | undefined
 }
@@ -55,6 +57,7 @@ export const EMPTY_WINDOW_LOOKUP: WindowBodyLookup = { body: () => undefined, me
 export function windowLookup(state: TranscriptWindowState | null, fallback: WindowBodyLookup = EMPTY_WINDOW_LOOKUP): WindowBodyLookup {
   const byId = new Map(state?.messages.map((message) => [message.id, message]))
   return {
+    message: (id) => byId.get(id) ?? fallback.message?.(id),
     body: (messageId, key, digest) => byId.get(messageId)?.fragments.find((f) => f.key === key && f.digest === digest)?.body
       ?? fallback.body(messageId, key, digest),
     meta: (messageId, digest) => {
@@ -77,23 +80,24 @@ export interface WindowApplyResult {
  */
 export function applyWindowResult(
   state: TranscriptWindowState | null,
-  result: Pick<TranscriptWindowResult, 'messages' | 'older' | 'newer' | 'total'>,
+  result: Pick<TranscriptWindowResult, 'messages' | 'older' | 'newer' | 'total' | 'compactRows'>,
   lookup: WindowBodyLookup,
   placement: 'replace' | 'older' | 'newer' = 'replace',
 ): WindowApplyResult {
   const missing: string[] = []
   const resolved = result.messages.flatMap((message) => {
-    const held = resolveMessage(message, undefined, lookup)
+    const held = resolveMessage(message, lookup.message?.(message.id), lookup)
     if (!held) missing.push(message.id)
     return held ? [held] : []
   })
+  const capability = result.compactRows ? { compactRows: true as const } : {}
   if (missing.length || !state || placement === 'replace') {
-    return { state: { messages: resolved, older: result.older, newer: result.newer, total: result.total }, missing }
+    return { state: { ...capability, messages: resolved, older: result.older, newer: result.newer, total: result.total }, missing }
   }
   if (placement === 'older') {
-    return { state: { messages: joinMessages(resolved, state.messages, 'after'), older: result.older, newer: state.newer, total: result.total }, missing }
+    return { state: { ...capability, messages: joinMessages(resolved, state.messages, 'after'), older: result.older, newer: state.newer, total: result.total }, missing }
   }
-  return { state: { messages: joinMessages(state.messages, resolved, 'before'), older: state.older, newer: result.newer, total: result.total }, missing }
+  return { state: { ...capability, messages: joinMessages(state.messages, resolved, 'before'), older: state.older, newer: result.newer, total: result.total }, missing }
 }
 
 /**
@@ -154,6 +158,12 @@ export function applyWindowPatch(state: TranscriptWindowState, patch: Transcript
 }
 
 function resolveMessage(message: TranscriptWindowMessage, existing: WindowStoreMessage | undefined, lookup: WindowBodyLookup): WindowStoreMessage | null {
+  if (message.reuseRow !== undefined) {
+    if (!existing || existing.omittedBefore || existing.omittedAfter
+      || windowRowDigest(existing) !== message.reuseRow) return null
+    return existing.index === message.index ? existing : { ...existing, index: message.index }
+  }
+  if (message.metaDigest === undefined) return null
   const meta = message.meta ?? (existing?.metaDigest === message.metaDigest ? existing.meta : lookup.meta(message.id, message.metaDigest))
   if (!meta) return null
   const fragments: WindowStoreFragment[] = []
@@ -259,11 +269,18 @@ export function materializeWindowMessage(message: WindowStoreMessage): ChatMessa
 }
 
 /** Coverage of the held window, newest first, bounded to what a host reads. */
-export function windowCoverage(messages: readonly WindowStoreMessage[]): TranscriptWindowCoverage[] {
+export function windowCoverage(messages: readonly WindowStoreMessage[], compactRows = false): TranscriptWindowCoverage[] {
   const coverage: TranscriptWindowCoverage[] = []
   let pairs = 0
   for (let i = messages.length - 1; i >= 0 && pairs < MAX_COVERAGE_PAIRS; i--) {
     const message = messages[i]
+    const count = message.fragments.length
+    if (compactRows && message.meta.status !== 'streaming' && !message.omittedBefore && !message.omittedAfter
+      && count > 0 && count <= MAX_COVERAGE_PAIRS - pairs) {
+      coverage.push({ id: message.id, meta: message.metaDigest, f: [], row: [count, windowRowDigest(message)] })
+      pairs += count
+      continue
+    }
     const f: Array<[string, string]> = []
     for (let j = message.fragments.length - 1; j >= 0 && pairs < MAX_COVERAGE_PAIRS; j--, pairs++) {
       f.unshift([message.fragments[j].key, message.fragments[j].digest])

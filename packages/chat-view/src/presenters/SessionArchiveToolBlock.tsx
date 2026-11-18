@@ -28,7 +28,9 @@ import {
   Wrench,
 } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
+import { DeferredDetailStatus } from '../use-deferred-tool-detail'
 import { ExpandableToolRow } from './ToolRow'
+import { unwrapMcpResultText } from './tool-block-utils'
 import {
   asArray,
   asRecord,
@@ -59,6 +61,7 @@ export interface SessionArchiveToolBlockPresenterProps {
   isDenied?: boolean
   /** false when nested under a subagent card — header-only. */
   allowExpand?: boolean
+  deferred?: { onExpandedChange: (expanded: boolean) => void; detailStatus?: string; onDetailRetry?: () => void }
   onOpenProject?: (projectPath: string) => void | Promise<void>
   onOpenSession?: (sessionId: string, projectId?: string | null, environmentId?: string) => void | Promise<void>
   renderHarnessIcon?: (harness: string, acpAgentId?: string | null) => ReactNode
@@ -550,11 +553,12 @@ function CleanupBody({
 export function SessionArchiveToolBlockPresenter({
   toolName,
   params,
-  result,
+  result: rawResult,
   isStreaming = false,
   isError = false,
   isDenied = false,
   allowExpand = true,
+  deferred,
   onOpenProject,
   onOpenSession,
   renderHarnessIcon,
@@ -562,6 +566,7 @@ export function SessionArchiveToolBlockPresenter({
   const { t } = useTranslation()
   const a = 'chat.toolBlock.archive' as const
 
+  const result = useMemo(() => rawResult ? unwrapMcpResultText(rawResult) : rawResult, [rawResult])
   const parsed = useMemo(() => {
     const json = tryParseJson(result)
     if (json != null) return json
@@ -581,6 +586,10 @@ export function SessionArchiveToolBlockPresenter({
         ? 'warning'
         : 'default'
 
+  const remoteRows = deferred && typeof rec?.remoteRows === 'number' ? rec.remoteRows : undefined
+  const pending = remoteRows !== undefined
+    ? <DeferredDetailStatus status={deferred?.detailStatus} onRetry={deferred?.onDetailRetry} />
+    : undefined
   const canShowExpand = allowExpand && !isStreaming && !isDenied
 
   if (toolName === 'environment_get_info' || toolName === 'environment_list') {
@@ -589,9 +598,9 @@ export function SessionArchiveToolBlockPresenter({
     return <ExpandableToolRow
       icon={<List className="size-3 text-muted-foreground" />}
       label={t(`${a}.${isStreaming ? 'listingEnvironments' : failed || isDenied ? 'listEnvironments' : 'environmentsListed'}`)}
-      summary={failed ? String(rec?.message ?? '') || undefined : !isStreaming && !isDenied ? rows.length ? t(`${a}.environmentCount`, { count: rows.length }) : t(`${a}.emptyEnvironments`) : undefined}
-      streaming={isStreaming} tone={tone} expandable={canShowExpand && !failed && rows.length > 0}>
-      <div className="space-y-1">{rows.map(row => <div key={String(row.environmentId)} className="flex min-w-0 items-center gap-2" title={String(row.environmentId)}><span className="min-w-0 flex-1 truncate">{String(row.label ?? row.environmentId)}</span><span className="shrink-0 text-muted-foreground">{['available', 'connecting', 'synchronizing', 'connected', 'disconnected', 'backoff', 'blocked'].includes(String(row.state)) ? t(`settings.environments.state.${row.state}`) : ''}</span></div>)}</div>
+      summary={failed ? String(rec?.message ?? '') || undefined : !isStreaming && !isDenied ? (remoteRows ?? rows.length) ? t(`${a}.environmentCount`, { count: remoteRows ?? rows.length }) : t(`${a}.emptyEnvironments`) : undefined}
+      streaming={isStreaming} tone={tone} expandable={canShowExpand && !failed && (remoteRows ?? rows.length) > 0} onExpandedChange={deferred?.onExpandedChange}>
+      {pending ?? <div className="space-y-1">{rows.map(row => <div key={String(row.environmentId)} className="flex min-w-0 items-center gap-2" title={String(row.environmentId)}><span className="min-w-0 flex-1 truncate">{String(row.label ?? row.environmentId)}</span><span className="shrink-0 text-muted-foreground">{['available', 'connecting', 'synchronizing', 'connected', 'disconnected', 'backoff', 'blocked'].includes(String(row.state)) ? t(`settings.environments.state.${row.state}`) : ''}</span></div>)}</div>}
     </ExpandableToolRow>
   }
 
@@ -613,7 +622,7 @@ export function SessionArchiveToolBlockPresenter({
         ? errMsg || filterSummary || undefined
         : [t(`${a}.projectCount`, { count }), filterSummary].filter(Boolean).join(' · ')
 
-    const expandable = canShowExpand && !isError && projects.length > 0
+    const expandable = canShowExpand && !isError && (remoteRows ?? projects.length) > 0
 
     return (
       <ExpandableToolRow
@@ -623,15 +632,16 @@ export function SessionArchiveToolBlockPresenter({
         streaming={isStreaming}
         tone={tone}
         expandable={expandable}
+        onExpandedChange={deferred?.onExpandedChange}
       >
-        <ProjectListBody
+        {pending ?? <ProjectListBody
           projects={projects}
           emptyLabel={t(`${a}.emptyProjects`)}
           thisProjectLabel={t(`${a}.thisProject`)}
           missingLabel={t(`${a}.missingProject`)}
           openProjectLabel={t(`${a}.openProject`)}
           onOpenProject={onOpenProject}
-        />
+        />}
       </ExpandableToolRow>
     )
   }
@@ -660,7 +670,7 @@ export function SessionArchiveToolBlockPresenter({
             .filter(Boolean)
             .join(' · ')
 
-    const expandable = canShowExpand && !isError && sessions.length > 0
+    const expandable = canShowExpand && !isError && (remoteRows ?? sessions.length) > 0
 
     return (
       <ExpandableToolRow
@@ -670,8 +680,9 @@ export function SessionArchiveToolBlockPresenter({
         streaming={isStreaming}
         tone={tone}
         expandable={expandable}
+        onExpandedChange={deferred?.onExpandedChange}
       >
-        <ListBody
+        {pending ?? <ListBody
           sessions={sessions}
           emptyLabel={t(`${a}.emptySessions`)}
           pinnedLabel={t(`${a}.pinned`)}
@@ -679,7 +690,7 @@ export function SessionArchiveToolBlockPresenter({
           openSessionLabel={t(`${a}.openSession`)}
           onOpenSession={openScopedSession}
           renderHarnessIcon={renderHarnessIcon}
-        />
+        />}
       </ExpandableToolRow>
     )
   }
@@ -704,7 +715,7 @@ export function SessionArchiveToolBlockPresenter({
         ? errMsg || q || undefined
         : q || undefined
 
-    const expandable = canShowExpand && !isError && hits.length > 0
+    const expandable = canShowExpand && !isError && (remoteRows ?? hits.length) > 0
 
     return (
       <ExpandableToolRow
@@ -714,13 +725,14 @@ export function SessionArchiveToolBlockPresenter({
         streaming={isStreaming}
         tone={tone}
         expandable={expandable}
+        onExpandedChange={deferred?.onExpandedChange}
       >
-        <SearchBody
+        {pending ?? <SearchBody
           hits={hits}
           emptyLabel={t(`${a}.emptyHits`)}
           openSessionLabel={t(`${a}.openSession`)}
           onOpenSession={openScopedSession}
-        />
+        />}
       </ExpandableToolRow>
     )
   }

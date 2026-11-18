@@ -536,6 +536,7 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
     if (isSessionArchiveToolName(mcpInfo.mcpToolName)) {
       return (
         <SessionArchiveToolBlock
+          deferred={deferred}
           toolName={mcpInfo.mcpToolName}
           params={params}
           result={cleanResult}

@@ -3,6 +3,7 @@ import type { AgentEvent, ChatMessage } from '@superone/shared/agent-types'
 import type { EnvironmentEventEnvelope, SessionLoadRequest, SessionLoadResult, SessionStreamFrame } from '@superone/shared/environment'
 import type { TranscriptWindowPatch, TranscriptWindowResult } from '@superone/shared/environment/transcript-window'
 import { utf8Length } from '@superone/shared/transcript-window/content-digest'
+import { WindowRestoreCache } from '@superone/shared/transcript-window/restore-data'
 import { applyWindowPatch, applyWindowResult, EMPTY_WINDOW_LOOKUP, materializeWindowMessage, windowCoverage, windowLookup } from '@superone/shared/transcript-window/window-store'
 import { longReplyText, textMessage } from '@superone/shared/transcript-window/window-fixtures'
 import { ConnectionDelivery } from '../stream/delivery/connection-delivery'
@@ -63,6 +64,61 @@ function patchesOf(delivered: SessionStreamFrame): TranscriptWindowPatch[] {
 }
 
 describe('session.transcriptWindow', () => {
+  it('includes only the requested desktop header on a tail open and skips the transcript clone', async () => {
+    const h = host([textMessage('m', 'assistant', 'answer')])
+    const reads: Array<{ includeTranscript?: boolean } | undefined> = []
+    const ctx = context({ ...h.sessions, get: (_id, options) => {
+      reads.push(options)
+      return {
+        sessionId: 's', title: 'My session', harnessId: 'claude', providerId: 'claude',
+        status: 'idle', model: 'sonnet', cwd: '/repo', controlReleased: true,
+        transcript: [{ id: 'm', text: 'body already in the transcript' }],
+      } as ReturnType<SessionHostPort['get']>
+    } })
+    expect((await window(ctx)).sessionRow).toBeUndefined()
+    const opened = await window(ctx, { includeSessionRow: true })
+    expect(opened.sessionRow).toMatchObject({ sessionId: 's', title: 'My session', model: 'sonnet', controlReleased: true })
+    expect(opened.sessionRow).not.toHaveProperty('transcript')
+    expect((await window(ctx, { includeSessionRow: true, anchor: { messageId: 'm' }, direction: 'before' })).sessionRow).toBeUndefined()
+    expect(reads).toEqual([{ includeTranscript: false }])
+  })
+
+  it('conditionally serves voice history and off-screen composer context while refreshing active controls', async () => {
+    const h = host([])
+    const original = h.sessions.load.bind(h.sessions)
+    const contextSource = { appInstanceId: 'chart', resourceUri: 'ui://fixture/chart', status: 'result' as const,
+      binding: { session: 's', node: 'env', server: 'fixture', configGeneration: 1, configFingerprint: 'cfg' } }
+    let contexts = [{ app: contextSource, messageId: 'off-screen' }]
+    let epoch = 'e', activeVoice = 'voice-a'
+    h.sessions.load = async input => ({
+      ...await original(input), state: { realtimeSegments: [{ text: 'voice '.repeat(400) }], realtimeSessionId: activeVoice },
+      cursor: { version: 1, sequence: '1', epoch },
+      restore: { mcpAppContexts: contexts, realtimeThreadMessages: [textMessage('voice', 'assistant', 'activity')],
+        sourceEnvironmentId: 'env', isWorktree: false, worktreeMissing: false, worktreePath: null, gitBranch: null },
+    })
+    const ctx = context(h.sessions)
+    const cache = new WindowRestoreCache()
+    const cold = await window(ctx)
+    cache.view('env', 's').remember(cold)
+    const warm = cache.view('env', 's')
+    expect(warm.revision).toBeTruthy()
+    activeVoice = 'voice-b'
+    const hit = await window(ctx, { haveRestore: warm.revision })
+    expect(hit.reusedRestore).toBe(warm.revision)
+    expect(hit.restore?.realtimeThreadMessages).toBeUndefined()
+    expect(hit.state?.realtimeSegments).toBeUndefined()
+    const full = warm.read(JSON.parse(JSON.stringify(hit)))
+    expect(full.state).toMatchObject({ ...cold.state, realtimeSessionId: activeVoice })
+    expect(full.restore).toEqual(cold.restore)
+    expect(cache.view('other-env', 's').revision).toBeUndefined()
+    contexts = []
+    expect((await window(ctx, { haveRestore: warm.revision })).reusedRestore).toBeUndefined()
+    contexts = [{ app: contextSource, messageId: 'off-screen' }]
+    epoch = 'e2'
+    expect((await window(ctx, { haveRestore: warm.revision })).reusedRestore).toBeUndefined()
+    expect(() => warm.read({ ...hit, cursor: { ...hit.cursor, epoch } })).toThrow('Missing baseline')
+  })
+
   it('keeps absolute indexes when the host serves a bounded transcript', async () => {
     const messages = Array.from({ length: 250 }, (_, index) => textMessage(`m${index}`, 'user', `row ${index}`))
     let loaded = false
@@ -101,6 +157,87 @@ describe('session.transcriptWindow', () => {
     const paged = await window(context(h.sessions), { anchor: { messageId: 'a' }, direction: 'before' })
     expect(paged.state).toBeUndefined()
     expect(paged.messages.map((m) => m.id)).toEqual(['u'])
+  })
+
+  it('reuses negotiated row manifests, including a narrower selection and a changed row', async () => {
+    const text = longReplyText(16_000)
+    const original = textMessage('a', 'assistant', text)
+    const h = host([textMessage('u', 'user', 'go'), original])
+    const ctx = context(h.sessions)
+    const budget = { targetChars: 80_000 }
+    const first = await window(ctx, { budget })
+    const cached = applyWindowResult(null, first, EMPTY_WINDOW_LOOKUP).state
+    const have = windowCoverage(cached.messages, cached.compactRows)
+    const same = await window(ctx, { budget, have })
+    expect(same.messages.every((m) => m.reuseRow && !m.fragments.length)).toBe(true)
+    expect(applyWindowResult(null, same, EMPTY_WINDOW_LOOKUP).missing).toEqual(['u', 'a'])
+    expect(applyWindowResult(null, same, windowLookup(cached)).state.messages[1]).toBe(cached.messages[1])
+    const narrower = await window(ctx, { budget: { targetChars: 1 }, have })
+    expect(narrower.messages[0].reuseRow).toBeUndefined()
+    expect(narrower.messages[0].fragments[0].body).toBeUndefined()
+    expect(applyWindowResult(null, narrower, windowLookup(cached)).missing).toEqual([])
+    h.set([textMessage('u', 'user', 'go'), textMessage('a', 'assistant', 'replacement')])
+    const changed = await window(ctx, { budget, have })
+    expect(changed.messages[0].reuseRow).toBeTruthy()
+    expect(changed.messages[1].fragments[0].body).toMatchObject({ text: 'replacement' })
+    const legacy = await window(ctx, { budget, have: windowCoverage(cached.messages) })
+    expect(legacy.messages[0].reuseRow).toBeUndefined()
+    expect(legacy.messages[0].fragments).toHaveLength(1)
+  })
+
+  it('refreshes a settled row’s metadata without resending its cached text fragments', async () => {
+    const original = textMessage('a', 'assistant', longReplyText(16_000))
+    const h = host([{ ...original, resumePointId: 'checkpoint' }])
+    const ctx = context(h.sessions)
+    const budget = { targetChars: 80_000 }
+    const first = await window(ctx, { budget })
+    const cached = applyWindowResult(null, first, EMPTY_WINDOW_LOOKUP).state
+    const have = windowCoverage(cached.messages, cached.compactRows)
+    expect(have[0].row).toBeDefined()
+    expect(cached.messages[0].fragments.length).toBeGreaterThan(1)
+
+    h.set([original])
+    const refreshed = await window(ctx, { budget, have })
+    const row = refreshed.messages[0]
+    expect(row.meta).toBeDefined()
+    expect(row.fragments.filter(fragment => fragment.body)).toHaveLength(0)
+    const applied = applyWindowResult(null, refreshed, windowLookup(cached))
+    expect(applied.missing).toEqual([])
+    expect(materializeWindowMessage(applied.state.messages[0])).toEqual(original)
+    expect(applyWindowResult(null, refreshed, EMPTY_WINDOW_LOOKUP).missing).toEqual(['a'])
+
+    // An older reader offers only the combined digest. It must still receive fresh metadata.
+    const olderClaim = have.map(({ meta, ...coverage }) => coverage)
+    const olderReply = await window(ctx, { budget, have: olderClaim })
+    const olderApplied = applyWindowResult(null, olderReply, windowLookup(cached))
+    expect(olderApplied.missing).toEqual([])
+    expect(materializeWindowMessage(olderApplied.state.messages[0])).toEqual(original)
+    h.set([{ ...original, resumePointId: 'checkpoint' }])
+    expect((await window(ctx, { budget, have: olderClaim })).messages[0].reuseRow).toBe(olderClaim[0].row![1])
+  })
+
+  it('keeps compact row coverage across a partial tail and the page that fills it back in', async () => {
+    const h = host([textMessage('a', 'assistant', longReplyText(16_000))])
+    const ctx = context(h.sessions)
+    const budget = { targetChars: 80_000 }
+    const first = await window(ctx, { budget })
+    const cached = applyWindowResult(null, first, EMPTY_WINDOW_LOOKUP).state
+    const narrow = await window(ctx, { budget: { targetChars: 1 }, have: windowCoverage(cached.messages, cached.compactRows) })
+    expect(narrow.messages[0].omittedBefore).toBeGreaterThan(0)
+    expect(narrow.messages[0].meta).toBeUndefined()
+    const partial = applyWindowResult(null, narrow, windowLookup(cached))
+    expect(partial.missing).toEqual([])
+    expect(partial.state.compactRows).toBe(true)
+    const page = await window(ctx, { anchor: narrow.older, direction: 'before', budget,
+      have: windowCoverage(partial.state.messages, partial.state.compactRows) })
+    const joined = applyWindowResult(partial.state, page, windowLookup(partial.state), 'older')
+    expect(joined.missing).toEqual([])
+    expect(joined.state.messages).toEqual(cached.messages)
+    const have = windowCoverage(joined.state.messages, joined.state.compactRows)
+    expect(have[0].row).toBeDefined()
+    const reopened = await window(ctx, { budget, have })
+    expect(reopened.messages[0].reuseRow).toBe(have[0].row![1])
+    expect(reopened.messages[0].fragments).toHaveLength(0)
   })
 
   it('validates its arguments', async () => {

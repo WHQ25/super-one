@@ -8,7 +8,8 @@ import type {
 } from '../environment/transcript-window'
 
 export type { TranscriptWindowBudget }
-import { MAX_FRAGMENT_BYTES, MAX_META_BYTES, type MessageFragments } from './fragment-message'
+import { contentDigest } from './content-digest'
+import { MAX_FRAGMENT_BYTES, MAX_META_BYTES, type FragmentEntry, type MessageFragments } from './fragment-message'
 
 export const DEFAULT_WINDOW_BUDGET: TranscriptWindowBudget = { maxBytes: 128 * 1024, maxFragments: 48, targetChars: 6000 }
 /** A window always fits one fragment and its meta. */
@@ -66,9 +67,9 @@ export function selectTranscriptWindow(
   source: WindowSource,
   request: Pick<TranscriptWindowRequest, 'anchor' | 'direction' | 'have'>,
   budget: TranscriptWindowBudget,
+  have = coverageMap(request.have),
 ): SelectedWindow {
   if (source.count === 0) return { messages: [], older: null, newer: null }
-  const have = coverageMap(request.have)
   const units = (index: number) => Math.max(1, source.at(index).fragments.length)
   const selected = new Map<number, { first: number; last: number }>()
   let bytes = 0
@@ -76,7 +77,7 @@ export function selectTranscriptWindow(
   let count = 0
   const take = (position: Position): boolean => {
     const message = source.at(position.message)
-    const held = have.get(message.id)
+    const held = matchWindowCoverage(have, message)
     const fragment = message.fragments[position.fragment]
     let cost = fragment ? (held?.f.get(fragment.key) === fragment.digest ? REF_BYTES : fragment.bytes + REF_BYTES) : 0
     if (!selected.has(position.message)) cost += held?.meta === message.metaDigest ? REF_BYTES : message.metaBytes + REF_BYTES
@@ -123,12 +124,8 @@ export function selectTranscriptWindow(
     const message = source.at(index)
     const range = selected.get(index)!
     const held = have.get(message.id)
-    const fragments = message.fragments.slice(range.first, range.last + 1).map((fragment): TranscriptWindowFragment => ({
-      key: fragment.key,
-      digest: fragment.digest,
-      ...(fragment.contentKey ? { contentKey: fragment.contentKey } : {}),
-      ...(held?.f.get(fragment.key) === fragment.digest ? {} : { body: fragment.body }),
-    }))
+    const fragments = message.fragments.slice(range.first, range.last + 1)
+      .map((fragment) => wireWindowFragment(fragment, held?.f.get(fragment.key)))
     const total = message.fragments.length
     return {
       id: message.id,
@@ -161,8 +158,46 @@ export function windowAnchor(message: { id: string; fragments: ReadonlyArray<{ k
 /** Coverage a host reads; a client sends its held window, which never needs more. */
 export const MAX_COVERAGE_PAIRS = 2 * MAX_WINDOW_FRAGMENTS
 
-function coverageMap(have: TranscriptWindowCoverage[] | undefined): Map<string, { meta?: string; f: Map<string, string> }> {
-  const map = new Map<string, { meta?: string; f: Map<string, string> }>()
+export type WindowCoverageMap = Map<string, {
+  meta?: string
+  f: Map<string, string>
+  row?: [number, string]
+  matchesFragments?: boolean
+}>
+
+type RowManifest = { metaDigest: string; fragments: ReadonlyArray<Pick<TranscriptWindowFragment, 'key' | 'digest' | 'contentKey'>> }
+
+/** Identical manifests imply identical bodies, order, content-key stamps and metadata. */
+export function windowRowDigest(row: RowManifest, metaDigest = row.metaDigest): string {
+  return contentDigest(JSON.stringify([metaDigest, row.fragments.map((f) => [f.key, f.digest, f.contentKey])]))
+}
+
+export function matchWindowCoverage(have: WindowCoverageMap, message: MessageFragments) {
+  const held = have.get(message.id)
+  if (held?.row && held.matchesFragments === undefined) {
+    // Rebuild the client's manifest using its cached metadata and the host's current fragments.
+    // Older readers supplied only the combined digest, so they need an exact whole-row match.
+    held.matchesFragments = message.fragments.length === held.row[0] && windowRowDigest(message, held.meta) === held.row[1]
+    if (held.matchesFragments) {
+      held.meta ??= message.metaDigest
+      for (const fragment of message.fragments) held.f.set(fragment.key, fragment.digest)
+    }
+  }
+  return held
+}
+
+/** Reopen reads send each changed visible fragment whole. */
+export function wireWindowFragment(fragment: FragmentEntry, heldDigest?: string): TranscriptWindowFragment {
+  return {
+    key: fragment.key,
+    digest: fragment.digest,
+    ...(fragment.contentKey ? { contentKey: fragment.contentKey } : {}),
+    ...(heldDigest === fragment.digest ? {} : { body: fragment.body }),
+  }
+}
+
+export function coverageMap(have: TranscriptWindowCoverage[] | undefined): WindowCoverageMap {
+  const map: WindowCoverageMap = new Map()
   let pairs = 0
   for (const entry of Array.isArray(have) ? have : []) {
     if (pairs >= MAX_COVERAGE_PAIRS) break
@@ -170,9 +205,16 @@ function coverageMap(have: TranscriptWindowCoverage[] | undefined): Map<string, 
     const f = new Map<string, string>()
     for (const pair of entry.f) {
       if (++pairs > MAX_COVERAGE_PAIRS) break
-      if (Array.isArray(pair) && typeof pair[0] === 'string' && typeof pair[1] === 'string') f.set(pair[0], pair[1])
+      if (!Array.isArray(pair) || typeof pair[0] !== 'string' || typeof pair[1] !== 'string') continue
+      f.set(pair[0], pair[1])
     }
-    map.set(entry.id, { ...(typeof entry.meta === 'string' ? { meta: entry.meta } : {}), f })
+    const meta = typeof entry.meta === 'string' ? entry.meta : undefined
+    const row = entry.row
+    if (Array.isArray(row) && Number.isSafeInteger(row[0]) && row[0] > 0 && row[0] <= MAX_COVERAGE_PAIRS - pairs
+      && typeof row[1] === 'string') {
+      pairs += row[0]
+      map.set(entry.id, { f, meta, row })
+    } else map.set(entry.id, { f, meta })
   }
   return map
 }

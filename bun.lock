@@ -848,6 +848,7 @@
         "@superone/chat-core": "workspace:*",
         "@superone/relay-client": "workspace:*",
         "@superone/shared": "workspace:*",
+        "@toon-format/toon": "^2.3.0",
         "better-sqlite3": "^13.0.1",
         "croner": "^10.0.1",
         "diff": "^9.0.0",

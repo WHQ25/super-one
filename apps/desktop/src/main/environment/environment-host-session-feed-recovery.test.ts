@@ -108,10 +108,29 @@ function setup() {
   raw.resolveSession = () => ({ gateway, environmentId: ENV, local: false })
   const resyncs: Array<{ connectionId: string; sessionId: string; projectPath?: string }> = []
   host.onRemoteSessionResync((target) => resyncs.push(target))
-  return { host, client, raw, resyncs }
+  return { host, client, raw, gateway, resyncs }
 }
 
 describe('remote session feed after the node returns', () => {
+  it('reads the metadata beside the window when the connected host predates window headers', async () => {
+    const { host, gateway } = setup()
+    gateway.rememberDescriptor({ environmentId: ENV, capabilities: { methods: ['session.transcriptWindow'] } } as ExecutionEnvironmentDescriptor)
+    let release!: () => void
+    const gate = new Promise<void>(resolve => { release = resolve })
+    const read = vi.spyOn(gateway.sessions, 'transcriptWindow').mockImplementation(async () => {
+      await gate
+      return { sessionId: 's', schema: 1, messages: [], older: null, newer: null, total: 0,
+        cursor: { version: 4, sequence: '4', epoch: 'e' }, state: {} }
+    })
+    const row = vi.spyOn(gateway.sessions, 'get')
+    const opening = host.openRemoteSession(CONNECTION, { ...SESSION, transcript: true })
+    try {
+      await vi.waitFor(() => expect(read).toHaveBeenCalledOnce())
+      expect(row).toHaveBeenCalledWith({ environmentId: ENV, sessionId: 's' }, { includeTranscript: false })
+    } finally { release() }
+    await expect(opening).resolves.toMatchObject({ sessionRow: { sessionId: 's', status: 'idle' } })
+  })
+
   it('subscribes and sends again after the stream died with not connected', async () => {
     const { host, client, raw, resyncs } = setup()
 

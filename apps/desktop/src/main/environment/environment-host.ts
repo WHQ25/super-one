@@ -222,6 +222,7 @@ interface RemoteSessionOpen extends RemoteSessionTarget {
   full?: boolean
   /** Chat open and history paging. Full reads and the realtime refresh omit it. */
   transcript?: boolean
+  viewport?: { width: number; height: number }
   anchor?: { messageId: string; key?: string }
   direction?: 'before' | 'after' | 'around'
 }
@@ -1015,9 +1016,9 @@ export class EnvironmentHost {
     return { leaseId: lease.leaseId, generation: lease.generation }
   }
 
-  async getSession(connectionId: string, sessionId: string): Promise<unknown> {
+  async getSession(connectionId: string, sessionId: string, options?: { includeTranscript?: boolean }): Promise<unknown> {
     const { gateway, environmentId } = this.resolveSession(connectionId)
-    return gateway.sessions.get({ environmentId, sessionId })
+    return gateway.sessions.get({ environmentId, sessionId }, options)
   }
 
   /** Host path of a remote project, for the files-previewer root key. */
@@ -1930,12 +1931,19 @@ export class EnvironmentHost {
    * that does not serve the method stay on `session.load`.
    */
   async openRemoteSession(connectionId: string, input: RemoteSessionOpen): Promise<SessionLoadResult> {
-    const { gateway, local } = this.resolveSession(connectionId)
-    if (local || !input.transcript || input.full || this.transcriptWindowUnsupported.has(connectionId) || !gateway.sessions.transcriptWindow) {
-      if (!local && input.transcript && !gateway.sessions.transcriptWindow) this.transcriptWindowUnsupported.add(connectionId)
-      return this.openLoadedSession(connectionId, input)
+    const { gateway, environmentId, local } = this.resolveSession(connectionId)
+    if (local || !input.transcript || input.full) return this.openLoadedSession(connectionId, input)
+    if (!gateway.sessions.transcriptWindow) this.transcriptWindowUnsupported.add(connectionId)
+    const legacy = this.transcriptWindowUnsupported.has(connectionId)
+    const opening = legacy ? this.openLoadedSession(connectionId, input) : this.openWindowedSession(connectionId, input)
+    const capabilities = gateway.cachedDescriptor?.capabilities
+    if (!input.anchor && (legacy || (capabilities && !capabilities.transcriptWindowHeader))) {
+      // Older hosts already needed both reads. Keep them parallel on high-latency links.
+      const [loaded, row] = await Promise.all([opening, gateway.sessions.get({ environmentId, sessionId: input.sessionId }, { includeTranscript: false })])
+      if (!loaded.sessionRow && row && typeof row === 'object' && 'sessionId' in row) return { ...loaded, sessionRow: row }
+      return loaded
     }
-    return this.openWindowedSession(connectionId, input)
+    return opening
   }
 
   /** Legacy `session.load`, followed for a remote session. */
@@ -1965,12 +1973,14 @@ export class EnvironmentHost {
     const read = async (): Promise<SessionLoadResult> => {
       const loaded = await readDesktopSessionWindow({
         held: this.remoteWindows.get(key) ?? null,
-        input: { sessionId: input.sessionId, anchor: input.anchor, direction: input.direction },
+        input: { sessionId: input.sessionId, anchor: input.anchor, direction: input.direction, viewport: input.viewport },
         window: (request) => gateway.sessions.transcriptWindow!({
           session: { environmentId, sessionId: input.sessionId },
           holder: request.holder,
           budget: request.budget,
           includeState: request.includeState,
+          ...(request.haveRestore ? { haveRestore: request.haveRestore } : {}),
+          ...(request.includeSessionRow ? { includeSessionRow: true } : {}),
           ...(request.folds ? { folds: true } : {}),
           ...(request.anchor ? { anchor: request.anchor, direction: request.direction } : {}),
           ...(request.have ? { have: request.have } : {}),

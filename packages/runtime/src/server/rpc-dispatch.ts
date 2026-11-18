@@ -336,7 +336,7 @@ const HANDLERS: Readonly<Record<string, (payload: unknown, ctx: RpcContext, meth
   'topic.update': (payload, ctx) => handleTopicUpdate(payload, ctx),
   'session.messages.list': (payload, ctx) => handleSessionMessagesList(payload, ctx),
   'session.load': (payload, ctx) => handleSessionLoad(payload, ctx),
-  'session.transcriptWindow': (payload, ctx) => handleSessionTranscriptWindow(payload, ctx),
+  'session.transcriptWindow': (payload, ctx) => handleSessionTranscriptWindow(payload, ctx, serves(ctx, 'session.historyIndex') || ctx.extensionMethods?.has('session.historyIndex') === true),
   'session.transcriptFold': (payload, ctx) => handleSessionTranscriptFold(payload, ctx),
   'session.historyIndex': (payload, ctx) => handleSessionHistoryIndex(payload, ctx),
   'session.subscribeDetail': (payload, ctx) => handleSessionSubscribeDetail(payload, ctx),
@@ -577,6 +577,7 @@ async function handleDescriptor(ctx: HostRpcContext): Promise<RpcResult> {
     // Host policy flags plus every method its ports and extensions serve.
     capabilities: {
       ...ctx.capabilities,
+      ...(serves(ctx, 'session.transcriptWindow') ? { transcriptWindowHeader: true as const } : {}),
       harnessIds,
       methods: [...SHARED_RPC_METHODS].filter((method) => serves(ctx, method)).concat([...ctx.extensionMethods ?? []]).sort(),
     },

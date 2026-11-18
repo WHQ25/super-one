@@ -935,9 +935,9 @@ export class SessionRuntime {
     return this.readModel?.messageCount(sessionId) ?? this.live.get(sessionId)!.transcript.length
   }
 
-  get(sessionId: string): NodeSessionRecord | null {
+  get(sessionId: string, options?: { includeTranscript?: boolean }): NodeSessionRecord | null {
     const s = this.live.get(sessionId)
-    return s ? this.clone(s) : null
+    return s ? this.clone(s, options?.includeTranscript) : null
   }
 
   list(
@@ -1076,6 +1076,11 @@ export class SessionRuntime {
   messages(sessionId: string): ChatMessage[] {
     sessionId = this.requireSessionId(sessionId)
     return this.withProviderResume(sessionId, this.readModel?.messages(sessionId) ?? [])
+  }
+
+  /** Details need only the original block, including when the window was a cold bounded read. */
+  detailMessage(sessionId: string, messageId: string): ChatMessage | null {
+    return this.readModel?.detailMessage(this.requireSessionId(sessionId), messageId) ?? null
   }
 
   /** The session's messages as catalog blocks; a host without a read model keeps none. */
@@ -3083,10 +3088,10 @@ export class SessionRuntime {
     }
   }
 
-  private clone(s: NodeSessionRecord): NodeSessionRecord {
+  private clone(s: NodeSessionRecord, includeTranscript = true): NodeSessionRecord {
     return {
       ...s,
-      transcript: s.transcript.map((t) => ({ ...t })),
+      transcript: includeTranscript ? s.transcript.map((t) => ({ ...t })) : [],
       pendingInteraction: s.pendingInteraction ? { ...s.pendingInteraction } : null,
       isUserRenamed: s.isUserRenamed === true,
       tags: [...(s.tags ?? [])],

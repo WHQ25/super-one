@@ -9,6 +9,7 @@ export interface WakeupReplayContext {
   stalledWakeupToolReplay: boolean
   unlockedPostStallStream: boolean
   streamedPreUserPostStall: boolean
+  wireWakeupStreamed?: boolean
 }
 
 const NON_INTERACTIVE_WAKEUP_TOOLS = new Set([
@@ -99,6 +100,7 @@ export function resetWakeupReplayState(ctx: WakeupReplayContext | undefined): bo
   ctx.stalledWakeupToolReplay = false
   ctx.unlockedPostStallStream = false
   ctx.streamedPreUserPostStall = false
+  ctx.wireWakeupStreamed = false
   ctx.replayedBackgroundToolIds.clear()
   return streamedPostStall
 }

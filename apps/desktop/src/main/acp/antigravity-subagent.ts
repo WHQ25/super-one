@@ -117,7 +117,20 @@ export function noteAntigravitySubagentEvents(
           ev.delta.toolName.toLowerCase() === 'schedule')) ||
         ev.delta.type === 'tool_result'),
   )
-  if (!hasRelevantEvent && !sessionStates.has(parentSessionId)) return
+  const existingState = sessionStates.get(parentSessionId)
+  const hasWireWakeupContent =
+    Boolean(existingState) &&
+    !idleHooks?.isPromptActive() &&
+    (existingState!.backgroundWatch || existingState!.bgTasks.idleWatchStepIndex !== null) &&
+    mappedEvents.some(
+      (ev) =>
+        ev.type === 'content_delta' &&
+        (ev.delta.type === 'text' ||
+          ev.delta.type === 'thinking' ||
+          ev.delta.type === 'tool_use' ||
+          ev.delta.type === 'tool_result'),
+    )
+  if (!hasRelevantEvent && !hasWireWakeupContent && !existingState) return
 
   const state = getOrCreateSessionState(
     parentSessionId,
@@ -126,6 +139,10 @@ export function noteAntigravitySubagentEvents(
     customBrainRoots,
     idleHooks,
   )
+  if (hasWireWakeupContent) {
+    state.wireWakeupStreamed = true
+    state.unflushedWakeupReplay = false
+  }
 
   let notedSubagent = false
   for (const event of mappedEvents) {

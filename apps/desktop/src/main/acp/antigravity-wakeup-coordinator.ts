@@ -86,6 +86,7 @@ export function settleWakeupWaiters(
   state.resumedInteractionStepIndex = null
   state.awaitingToolSinceMs = null
   state.hasExplicitStallTimeout = false
+  state.wireWakeupStreamed = false
   clearSettledWakeupBackgroundTasks(state.bgTasks, state.emitEvent)
   const waiters = state.wakeupWaiters.splice(0, state.wakeupWaiters.length)
   for (const resolve of waiters) {
@@ -163,9 +164,11 @@ function emitBackgroundWatch(
     if (emitWakeupProgressSteps(state, wakeup, targetMsgId, now)) stillRunning = true
   }
   if (wakeup.awaitingToolExecution) {
-    state.unflushedWakeupReplay = true
-    state.stalledWakeupToolReplay = true
-    state.unlockedPostStallStream = false
+    if (!state.wireWakeupStreamed) {
+      state.unflushedWakeupReplay = true
+      state.stalledWakeupToolReplay = true
+      state.unlockedPostStallStream = false
+    }
     if (state.awaitingToolSinceMs === null) state.awaitingToolSinceMs = now
     if (!stillRunning) {
       const isAskQuestion =
@@ -197,7 +200,7 @@ function emitBackgroundWatch(
   if (stillRunning) {
     if (wakeup.completed && state.idleWakeupMessageId) {
       const targetMsgId = state.idleWakeupMessageId
-      flushRemainingWakeupToolResults(state, wakeup, targetMsgId)
+      if (!state.wireWakeupStreamed) flushRemainingWakeupToolResults(state, wakeup, targetMsgId)
       const lastStep = wakeup.steps[wakeup.steps.length - 1]
       if (lastStep) state.bgTasks.idleWatchStepIndex = lastStep.stepIndex
       state.idleWakeupMessageId = null
@@ -216,7 +219,7 @@ function emitBackgroundWatch(
     elapsedSinceActivity >= state.wakeupResponseTimeoutMs
   if (!wakeup.completed && !plannerStalled && !noWakeupTimedOut) return
   const targetMsgId = state.idleWakeupMessageId
-  if (targetMsgId) {
+  if (targetMsgId && !state.wireWakeupStreamed) {
     flushRemainingWakeupToolResults(state, wakeup, targetMsgId)
   }
   if (wakeup.completed) {
@@ -289,7 +292,7 @@ export function syncSessionSubagents(state: SessionSubagentState): void {
 
   if (bgSummary.emittedCompletionFromTranscript) {
     state.lastWakeupActivityAtMs = now
-    if (state.parentTurnEnded) state.unflushedWakeupReplay = true
+    if (state.parentTurnEnded && !state.wireWakeupStreamed) state.unflushedWakeupReplay = true
     for (const id of bgSummary.emittedCompletedToolUseIds) {
       state.emittedWakeupToolUseIds.add(id)
       state.emittedWakeupToolResultIds.add(id)
@@ -409,6 +412,7 @@ export function syncSessionSubagents(state: SessionSubagentState): void {
 
 export function noteForegroundTurnEndedOnState(state: SessionSubagentState): void {
   state.idleWakeupMessageId = null
+  state.wireWakeupStreamed = false
   const parentTranscriptPath = findAntigravityTranscriptPath(state.parentSessionId, state.brainRoots, true)
   if (!parentTranscriptPath) return
   let parentRaw = ''

@@ -326,25 +326,30 @@ export function emitWakeupProgressSteps(
   now: number,
 ): boolean {
   let spawnedNewSubagent = false
+  const wireStreamed = Boolean(ctx.wireWakeupStreamed)
   for (const step of wakeup.steps) {
     if (ctx.emittedWakeupStepIndices.has(step.stepIndex)) {
-      for (const tc of step.toolCalls) {
-        if (ctx.emittedWakeupToolResultIds.has(tc.toolUseId) || isSubagentToolName(tc.toolName)) continue
-        if (tc.hasResult && !tc.resultPending) {
-          ctx.unflushedWakeupReplay = true
-          emitWakeupToolCallEvents(ctx, targetMessageId, tc, true)
-        } else if (tc.resultPending && !ctx.emittedWakeupToolUseIds.has(tc.toolUseId)) {
-          ctx.unflushedWakeupReplay = true
-          emitWakeupToolCallEvents(ctx, targetMessageId, tc, false, true)
+      if (!wireStreamed) {
+        for (const tc of step.toolCalls) {
+          if (ctx.emittedWakeupToolResultIds.has(tc.toolUseId) || isSubagentToolName(tc.toolName)) continue
+          if (tc.hasResult && !tc.resultPending) {
+            ctx.unflushedWakeupReplay = true
+            emitWakeupToolCallEvents(ctx, targetMessageId, tc, true)
+          } else if (tc.resultPending && !ctx.emittedWakeupToolUseIds.has(tc.toolUseId)) {
+            ctx.unflushedWakeupReplay = true
+            emitWakeupToolCallEvents(ctx, targetMessageId, tc, false, true)
+          }
         }
       }
       continue
     }
 
     ctx.emittedWakeupStepIndices.add(step.stepIndex)
-    ctx.unflushedWakeupReplay = true
+    if (!wireStreamed) {
+      ctx.unflushedWakeupReplay = true
+    }
 
-    if (step.thinking) {
+    if (step.thinking && !wireStreamed) {
       ctx.emitEvent({
         type: 'content_delta',
         messageId: targetMessageId,
@@ -363,18 +368,20 @@ export function emitWakeupProgressSteps(
       if (isSubagentToolName(tc.toolName)) {
         ctx.emittedWakeupToolUseIds.add(tc.toolUseId)
         ctx.emittedWakeupToolResultIds.add(tc.toolUseId)
-        ctx.emitEvent({
-          type: 'content_delta',
-          messageId: targetMessageId,
-          delta: {
-            type: 'tool_use',
-            toolUseId: tc.toolUseId,
-            toolName: tc.toolName,
-            input: JSON.stringify(tc.input),
-            status: 'complete',
-            ...(tc.summary ? { toolSummary: tc.summary } : {}),
-          },
-        })
+        if (!wireStreamed) {
+          ctx.emitEvent({
+            type: 'content_delta',
+            messageId: targetMessageId,
+            delta: {
+              type: 'tool_use',
+              toolUseId: tc.toolUseId,
+              toolName: tc.toolName,
+              input: JSON.stringify(tc.input),
+              status: 'complete',
+              ...(tc.summary ? { toolSummary: tc.summary } : {}),
+            },
+          })
+        }
         if (!ctx.trackedByToolUseId.has(tc.toolUseId)) {
           const desc =
             typeof tc.input.description === 'string' && tc.input.description.trim()
@@ -405,12 +412,13 @@ export function emitWakeupProgressSteps(
         continue
       }
 
+      if (wireStreamed) continue
       const ready = Boolean(tc.hasResult && !tc.resultPending)
       if (!ready && !tc.resultPending) continue
       emitWakeupToolCallEvents(ctx, targetMessageId, tc, ready, true)
     }
 
-    if (step.content) {
+    if (step.content && !wireStreamed) {
       ctx.emitEvent({
         type: 'content_delta',
         messageId: targetMessageId,
@@ -423,7 +431,7 @@ export function emitWakeupProgressSteps(
       })
     }
 
-    if (wakeup.turnInputTokens > 0 || wakeup.turnOutputTokens > 0 || wakeup.turnCacheReadTokens > 0) {
+    if (!wireStreamed && (wakeup.turnInputTokens > 0 || wakeup.turnOutputTokens > 0 || wakeup.turnCacheReadTokens > 0)) {
       ctx.emitEvent({
         type: 'message_usage',
         messageId: targetMessageId,

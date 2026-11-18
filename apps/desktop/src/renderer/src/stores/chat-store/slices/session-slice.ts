@@ -73,7 +73,7 @@ export interface SessionSlice {
   /** Drop a failed user message from the transcript and put it back into the composer. */
   editFailedMessage: (messageId: string, target?: SessionWriteTarget) => void
   deleteQueuedMessage: (messageId: string, target?: SessionWriteTarget) => void
-  steerQueuedMessage: (messageId: string, target?: SessionWriteTarget) => Promise<boolean>
+  steerQueuedMessage: (messageId: string, target?: SessionWriteTarget, options?: { silent?: boolean }) => Promise<boolean>
   startQueuedMessages: (target?: SessionWriteTarget) => Promise<boolean>
   setDraftText: (text: string, target?: SessionWriteTarget, opts?: SetDraftTextOptions) => void
   setDraftJson: (json: object | null, target?: SessionWriteTarget) => void
@@ -157,14 +157,15 @@ export const createSessionSlice: StateCreator<ChatStore, [], [], SessionSlice> =
     })))
   },
 
-  steerQueuedMessage: async (messageId, target) => {
+  steerQueuedMessage: async (messageId, target, options) => {
     const { projectPath, sessionId, session } = resolveWriteScope(get(), target)
     if (!projectPath || !sessionId) return false
     if (!session.queuedMessages.some((message) => message.id === messageId)) return false
     try {
       return (await callSession(projectPath, sessionId, 'session.steer', { clientMessageId: messageId })).ok
     } catch (error) {
-      toastSendFailure(error)
+      if (options?.silent) console.warn('[chat] steer failed:', error)
+      else toastSendFailure(error)
       return false
     }
   },

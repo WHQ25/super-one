@@ -2,6 +2,7 @@ import { createDefaultPerSessionState } from './chat-store/defaults'
 /** @vitest-environment jsdom */
 
 import { describe, it, expect, vi, beforeEach } from 'vitest'
+import { toast } from 'sonner'
 import type { AccountInfo, ChatMessage, ClaudeResources, ModelOption } from '@superone/shared/agent-types'
 import { plainTextToTiptapDoc } from '@/components/chat/chat-input/plainTextToTiptapDoc'
 
@@ -607,6 +608,18 @@ describe('session-slice: queued-message edit/delete', () => {
     await expect(useChatStore.getState().steerQueuedMessage('ghost')).resolves.toBe(false)
 
     expect(mockWindowEnvironment.callSession).not.toHaveBeenCalled()
+  })
+
+  it('suppresses failure toasts when silent steer fails', async () => {
+    setupProject()
+    const sessionId = activeProjectState()._activeSessionId!
+    patchSession({ queuedMessages: [queued('q1', 'steer this')] })
+    const toastError = vi.spyOn(toast, 'error')
+    mockWindowEnvironment.callSession.mockRejectedValueOnce(new Error('Queued message is no longer pending'))
+
+    await expect(useChatStore.getState().steerQueuedMessage('q1', { projectPath: PATH, sessionId }, { silent: true })).resolves.toBe(false)
+    expect(toastError).not.toHaveBeenCalled()
+    toastError.mockRestore()
   })
 
   it('starts the durable queue for the scoped session', async () => {

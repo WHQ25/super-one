@@ -112,6 +112,7 @@ import { isUnsentSession } from '@/stores/chat-store/helpers/session-liveness'
 import { prepareComposerSession } from '@/lib/prepare-composer-session'
 import { useEnvironmentServes } from '@/hooks/use-environment-serves'
 import { useCanSteerQueue, useDoubleEnterSteer } from './queued-steer'
+import { newMessageId } from '@superone/shared/message-id'
 import { callSession } from '@/lib/session-client'
 import { useResolvedProviderId } from './model-selector/useSelectorProviders'
 
@@ -155,6 +156,7 @@ export function ChatInput({
       setDraftText: s.setDraftText,
       setDraftJson: s.setDraftJson,
       sendMessage: s.sendMessage,
+      steerQueuedMessage: s.steerQueuedMessage,
       editQueuedMessage: s.editQueuedMessage,
       interrupt: s.interrupt,
       addAttachment: s.addAttachment,
@@ -176,7 +178,7 @@ export function ChatInput({
       addDir: s.addDir,
       removeDir: s.removeDir,
     })))
-    const { sendMessage, setShowReviewPanel } = storeActions
+    const { sendMessage, steerQueuedMessage, setShowReviewPanel } = storeActions
     const modUi = useModUi()
     const [modArgMatches, setModArgMatches] = useState<ReturnType<typeof computeMatchingSlashCommands>>([])
     const sessionScope = useSessionScope()
@@ -390,6 +392,9 @@ export function ChatInput({
       && !scheduledLoading && !scheduled && !originalsHeld
     const canSteerQueue = useCanSteerQueue(sessionProject, activeProviderForResources, runtimeCapabilities, status)
     const doubleEnterSteer = useDoubleEnterSteer(canSteerQueue)
+    useEffect(() => {
+      doubleEnterSteer.disarm()
+    }, [displayedSessionId, doubleEnterSteer])
     const showAgentMentions = activeProviderForResources === 'claude'
 
 
@@ -1341,19 +1346,28 @@ export function ChatInput({
       // A send the host never took is kept on its bubble (Resend / Edit); this
       // catch only covers failures before the bubble exists.
       const target = sessionScope ?? (sessionProject && displayedSessionId ? { projectPath: sessionProject, sessionId: displayedSessionId } : undefined)
-      doubleEnterSteer.submit((steer) => {
-        void sendMessage(
-          fullText,
-          segments,
-          editorMentions,
-          sentAttachments,
-          target,
-          steer ? { steer } : undefined,
-        ).catch((err) => {
-          console.error('[ChatInput] sendMessage failed:', err)
-        })
-      }, fromEnter)
-    }, [clearFirstLine, goalCapability, goalComposing, goalActions, enterGoalCompose, t, canSend, sendMessage, serializeAndClear, sessionScope, sessionProject, text, displayedSessionId, activeProviderForResources, realtimeVoiceEngaged, doubleEnterSteer])
+      const clientMessageId = canSteerQueue && fromEnter ? newMessageId('user') : undefined
+      let sendPromise: Promise<void> | undefined
+      doubleEnterSteer.submit(
+        (steer) => {
+          sendPromise = sendMessage(
+            fullText,
+            segments,
+            editorMentions,
+            sentAttachments,
+            target,
+            steer ? { steer } : clientMessageId ? { clientMessageId } : undefined,
+          ).catch((err) => {
+            console.error('[ChatInput] sendMessage failed:', err)
+          })
+        },
+        () => {
+          if (!clientMessageId || !sendPromise) return
+          void sendPromise.then(() => steerQueuedMessage(clientMessageId, target, { silent: true }))
+        },
+        fromEnter,
+      )
+    }, [clearFirstLine, goalCapability, goalComposing, goalActions, enterGoalCompose, t, canSend, canSteerQueue, sendMessage, steerQueuedMessage, serializeAndClear, sessionScope, sessionProject, text, displayedSessionId, activeProviderForResources, realtimeVoiceEngaged, doubleEnterSteer])
 
     const handleKeyDownCore = useCallback(
       (e: KeyboardEvent | React.KeyboardEvent): boolean => {
@@ -1526,6 +1540,7 @@ export function ChatInput({
 
         if (e.key === 'ArrowUp' && editorRef.current?.isEmpty && queuedMessages.length > 0) {
           e.preventDefault()
+          doubleEnterSteer.disarm()
           editQueuedMessage(queuedMessages[queuedMessages.length - 1].id)
           return true
         }
@@ -1544,7 +1559,7 @@ export function ChatInput({
 
         return false
       },
-      [handleSend, queuedMessages, editQueuedMessage, matchingCommands, slashIndex, selectSlashCommand, mentionActive, slashDismissed, attachments, removeAttachment, commandPopup, dismissCommandPopup, addDirActive, workflowSlashActive, setText, showReviewPanel, setShowReviewPanel, goalComposing]
+      [handleSend, doubleEnterSteer, queuedMessages, editQueuedMessage, matchingCommands, slashIndex, selectSlashCommand, mentionActive, slashDismissed, attachments, removeAttachment, commandPopup, dismissCommandPopup, addDirActive, workflowSlashActive, setText, showReviewPanel, setShowReviewPanel, goalComposing]
     )
 
     handleKeyDownRef.current = handleKeyDownCore

@@ -76,7 +76,15 @@ const { chatActions, activeSessionState, editorState, useChatStore, mentionPopup
     setDraftJson: vi.fn((json: object | null) => {
       activeSessionState.draftJson = json
     }),
-    sendMessage: vi.fn(async () => undefined),
+    sendMessage: vi.fn(async (
+      _content?: unknown,
+      _segments?: unknown,
+      _mentions?: unknown,
+      _attachments?: unknown,
+      _target?: unknown,
+      _options?: { clientMessageId?: string; steer?: boolean },
+    ) => {}),
+    steerQueuedMessage: vi.fn(async () => true),
     switchToSession: vi.fn(async () => undefined),
     editQueuedMessage: vi.fn(),
     interrupt: vi.fn(),
@@ -848,7 +856,7 @@ describe('ChatInput', () => {
     )
   })
 
-  it('steers a send made while the agent works when Enter is pressed twice', async () => {
+  it('steers directly when Enter is pressed twice within the 100ms send delay', async () => {
     activeSessionState.status = 'streaming'
     activeSessionState.sessionProvider = 'claude'
     const { rerender } = render(<ChatInput />)
@@ -870,9 +878,71 @@ describe('ChatInput', () => {
       { projectPath: '/project', sessionId: 'session-1' },
       { steer: true },
     )
+    expect(chatActions.steerQueuedMessage).not.toHaveBeenCalled()
   })
 
-  it('queues a send made while the agent works after a single Enter', async () => {
+  it('sends after 100ms and promotes to steer when second Enter arrives within 400ms', async () => {
+    activeSessionState.status = 'streaming'
+    activeSessionState.sessionProvider = 'claude'
+    const { rerender } = render(<ChatInput />)
+    await waitFor(() => expect(scheduledSend.get).toHaveBeenCalled())
+    await act(async () => {})
+    typeInEditor('change course')
+    rerender(<ChatInput />)
+
+    act(() => { editorState.handleKeyDown?.(null, new KeyboardEvent('keydown', { key: 'Enter' })) })
+    expect(chatActions.sendMessage).not.toHaveBeenCalled()
+    await waitFor(() => expect(chatActions.sendMessage).toHaveBeenCalledExactlyOnceWith(
+      'change course',
+      expect.any(Array),
+      expect.any(Array),
+      expect.any(Array),
+      { projectPath: '/project', sessionId: 'session-1' },
+      { clientMessageId: expect.stringMatching(/^user_/) },
+    ))
+    const sentId = chatActions.sendMessage.mock.calls[0]?.[5]?.clientMessageId
+    expect(sentId).toMatch(/^user_/)
+    expect(chatActions.steerQueuedMessage).not.toHaveBeenCalled()
+
+    rerender(<ChatInput />)
+    act(() => { editorState.handleKeyDown?.(null, new KeyboardEvent('keydown', { key: 'Enter' })) })
+    await waitFor(() => expect(chatActions.steerQueuedMessage).toHaveBeenCalledExactlyOnceWith(
+      sentId,
+      { projectPath: '/project', sessionId: 'session-1' },
+      { silent: true },
+    ))
+  })
+
+  it('waits for an in-flight send before steering on double Enter', async () => {
+    activeSessionState.status = 'streaming'
+    activeSessionState.sessionProvider = 'claude'
+    let resolveSend!: () => void
+    chatActions.sendMessage.mockImplementationOnce(() => new Promise<void>((resolve) => { resolveSend = resolve }))
+    const { rerender } = render(<ChatInput />)
+    await waitFor(() => expect(scheduledSend.get).toHaveBeenCalled())
+    await act(async () => {})
+    typeInEditor('change course')
+    rerender(<ChatInput />)
+
+    act(() => { editorState.handleKeyDown?.(null, new KeyboardEvent('keydown', { key: 'Enter' })) })
+    await waitFor(() => expect(chatActions.sendMessage).toHaveBeenCalledOnce())
+    const sentId = chatActions.sendMessage.mock.calls[0]?.[5]?.clientMessageId
+    expect(sentId).toMatch(/^user_/)
+
+    rerender(<ChatInput />)
+    act(() => { editorState.handleKeyDown?.(null, new KeyboardEvent('keydown', { key: 'Enter' })) })
+    await act(async () => {})
+    expect(chatActions.steerQueuedMessage).not.toHaveBeenCalled()
+
+    await act(async () => { resolveSend() })
+    expect(chatActions.steerQueuedMessage).toHaveBeenCalledExactlyOnceWith(
+      sentId,
+      { projectPath: '/project', sessionId: 'session-1' },
+      { silent: true },
+    )
+  })
+
+  it('queues a send made while the agent works after a single Enter without steering', async () => {
     activeSessionState.status = 'streaming'
     activeSessionState.sessionProvider = 'claude'
     const { rerender } = render(<ChatInput />)
@@ -890,8 +960,13 @@ describe('ChatInput', () => {
       expect.any(Array),
       expect.any(Array),
       { projectPath: '/project', sessionId: 'session-1' },
-      undefined,
+      { clientMessageId: expect.stringMatching(/^user_/) },
     ])
+    await new Promise((resolve) => setTimeout(resolve, 350))
+    rerender(<ChatInput />)
+    act(() => { editorState.handleKeyDown?.(null, new KeyboardEvent('keydown', { key: 'Enter' })) })
+    await act(async () => {})
+    expect(chatActions.steerQueuedMessage).not.toHaveBeenCalled()
   })
 
   it('places the realtime voice control immediately after the send control', () => {

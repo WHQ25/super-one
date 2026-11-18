@@ -1255,6 +1255,23 @@ describe('sendMessageImpl: queued send (streaming)', () => {
     expect(getActiveSession('/proj').queuedMessages).toHaveLength(1)
   })
 
+  it('reuses caller-supplied clientMessageId for queued sends', async () => {
+    seedProject('/proj', 'sid-1', {
+      status: 'streaming',
+      awaitingAssistantReply: true,
+      sessionProvider: 'claude',
+      preferredProvider: 'claude',
+    })
+
+    await useChatStore.getState().sendMessage('queued with id', undefined, undefined, undefined, undefined, { clientMessageId: 'user_custom_1' })
+
+    expect(getActiveSession('/proj').queuedMessages.map((m) => m.id)).toEqual(['user_custom_1'])
+    expect(mockEnvSendSessionMessage).toHaveBeenCalledWith('local', expect.objectContaining({
+      clientMessageId: 'user_custom_1',
+      priority: 'next',
+    }))
+  })
+
   it('sends the displayed Codex default model and effort when they were not manually chosen', async () => {
     seedProject('/proj', 'sid-1', {
       sessionProvider: 'codex',

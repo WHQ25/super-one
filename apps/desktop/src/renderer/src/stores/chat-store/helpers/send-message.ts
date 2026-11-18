@@ -522,7 +522,7 @@ export async function sendMessageImpl(
           : rawContent ? [{ type: 'text' as const, text: rawContent }] : []),
       ]
 
-  const userMessageId = newMessageId('user')
+  const userMessageId = options?.clientMessageId || newMessageId('user')
   const messageContexts = activeContexts.length > 0
     ? activeContexts.map((ctx) => ({ appId: ctx.appId, appName: ctx.appName, summary: ctx.summary, content: ctx.content, color: ctx.color }))
     : undefined

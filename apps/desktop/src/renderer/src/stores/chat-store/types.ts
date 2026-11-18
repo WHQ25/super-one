@@ -55,6 +55,7 @@ export interface SessionWriteTarget {
 
 export interface SendMessageOptions {
   steer?: boolean
+  clientMessageId?: string
 }
 
 export interface SetDraftTextOptions {
@@ -497,7 +498,7 @@ export interface ChatStore {
   /** Drop a failed user message from the transcript and put it back into the composer. */
   editFailedMessage: (messageId: string, target?: SessionWriteTarget) => void
   deleteQueuedMessage: (messageId: string, target?: SessionWriteTarget) => void
-  steerQueuedMessage: (messageId: string, target?: SessionWriteTarget) => Promise<boolean>
+  steerQueuedMessage: (messageId: string, target?: SessionWriteTarget, options?: { silent?: boolean }) => Promise<boolean>
   startQueuedMessages: (target?: SessionWriteTarget) => Promise<boolean>
 
   setDraftText: (text: string, target?: SessionWriteTarget, opts?: SetDraftTextOptions) => void

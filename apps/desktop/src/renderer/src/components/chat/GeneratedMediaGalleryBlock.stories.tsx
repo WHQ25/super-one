@@ -61,9 +61,6 @@ export const Mixed: Story = {
     const canvas = within(canvasElement)
     await userEvent.click(canvas.getByRole('button', { name: /screenshot.png/ }))
     await expect(await canvas.findByRole('button', { name: 'Node screenshot' })).toBeVisible()
-    await userEvent.click(canvas.getByRole('button', { name: 'Collapse Media Sidebar' }))
-    await expect(canvas.getByRole('button', { name: 'Expand Media Sidebar' })).toBeVisible()
-    await userEvent.click(canvas.getByRole('button', { name: 'Expand Media Sidebar' }))
     await expect(canvas.getByRole('button', { name: /screenshot.png/ })).toHaveAttribute('aria-pressed', 'true')
   },
 }

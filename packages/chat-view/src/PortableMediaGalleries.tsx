@@ -51,7 +51,7 @@ export function PortableGeneratedMediaGallery({ items, projectPath }: {
               root={root}
               label={label}
               className={PREVIEW_FALLBACK}
-              pictureClassName="min-h-0 flex-1 overflow-hidden rounded-lg bg-black"
+              pictureClassName="min-h-0 flex-1 overflow-hidden rounded-lg"
               imageClassName="block size-full object-contain"
               generation={generationInfo(item)}
             />

@@ -63,32 +63,20 @@ describe('node gallery image paths', () => {
   })
 })
 
-it('keeps the active player mounted while the mixed media sidebar collapses', () => {
+it('lists mixed media in order and swaps the preview from the sidebar', () => {
   const width = vi.spyOn(HTMLElement.prototype, 'clientWidth', 'get').mockReturnValue(640)
   const { container } = render(<GeneratedMediaGalleryBlock items={[
-    ...items,
     { id: 'clip', type: 'video_generation', status: 'completed', savedPath: '/tmp/preview.mp4', prompt: 'Animation' },
+    ...items,
   ]} />)
   width.mockRestore()
-  const videos = screen.getByRole('list', { name: 'Video' })
-  const images = screen.getByRole('list', { name: 'Image' })
-  expect(within(videos).getAllByRole('listitem')).toHaveLength(1)
-  expect(within(images).getAllByRole('listitem')).toHaveLength(1)
-  fireEvent.click(within(videos).getByRole('button', { name: 'preview.mp4' }))
+  const list = screen.getByRole('list', { name: 'Media List' })
+  expect(within(list).getAllByRole('button').map(button => button.getAttribute('aria-label'))).toEqual(['preview.mp4', 'screenshot.png'])
+  expect(within(list).getByRole('button', { name: 'preview.mp4' })).toHaveAttribute('aria-pressed', 'true')
   const preview = container.querySelector('[data-generated-media-preview]')!
-  const video = preview.querySelector('video')
-  expect(video).toHaveAttribute('aria-label', 'Animation')
-  fireEvent.click(screen.getByRole('button', { name: 'Collapse Media Sidebar' }))
-  expect(screen.queryByRole('list')).toBeNull()
-  expect(preview.querySelector('video')).toBe(video)
-  const handle = screen.getByRole('button', { name: 'Expand Media Sidebar' })
-  handle.setPointerCapture = vi.fn()
-  fireEvent.pointerDown(handle, { pointerId: 1, isPrimary: true, button: 0, clientX: 600 })
-  fireEvent.pointerUp(handle, { pointerId: 1, isPrimary: true, button: 0, clientX: 550 })
-  fireEvent.click(handle, { detail: 1 })
-  expect(handle).toHaveAttribute('aria-expanded', 'true')
-  expect(screen.getByRole('button', { name: 'preview.mp4' })).toHaveAttribute('aria-pressed', 'true')
-  fireEvent.click(screen.getByRole('button', { name: 'screenshot.png' }))
+  expect(preview.querySelector('video')).toHaveAttribute('aria-label', 'Animation')
+  fireEvent.click(within(list).getByRole('button', { name: 'screenshot.png' }))
   expect(preview.isConnected).toBe(false)
   expect(screen.getByRole('button', { name: 'Screenshot' })).toBeVisible()
+  expect(within(list).getByRole('button', { name: 'screenshot.png' })).toHaveAttribute('aria-pressed', 'true')
 })

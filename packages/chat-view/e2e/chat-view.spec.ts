@@ -882,7 +882,7 @@ test('42 renders Codex images as a turn-end gallery whose tap carries the genera
   await send(page, { type: 'hydrate', messages: [CODEX_IMAGE_GALLERY_RECORDING] })
 
   const turn = page.locator('[data-turn-id="recording-codex-image-gallery"]')
-  const gallery = turn.getByRole('region', { name: 'Generated Media 2' })
+  const gallery = turn.getByRole('region', { name: 'Generated Media' })
   const counter = gallery.locator('[data-generated-media-counter]')
   await expect(counter).toHaveText('1/2')
   await expect(gallery.getByRole('list')).toHaveCount(0)

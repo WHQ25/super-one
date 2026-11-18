@@ -1,10 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
-import { ImageIcon, Maximize2, Video } from 'lucide-react'
+import { ImageIcon, Video } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { ImageGenerationItem, VideoGenerationItem } from '@superone/shared/agent-types'
 import type { GeneratedMediaItem } from '@superone/chat-view/presenters/tool-display'
 import { GeneratedMediaGallery, GeneratedMediaPlaceholder } from '@superone/chat-view/presenters/GeneratedMediaGallery'
-import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { useResolvedMediaSrc } from '@/hooks/use-resolved-media-src'
 import { toLocalFileUrl } from '@/lib/path-utils'
 import { encodeRemoteMediaUrl } from '@/lib/remote-media-url'
@@ -39,13 +38,10 @@ function ImagePreview({ items, index }: { items: ImageGenerationItem[]; index: n
         ariaLabel={item.revisedPrompt ?? t('generatedMedia.openImage')}
         prompt={item.revisedPrompt}
         downloadable
-        className="min-h-0 flex-1 cursor-zoom-in overflow-hidden rounded-lg bg-black"
+        className="min-h-0 flex-1 cursor-zoom-in overflow-hidden rounded-lg"
       >
         <img src={src} alt={item.revisedPrompt ?? ''} onError={onError} className="block size-full object-contain" />
       </ImageInteractive>
-      <div className="mt-1.5 flex shrink-0 justify-end border-t border-border/60 pt-1.5">
-        <IconButton size="md" tooltip={t('mediaPlayer.enterFullscreen')} onClick={open}><Maximize2 /></IconButton>
-      </div>
       {viewer.open && (
         <ImageViewer
           items={items}

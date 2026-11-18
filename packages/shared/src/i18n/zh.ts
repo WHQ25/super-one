@@ -5146,8 +5146,6 @@ export const zh: Messages = {
   generatedMedia: {
     title: '生成结果',
     list: '媒体列表',
-    expand: '展开媒体侧栏',
-    collapse: '收起媒体侧栏',
     previous: '上一项媒体',
     next: '下一项媒体',
     item: '结果 {{number}}',

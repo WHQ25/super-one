@@ -552,6 +552,32 @@ export const Error: Story = {
   render: (args) => <Frame><MultiHostProjectList {...args} /></Frame>,
 }
 
+/** A dead socket keeps the host row and drops the RPC text under it. */
+export const Unreachable: Story = {
+  args: {
+    groupBy: 'environment',
+    environments: [
+      bucket({
+        environmentId: 'node-1',
+        connectionId: 'cli-1',
+        label: 'VensenA',
+        projectsStatus: 'error',
+        projectsError: "Error invoking remote method 'environment:listProjects': Error: not connected",
+      }),
+    ],
+  },
+  render: (args) => <Frame><MultiHostProjectList {...args} /></Frame>,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvasElement.querySelector('.lucide-cloud-off')).toHaveClass('text-error')
+    await expect(canvas.queryByText(/Could not load projects/)).not.toBeInTheDocument()
+    await expect(canvas.queryByText(/not connected/i)).not.toBeInTheDocument()
+    await expect(canvas.getByRole('button', { name: 'Refresh', hidden: true })).toBeInTheDocument()
+    await expect(canvas.getByRole('button', { name: 'Disconnect', hidden: true })).toBeInTheDocument()
+    await expect(canvas.queryByRole('button', { name: 'Add Project', hidden: true })).not.toBeInTheDocument()
+  },
+}
+
 export const Empty: Story = {
   args: {
     groupBy: 'environment',

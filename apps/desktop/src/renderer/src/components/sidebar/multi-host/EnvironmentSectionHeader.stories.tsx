@@ -85,14 +85,36 @@ export const ErrorRetry: Story = {
   render: (args) => <Frame><EnvironmentSectionHeader {...args} /></Frame>,
 }
 
-/** The red cloud is the disconnected mark. The row does not expand; hover offers only Connect. */
+/** The socket is down while the row is still listed as connected. No RPC text; refresh and disconnect stay. */
+export const Unreachable: Story = {
+  args: {
+    label: 'VensenA',
+    projectsStatus: 'error',
+    projectsError: "Error invoking remote method 'environment:listProjects': Error: not connected",
+    onSort: () => {},
+  },
+  render: (args) => <Frame><EnvironmentSectionHeader {...args} /></Frame>,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await expect(canvasElement.querySelector('.lucide-cloud-off')).toHaveClass('text-error')
+    await expect(canvas.queryByText(/listProjects/)).not.toBeInTheDocument()
+    await expect(canvas.queryByText(/not connected/i)).not.toBeInTheDocument()
+    await expect(canvas.queryByRole('button', { name: 'Retry' })).not.toBeInTheDocument()
+    await expect(canvas.queryByRole('button', { name: 'Add Project', hidden: true })).not.toBeInTheDocument()
+    await expect(canvas.queryByRole('button', { name: 'Sort Projects', hidden: true })).not.toBeInTheDocument()
+    await expect(canvas.getByRole('button', { name: 'Refresh', hidden: true })).toBeInTheDocument()
+    await expect(canvas.getByRole('button', { name: 'Disconnect', hidden: true })).toBeInTheDocument()
+  },
+}
+
+/** Cloud-off is the disconnected mark. The row does not expand; hover offers only Connect. */
 export const Offline: Story = {
   args: { label: 'build-box', connection: 'offline', projectsStatus: 'idle', onSort: () => {} },
   render: (args) => <Frame><EnvironmentSectionHeader {...args} /></Frame>,
   play: async ({ canvasElement }) => {
     const canvas = within(canvasElement)
     await expect(canvasElement.querySelector('.lucide-unplug')).toBeNull()
-    await expect(canvasElement.querySelector('.lucide-cloud')).toHaveClass('text-error')
+    await expect(canvasElement.querySelector('.lucide-cloud-off')).toHaveClass('text-error')
     await expect(canvasElement.querySelector('.lucide-chevron-right')).toHaveClass('!hidden')
     await expect(canvas.getByText('build-box').closest('button')).toBeNull()
     await expect(canvas.queryByRole('button', { name: 'Refresh' })).not.toBeInTheDocument()
@@ -108,7 +130,7 @@ export const NeedsUpgrade: Story = {
   render: (args) => <Frame><EnvironmentSectionHeader {...args} /></Frame>,
 }
 
-/** The install replaces the kind icon with the toast's fading bars. The socket is already down, so this is not the red cloud. */
+/** The install replaces the kind icon with the toast's fading bars. The socket is already down, so this is not cloud-off. */
 export const Upgrading: Story = {
   args: {
     connection: 'offline',
@@ -121,6 +143,7 @@ export const Upgrading: Story = {
     await expect(spinner?.querySelectorAll('.environment-upgrading-bar')).toHaveLength(12)
     await expect(spinner).toHaveAttribute('aria-label', expect.stringContaining('0.76.0-alpha.3'))
     await expect(canvasElement.querySelector('.lucide-cloud')).toBeNull()
+    await expect(canvasElement.querySelector('.lucide-cloud-off')).toBeNull()
     await expect(within(canvasElement).queryByRole('button', { name: 'Connect', hidden: true })).not.toBeInTheDocument()
   },
 }

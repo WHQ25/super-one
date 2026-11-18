@@ -159,13 +159,15 @@ function KindLineIcon({
   kind,
   connection,
   path,
+  unreachable = false,
 }: {
   kind: EnvironmentKind
   connection: EnvironmentConnection
   path?: NodeLinkPath | null
+  unreachable?: boolean
 }) {
   if (kind === 'local') return <Computer className="size-3" aria-hidden />
-  return <EnvironmentKindIcon kind={kind} connection={connection} path={path ?? undefined} className="size-3" />
+  return <EnvironmentKindIcon kind={kind} connection={connection} path={path ?? undefined} unreachable={unreachable} className="size-3" />
 }
 
 function cpuLine(
@@ -211,6 +213,7 @@ export function EnvironmentHoverBody({
   waiting = false,
   onEdit,
   statusLabel: statusOverride,
+  unreachable = false,
 }: {
   label: string
   kind: EnvironmentKind
@@ -231,6 +234,8 @@ export function EnvironmentHoverBody({
   onEdit?: () => void
   /** Replaces the connection word. An install stays "Upgrading" after the socket drops. */
   statusLabel?: string
+  /** Dead socket while the supervisor still lists the host as live. */
+  unreachable?: boolean
 }) {
   const { t } = useTranslation()
   const liveRunning = useEnvironmentRunningCounts(
@@ -275,7 +280,7 @@ export function EnvironmentHoverBody({
         )}
       </div>
       <div className="flex flex-col gap-1 text-muted-foreground">
-        <HoverLine icon={<KindLineIcon kind={kind} connection={connection} path={path} />}>
+        <HoverLine icon={<KindLineIcon kind={kind} connection={connection} path={path} unreachable={unreachable} />}>
           <span className="block truncate">{kindLine}</span>
         </HoverLine>
         {projectCount != null && (
@@ -325,6 +330,7 @@ export function EnvironmentHoverCard({
   details,
   onRename,
   statusLabel,
+  unreachable = false,
   children,
 }: {
   /** Stories pin the card open. */
@@ -340,6 +346,8 @@ export function EnvironmentHoverCard({
   onRename?: (name: string) => Promise<void>
   /** Replaces the connection word in the card, for example while the CLI is installing. */
   statusLabel?: string
+  /** Dead socket while the supervisor still lists the host as live. */
+  unreachable?: boolean
   children: ReactNode
 }) {
   const [hovered, setHovered] = useState(false)
@@ -367,6 +375,7 @@ export function EnvironmentHoverCard({
             waiting={waiting}
             onEdit={onRename ? () => setSettingsOpen(true) : undefined}
             statusLabel={statusLabel}
+            unreachable={unreachable}
           />
         )}
       >

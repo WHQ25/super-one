@@ -2,7 +2,7 @@ import { createContext, useContext, useId, useLayoutEffect, useMemo, useRef, use
 import { useTranslation } from 'react-i18next'
 import { useShallow } from 'zustand/react/shallow'
 import { toast } from 'sonner'
-import { CalendarClock, Cloud, Folder, FolderOpen, Pencil, Search, SquarePen, Trash2 } from 'lucide-react'
+import { CalendarClock, CloudOff, Folder, FolderOpen, Pencil, Search, SquarePen, Trash2 } from 'lucide-react'
 import type { PinnedSessionEntry, RecentFolder, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { ScrollArea } from '@superone/ui/components/ui/scroll-area'
@@ -15,6 +15,7 @@ import { environmentSections, groupCheckoutsByRepo, sortProjectGroups, type Envi
 import { projectHoverFolders } from '@/lib/multi-host/project-hover'
 import { presenterFor } from '@/lib/multi-host/session-hover'
 import type { EnvironmentBucket, HostCheckout, SidebarGroupBy, SidebarSort } from '@/lib/multi-host/types'
+import { environmentUnreachable } from '@/lib/multi-host/unreachable-error'
 import { AutomationDialog } from '@/components/AutomationDialog'
 import { ProjectHistoryList } from '@/components/sidebar/ProjectHistoryList'
 import { ProjectSidebarRow } from '@/components/sidebar/ProjectSidebarRow'
@@ -225,7 +226,7 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
             {bucket.projectsStatus === 'loading' && checkouts.length === 0 && cloningTasks.length === 0 && (
               <div className="px-2.5 py-2 text-xs text-sidebar-foreground/70">{t('common.loading')}</div>
             )}
-            {bucket.projectsStatus === 'error' && checkouts.length === 0 && cloningTasks.length === 0 && (
+            {bucket.projectsStatus === 'error' && checkouts.length === 0 && cloningTasks.length === 0 && !environmentUnreachable(bucket) && (
               <ProjectLoadError
                 bucket={bucket}
                 className="px-2.5 py-2 text-left text-xs text-sidebar-foreground/70"
@@ -267,6 +268,7 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
             frozenEnvironmentHeightsRef.current.set(bucket.environmentId, { projectMax, sessionMaxes })
           }
           const cloningTasks = backgroundCloneTasks.filter((task) => task.connectionId === bucket.connectionId)
+          const quiet = environmentUnreachable(bucket)
           const pierced: HostCheckout[] = []
           if (collapsed) {
             for (const checkout of checkouts) {
@@ -289,10 +291,12 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
                 obscured={props.obscuredEnvironmentIds?.includes(bucket.environmentId) ?? false}
                 upgradingLabel={props.upgradingLabels?.[bucket.connectionId]}
               />
-              {/* Projects sit one step inside their environment, hover fill included. */}
+              {/* A dead socket has nothing to list. Refresh and disconnect stay on the header. */}
+              {!quiet && (
               <div className="pl-1">
-                {/* The fold keeps the full list mounted until the close eases
-                    out. Hide that copy while a prompt is drawn beside it. */}
+                {/* Projects sit one step inside their environment. The fold keeps
+                    the list mounted until the close eases out, and hides that
+                    copy while a prompt is drawn beside it. */}
                 <SidebarCollapse open={!collapsed} unmountClosed className={pierced.length > 0 ? 'invisible' : undefined}>
                   <EnvironmentProjectScroll maxHeight={projectMax?.kind === 'px' ? projectMax.maxHeight : undefined}>
                     {bucket.projectsStatus === 'loading' && checkouts.length === 0 && cloningTasks.length === 0 && (
@@ -323,6 +327,7 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
                 </SidebarCollapse>
                 {pierced.map((checkout) => checkoutRow(checkout, bucket, undefined, false, true))}
               </div>
+              )}
             </div>
           )
         })}
@@ -334,7 +339,7 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
     groupCheckoutsByRepo(environments.flatMap((bucket) => bucket.checkouts)),
     sort,
   )
-  const errors = environments.filter((bucket) => bucket.projectsStatus === 'error')
+  const errors = environments.filter((bucket) => bucket.projectsStatus === 'error' && !environmentUnreachable(bucket))
   return (
     <div className="flex w-0 min-w-full flex-col px-2 pb-1.5 [&>*]:min-w-0">
       {unlistedRows}
@@ -460,7 +465,7 @@ export function OfflineEnvironmentGroup({
         onToggle={toggle}
         controlsId={panelId}
         chevronWhenExpanded
-        icon={<Cloud className="text-sidebar-foreground/45" />}
+        icon={<CloudOff className="text-sidebar-foreground/45" />}
       >
         {t('sidebar.offlineEnvironments')}
       </SidebarSectionLabel>

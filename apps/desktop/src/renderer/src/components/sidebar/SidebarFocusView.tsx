@@ -17,6 +17,7 @@ import { checkoutToRecentFolder } from '@/lib/multi-host/checkout-folder'
 import { projectFocusPaths } from '@/lib/multi-host/project-focus'
 import { presenterFor } from '@/lib/multi-host/session-hover'
 import type { EnvironmentBucket } from '@/lib/multi-host/types'
+import { environmentUnreachable } from '@/lib/multi-host/unreachable-error'
 import { SessionFocusList } from './SessionFocusList'
 import { EnvironmentKindIcon, EnvironmentUpgradingIcon } from './multi-host/EnvironmentKindIcon'
 import { EnvironmentRowActions } from './multi-host/EnvironmentSectionHeader'
@@ -103,7 +104,7 @@ export function projectFocusIcon(state: { missing?: boolean; open?: boolean; loa
 /** Glyph for one row of the ancestor menu. Exit leaves focus; the others match the list. */
 export function focusLevelIcon(level: {
   id: string
-  environment?: Pick<EnvironmentBucket, 'kind' | 'connection' | 'path'> | null
+  environment?: (Pick<EnvironmentBucket, 'kind' | 'connection' | 'path'> & Partial<Pick<EnvironmentBucket, 'projectsStatus' | 'projectsError'>>) | null
   projectMissing?: boolean
   /** Sentence for the loading bars that replace this environment's glyph during a CLI install. */
   upgradingLabel?: string
@@ -119,6 +120,7 @@ export function focusLevelIcon(level: {
         kind={level.environment.kind}
         connection={level.environment.connection}
         path={level.environment.path}
+        unreachable={environmentUnreachable(level.environment)}
         className="size-4 shrink-0"
       />
     )
@@ -462,6 +464,7 @@ function FocusResidentActions({
         onRefresh={remote ? () => props.onRefreshEnvironment(bucket.connectionId) : undefined}
         onToggleConnection={remote ? () => props.onToggleConnection(bucket.connectionId, bucket.connection) : undefined}
         upgrading={Boolean(props.upgradingLabels?.[bucket.connectionId])}
+        unreachable={environmentUnreachable(bucket)}
       />
     )
   }

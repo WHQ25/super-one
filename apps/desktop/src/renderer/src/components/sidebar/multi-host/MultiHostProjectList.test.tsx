@@ -107,6 +107,32 @@ describe('environment sections', () => {
     fireEvent.click(screen.getByText('Recover this turn'))
     expect(callbacks.onSwitchSession).toHaveBeenCalledWith(remote.pathKey, 'failed', { revealProject: false })
   })
+
+  it.each(['environment', 'project'] as const)('drops the socket error and keeps refresh with disconnect (%s)', (groupBy) => {
+    const projectsError = "Error invoking remote method 'environment:listProjects': Error: not connected"
+    renderList({
+      groupBy,
+      environments: [
+        bucket({
+          environmentId: 'node-1',
+          connectionId: 'cli-1',
+          label: 'VensenA',
+          projectsStatus: 'error',
+          projectsError,
+          checkouts: [],
+        }),
+      ],
+    })
+    expect(screen.queryByText(/Could not load projects/)).toBeNull()
+    expect(screen.queryByText(/listProjects/)).toBeNull()
+    expect(screen.queryByText(/not connected/i)).toBeNull()
+    if (groupBy === 'environment') {
+      expect(document.querySelector('.lucide-cloud-off')?.getAttribute('class')).toContain('text-error')
+      expect(screen.getByRole('button', { name: 'Refresh', hidden: true })).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: 'Disconnect', hidden: true })).toBeInTheDocument()
+      expect(screen.queryByRole('button', { name: 'Add Project', hidden: true })).toBeNull()
+    }
+  })
   it('lists each device without a painted name bar', () => {
     renderList()
 

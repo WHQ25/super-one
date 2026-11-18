@@ -36,7 +36,7 @@ describe('environment header row', () => {
 })
 
 describe('disconnected environment header', () => {
-  it('keeps the red cloud, offers only Connect, and does not expand', () => {
+  it('keeps cloud-off, offers only Connect, and does not expand', () => {
     const onToggle = vi.fn()
     render(
       <EnvironmentSectionHeader
@@ -54,7 +54,7 @@ describe('disconnected environment header', () => {
       />,
     )
     expect(document.querySelector('.lucide-unplug')).toBeNull()
-    expect(document.querySelector('.lucide-cloud')?.getAttribute('class')).toContain('text-error')
+    expect(document.querySelector('.lucide-cloud-off')?.getAttribute('class')).toContain('text-error')
     expect(document.querySelector('.lucide-chevron-right')?.getAttribute('class')).toContain('!hidden')
     expect(screen.queryByRole('button', { name: 'Refresh' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Add Project' })).toBeNull()
@@ -68,6 +68,66 @@ describe('disconnected environment header', () => {
     expect(screen.getByText('build-box').closest('button')).toBeNull()
     fireEvent.click(screen.getByText('build-box'))
     expect(onToggle).not.toHaveBeenCalled()
+  })
+})
+
+describe('unreachable environment header', () => {
+  const projectsError = "Error invoking remote method 'environment:listProjects': Error: not connected"
+
+  it('hides the socket error and keeps only refresh and disconnect', () => {
+    const onToggle = vi.fn()
+    render(
+      <EnvironmentSectionHeader
+        label="VensenA"
+        kind="cli-node"
+        connection="connected"
+        expanded
+        projectsStatus="error"
+        projectsError={projectsError}
+        onToggle={onToggle}
+        onRefresh={() => {}}
+        onToggleConnection={() => {}}
+        onAddProject={() => {}}
+        onSort={() => {}}
+        cardOpen
+      />,
+    )
+    expect(document.querySelector('.lucide-cloud-off')?.getAttribute('class')).toContain('text-error')
+    expect(document.querySelector('.lucide-cloud')).toBeNull()
+    expect(screen.queryByText(/listProjects/)).toBeNull()
+    expect(screen.queryByText(/not connected/i)).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Retry' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Add Project', hidden: true })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Sort Projects', hidden: true })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Refresh', hidden: true })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Disconnect', hidden: true })).toBeInTheDocument()
+    expect(screen.getByText('Node · Offline')).toBeInTheDocument()
+    const header = document.querySelector('[data-slot="environment-section-header"]')
+    const name = header?.querySelector('.truncate')
+    expect(name?.textContent).toBe('VensenA')
+    expect(name?.closest('button')).toBeNull()
+    fireEvent.click(name!)
+    expect(onToggle).not.toHaveBeenCalled()
+  })
+
+  it('still shows a catalog error that is not a dead socket', () => {
+    render(
+      <EnvironmentSectionHeader
+        label="build"
+        kind="cli-node"
+        connection="connected"
+        expanded
+        projectsStatus="error"
+        projectsError="socket closed while listing /srv/projects"
+        onToggle={() => {}}
+        onRefresh={() => {}}
+        onAddProject={() => {}}
+      />,
+    )
+    expect(screen.getByRole('button', { name: 'Retry' })).toBeInTheDocument()
+    expect(screen.getByText('socket closed while listing /srv/projects')).toBeInTheDocument()
+    expect(document.querySelector('.lucide-cloud-off')).toBeNull()
+    expect(screen.getByRole('button', { name: 'Add Project', hidden: true })).toBeInTheDocument()
   })
 })
 
@@ -95,6 +155,7 @@ describe('environment upgrade', () => {
     expect(spinner?.querySelectorAll('.environment-upgrading-bar')).toHaveLength(12)
     expect(spinner?.getAttribute('aria-label')).toContain('0.76.0-alpha.3')
     expect(header?.querySelector('.lucide-cloud')).toBeNull()
+    expect(header?.querySelector('.lucide-cloud-off')).toBeNull()
     expect(header?.querySelector('.lucide-triangle-alert')).toBeNull()
     expect(header?.querySelector('.lucide-chevron-right')?.getAttribute('class')).toContain('!hidden')
     expect(screen.queryByRole('button', { name: 'Connect', hidden: true })).toBeNull()
@@ -118,6 +179,7 @@ describe('environment upgrade', () => {
     const dropped = document.querySelector('[data-slot="environment-section-header"]')
     expect(dropped?.querySelector('[data-slot="environment-upgrading"]')).not.toBeNull()
     expect(dropped?.querySelector('.lucide-cloud')).toBeNull()
+    expect(dropped?.querySelector('.lucide-cloud-off')).toBeNull()
     expect(dropped?.className).not.toContain('opacity-70')
     expect(screen.queryByRole('button', { name: 'Connect', hidden: true })).toBeNull()
   })

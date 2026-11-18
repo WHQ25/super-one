@@ -11,6 +11,7 @@ import {
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import type { EnvironmentConnection, EnvironmentKind, LoadStatus, SidebarSort } from '@/lib/multi-host/types'
+import { environmentUnreachable } from '@/lib/multi-host/unreachable-error'
 import { HostConnectionToggle } from '@/components/sidebar/HostConnectionToggle'
 import { SidebarHoverChevron, sidebarRowActionsClass } from '@/components/sidebar/hover-disclosure'
 import { EnvironmentKindIcon, EnvironmentUpgradingIcon } from './EnvironmentKindIcon'
@@ -31,6 +32,7 @@ export function EnvironmentRowActions({
   onRefresh,
   onToggleConnection,
   upgrading = false,
+  unreachable = false,
   resident = false,
 }: {
   offline: boolean
@@ -45,12 +47,18 @@ export function EnvironmentRowActions({
   onToggleConnection?: () => void
   /** The CLI install owns this node. Hide connect, refresh, and add until it finishes. */
   upgrading?: boolean
+  /**
+   * The socket is down while the supervisor still lists the host as live.
+   * Keep refresh and disconnect; hide catalog actions.
+   */
+  unreachable?: boolean
   /** Focus mode keeps these icons on screen. The row still reveals them on hover. */
   resident?: boolean
 }) {
   const { t } = useTranslation()
   const [sortOpen, setSortOpen] = useState(false)
   const unavailable = offline || upgrading
+  const catalog = !unavailable && !unreachable
   return (
     <div
       data-slot="environment-row-actions"
@@ -60,7 +68,7 @@ export function EnvironmentRowActions({
         !resident && sortOpen && 'pointer-events-auto visible w-auto opacity-100',
       )}
     >
-      {!unavailable && onSort && (
+      {catalog && onSort && (
         <DropdownMenu open={sortOpen} onOpenChange={setSortOpen}>
           <DropdownMenuTrigger asChild>
             <IconButton size="sm" variant="nested" tooltip={t('sidebar.sort.title')}>
@@ -77,7 +85,7 @@ export function EnvironmentRowActions({
           </DropdownMenuContent>
         </DropdownMenu>
       )}
-      {!unavailable && onAddProject && (
+      {catalog && onAddProject && (
         <IconButton size="sm" variant="nested" tooltip={t('sidebar.addProject.title')} onClick={onAddProject}>
           <Plus />
         </IconButton>
@@ -165,20 +173,22 @@ export function EnvironmentSectionHeader({
   const { t } = useTranslation()
   const offline = connection === 'offline'
   const upgrading = Boolean(upgradingLabel)
+  const unreachable = environmentUnreachable({ connection, projectsStatus, projectsError })
   const remote = kind !== 'local'
-  const open = expanded && !offline
+  const quiet = offline || unreachable
+  const open = expanded && !quiet
   const labelClass = 'flex min-w-0 flex-1 items-center gap-2 rounded-md py-1 text-left text-sm font-medium text-sidebar-foreground'
   const disclosure = (
     <>
       <SidebarHoverChevron
         expanded={open}
-        locked={offline || upgrading}
+        locked={quiet || upgrading}
         glyph={upgradingLabel
           ? <EnvironmentUpgradingIcon label={upgradingLabel} />
-          : <EnvironmentKindIcon kind={kind} connection={connection} path={path} />}
+          : <EnvironmentKindIcon kind={kind} connection={connection} path={path} unreachable={unreachable} />}
       />
       <span className="truncate">{label}</span>
-      {connection === 'needs-upgrade' && !upgrading && (
+      {connection === 'needs-upgrade' && !upgrading && !unreachable && (
         <TriangleAlert className="size-3 shrink-0 text-warning" aria-label={t('sidebar.hover.needsUpgrade')} />
       )}
     </>
@@ -202,7 +212,8 @@ export function EnvironmentSectionHeader({
         connectionId={connectionId}
         details={details}
         onRename={onRename}
-        statusLabel={upgrading ? t('sidebar.hover.upgrading') : undefined}
+        statusLabel={upgrading ? t('sidebar.hover.upgrading') : unreachable ? t('sidebar.hover.offline') : undefined}
+        unreachable={unreachable}
       >
       <div
         onDoubleClick={(event) => {
@@ -213,10 +224,10 @@ export function EnvironmentSectionHeader({
         className={cn(
           'group flex h-9 items-center gap-1 overflow-hidden rounded-md px-1.5 transition-colors',
           sidebarHoverCardRowClass,
-          !offline && 'cursor-pointer',
+          !quiet && 'cursor-pointer',
         )}
       >
-        {offline ? (
+        {quiet ? (
           <div className={labelClass}>{disclosure}</div>
         ) : (
           <button type="button" className={labelClass} onClick={onToggle} aria-expanded={expanded}>
@@ -235,6 +246,7 @@ export function EnvironmentSectionHeader({
           onRefresh={onRefresh}
           onToggleConnection={onToggleConnection}
           upgrading={upgrading}
+          unreachable={unreachable}
         />
       </div>
       </EnvironmentHoverCard>

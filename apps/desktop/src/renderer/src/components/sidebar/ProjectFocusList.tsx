@@ -7,6 +7,7 @@ import { checkoutToRecentFolder } from '@/lib/multi-host/checkout-folder'
 import { sortCheckouts } from '@/lib/multi-host/group-projects'
 import { presenterFor } from '@/lib/multi-host/session-hover'
 import type { EnvironmentBucket } from '@/lib/multi-host/types'
+import { environmentUnreachable } from '@/lib/multi-host/unreachable-error'
 import { EnvironmentKindIcon, EnvironmentUpgradingIcon } from './multi-host/EnvironmentKindIcon'
 import { ProjectSidebarRow, type ProjectFocusActions } from './ProjectSidebarRow'
 import { SettledSessionList } from './SettledSection'
@@ -64,7 +65,7 @@ export function FocusEnvironmentGroup({
         ) : undefined}
         icon={upgradingLabel
           ? <EnvironmentUpgradingIcon label={upgradingLabel} className="size-3" />
-          : <EnvironmentKindIcon {...bucket} className="size-3 text-sidebar-foreground/45" />}
+          : <EnvironmentKindIcon {...bucket} unreachable={environmentUnreachable(bucket)} className="size-3 text-sidebar-foreground/45" />}
       >
         {bucket.label}
       </SidebarSectionLabel>

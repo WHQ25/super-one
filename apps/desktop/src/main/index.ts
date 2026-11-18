@@ -3482,6 +3482,11 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.GIT_STATUS_FILES, async (_event, folderPath: string) => {
     try {
+      if (parseRemoteProjectKey(folderPath)) {
+        const { getEnvironmentHost } = await import('./environment')
+        const { getRemoteGitStatusFiles } = await import('./environment/remote-file-tree')
+        return (await getRemoteGitStatusFiles(getEnvironmentHost(), folderPath)) ?? []
+      }
       const raw = await gitRun(folderPath, ['status', '--porcelain=v1'])
       if (!raw) return []
       return parseGitStatusFiles(raw)

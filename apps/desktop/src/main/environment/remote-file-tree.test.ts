@@ -24,6 +24,7 @@ import {
   saveRemoteProjectFile,
   getRemoteGitInfo,
   getRemoteGitIsRepo,
+  getRemoteGitStatusFiles,
   getRemoteGitBranches,
   getRemoteWorktreeInfo,
   getRemoteGitMentionCapabilities,
@@ -297,6 +298,39 @@ describe('getRemoteGitInfo / isRepo / branches', () => {
     })
     expect(gitStatus).toHaveBeenCalledWith('proj-1', { cwd: '/work/task' })
     expect(host.openProject).not.toHaveBeenCalled()
+  })
+
+  it('parses git status files for remote projects and worktrees', async () => {
+    const gitStatus = vi.fn().mockResolvedValue({
+      isRepo: true,
+      branch: 'main',
+      dirty: true,
+      porcelain: ' M src/a.ts\n?? b.ts\nA  docs/new.md\n',
+    })
+    const host = mockHost({ getGateway: () => ({ gitStatus }) })
+
+    expect(await getRemoteGitStatusFiles(host, '/local/app')).toBeNull()
+    expect(await getRemoteGitStatusFiles(host, 'remote:conn-1:/work/app')).toEqual([
+      { path: 'src/a.ts', status: 'M', staged: false },
+      { path: 'b.ts', status: '?', staged: false },
+      { path: 'docs/new.md', status: 'A', staged: true },
+    ])
+    expect(await getRemoteGitStatusFiles(host, 'remote:conn-1:/work/task')).toEqual([
+      { path: 'src/a.ts', status: 'M', staged: false },
+      { path: 'b.ts', status: '?', staged: false },
+      { path: 'docs/new.md', status: 'A', staged: true },
+    ])
+  })
+
+  it('returns empty status files when remote repo is clean or not a repo', async () => {
+    const gitStatus = vi.fn()
+      .mockResolvedValueOnce({ isRepo: true, branch: 'main', dirty: false, porcelain: '' })
+      .mockResolvedValueOnce({ isRepo: false })
+    const host = mockHost({ getGateway: () => ({ gitStatus }) })
+
+    expect(await getRemoteGitStatusFiles(host, 'remote:conn-1:/work/app')).toEqual([])
+    invalidateRemoteGitReads()
+    expect(await getRemoteGitStatusFiles(host, 'remote:conn-1:/work/app')).toEqual([])
   })
 
   it('lists local branches at the host path', async () => {

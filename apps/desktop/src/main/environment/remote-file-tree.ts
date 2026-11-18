@@ -43,9 +43,11 @@ import {
 import { AUDIO_EXTENSIONS, BINARY_IMAGE_EXTENSIONS, MODEL_EXTENSIONS, MODEL_MIME, OFFICE_MIME, OFFICE_PREVIEW_MAX_BYTES, PDF_EXTENSIONS, VIDEO_EXTENSIONS, officePreviewKind } from '@superone/shared/file-preview'
 import {
   EMPTY_PAIR,
+  parseGitStatusFiles,
   parseGitStatusOutput,
   resolveEntryStatusPair,
   type ParsedGitStatus,
+  type ParsedGitStatusFile,
 } from '../git-status-utils'
 import { AsyncCoalescer } from '@superone/runtime/async-coalescer'
 import { localBranchList, type LocalBranchList } from '@superone/runtime/git'
@@ -951,45 +953,68 @@ function mapStatusToGitInfo(status: {
   }
 }
 
+type RemoteGitStatusPayload = {
+  isRepo?: boolean
+  branch?: string | null
+  dirty?: boolean
+  porcelain?: string
+  insertions?: number
+  deletions?: number
+}
+
+async function fetchRemoteGitStatusForFolder(
+  host: EnvironmentHost,
+  folderPath: string,
+): Promise<RemoteGitStatusPayload | null> {
+  const remote = parseRemoteProjectKey(folderPath)
+  if (!remote) return null
+  const ctx = await resolveRemoteProjectContext(host, folderPath, { registerIfMissing: false })
+  if (ctx) {
+    return fetchRemoteGitStatusRaw(host, ctx)
+  }
+  const known = host.connections.listKnown().find((k) => k.connectionId === remote.connectionId)
+  if (!known) return null
+  const gw = asRemoteGitGateway(host.getGateway(known.environmentId))
+  if (!gw) return null
+  const projects = await host.listProjects(remote.connectionId)
+  for (const p of projects) {
+    try {
+      const status = (await gw.gitStatus(p.projectId, { cwd: remote.path })) as RemoteGitStatusPayload
+      if (status?.isRepo) return status
+    } catch {
+    }
+  }
+  return null
+}
+
 export async function getRemoteGitInfo(
   host: EnvironmentHost,
   folderPath: string,
 ): Promise<GitInfoResult> {
   if (!parseRemoteProjectKey(folderPath)) return null
   try {
-    // Never registerIfMissing — git probes must not pollute project.list with worktree paths.
-    const ctx = await resolveRemoteProjectContext(host, folderPath, { registerIfMissing: false })
-    if (ctx) {
-      return mapStatusToGitInfo(await fetchRemoteGitStatusRaw(host, ctx))
-    }
-    // Worktree host path under a registered project: status with cwd, no openProject.
-    const remote = parseRemoteProjectKey(folderPath)!
-    const known = host.connections.listKnown().find((k) => k.connectionId === remote.connectionId)
-    if (!known) return null
-    const gw = asRemoteGitGateway(host.getGateway(known.environmentId))
-    if (!gw) return null
-    const projects = await host.listProjects(remote.connectionId)
-    for (const p of projects) {
-      try {
-        const status = (await gw.gitStatus(p.projectId, { cwd: remote.path })) as {
-          isRepo?: boolean
-          branch?: string | null
-          dirty?: boolean
-          porcelain?: string
-          insertions?: number
-          deletions?: number
-        }
-        if (status?.isRepo) return mapStatusToGitInfo(status)
-      } catch {
-        /* not a worktree of this project */
-      }
-    }
-    return null
+    return mapStatusToGitInfo(await fetchRemoteGitStatusForFolder(host, folderPath))
   } catch (err) {
     // The node answers `isRepo: false` for a plain folder and throws when git
     // itself fails (see cli git-service `statusForCwd`) — keep that distinction
     // so the status bar does not offer "Init Git" for a repo git cannot read.
     return { branch: null, error: (err as Error)?.message || 'git status failed' }
+  }
+}
+
+export async function getRemoteGitStatusFiles(
+  host: EnvironmentHost,
+  folderPath: string,
+): Promise<ParsedGitStatusFile[] | null> {
+  if (!parseRemoteProjectKey(folderPath)) return null
+  try {
+    const status = await fetchRemoteGitStatusForFolder(host, folderPath)
+    if (!status?.isRepo || typeof status.porcelain !== 'string' || !status.porcelain) {
+      return []
+    }
+    return parseGitStatusFiles(status.porcelain)
+  } catch {
+    return []
   }
 }
 

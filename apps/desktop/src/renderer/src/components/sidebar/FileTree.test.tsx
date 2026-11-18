@@ -49,14 +49,22 @@ describe('FileTree manual refresh', () => {
   })
 
   it('offers a refresh button for remote projects, which are not watched', async () => {
+    const getGitStatusFiles = vi.fn(async () => [{ path: 'a.ts', status: 'M' as const, staged: false }])
+    const w = globalThis.window as unknown as Record<string, Record<string, unknown>>
+    w.app.getGitStatusFiles = getGitStatusFiles
     useAppStore.setState({ currentFolder: 'remote:conn-1:/root/workspace/proj' })
     render(<FileTree />)
     await waitFor(() => expect(listDir).toHaveBeenCalled())
     listDir.mockClear()
 
+    fireEvent.click(screen.getByRole('button', { name: 'Only Changed Files' }))
+    expect(await screen.findByText('a.ts')).toBeInTheDocument()
+    getGitStatusFiles.mockClear()
+
     fireEvent.click(screen.getByRole('button', { name: 'Refresh file tree' }))
 
     await waitFor(() => expect(listDir).toHaveBeenCalledWith('remote:conn-1:/root/workspace/proj', ''))
+    await waitFor(() => expect(getGitStatusFiles).toHaveBeenCalledWith('remote:conn-1:/root/workspace/proj'))
   })
 
   it('hides it for local projects, where the file watcher already refreshes', async () => {

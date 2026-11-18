@@ -396,11 +396,14 @@ export function FileTree() {
     if (!fileRoot) return
     setRefreshing(true)
     try {
-      await refreshTree(fileRoot)
+      await Promise.all([
+        refreshTree(fileRoot),
+        changesOnly ? useSourceControlStore.getState().fetchFiles(fileRoot) : Promise.resolve(),
+      ])
     } finally {
       setRefreshing(false)
     }
-  }, [fileRoot, refreshTree])
+  }, [fileRoot, refreshTree, changesOnly])
 
   const isEmpty = visibleList.length === 0 && !loading
 

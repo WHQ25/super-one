@@ -25,19 +25,40 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 - Queued Enter sends dispatch after 100ms while a second Enter within 400ms steers the active turn.
 - Soften in-chat `AskUserQuestion` result styling.
+- Deleted-session sync files count toward Storage → Optimize and are removed by the one-click cleanup. Handoff or redelivery errors appear in Session Files only when there are some.
+- Sidebar icons that already name their action no longer show a hover tooltip.
 
 ### Fixed
 
 - Android QR scanning uses an OpenCV WeChat QRCode detector over CameraX with tap-to-focus, zoom, torch, and gallery fallback, and mobile photo saves stage sanitized ASCII filenames.
-- Antigravity wakeups track background tasks and swarm workers without stalling, release session holds when tasks or subagents stop (#214, #215), prevent away auto-recap lease leaks, and keep cached model catalogs on transient startup failures.
+- Antigravity wakeups track background tasks and swarm workers without stalling, release session holds when tasks or subagents stop (#214, #215), prevent away auto-recap lease leaks, and keep cached model catalogs on transient startup failures. The selected effort stays across prewarm and the live turn. A wakeup does not replay twice while its stream is already live, and the turn unlocks when that wakeup omits `user_message_chunk`.
 - Claude mod themes tint panels, borders, and the bottom terminal consistently across light and dark schemes.
 - Codex remote replies split at the steer boundary, and remote turns apply the selected speed tier.
 - Remote sessions preserve scheduled sends across reconnects (#206), retain first-send drafts and attachments on failure (#212), retry collaboration spawns without orphaning worktrees (#205), resolve remote changed files via `git.status` RPC, and restore large tool bodies from cache or chunks.
 - Transposed table scroll fade aligns with the sticky column, sidebar level menu steps back from parent-session focus to its project, ask-user answers keep tabs across tool aliases, and suggested task launch choices persist across remounts.
+- A remote host whose socket is down shows as offline instead of a raw connection error. Multi-host sidebar lists resize before paint, so opening or closing Pinned, Drafts, or Offline does not lag or bounce.
 
 ### Performance
 
 - Remote chats paint the visible transcript window before fetching expanded tool details and reuse cached fragments across reopen.
+
+## [0.83.0-alpha.1] - 2026-11-19
+
+### Changed
+
+- Deleted-session sync files count toward Storage → Optimize and are swept by the one-click cleanup. The separate sync storage section is gone. Upload handoff or redelivery errors show in Session Files only when there are some.
+- Sidebar icons that already read as their action (search, new session, environment actions, and the file-tree header) no longer show hover tooltips.
+
+### Fixed
+
+- Antigravity keeps the selected effort across prewarm, the live runtime, and the mode list.
+- An Antigravity wakeup does not replay a second time while that stream is already live, and the turn unlocks when the wakeup omits `user_message_chunk`.
+- A remote host whose project list fails because the socket is down shows as offline, with refresh and disconnect, instead of the raw "not connected" error.
+- Multi-host sidebar lists apply height changes before paint, so toggling Pinned, Drafts, or Offline no longer lags or bounces.
+
+### Tests
+
+- Worktree tests remove the temporary `~/.worktrees` directories they create.
 
 ## [0.83.0-alpha] - 2026-11-18
 

@@ -389,4 +389,37 @@ describe('CodeFileEditor', () => {
       expect(colored.length).toBeGreaterThan(0)
     })
   })
+
+  it('keeps CodeMinimap mounted when the editor layout collapses to 0 height on tab detach', async () => {
+    const content = Array.from({ length: 80 }, (_, i) => `const line_${i} = ${i}`).join('\n') + '\n'
+    const { container } = render(
+      <CodeFileEditor
+        content={content}
+        diskContent={content}
+        gitDiff=""
+        filePath="src/detach.ts"
+      />,
+    )
+
+    const cmDom = container.querySelector('.cm-editor') as HTMLElement
+    const view = EditorView.findFromDOM(cmDom)!
+    Object.defineProperty(view.scrollDOM, 'scrollHeight', { value: 1600, configurable: true })
+    Object.defineProperty(view.scrollDOM, 'clientHeight', { value: 400, configurable: true })
+
+    act(() => {
+      view.dispatch({ changes: { from: content.length, to: content.length, insert: '\n' } })
+    })
+
+    expect(await screen.findByTestId('code-minimap')).toBeInTheDocument()
+
+    Object.defineProperty(view.scrollDOM, 'scrollHeight', { value: 0, configurable: true })
+    Object.defineProperty(view.scrollDOM, 'clientHeight', { value: 0, configurable: true })
+
+    act(() => {
+      view.dispatch({ changes: { from: content.length + 1, to: content.length + 1, insert: '\n' } })
+    })
+
+    expect(screen.getByTestId('code-minimap')).toBeInTheDocument()
+    expect(cmDom).toHaveAttribute('data-has-minimap', 'true')
+  })
 })

@@ -243,24 +243,63 @@ async function highlightCodeElement(codeEl: HTMLElement, isDark: boolean, fallba
 function createLspTooltipHighlightExtension(isDark: boolean, fallbackLang: string): Extension {
   return ViewPlugin.fromClass(
     class {
-      private observer: MutationObserver
+      private rootObserver: MutationObserver
+      private tooltipObservers = new Map<HTMLElement, MutationObserver>()
 
       constructor(view: EditorView) {
-        const scan = () => {
-          const blocks = view.dom.querySelectorAll<HTMLElement>('.cm-lsp-documentation pre code')
+        const scanRoot = (root: ParentNode) => {
+          const blocks = root.querySelectorAll<HTMLElement>('.cm-lsp-documentation pre code')
           for (const block of blocks) {
             if (block.dataset.shikiHighlighted !== 'true') {
               void highlightCodeElement(block, isDark, fallbackLang)
             }
           }
         }
-        this.observer = new MutationObserver(scan)
-        this.observer.observe(view.dom, { childList: true, subtree: true })
-        scan()
+
+        const watchTooltip = (el: HTMLElement) => {
+          if (this.tooltipObservers.has(el)) return
+          scanRoot(el)
+          const sub = new MutationObserver(() => scanRoot(el))
+          sub.observe(el, { childList: true, subtree: true })
+          this.tooltipObservers.set(el, sub)
+        }
+
+        const unwatchTooltip = (el: HTMLElement) => {
+          const sub = this.tooltipObservers.get(el)
+          if (!sub) return
+          sub.disconnect()
+          this.tooltipObservers.delete(el)
+        }
+
+        this.rootObserver = new MutationObserver((mutations) => {
+          for (const mutation of mutations) {
+            for (const node of mutation.addedNodes) {
+              if (node instanceof HTMLElement && node.classList.contains('cm-tooltip')) {
+                watchTooltip(node)
+              }
+            }
+            for (const node of mutation.removedNodes) {
+              if (node instanceof HTMLElement && node.classList.contains('cm-tooltip')) {
+                unwatchTooltip(node)
+              }
+            }
+          }
+        })
+
+        this.rootObserver.observe(view.dom, { childList: true, subtree: false })
+        for (const child of Array.from(view.dom.children)) {
+          if (child instanceof HTMLElement && child.classList.contains('cm-tooltip')) {
+            watchTooltip(child)
+          }
+        }
       }
 
       destroy() {
-        this.observer.disconnect()
+        this.rootObserver.disconnect()
+        for (const sub of this.tooltipObservers.values()) {
+          sub.disconnect()
+        }
+        this.tooltipObservers.clear()
       }
     },
   )

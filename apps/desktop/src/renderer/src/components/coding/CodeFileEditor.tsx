@@ -52,6 +52,7 @@ import {
 const AUTOSAVE_DELAY = 1000
 const HOVER_CLOSE_DELAY = 150
 const LARGE_DIFF_LINE_THRESHOLD = 2000
+const DEFER_HEAVY_WORK_MS = 240
 
 export interface CodeFileEditorProps {
   content: string
@@ -105,6 +106,7 @@ export function CodeFileEditor({
   const [debouncedLiveText, setDebouncedLiveText] = useState(content)
   const [isDirty, setIsDirty] = useState(false)
   const [overflowsPage, setOverflowsPage] = useState(false)
+  const [minimapHighlightReady, setMinimapHighlightReady] = useState(false)
   const [editorDom, setEditorDom] = useState<HTMLElement | null>(null)
   const [hoveredTarget, setHoveredTarget] = useState<GutterHoverPayload | null>(null)
   const hoveredTargetRef = useRef<GutterHoverPayload | null>(null)
@@ -155,8 +157,18 @@ export function CodeFileEditor({
     return computeLiveDiffChanges(baseContent, debouncedLiveText)
   }, [baseContent, debouncedLiveText, diskContent, gitDiff])
 
+  useEffect(() => {
+    if (!overflowsPage) return
+    const timer = setTimeout(() => setMinimapHighlightReady(true), DEFER_HEAVY_WORK_MS)
+    return () => clearTimeout(timer)
+  }, [overflowsPage])
+
   const highlightCache = useMemo(() => getHighlightCache(fileRoot ?? null), [fileRoot])
-  const minimapTokens = useHighlightedTokens(overflowsPage ? debouncedLiveText : '', language, { cache: highlightCache })
+  const minimapTokens = useHighlightedTokens(
+    overflowsPage && minimapHighlightReady ? debouncedLiveText : '',
+    language,
+    { cache: highlightCache },
+  )
   const minimapLines = useMemo(
     () => (overflowsPage ? buildEditorMinimapLines(debouncedLiveText, diffChanges) : []),
     [overflowsPage, debouncedLiveText, diffChanges],
@@ -234,6 +246,7 @@ export function CodeFileEditor({
     lspActiveRef.current = false
 
     const syncOverflow = (targetView: EditorView) => {
+      if (!targetView.dom.isConnected || targetView.scrollDOM.clientHeight === 0) return
       const next = targetView.scrollDOM.scrollHeight - targetView.scrollDOM.clientHeight > 1
       if (next) targetView.dom.dataset.hasMinimap = 'true'
       else delete targetView.dom.dataset.hasMinimap
@@ -404,16 +417,20 @@ export function CodeFileEditor({
       return
     }
     let cancelled = false
-    void import('./cm-lsp')
-      .then((m) => m.loadLspExtension({ workspaceRoot: fileRoot, filePath: fullFilePath, language, isDark }))
-      .then((ext) => {
-        if (cancelled || viewRef.current !== view) return
-        lspActiveRef.current = true
-        view.dispatch({ effects: lspCompartmentRef.current.reconfigure(ext) })
-      })
-      .catch(() => {})
+    const timer = setTimeout(() => {
+      if (cancelled || viewRef.current !== view) return
+      void import('./cm-lsp')
+        .then((m) => m.loadLspExtension({ workspaceRoot: fileRoot, filePath: fullFilePath, language, isDark }))
+        .then((ext) => {
+          if (cancelled || viewRef.current !== view) return
+          lspActiveRef.current = true
+          view.dispatch({ effects: lspCompartmentRef.current.reconfigure(ext) })
+        })
+        .catch(() => {})
+    }, DEFER_HEAVY_WORK_MS)
     return () => {
       cancelled = true
+      clearTimeout(timer)
     }
   }, [lspEnabled, fileRoot, fullFilePath, language, isDark])
 

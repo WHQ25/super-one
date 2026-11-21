@@ -23,6 +23,7 @@ const MINIMAP_DETAIL_LIMIT = 3000
 const MAX_VISIBLE_LINES = 500
 
 const MINIMAP_CHUNK_LINES = 300
+const INITIAL_DRAW_DELAY_MS = 240
 
 function drawMinimapBase(ctx: CanvasRenderingContext2D, lines: MinimapLine[], minimapW: number) {
   const addedBg = new Path2D()
@@ -172,6 +173,7 @@ export const CodeMinimap = memo(function CodeMinimap({ lines, tokens, scrollRef 
     const update = () => {
       cancelAnimationFrame(raf)
       raf = requestAnimationFrame(() => {
+        if (!scrollEl.isConnected || scrollEl.clientWidth === 0) return
         const next = calcWidth(scrollEl.clientWidth)
         setMinimapW((prev) => prev === next ? prev : next)
       })
@@ -197,12 +199,28 @@ export const CodeMinimap = memo(function CodeMinimap({ lines, tokens, scrollRef 
     const prev = prevDrawRef.current
     if (prev.lines === lines && prev.tokens === tokens && prev.w === minimapW) return
 
-    const idleId = requestIdleCallback(() => {
+    let idleId: number | null = null
+    let delayTimer: ReturnType<typeof setTimeout> | null = null
+    const scheduleDraw = () => {
+      idleId = requestIdleCallback(() => {
+        idleId = null
+        cancelChunkRef.current?.()
+        prevDrawRef.current = { lines, tokens, w: minimapW }
+        cancelChunkRef.current = drawMinimap(canvas, lines, tokens, canvasH, minimapW)
+      }, { timeout: 150 })
+    }
+
+    if (prev.lines.length === 0) {
+      delayTimer = setTimeout(scheduleDraw, INITIAL_DRAW_DELAY_MS)
+    } else {
+      scheduleDraw()
+    }
+
+    return () => {
+      if (delayTimer !== null) clearTimeout(delayTimer)
+      if (idleId !== null) cancelIdleCallback(idleId)
       cancelChunkRef.current?.()
-      prevDrawRef.current = { lines, tokens, w: minimapW }
-      cancelChunkRef.current = drawMinimap(canvas, lines, tokens, canvasH, minimapW)
-    }, { timeout: 150 })
-    return () => { cancelIdleCallback(idleId); cancelChunkRef.current?.() }
+    }
   }, [lines, tokens, canvasH, minimapW])
 
   const syncViewport = useCallback(() => {

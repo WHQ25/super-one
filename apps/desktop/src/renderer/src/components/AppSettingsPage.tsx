@@ -25,7 +25,6 @@ import { useAppStore } from '@/stores/app'
 import { DefaultProviderRow } from '@/components/providers/DefaultProviderRow'
 import { SpeechModelRow } from '@/components/settings/SpeechModelRow'
 import { SpeechVoiceRow } from '@/components/settings/SpeechVoiceRow'
-import { EditorSettingsSection } from '@/components/settings/EditorSettingsSection'
 import { NotificationSettingsSection } from '@/components/settings/NotificationSettingsSection'
 import { DoubaoVoiceSetting } from '@/components/settings/DoubaoVoiceSetting'
 import { JevFastLoopSetting } from '@/components/settings/JevFastLoopSetting'
@@ -198,8 +197,6 @@ export function AppSettingsPage() {
           </SettingsRow>
         )}
       </SettingsSection>
-
-      <EditorSettingsSection />
 
       <SettingsSection title={t('settings.general.media')}>
         <DefaultProviderRow

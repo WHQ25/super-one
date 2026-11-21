@@ -16,7 +16,9 @@ import {
   VIDEO_EXTENSIONS,
   officePreviewKind,
 } from '@superone/shared/file-preview'
-import { useEffectiveProjectRoot } from '@/stores/app'
+import { resolveLspTarget } from '@superone/shared/lsp-languages'
+import { useAppStore, useEffectiveProjectRoot } from '@/stores/app'
+import { inferLanguage } from '@/lib/shiki-highlighter'
 import { useSourceControlStore } from '@/stores/source-control'
 import { isAbsoluteLocalPath } from '@/lib/file-link'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
@@ -133,7 +135,51 @@ export function FilePreview({ filePath, fileRoot: root }: FilePreviewProps) {
   const { diff: fileDiff, content: fileContent, tab: activeTab, setTab: setActiveTab } = useOwnFileData(filePath, refreshKey, root)
   const scrollToLine = useSourceControlStore((s) => s.scrollToLine)
   const selectedSourceFile = useSourceControlStore((s) => s.selectedFile)
+  const lspEnabledServers = useAppStore((s) => s.lspEnabledServers)
+  const setSettingsTab = useAppStore((s) => s.setSettingsTab)
+  const navigateTo = useAppStore((s) => s.navigateTo)
   const selectedFile = filePath
+  const fileLanguage = inferLanguage(selectedFile)
+  const fileExt = selectedFile.split('.').pop()?.toLowerCase() ?? ''
+  const lspTarget = resolveLspTarget(fileLanguage)
+  const [hasEnabledLsp, setHasEnabledLsp] = useState<boolean>(() =>
+    Boolean(lspTarget && lspEnabledServers[lspTarget.serverId] === true),
+  )
+
+  useEffect(() => {
+    const candidates = [fileLanguage.toLowerCase(), fileExt].filter((v) => v && v !== 'text')
+    if (candidates.length === 0) {
+      setHasEnabledLsp(true)
+      return
+    }
+    if (lspTarget && lspEnabledServers[lspTarget.serverId] === true) {
+      setHasEnabledLsp(true)
+      return
+    }
+    if (!Object.values(lspEnabledServers).some(Boolean)) {
+      setHasEnabledLsp(false)
+      return
+    }
+    let cancelled = false
+    void window.app
+      .listLspServers?.()
+      .then((servers) => {
+        if (cancelled || !Array.isArray(servers)) return
+        const matched = servers.some(
+          (s) =>
+            s.installStatus === 'installed' &&
+            s.enabled &&
+            candidates.some((c) => s.languages.includes(c)),
+        )
+        setHasEnabledLsp(matched)
+      })
+      .catch(() => {
+        if (!cancelled) setHasEnabledLsp(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [fileLanguage, fileExt, lspTarget, lspEnabledServers])
   const loadError = fileContent?.error
 
   useEffect(() => { setRetrying(false) }, [fileContent])
@@ -307,6 +353,20 @@ export function FilePreview({ filePath, fileRoot: root }: FilePreviewProps) {
           ))}
         </div>
         {isDirty && <span className="size-1.5 rounded-full bg-orange-600 dark:bg-orange-400" title={t('tooltips.unsavedChanges')} />}
+        {!loadError && !isUnpreviewable && effectiveTab === 'file' && fileRoot && fileLanguage !== 'text' && !hasEnabledLsp && (
+          <button
+            type="button"
+            onClick={() => {
+              setSettingsTab('editor')
+              navigateTo('settings')
+            }}
+            title={t('settings.editor.lsp.configureTooltip')}
+            className="inline-flex h-5 shrink-0 items-center gap-1 rounded px-1.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+          >
+            <span className="size-1.5 rounded-full bg-muted-foreground/40" />
+            LSP
+          </button>
+        )}
         {!loadError && !isUnpreviewable && <McpAppOpenWithButton absolutePath={absoluteFilePath(selectedFile, fileRoot)} scope={lastTouchedPane()} />}
         {tabs.length > 1 && (
           <Tabs value={effectiveTab} onValueChange={handleTabChange}>

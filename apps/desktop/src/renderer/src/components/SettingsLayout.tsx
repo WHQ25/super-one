@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { ArrowLeft, BarChart3, Bot, Brain, Cpu, Globe, HardDrive, LayoutGrid, Loader2, MousePointer2, Paintbrush, Settings, Smartphone, SquareTerminal } from 'lucide-react'
+import { ArrowLeft, BarChart3, Bot, Brain, Code2, Cpu, Globe, HardDrive, LayoutGrid, Loader2, MousePointer2, Paintbrush, Settings, Smartphone, SquareTerminal } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore } from '@/stores/app'
 import { ProvidersPage } from './ProvidersPage'
@@ -12,6 +12,7 @@ import { BrowserSettingsPage } from './BrowserSettingsPage'
 import { ComputerUseSettingsPage } from './ComputerUseSettingsPage'
 import { HarnessesSettingsPage } from './HarnessesSettingsPage'
 import { TerminalSettingsPage } from './TerminalSettingsPage'
+import { EditorSettingsPage } from './EditorSettingsPage'
 import { SettingsNavGroup, SettingsNavItem } from './settings/SettingsNav'
 import { isComputerUseSupportedPlatform } from '@/lib/computer-use-platform'
 
@@ -43,6 +44,7 @@ const tabGroups = [
       { id: 'browser' as const, labelKey: 'settings.layout.tabs.browser', icon: Globe },
       { id: 'computer-use' as const, labelKey: 'settings.layout.tabs.computerUse', icon: MousePointer2 },
       { id: 'terminal' as const, labelKey: 'settings.layout.tabs.terminal', icon: SquareTerminal },
+      { id: 'editor' as const, labelKey: 'settings.layout.tabs.editor', icon: Code2 },
       { id: 'apps' as const, labelKey: 'settings.layout.tabs.apps', icon: LayoutGrid },
     ],
   },
@@ -113,6 +115,7 @@ export function SettingsLayout() {
         {activeSettingsTab === 'browser' && <BrowserSettingsPage />}
         {activeSettingsTab === 'computer-use' && <ComputerUseSettingsPage />}
         {activeSettingsTab === 'terminal' && <TerminalSettingsPage />}
+        {activeSettingsTab === 'editor' && <EditorSettingsPage />}
         {activeSettingsTab === 'apps' && <AppsSettingsPage />}
         {activeSettingsTab === 'remote' && <RemotePage />}
         {activeSettingsTab === 'usage' && (

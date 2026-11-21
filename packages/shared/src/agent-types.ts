@@ -4947,6 +4947,16 @@ export const AgentIpcChannels = {
   STORAGE_ACTION: 'app:storage-action',
   STORAGE_WORKTREES_GET: 'app:storage-worktrees',
   STORAGE_WORKTREES_REMOVE: 'app:storage-worktrees-remove',
+  LSP_LIST_SERVERS: 'app:lsp-list-servers',
+  LSP_FETCH_REGISTRY: 'app:lsp-fetch-registry',
+  LSP_FETCH_STARS: 'app:lsp-fetch-stars',
+  LSP_DETECT_PROJECT_LANGUAGES: 'app:lsp-detect-project-languages',
+  LSP_INSTALL_SERVER: 'app:lsp-install-server',
+  LSP_UNINSTALL_SERVER: 'app:lsp-uninstall-server',
+  LSP_STOP_WORKSPACE: 'app:lsp-stop-workspace',
+  LSP_SEND_MESSAGE: 'app:lsp-send-message',
+  LSP_MESSAGE: 'app:lsp-message',
+  LSP_STATUS_EVENT: 'app:lsp-status-event',
   /** Stable per-installation id used as the analytics distinct id. */
   APP_INSTALL_ID_GET: 'app:install-id-get',
   /**
@@ -6020,6 +6030,9 @@ export interface AppSettings {
   autoExpandFileDiffs: boolean
   editorVimMode: boolean
   editorRelativeLineNumbers: boolean
+  lspEnabledProjects: string[]
+  lspEnabledServers: Record<string, boolean>
+  customLspServers: import('./desktop-lsp').CustomLspServerConfig[]
   /**
    * When true (default), reasoning blocks open while they stream. When false,
    * they stay collapsed until the header is clicked. Completing a block still
@@ -6286,6 +6299,9 @@ export interface AppSettingsPatch {
   autoExpandFileDiffs?: boolean
   editorVimMode?: boolean
   editorRelativeLineNumbers?: boolean
+  lspEnabledProjects?: string[]
+  lspEnabledServers?: Record<string, boolean>
+  customLspServers?: import('./desktop-lsp').CustomLspServerConfig[]
   autoExpandReasoning?: boolean
   detailChatMode?: boolean
   /** Merged into the stored value field by field. */

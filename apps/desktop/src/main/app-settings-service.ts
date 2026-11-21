@@ -120,6 +120,9 @@ const defaults: AppSettings = {
   autoExpandFileDiffs: false,
   editorVimMode: false,
   editorRelativeLineNumbers: false,
+  lspEnabledProjects: [],
+  lspEnabledServers: {},
+  customLspServers: [],
   autoExpandReasoning: true,
   detailChatMode: false,
   sessionContinuationHint: DEFAULT_SESSION_CONTINUATION_HINT,
@@ -697,6 +700,31 @@ export function readAppSettings(): AppSettings {
         typeof data.editorRelativeLineNumbers === 'boolean'
           ? data.editorRelativeLineNumbers
           : defaults.editorRelativeLineNumbers,
+      lspEnabledProjects: Array.isArray(data.lspEnabledProjects)
+        ? (data.lspEnabledProjects as unknown[]).filter((v): v is string => typeof v === 'string' && v.length > 0)
+        : defaults.lspEnabledProjects,
+      lspEnabledServers:
+        data.lspEnabledServers && typeof data.lspEnabledServers === 'object' && !Array.isArray(data.lspEnabledServers)
+          ? Object.fromEntries(
+              Object.entries(data.lspEnabledServers as Record<string, unknown>).filter(
+                ([k, v]) => typeof k === 'string' && typeof v === 'boolean',
+              ),
+            ) as Record<string, boolean>
+          : defaults.lspEnabledServers,
+      customLspServers: Array.isArray(data.customLspServers)
+        ? (data.customLspServers as unknown[]).filter(
+            (item): item is import('@superone/shared/desktop-lsp').CustomLspServerConfig =>
+              Boolean(
+                item &&
+                typeof item === 'object' &&
+                typeof (item as { id?: unknown }).id === 'string' &&
+                typeof (item as { label?: unknown }).label === 'string' &&
+                typeof (item as { command?: unknown }).command === 'string' &&
+                Array.isArray((item as { args?: unknown }).args) &&
+                Array.isArray((item as { languages?: unknown }).languages),
+              ),
+          )
+        : defaults.customLspServers,
       autoExpandReasoning: typeof data.autoExpandReasoning === 'boolean' ? data.autoExpandReasoning : defaults.autoExpandReasoning,
       detailChatMode: typeof data.detailChatMode === 'boolean'
         ? data.detailChatMode
@@ -794,6 +822,9 @@ export function readAppSettings(): AppSettings {
       autoExpandFileDiffs: defaults.autoExpandFileDiffs,
       editorVimMode: defaults.editorVimMode,
       editorRelativeLineNumbers: defaults.editorRelativeLineNumbers,
+      lspEnabledProjects: defaults.lspEnabledProjects,
+      lspEnabledServers: defaults.lspEnabledServers,
+      customLspServers: defaults.customLspServers,
       autoExpandReasoning: defaults.autoExpandReasoning,
       detailChatMode: defaults.detailChatMode,
       sessionContinuationHint: defaults.sessionContinuationHint,
@@ -929,6 +960,11 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     autoExpandFileDiffs: patch.autoExpandFileDiffs ?? current.autoExpandFileDiffs,
     editorVimMode: patch.editorVimMode ?? current.editorVimMode,
     editorRelativeLineNumbers: patch.editorRelativeLineNumbers ?? current.editorRelativeLineNumbers,
+    lspEnabledProjects: patch.lspEnabledProjects ?? current.lspEnabledProjects,
+    lspEnabledServers: patch.lspEnabledServers
+      ? { ...current.lspEnabledServers, ...patch.lspEnabledServers }
+      : current.lspEnabledServers,
+    customLspServers: patch.customLspServers ?? current.customLspServers,
     autoExpandReasoning: patch.autoExpandReasoning ?? current.autoExpandReasoning,
     detailChatMode: patch.detailChatMode ?? current.detailChatMode,
     sessionContinuationHint: patch.sessionContinuationHint === undefined

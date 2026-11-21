@@ -589,6 +589,16 @@ interface AppAPI extends WindowLayoutAPI {
   applyStorageAction(action: import('@superone/shared/desktop-storage').StorageApplyAction, harnessId?: string): Promise<import('@superone/shared/desktop-storage').StorageActionResult>
   getStorageWorktrees(): Promise<import('@superone/shared/desktop-storage').StorageWorktree[]>
   removeStorageWorktrees(paths: string[]): Promise<import('@superone/shared/desktop-storage').StorageWorktreeRemoval>
+  listLspServers(): Promise<import('@superone/shared/desktop-lsp').LspServerInfo[]>
+  fetchLspRegistry(forceRefresh?: boolean): Promise<import('@superone/shared/desktop-lsp').LspServerInfo[]>
+  fetchLspGithubStars(repos: string[], forceRefresh?: boolean): Promise<{ hasGh: boolean; stars: Record<string, number> }>
+  detectProjectLspLanguages(workspaceRoot: string): Promise<import('@superone/shared/desktop-lsp').LspProjectDetection>
+  installLspServer(serverId: string): Promise<import('@superone/shared/desktop-lsp').LspServerInfo>
+  uninstallLspServer(serverId: string): Promise<import('@superone/shared/desktop-lsp').LspServerInfo>
+  stopLspWorkspace(serverId: string, workspaceRoot: string): Promise<void>
+  sendLspMessage(serverId: string, workspaceRoot: string, message: string): Promise<void>
+  onLspMessage(callback: (payload: import('@superone/shared/desktop-lsp').LspMessageEvent) => void): () => void
+  onLspStatusChange(callback: (payload: { serverId: string }) => void): () => void
   getInstallId(): Promise<string>
   /**
    * false — status only.

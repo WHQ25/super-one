@@ -895,6 +895,7 @@ export type Messages = {
         browser: string
         computerUse: string
         terminal: string
+        editor: string
         apps: string
         remote: string
         usage: string
@@ -922,6 +923,59 @@ export type Messages = {
       providers: {
         claude: string
         codex: string
+      }
+    }
+    editor: {
+      title: string
+      lsp: {
+        title: string
+        projectLabel: string
+        projectDescription: string
+        noProject: string
+        projectEnabled: string
+        projectDisabled: string
+        loading: string
+        installed: string
+        installedSystem: string
+        notInstalled: string
+        installing: string
+        install: string
+        uninstall: string
+        running: string
+        stop: string
+        serverEnabled: string
+        serverDisabled: string
+        installSuccess: string
+        installFailed: string
+        uninstallSuccess: string
+        stoppedToast: string
+        searchPlaceholder: string
+        filterAll: string
+        filterInstalled: string
+        filterEnabled: string
+        noMatches: string
+        manualInstall: string
+        enabledProjectsLabel: string
+        disableProject: string
+        browseRegistry: string
+        refreshRegistry: string
+        showingSubset: string
+        selectProject: string
+        filterRecommended: string
+        recommendedBadge: string
+        detectedLanguages: string
+        noDetectedLanguages: string
+        addCustom: string
+        editCustom: string
+        customName: string
+        customCommand: string
+        customArgs: string
+        customLanguages: string
+        customSave: string
+        customCancel: string
+        customBadge: string
+        serverReplaced: string
+        configureTooltip: string
       }
     }
     dshPlugins: {
@@ -6255,6 +6309,7 @@ export const en: Messages = {
         browser: 'Browser',
         computerUse: 'Computer Use',
         terminal: 'Terminal',
+        editor: 'Editor',
         apps: 'Mini Apps',
         remote: 'Remote Control',
         usage: 'Usage Stats',
@@ -6282,6 +6337,59 @@ export const en: Messages = {
       providers: {
         claude: 'Claude Code',
         codex: 'Codex',
+      },
+    },
+    editor: {
+      title: 'Editor',
+      lsp: {
+        title: 'Language Server',
+        projectLabel: 'Project languages',
+        projectDescription: 'Off by default so projects that do not edit code use zero resources.',
+        noProject: 'Open a project to toggle project-level LSP.',
+        projectEnabled: 'Language Server enabled for this project',
+        projectDisabled: 'Language Server disabled for this project',
+        loading: 'Checking language servers…',
+        installed: 'Installed · {{version}}',
+        installedSystem: 'Installed (system PATH)',
+        notInstalled: 'Not installed',
+        installing: 'Installing…',
+        install: 'Install',
+        uninstall: 'Uninstall',
+        running: 'Running ({{count}})',
+        stop: 'Stop',
+        serverEnabled: '{{name}} enabled',
+        serverDisabled: '{{name}} disabled',
+        installSuccess: '{{name}} installed',
+        installFailed: 'Failed to install {{name}}',
+        uninstallSuccess: '{{name}} uninstalled',
+        stoppedToast: 'Stopped {{name}} for this project',
+        searchPlaceholder: 'Search language servers or languages…',
+        filterAll: 'All',
+        filterInstalled: 'Installed',
+        filterEnabled: 'Enabled',
+        noMatches: 'No matching language servers',
+        manualInstall: 'Manual: {{cmd}}',
+        enabledProjectsLabel: 'Projects with LSP enabled',
+        disableProject: 'Disable',
+        browseRegistry: 'Registry',
+        refreshRegistry: 'Refresh registry',
+        showingSubset: 'Showing {{shown}} of {{total}} servers — type to search all',
+        selectProject: 'Select project',
+        filterRecommended: 'Recommended',
+        recommendedBadge: 'Recommended',
+        detectedLanguages: 'Detected: {{langs}}',
+        noDetectedLanguages: 'No supported code files detected',
+        addCustom: 'Add Custom',
+        editCustom: 'Edit Language Server',
+        customName: 'Name',
+        customCommand: 'Command / Binary Path',
+        customArgs: 'Arguments (space-separated)',
+        customLanguages: 'Languages / Extensions (comma-separated)',
+        customSave: 'Save',
+        customCancel: 'Cancel',
+        customBadge: 'Custom',
+        serverReplaced: '{{name}} enabled (disabled conflicting: {{disabled}})',
+        configureTooltip: 'Configure Language Server in Editor Settings',
       },
     },
     dshPlugins: {

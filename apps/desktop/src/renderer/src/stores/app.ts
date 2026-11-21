@@ -74,7 +74,7 @@ type UpdateStatus =
   | 'migration-downloading'
   | 'migration-downloaded'
   | 'migration-error'
-export type SettingsTab = 'providers' | 'agents' | 'skills' | 'mcp' | 'plugins' | 'hooks' | 'apps' | 'preferences' | 'remote' | 'usage' | 'automations' | 'app-settings' | 'appearance' | 'storage' | 'browser' | 'computer-use' | 'terminal' | 'harnesses' | 'agent-profiles'
+export type SettingsTab = 'providers' | 'agents' | 'skills' | 'mcp' | 'plugins' | 'hooks' | 'apps' | 'preferences' | 'remote' | 'usage' | 'automations' | 'app-settings' | 'appearance' | 'storage' | 'browser' | 'computer-use' | 'terminal' | 'editor' | 'harnesses' | 'agent-profiles'
 
 /** Nested config pages opened from Settings → Harnesses (reuse existing page components). */
 export type HarnessConfigSection =
@@ -286,6 +286,9 @@ interface AppState extends HarnessThemeState {
   autoExpandFileDiffs: boolean
   editorVimMode: boolean
   editorRelativeLineNumbers: boolean
+  lspEnabledProjects: string[]
+  lspEnabledServers: Record<string, boolean>
+  customLspServers: import('@superone/shared/desktop-lsp').CustomLspServerConfig[]
   autoExpandReasoning: boolean
   detailChatMode: boolean
   sessionContinuationHint: SessionContinuationHintSettings
@@ -298,6 +301,11 @@ interface AppState extends HarnessThemeState {
   setAutoExpandFileDiffs: (enabled: boolean) => Promise<void>
   setEditorVimMode: (enabled: boolean) => Promise<void>
   setEditorRelativeLineNumbers: (enabled: boolean) => Promise<void>
+  setProjectLspEnabled: (projectRoot: string, enabled: boolean) => Promise<void>
+  setLspServerEnabled: (serverId: string, enabled: boolean) => Promise<void>
+  setLspServerEnabledBatch: (patch: Record<string, boolean>) => Promise<void>
+  upsertCustomLspServer: (config: import('@superone/shared/desktop-lsp').CustomLspServerConfig) => Promise<void>
+  removeCustomLspServer: (id: string) => Promise<void>
   setAutoExpandReasoning: (enabled: boolean) => Promise<void>
   setDetailChatMode: (enabled: boolean) => Promise<void>
   setSessionContinuationHint: (patch: Partial<SessionContinuationHintSettings>) => Promise<void>
@@ -1280,6 +1288,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   autoExpandFileDiffs: false,
   editorVimMode: false,
   editorRelativeLineNumbers: false,
+  lspEnabledProjects: [],
+  lspEnabledServers: {},
+  customLspServers: [],
   autoExpandReasoning: true,
   detailChatMode: false,
   sessionContinuationHint: DEFAULT_SESSION_CONTINUATION_HINT,
@@ -1305,6 +1316,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         autoExpandFileDiffs: settings.autoExpandFileDiffs,
         editorVimMode: settings.editorVimMode ?? false,
         editorRelativeLineNumbers: settings.editorRelativeLineNumbers ?? false,
+        lspEnabledProjects: settings.lspEnabledProjects ?? [],
+        lspEnabledServers: settings.lspEnabledServers ?? {},
+        customLspServers: settings.customLspServers ?? [],
         autoExpandReasoning: settings.autoExpandReasoning,
         detailChatMode: settings.detailChatMode,
         sessionContinuationHint: settings.sessionContinuationHint,
@@ -1415,6 +1429,43 @@ export const useAppStore = create<AppState>((set, get) => ({
       .catch((err) => console.error('[editor-relative-line-numbers] persist failed:', err))
   },
 
+  setProjectLspEnabled: async (projectRoot, enabled) => {
+    const current = get().lspEnabledProjects
+    const next = enabled
+      ? current.includes(projectRoot) ? current : [...current, projectRoot]
+      : current.filter((p) => p !== projectRoot)
+    set({ lspEnabledProjects: next })
+    await window.app.saveAppSettings({ lspEnabledProjects: next })
+  },
+
+  setLspServerEnabled: async (serverId, enabled) => {
+    const next = { ...get().lspEnabledServers, [serverId]: enabled }
+    set({ lspEnabledServers: next })
+    await window.app.saveAppSettings({ lspEnabledServers: next })
+  },
+
+  setLspServerEnabledBatch: async (patch) => {
+    const next = { ...get().lspEnabledServers, ...patch }
+    set({ lspEnabledServers: next })
+    await window.app.saveAppSettings({ lspEnabledServers: next })
+  },
+
+  upsertCustomLspServer: async (config) => {
+    const current = get().customLspServers
+    const idx = current.findIndex((c) => c.id === config.id)
+    const next = idx >= 0 ? current.map((c) => (c.id === config.id ? config : c)) : [...current, config]
+    set({ customLspServers: next })
+    await window.app.saveAppSettings({ customLspServers: next })
+  },
+
+  removeCustomLspServer: async (id) => {
+    const nextCustom = get().customLspServers.filter((c) => c.id !== id)
+    const nextEnabled = { ...get().lspEnabledServers }
+    delete nextEnabled[id]
+    set({ customLspServers: nextCustom, lspEnabledServers: nextEnabled })
+    await window.app.saveAppSettings({ customLspServers: nextCustom, lspEnabledServers: nextEnabled })
+  },
+
   setAutoExpandReasoning: async (enabled) => {
     set({ autoExpandReasoning: enabled })
     void window.app
@@ -1507,6 +1558,9 @@ if (typeof window !== 'undefined') {
       autoExpandFileDiffs: settings.autoExpandFileDiffs,
       editorVimMode: settings.editorVimMode ?? false,
       editorRelativeLineNumbers: settings.editorRelativeLineNumbers ?? false,
+      lspEnabledProjects: settings.lspEnabledProjects ?? [],
+      lspEnabledServers: settings.lspEnabledServers ?? {},
+      customLspServers: settings.customLspServers ?? [],
       autoExpandReasoning: settings.autoExpandReasoning,
       detailChatMode: settings.detailChatMode,
       sessionContinuationHint: settings.sessionContinuationHint,

@@ -256,4 +256,79 @@ export const codeEditorTheme = EditorView.theme({
     backgroundColor: 'color-mix(in oklch, rgb(245 158 11) 50%, transparent)',
     outline: '1px solid rgb(245 158 11)',
   },
+  '.cm-tooltip': {
+    backgroundColor: 'var(--popover)',
+    color: 'var(--popover-foreground)',
+    border: '1px solid var(--border)',
+    borderRadius: '8px',
+    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.24)',
+    overflow: 'hidden',
+    zIndex: '50',
+  },
+  '.cm-tooltip.cm-tooltip-hover': {
+    padding: '6px 10px',
+    maxWidth: '480px',
+    maxHeight: '280px',
+    overflowY: 'auto',
+    fontSize: '12px',
+    lineHeight: '1.5',
+    fontFamily: 'inherit',
+  },
+  '.cm-lsp-documentation': {
+    padding: '2px 0',
+  },
+  '.cm-lsp-documentation p, .cm-lsp-documentation pre': {
+    margin: '4px 0',
+  },
+  '.cm-lsp-documentation pre': {
+    padding: '6px 8px',
+    borderRadius: '6px',
+    backgroundColor: 'color-mix(in oklch, var(--muted) 65%, transparent)',
+    overflowX: 'auto',
+    fontFamily: MONO_FONT_FAMILY,
+    fontSize: '12px',
+  },
+  '.cm-lsp-documentation code': {
+    fontFamily: MONO_FONT_FAMILY,
+    fontSize: '12px',
+  },
+  '.cm-lsp-documentation a': {
+    color: 'var(--primary)',
+    textDecoration: 'underline',
+  },
+  '.cm-tooltip.cm-tooltip-autocomplete > ul': {
+    fontFamily: MONO_FONT_FAMILY,
+    fontSize: '12px',
+    maxHeight: '240px',
+  },
+  '.cm-tooltip.cm-tooltip-autocomplete > ul > li': {
+    padding: '4px 8px',
+    color: 'var(--popover-foreground)',
+  },
+  '.cm-tooltip.cm-tooltip-autocomplete > ul > li[aria-selected]': {
+    backgroundColor: 'var(--accent)',
+    color: 'var(--accent-foreground)',
+  },
+  '.cm-lsp-signature-tooltip': {
+    padding: '6px 10px',
+    fontSize: '12px',
+  },
+  '.cm-lsp-reference-panel': {
+    backgroundColor: 'var(--popover)',
+    color: 'var(--popover-foreground)',
+  },
+  '.cm-lsp-jump-link': {
+    textDecoration: 'underline',
+    textDecorationColor: 'currentColor',
+    textUnderlineOffset: '3px',
+    cursor: 'pointer',
+  },
+  '.cm-lsp-jump-link:has(> span)': {
+    textDecoration: 'none',
+  },
+  '.cm-lsp-jump-link > span': {
+    textDecoration: 'underline',
+    textDecorationColor: 'currentColor',
+    textUnderlineOffset: '3px',
+  },
 })

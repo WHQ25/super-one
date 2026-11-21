@@ -1949,6 +1949,32 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.STORAGE_WORKTREES_GET),
   removeStorageWorktrees: (paths: string[]) =>
     ipcRenderer.invoke(AgentIpcChannels.STORAGE_WORKTREES_REMOVE, paths),
+  listLspServers: () =>
+    ipcRenderer.invoke(AgentIpcChannels.LSP_LIST_SERVERS) as Promise<import('@superone/shared/desktop-lsp').LspServerInfo[]>,
+  fetchLspRegistry: (forceRefresh = false) =>
+    ipcRenderer.invoke(AgentIpcChannels.LSP_FETCH_REGISTRY, forceRefresh) as Promise<import('@superone/shared/desktop-lsp').LspServerInfo[]>,
+  fetchLspGithubStars: (repos: string[], forceRefresh = false) =>
+    ipcRenderer.invoke(AgentIpcChannels.LSP_FETCH_STARS, repos, forceRefresh) as Promise<{ hasGh: boolean; stars: Record<string, number> }>,
+  detectProjectLspLanguages: (workspaceRoot: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.LSP_DETECT_PROJECT_LANGUAGES, workspaceRoot) as Promise<import('@superone/shared/desktop-lsp').LspProjectDetection>,
+  installLspServer: (serverId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.LSP_INSTALL_SERVER, serverId) as Promise<import('@superone/shared/desktop-lsp').LspServerInfo>,
+  uninstallLspServer: (serverId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.LSP_UNINSTALL_SERVER, serverId) as Promise<import('@superone/shared/desktop-lsp').LspServerInfo>,
+  stopLspWorkspace: (serverId: string, workspaceRoot: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.LSP_STOP_WORKSPACE, serverId, workspaceRoot) as Promise<void>,
+  sendLspMessage: (serverId: string, workspaceRoot: string, message: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.LSP_SEND_MESSAGE, serverId, workspaceRoot, message) as Promise<void>,
+  onLspMessage: (callback: (payload: import('@superone/shared/desktop-lsp').LspMessageEvent) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: import('@superone/shared/desktop-lsp').LspMessageEvent) => callback(payload)
+    ipcRenderer.on(AgentIpcChannels.LSP_MESSAGE, handler)
+    return () => ipcRenderer.removeListener(AgentIpcChannels.LSP_MESSAGE, handler)
+  },
+  onLspStatusChange: (callback: (payload: { serverId: string }) => void) => {
+    const handler = (_event: Electron.IpcRendererEvent, payload: { serverId: string }) => callback(payload)
+    ipcRenderer.on(AgentIpcChannels.LSP_STATUS_EVENT, handler)
+    return () => ipcRenderer.removeListener(AgentIpcChannels.LSP_STATUS_EVENT, handler)
+  },
   getInstallId: () => ipcRenderer.invoke(AgentIpcChannels.APP_INSTALL_ID_GET),
   openComputerUsePermissions: (
     request: boolean | 'guided' | 'accessibility' | 'screenRecording' = true,

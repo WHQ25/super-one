@@ -1104,6 +1104,7 @@ function desktopPairing(): Promise<typeof import('./node-host/desktop-pairing')>
 
 /** Start or stop the node surface other devices run tasks through; loaded only when it is on. */
 let nodeHostLoaded = false
+let lspManagerLoaded = false
 let phoneRpcRouter: ReturnType<typeof import('./node-host/routed-phone-rpc')['createPhoneRpcRouter']> | undefined
 let nativePhoneOpen: ((link: PhoneLink) => PhoneConnection) | null = null
 let phoneDomainReady: Promise<void> | null = null
@@ -4675,6 +4676,38 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.STORAGE_ACTION, async (_e, action: unknown, harnessId: unknown) => (await import('./storage-ipc')).runDesktopStorageAction(action, harnessId))
   ipcMain.handle(AgentIpcChannels.STORAGE_WORKTREES_GET, async () => (await import('./storage-ipc')).getDesktopStorageWorktrees())
   ipcMain.handle(AgentIpcChannels.STORAGE_WORKTREES_REMOVE, async (_e, paths: unknown) => (await import('./storage-ipc')).removeDesktopStorageWorktrees(paths))
+  ipcMain.handle(AgentIpcChannels.LSP_LIST_SERVERS, async () => {
+    lspManagerLoaded = true
+    return (await import('./lsp-manager')).listLspServers()
+  })
+  ipcMain.handle(AgentIpcChannels.LSP_FETCH_REGISTRY, async (_e, forceRefresh?: boolean) => {
+    lspManagerLoaded = true
+    return (await import('./lsp-manager')).fetchLspRegistry(Boolean(forceRefresh))
+  })
+  ipcMain.handle(AgentIpcChannels.LSP_FETCH_STARS, async (_e, repos: string[], forceRefresh?: boolean) => {
+    lspManagerLoaded = true
+    return (await import('./lsp-manager')).fetchLspGithubStars(Array.isArray(repos) ? repos : [], Boolean(forceRefresh))
+  })
+  ipcMain.handle(AgentIpcChannels.LSP_DETECT_PROJECT_LANGUAGES, async (_e, workspaceRoot: string) => {
+    lspManagerLoaded = true
+    return (await import('./lsp-manager')).detectProjectLspLanguages(workspaceRoot)
+  })
+  ipcMain.handle(AgentIpcChannels.LSP_INSTALL_SERVER, async (_e, serverId: string) => {
+    lspManagerLoaded = true
+    return (await import('./lsp-manager')).installLspServer(serverId)
+  })
+  ipcMain.handle(AgentIpcChannels.LSP_UNINSTALL_SERVER, async (_e, serverId: string) => {
+    lspManagerLoaded = true
+    return (await import('./lsp-manager')).uninstallLspServer(serverId)
+  })
+  ipcMain.handle(AgentIpcChannels.LSP_STOP_WORKSPACE, async (_e, serverId: string, workspaceRoot: string) => {
+    lspManagerLoaded = true
+    return (await import('./lsp-manager')).stopLspWorkspace(serverId, workspaceRoot)
+  })
+  ipcMain.handle(AgentIpcChannels.LSP_SEND_MESSAGE, async (_e, serverId: string, workspaceRoot: string, message: string) => {
+    lspManagerLoaded = true
+    return (await import('./lsp-manager')).sendLspMessage(serverId, workspaceRoot, message)
+  })
 
   ipcMain.handle(AgentIpcChannels.APP_INSTALL_ID_GET, () => getInstallId())
   ipcMain.handle(
@@ -6205,6 +6238,7 @@ function performQuit(): void {
   Promise.allSettled([
     remoteStop,
     nodeHostLoaded ? import('./node-host/node-host-controller').then((m) => m.stopNodeHost()) : undefined,
+    lspManagerLoaded ? import('./lsp-manager').then((m) => m.disposeAllLspServers()) : undefined,
     powerManagementService.dispose(),
     disposeIosSimulatorManager(),
     // Shuts down only emulators SuperOne started. Without this they survive the app

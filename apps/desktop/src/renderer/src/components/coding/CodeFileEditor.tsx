@@ -11,10 +11,11 @@ import {
 } from '@codemirror/view'
 import { defaultKeymap, history, historyKeymap, indentWithTab } from '@codemirror/commands'
 import { bracketMatching, indentOnInput } from '@codemirror/language'
-import { closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete'
+import { acceptCompletion, closeBrackets, closeBracketsKeymap } from '@codemirror/autocomplete'
 import { highlightSelectionMatches, search, searchKeymap } from '@codemirror/search'
 import { useIsDark } from '@/hooks/use-is-dark'
 import { isAbsoluteLocalPath } from '@/lib/file-link'
+import { resolveLspTarget } from '@superone/shared/lsp-languages'
 import { inferLanguage, splitContentLines, useHighlightedTokens } from '@/lib/diff-utils'
 import { getHighlightCache } from '@/lib/highlight-cache'
 import { useAppStore, useEffectiveProjectRoot } from '@/stores/app'
@@ -79,7 +80,15 @@ export function CodeFileEditor({
   const isDark = useIsDark()
   const editorVimMode = useAppStore((s) => s.editorVimMode)
   const editorRelativeLineNumbers = useAppStore((s) => s.editorRelativeLineNumbers)
+  const lspEnabledServers = useAppStore((s) => s.lspEnabledServers)
   const language = useMemo(() => inferLanguage(filePath), [filePath])
+  const lspTarget = useMemo(() => resolveLspTarget(language), [language])
+  const lspEnabled = Boolean(
+    fileRoot &&
+    (lspTarget
+      ? lspEnabledServers[lspTarget.serverId] === true || Object.values(lspEnabledServers).some(Boolean)
+      : Object.values(lspEnabledServers).some(Boolean)),
+  )
   const scrollToLine = useSourceControlStore((s) => s.scrollToLine)
 
   const hostRef = useRef<HTMLDivElement>(null)
@@ -89,6 +98,8 @@ export function CodeFileEditor({
   const shikiCompartmentRef = useRef(new Compartment())
   const vimCompartmentRef = useRef(new Compartment())
   const vimActiveRef = useRef(false)
+  const lspCompartmentRef = useRef(new Compartment())
+  const lspActiveRef = useRef(false)
 
   const [liveText, setLiveText] = useState(content)
   const [debouncedLiveText, setDebouncedLiveText] = useState(content)
@@ -214,11 +225,13 @@ export function CodeFileEditor({
     const initialDoc = latestTextRef.current
     const shikiCompartment = shikiCompartmentRef.current
     const vimCompartment = vimCompartmentRef.current
+    const lspCompartment = lspCompartmentRef.current
     const lineNumbersController = createLineNumbersController(
       useAppStore.getState().editorRelativeLineNumbers,
     )
     lineNumbersControllerRef.current = lineNumbersController
     vimActiveRef.current = false
+    lspActiveRef.current = false
 
     const syncOverflow = (targetView: EditorView) => {
       const next = targetView.scrollDOM.scrollHeight - targetView.scrollDOM.clientHeight > 1
@@ -249,6 +262,10 @@ export function CodeFileEditor({
         Prec.high(
           keymap.of([
             {
+              key: 'Tab',
+              run: acceptCompletion,
+            },
+            {
               key: 'Mod-s',
               run: (targetView) => {
                 triggerImmediateSaveRef.current(targetView)
@@ -266,6 +283,7 @@ export function CodeFileEditor({
           ]),
         ),
         vimCompartment.of([]),
+        lspCompartment.of([]),
         keymap.of([
           indentWithTab,
           ...closeBracketsKeymap,
@@ -374,6 +392,30 @@ export function CodeFileEditor({
       cancelled = true
     }
   }, [editorVimMode, filePath])
+
+  useEffect(() => {
+    const view = viewRef.current
+    if (!view) return
+    if (!lspEnabled || !fileRoot) {
+      if (lspActiveRef.current) {
+        lspActiveRef.current = false
+        view.dispatch({ effects: lspCompartmentRef.current.reconfigure([]) })
+      }
+      return
+    }
+    let cancelled = false
+    void import('./cm-lsp')
+      .then((m) => m.loadLspExtension({ workspaceRoot: fileRoot, filePath: fullFilePath, language, isDark }))
+      .then((ext) => {
+        if (cancelled || viewRef.current !== view) return
+        lspActiveRef.current = true
+        view.dispatch({ effects: lspCompartmentRef.current.reconfigure(ext) })
+      })
+      .catch(() => {})
+    return () => {
+      cancelled = true
+    }
+  }, [lspEnabled, fileRoot, fullFilePath, language, isDark])
 
   useEffect(() => {
     const view = viewRef.current

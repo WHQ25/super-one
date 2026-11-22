@@ -208,10 +208,10 @@ describe('DeepseekBackend', () => {
     await backend.start(makeOpts())
 
     await backend.send({ sessionId: 's1', content: 'a', effort: 'max' } as never)
-    // `medium` only reaches here from a pref carried over from another harness.
+    // `xhigh` only reaches here from a pref carried over from another harness.
     // Forwarding it would fail the whole turn with UNSUPPORTED_REASONING_EFFORT
     // before any provider I/O, so the route is left on the adapter's default.
-    await backend.send({ sessionId: 's1', content: 'b', effort: 'medium' } as never)
+    await backend.send({ sessionId: 's1', content: 'b', effort: 'xhigh' } as never)
 
     expect(agent.routes).toEqual([{ reasoningEffort: 'max' }])
     expect(agent.sent).toEqual(['a', 'b'])

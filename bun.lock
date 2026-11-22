@@ -87,6 +87,7 @@
         "@deepseek-ai/dsh-atomic-write": "0.2.2-rc.5",
         "@deepseek-ai/dsh-attachment": "0.2.2-rc.5",
         "@deepseek-ai/dsh-attachment-local": "0.2.2-rc.5",
+        "@deepseek-ai/dsh-authorization": "0.2.2-rc.5",
         "@deepseek-ai/dsh-bash-local": "0.2.2-rc.5",
         "@deepseek-ai/dsh-bash-sandbox": "0.2.2-rc.5",
         "@deepseek-ai/dsh-brand": "0.2.2-rc.5",
@@ -103,6 +104,7 @@
         "@deepseek-ai/dsh-credentials": "0.2.2-rc.5",
         "@deepseek-ai/dsh-deepseek-account": "0.2.2-rc.5",
         "@deepseek-ai/dsh-deepseek-llm-api-extensions": "0.2.2-rc.5",
+        "@deepseek-ai/dsh-error": "0.2.2-rc.5",
         "@deepseek-ai/dsh-fs": "0.2.2-rc.5",
         "@deepseek-ai/dsh-fs-local": "0.2.2-rc.5",
         "@deepseek-ai/dsh-fs-patch": "0.2.2-rc.5",
@@ -110,6 +112,7 @@
         "@deepseek-ai/dsh-goal": "0.2.2-rc.5",
         "@deepseek-ai/dsh-goal-round-driver": "0.2.2-rc.5",
         "@deepseek-ai/dsh-home-paths": "0.2.2-rc.5",
+        "@deepseek-ai/dsh-host-webserver": "0.2.2-rc.5",
         "@deepseek-ai/dsh-http-proxy": "0.2.2-rc.5",
         "@deepseek-ai/dsh-jobs": "0.2.2-rc.5",
         "@deepseek-ai/dsh-jobs-local": "0.2.2-rc.5",
@@ -654,6 +657,7 @@
         "@deepseek-ai/dsh-atomic-write": "0.2.2-rc.5",
         "@deepseek-ai/dsh-attachment": "0.2.2-rc.5",
         "@deepseek-ai/dsh-attachment-local": "0.2.2-rc.5",
+        "@deepseek-ai/dsh-authorization": "0.2.2-rc.5",
         "@deepseek-ai/dsh-bash-local": "0.2.2-rc.5",
         "@deepseek-ai/dsh-bash-sandbox": "0.2.2-rc.5",
         "@deepseek-ai/dsh-brand": "0.2.2-rc.5",
@@ -670,6 +674,7 @@
         "@deepseek-ai/dsh-credentials": "0.2.2-rc.5",
         "@deepseek-ai/dsh-deepseek-account": "0.2.2-rc.5",
         "@deepseek-ai/dsh-deepseek-llm-api-extensions": "0.2.2-rc.5",
+        "@deepseek-ai/dsh-error": "0.2.2-rc.5",
         "@deepseek-ai/dsh-fs": "0.2.2-rc.5",
         "@deepseek-ai/dsh-fs-local": "0.2.2-rc.5",
         "@deepseek-ai/dsh-fs-patch": "0.2.2-rc.5",
@@ -677,6 +682,7 @@
         "@deepseek-ai/dsh-goal": "0.2.2-rc.5",
         "@deepseek-ai/dsh-goal-round-driver": "0.2.2-rc.5",
         "@deepseek-ai/dsh-home-paths": "0.2.2-rc.5",
+        "@deepseek-ai/dsh-host-webserver": "0.2.2-rc.5",
         "@deepseek-ai/dsh-http-proxy": "0.2.2-rc.5",
         "@deepseek-ai/dsh-jobs": "0.2.2-rc.5",
         "@deepseek-ai/dsh-jobs-local": "0.2.2-rc.5",
@@ -5287,7 +5293,7 @@
 
     "natural-compare": ["natural-compare@1.4.0", "", {}, "sha512-OWND8ei3VtNC9h7V60qff3SVobHr996CTwgxubgyQYEpg290h9J0buyECNNJexkFm5sOajh5G116RYA1c8ZMSw=="],
 
-    "negotiator": ["negotiator@1.0.0", "", {}, "sha512-8Ofs/AUQh8MaEcrlq5xOX0CQ9ypTF5dl78mjlMNfOK08fzpgTHQRQPBxcPlEtIw0yRpws+Zo/3r+5WRby7u3Gg=="],
+    "negotiator": ["negotiator@1.1.0", "", { "dependencies": { "content-type": "^2.1.0" } }, "sha512-NMPBRMJgiQHjbd8phG3Vebdx4kZ1H121rbl5IkMqeOsahptB9BKo/d7oJ3zTXqTgagn2bWlNSXkh0QUGM31RYg=="],
 
     "neo-async": ["neo-async@2.6.2", "", {}, "sha512-Yd3UES5mWCSqR+qNT93S3UoYUkqAZ9lLg8a7g9rimsWmYGK8cVToA4/sF3RrshdyV3sAGMXVUmpMYOw+dLpOuw=="],
 
@@ -6571,8 +6577,6 @@
 
     "@deepseek-ai/dsh-goal/zod": ["zod@4.6.6", "", {}, "sha512-4UmzQUF5fxvfcYHlbjBmejU+w+hbDnWFx4aS8kBx7nPBHcO2SqPbpAG8snbdg+Xse4pRefR98hgjFgIMCI/UhA=="],
 
-    "@deepseek-ai/dsh-host-webserver/negotiator": ["negotiator@1.1.0", "", { "dependencies": { "content-type": "^2.1.0" } }, "sha512-NMPBRMJgiQHjbd8phG3Vebdx4kZ1H121rbl5IkMqeOsahptB9BKo/d7oJ3zTXqTgagn2bWlNSXkh0QUGM31RYg=="],
-
     "@deepseek-ai/dsh-http-proxy/undici": ["undici@8.11.2", "", {}, "sha512-u4UB2/IrKdU6lFxumHmmo1a3fCQO5tzQllRorfoRS63txhrB7xTpSn1PftwC4qEHkOaqP95fCWW4lJzwErwzhQ=="],
 
     "@deepseek-ai/dsh-llm/zod": ["zod@4.6.6", "", {}, "sha512-4UmzQUF5fxvfcYHlbjBmejU+w+hbDnWFx4aS8kBx7nPBHcO2SqPbpAG8snbdg+Xse4pRefR98hgjFgIMCI/UhA=="],
@@ -6943,6 +6947,8 @@
 
     "abort-controller/event-target-shim": ["event-target-shim@5.0.1", "", {}, "sha512-i/2XbnSz/uxRCU6+NdVJgKWDTM427+MqYbkQzD321DuCQJUqOuJKIA0IM2+W2xtYHdKOmZ4dR6fExsd4SXL+WQ=="],
 
+    "accepts/negotiator": ["negotiator@1.0.0", "", {}, "sha512-8Ofs/AUQh8MaEcrlq5xOX0CQ9ypTF5dl78mjlMNfOK08fzpgTHQRQPBxcPlEtIw0yRpws+Zo/3r+5WRby7u3Gg=="],
+
     "agent-install/commander": ["commander@14.0.3", "", {}, "sha512-H+y0Jo/T1RZ9qPP4Eh1pkcQcLRglraJaSLoyOtHxu6AapkjWVCy2Sit1QQ4x3Dng8qDlSsZEet7g5Pq06MvTgw=="],
 
     "ansi-escapes/type-fest": ["type-fest@0.21.3", "", {}, "sha512-t0rzBq87m3fVcduHDUFhKmyyX+9eo6WQjZvf51Ea/M0Q7+T374Jp1aUiyUl0GKxp8M/OETVHSDvmkyPgvX+X2w=="],
@@ -7233,7 +7239,11 @@
 
     "music-metadata/content-type": ["content-type@3.1.1", "", {}, "sha512-GW4qUsfFo59d0HbUibDlWv5wPz+vAAcaTWbKIuKCf0JkC7wWkSyf8f13IpXn5JkeMlB2P8iTSSIjwXljorg2vA=="],
 
+    "negotiator/content-type": ["content-type@2.1.0", "", {}, "sha512-mj7UPXE0jaqaOsukNZRUEfEi2AcL7C/vwmwcHV0O97eO1E1pxBZuyjlZrx5seTaNBg1U6+o35wpa35Qfcc+7ag=="],
+
     "next/postcss": ["postcss@8.5.23", "", { "dependencies": { "nanoid": "^3.3.16", "picocolors": "^1.1.1", "source-map-js": "^1.2.1" } }, "sha512-g50586zr4bZmwFiTlflMu8E0bDTb5I5gertgwAKmsdUlTQIhZtunzUlD1WSzwcVWPoAVpsrA6vlfCD7oXvRwgg=="],
+
+    "next-intl/negotiator": ["negotiator@1.0.0", "", {}, "sha512-8Ofs/AUQh8MaEcrlq5xOX0CQ9ypTF5dl78mjlMNfOK08fzpgTHQRQPBxcPlEtIw0yRpws+Zo/3r+5WRby7u3Gg=="],
 
     "node-exports-info/semver": ["semver@6.3.1", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-BR7VvDCVHO+q2xBEWskxS6DJE1qRnb7DxzUrogb71CWoSficBxYsiAGd+Kl0mmq/MprG9yArRkyrQxTO6XjMzA=="],
 
@@ -7414,8 +7424,6 @@
     "zxing-wasm/type-fest": ["type-fest@5.10.0", "", { "dependencies": { "tagged-tag": "^1.0.0" } }, "sha512-NoSdpq/WEiAg5sjmBkmV/hfxv6HJH4NqPNrqjtSO5CwRmpsDfaf4begxW34KdJykH/l1yHtwBWQkCRdoXO8mPA=="],
 
     "@babel/helper-compilation-targets/lru-cache/yallist": ["yallist@3.1.1", "", {}, "sha512-a4UGQaWPH59mOXUYnAG2ewncQS4i4F43Tv3JoAM+s2VDAmS9NsK8GpDMLrCHPksFT7h3K6TOoUNn2pb7RoXx4g=="],
-
-    "@deepseek-ai/dsh-host-webserver/negotiator/content-type": ["content-type@2.1.0", "", {}, "sha512-mj7UPXE0jaqaOsukNZRUEfEi2AcL7C/vwmwcHV0O97eO1E1pxBZuyjlZrx5seTaNBg1U6+o35wpa35Qfcc+7ag=="],
 
     "@deepseek-ai/dsh-subprocess-local/node-pty/node-addon-api": ["node-addon-api@7.1.1", "", {}, "sha512-5m3bsyrjFWE1xf7nz7YXdN4udnVtXK6/Yfgn5qnahL6bCkf2yKt4k3nuTKAtT4r3IG8JNR2ncsIMdZuAzJjHQQ=="],
 

@@ -812,4 +812,38 @@ describe('antigravity invoke_subagent normalization and transcript lifecycle', (
     clearUnflushedAntigravityWakeupReplay(parentSid)
     expect(hasUnflushedAntigravityWakeupReplay(parentSid)).toBe(false)
   })
+
+  it('does not mark subagent as failed or completed on a trailing GENERIC tool error', () => {
+    const rawWithToolError = [
+      JSON.stringify({
+        step_index: 1,
+        type: 'PLANNER_RESPONSE',
+        status: 'DONE',
+        tool_calls: [{ id: 'tc-read-1', name: 'read_file', args: { Path: '/tmp/missing.ts' } }],
+      }),
+      JSON.stringify({
+        step_index: 2,
+        type: 'GENERIC',
+        status: 'ERROR',
+        content: 'File not found: /tmp/missing.ts',
+      }),
+    ].join('\n')
+
+    const midRun = parseAntigravitySubagentTranscript(rawWithToolError)
+    expect(midRun.completed).toBe(false)
+    expect(midRun.failed).toBe(false)
+
+    const rawWithPlannerError = [
+      rawWithToolError,
+      JSON.stringify({
+        step_index: 3,
+        type: 'PLANNER_RESPONSE',
+        status: 'ERROR',
+      }),
+    ].join('\n')
+
+    const terminalErr = parseAntigravitySubagentTranscript(rawWithPlannerError)
+    expect(terminalErr.completed).toBe(true)
+    expect(terminalErr.failed).toBe(true)
+  })
 })

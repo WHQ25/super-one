@@ -314,7 +314,7 @@ export function parseAntigravitySubagentTranscript(raw: string): ParsedAntigravi
 
   const lastRec = records[records.length - 1]
   const lastCalls = lastRec && Array.isArray(lastRec.tool_calls) ? lastRec.tool_calls : []
-  const failed = Boolean(lastRec && lastRec.status === 'ERROR')
+  const failed = Boolean(lastRec && lastRec.type !== 'GENERIC' && lastRec.status === 'ERROR')
   const completed =
     failed ||
     Boolean(

@@ -145,6 +145,9 @@ export default defineConfig(({ mode }) => {
       react({ babel: { plugins: [['babel-plugin-react-compiler', { target: '19' }]] } }),
       tailwindcss(),
     ],
+    worker: {
+      format: 'es',
+    },
     build: {
       rollupOptions: {
         input: {

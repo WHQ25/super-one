@@ -117,7 +117,7 @@ export function ReviewDiffCanvas({
   const [dragSelectedLines, setDragSelectedLines] = useState<SelectedLineRange | null>(null)
   const diffWrapperRef = useRef<HTMLDivElement>(null)
   const hostRef = useRef<HTMLDivElement>(null)
-  const [isInViewport, setIsInViewport] = useState(
+  const [hasEnteredViewport, setHasEnteredViewport] = useState(
     () => !lazyViewport || typeof IntersectionObserver === 'undefined',
   )
   const [diskState, setDiskState] = useState<{ content: string | null; matchesDisk: boolean }>({
@@ -128,31 +128,35 @@ export function ReviewDiffCanvas({
 
   useLayoutEffect(() => {
     if (!lazyViewport || typeof IntersectionObserver === 'undefined') {
-      setIsInViewport(true)
+      setHasEnteredViewport(true)
       return
     }
     if (collapsed) {
-      setIsInViewport(false)
+      setHasEnteredViewport(false)
       return
     }
+    if (hasEnteredViewport) return
     const el = hostRef.current
     if (!el) return
     const rootEl = scrollRootRef?.current ?? null
     const rootRect = rootEl ? rootEl.getBoundingClientRect() : { top: 0, bottom: window.innerHeight || 900 }
     const rect = el.getBoundingClientRect()
     if (rect.bottom >= rootRect.top - 250 && rect.top <= rootRect.bottom + 250) {
-      setIsInViewport(true)
+      setHasEnteredViewport(true)
+      return
     }
     const observer = new IntersectionObserver(
       (entries) => {
-        const visible = entries.some((entry) => entry.isIntersecting)
-        setIsInViewport(visible)
+        if (entries.some((entry) => entry.isIntersecting)) {
+          setHasEnteredViewport(true)
+          observer.disconnect()
+        }
       },
       { root: rootEl, rootMargin: '250px 0px' },
     )
     observer.observe(el)
     return () => observer.disconnect()
-  }, [collapsed, lazyViewport, scrollRootRef])
+  }, [collapsed, hasEnteredViewport, lazyViewport, scrollRootRef])
 
   useEffect(() => {
     selectedLinesRef.current = null
@@ -162,7 +166,7 @@ export function ReviewDiffCanvas({
   useEffect(() => {
     let cancelled = false
     setDiskState({ content: null, matchesDisk: false })
-    if (collapsed || !isInViewport || !workspaceRoot || !file.path || file.isBinary || file.status === 'deleted') return
+    if (collapsed || !hasEnteredViewport || !workspaceRoot || !file.path || file.isBinary || file.status === 'deleted') return
     if (typeof window.app?.getReviewFileContents !== 'function') return
 
     void window.app.getReviewFileContents(workspaceRoot, file.path).then((pair) => {
@@ -171,21 +175,21 @@ export function ReviewDiffCanvas({
     }).catch(() => {})
 
     return () => { cancelled = true }
-  }, [collapsed, isInViewport, workspaceRoot, file.path, file.patch, file.isBinary, file.status])
+  }, [collapsed, hasEnteredViewport, workspaceRoot, file.path, file.patch, file.isBinary, file.status])
 
   const parsedFileDiff = useMemo<FileDiffMetadata | null>(() => {
-    if (collapsed || !isInViewport || !file.patch.trim() || file.isBinary) return null
+    if (collapsed || !file.patch.trim() || file.isBinary) return null
     const parsed = parsePatchFiles(file.patch, {
       cacheKeyPrefix: `review-${scope}-${file.path}-${cacheVersionRef.current}`,
     })
     return parsed[0]?.files[0] ?? null
-  }, [collapsed, isInViewport, file.patch, file.isBinary, file.path, scope])
+  }, [collapsed, file.patch, file.isBinary, file.path, scope])
 
   const lsp = useReviewLsp({
     workspaceRoot,
-    filePath: lspAllowed && !collapsed && isInViewport ? file.path : null,
+    filePath: lspAllowed && !collapsed && hasEnteredViewport ? file.path : null,
     diskContent: diskState.content,
-    matchesDisk: lspAllowed && !collapsed && isInViewport && diskState.matchesDisk,
+    matchesDisk: lspAllowed && !collapsed && hasEnteredViewport && diskState.matchesDisk,
   })
 
   const loadDiffFiles = useCallback(async () => {
@@ -339,11 +343,11 @@ export function ReviewDiffCanvas({
   )
 
   const renderBody = () => {
-    if (!isInViewport) {
-      const estimatedHeight = Math.min(480, Math.max(80, (file.additions + file.deletions) * 20))
-      return <div style={{ height: `${estimatedHeight}px` }} />
-    }
     if (shouldShowPreview) {
+      if (!hasEnteredViewport) {
+        const estimatedHeight = Math.min(480, Math.max(80, (file.additions + file.deletions) * 20))
+        return <div style={{ height: `${estimatedHeight}px` }} />
+      }
       const ext = fileExtensionOf(file.path)
       const needsFixedViewport =
         PDF_EXTENSIONS.has(ext) || MODEL_EXTENSIONS.has(ext) || officePreviewKind(file.path) !== null

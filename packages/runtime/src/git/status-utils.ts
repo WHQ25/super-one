@@ -153,6 +153,7 @@ export interface ParsedGitStatusFile {
   path: string
   status: GitFileStatus
   staged: boolean
+  isDirectory?: boolean
 }
 
 const MERGED_PRIORITY = ['?', 'D', 'A', 'R', 'C', 'U', 'T', 'M'] as const
@@ -172,6 +173,7 @@ export function parseGitStatusFiles(raw: string): ParsedGitStatusFile[] {
       path: parsed.path,
       status: mergedStatus(parsed),
       staged: parsed.index !== null,
+      ...(parsed.isDirEntry ? { isDirectory: true } : {}),
     }
   })
 }

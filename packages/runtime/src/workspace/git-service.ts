@@ -157,7 +157,7 @@ export class WorkspaceGitService {
     }
     try {
       // Single process: branch header + file lines. No --ignored (expensive on large trees).
-      const raw = await this.read(cwd, ['status', '--porcelain=v1', '-b'])
+      const raw = await this.read(cwd, ['status', '--porcelain=v1', '-b', '-uall'])
       const parsed = parseBranchPorcelain(raw)
       const dirty = parsed.porcelain.trim().length > 0
       // shortstat only when dirty — clean trees skip the extra git invocation.

@@ -84,8 +84,10 @@ function isUnder(focusPath: string, path: string): boolean {
  */
 export function buildChangedFileTree(files: GitStatusFile[], focusPath: string): VisibleItem[] {
   const byPath = new Map<string, ChangedPair>()
+  const dirSet = new Set<string>()
   for (const file of files) {
     if (file.status === '!' || !isUnder(focusPath, file.path)) continue
+    if (file.isDirectory) dirSet.add(file.path)
     const pair = pairOf(file)
     const prev = byPath.get(file.path)
     if (!prev) {
@@ -99,7 +101,6 @@ export function buildChangedFileTree(files: GitStatusFile[], focusPath: string):
     })
   }
 
-  const dirSet = new Set<string>()
   for (const path of byPath.keys()) {
     const rel = focusPath ? path.slice(focusPath.length + 1) : path
     const parts = rel.split('/')
@@ -144,6 +145,7 @@ export function buildChangedFileTree(files: GitStatusFile[], focusPath: string):
     if (!list) return
     for (const path of list) {
       const isDirectory = dirSet.has(path)
+      const hasChildren = isDirectory && (children.get(path)?.length ?? 0) > 0
       const file = byPath.get(path)
       result.push({
         path,
@@ -152,9 +154,9 @@ export function buildChangedFileTree(files: GitStatusFile[], focusPath: string):
         gitIndex: file?.gitIndex ?? null,
         gitWorktree: file?.gitWorktree ?? null,
         depth,
-        isExpanded: isDirectory,
+        isExpanded: hasChildren,
         isLoading: false,
-        hasChildren: isDirectory && (children.get(path)?.length ?? 0) > 0,
+        hasChildren,
       })
       if (isDirectory) walk(path, depth + 1)
     }

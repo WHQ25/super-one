@@ -241,6 +241,12 @@ describe('parseGitStatusFiles', () => {
       { path: 'a.ts', status: 'T', staged: false },
     ])
   })
+
+  it('marks directory entries with isDirectory', () => {
+    expect(parseGitStatusFiles('?? newdir/')).toEqual([
+      { path: 'newdir', status: '?', staged: false, isDirectory: true },
+    ])
+  })
 })
 
 describe('resolveEntryStatusPair — file tree coloring', () => {

@@ -1977,6 +1977,7 @@ export interface GitStatusFile {
   path: string
   status: GitFileStatus
   staged: boolean
+  isDirectory?: boolean
 }
 
 export interface GitFileDiff {

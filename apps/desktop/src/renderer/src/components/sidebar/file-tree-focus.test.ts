@@ -88,4 +88,30 @@ describe('buildChangedFileTree', () => {
     expect(rows.find((row) => row.path === 'src/app.ts')?.depth).toBe(0)
     expect(rows.find((row) => row.path === 'src/components/Button.tsx')?.depth).toBe(1)
   })
+
+  it('renders untracked directory entries as folders even without listed children', () => {
+    const rows = buildChangedFileTree(
+      [
+        { path: 'src/newdir', status: '?', staged: false, isDirectory: true },
+        { path: 'newdir/file.ts', status: '?', staged: false },
+      ],
+      '',
+    )
+    expect(rows.find((row) => row.path === 'src/newdir')).toMatchObject({
+      isDirectory: true,
+      isExpanded: false,
+      hasChildren: false,
+      gitWorktree: '?',
+    })
+    expect(rows.find((row) => row.path === 'newdir')).toMatchObject({
+      isDirectory: true,
+      isExpanded: true,
+      hasChildren: true,
+    })
+    expect(rows.find((row) => row.path === 'newdir/file.ts')).toMatchObject({
+      isDirectory: false,
+      depth: 1,
+      gitWorktree: '?',
+    })
+  })
 })

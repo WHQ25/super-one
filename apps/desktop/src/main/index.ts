@@ -3495,7 +3495,7 @@ function registerIpcHandlers(): void {
         const { getRemoteGitStatusFiles } = await import('./environment/remote-file-tree')
         return (await getRemoteGitStatusFiles(getEnvironmentHost(), folderPath)) ?? []
       }
-      const raw = await gitRun(folderPath, ['status', '--porcelain=v1'])
+      const raw = await gitRun(folderPath, ['status', '--porcelain=v1', '-uall'])
       if (!raw) return []
       return parseGitStatusFiles(raw)
     } catch {

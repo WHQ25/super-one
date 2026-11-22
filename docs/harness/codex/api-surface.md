@@ -1,10 +1,10 @@
 # Codex API surface
 
-Ledger version: `0.169.0` · Check: `bun scripts/harness-api-inventory.ts codex`
+Ledger version: `0.171.0` · Check: `bun scripts/harness-api-inventory.ts codex`
 
 Inventoried from the pinned npm binary, with and without `--experimental`. The
 checker covers RPC method names; field-level changes and feature flags are
-reviewed in [the upgrade record](upgrades/0.169.0.md). A notification appearing
+reviewed in [the upgrade record](upgrades/0.171.0.md). A notification appearing
 in the stable generated schema does not make its underlying feature stable.
 
 Statuses describe actual SuperOne integration, not every upstream field. `used`
@@ -80,6 +80,7 @@ voices still come from
 | `model/list` | partial | Desktop and remote-node catalogs, efforts and speed tiers. `modelProvider` is omitted, so the catalog stays the app-server default. The node's static slug table is only the fallback when this probe is empty. Fast stays a toggle; an extra tier such as Ultrafast is a Standard / Fast / Ultrafast choice. availableAccessPrograms is not mapped. | `apps/desktop/src/main/codex/codex-experiment-service.ts`, `apps/cli/src/session/codex-model-catalog.ts` |
 | `modelProvider/capabilities/read` | unused | No client call or dedicated handler. | — |
 | `modelProvider/config/write` | unused | No custom gateway, Bedrock, or GCP provider editor. | — |
+| `modelProvider/default/set` | unused | No provider administration; SuperOne owns provider configuration. | — |
 | `modelProvider/list` | unused | No provider browser. SuperOne owns provider configuration. | — |
 | `permissionProfile/list` | unused | No client call or dedicated handler. | — |
 | `plugin/install` | used | Local entries use marketplacePath/name; remote entries use remoteMarketplaceName/backend remotePluginId on desktop and nodes. | `packages/codex/src/codex-admin.ts`, `packages/codex/src/plugin-target.ts`, `apps/desktop/src/main/codex/codex-plugins-service.ts` |
@@ -199,12 +200,16 @@ voices still come from
 | `thread/realtime/appendAudio` | unused | No client call or dedicated handler. | — |
 | `thread/realtime/appendSpeech` | unused | No client call or dedicated handler. | — |
 | `thread/realtime/appendText` | unused | No client call or dedicated handler. | — |
+| `thread/realtime/list` | unused | Voice timeline uses `thread/timeline/list`; dedicated realtime query unused. | — |
 | `thread/realtime/listVoices` | partial | Desktop/phone official-account voice catalog prefers v3, falls back to v1, and validates defaultV1. | `apps/desktop/src/main/codex/codex-realtime.ts` |
 | `thread/realtime/start` | partial | Desktop and paired-phone official-account WebRTC; backendReasoningStatus, voiceSessionId, and custom-provider audio are unused. | `apps/desktop/src/main/codex/codex-realtime.ts` |
 | `thread/realtime/stop` | partial | Host-owned desktop/paired-phone voice lifecycle; stop preserves delegated turns. | `apps/desktop/src/main/codex/codex-realtime.ts` |
 | `thread/sample` | used | After a successful root turn, and when an idle composer shows a thread whose latest turn already completed, desktop and node request one prompt suggestion at `effort: low`. Plan mode, custom providers, child threads, and in-flight turns are skipped. `allowInProgressTurn` is not sent. The server keeps the parent effort when a cache-preserving change is unsupported. Unreadable text leaves the composer unchanged. | `packages/codex/src/prompt-sample.ts`, `packages/codex/src/prompt-prediction.ts` |
 | `thread/sample/cancel` | used | Abort or the 30s sample timeout cancels that request id. | `packages/codex/src/app-server-client.ts`, `apps/desktop/src/main/codex/app-server-connection.ts` |
 | `thread/search` | unused | No client call or dedicated handler. | — |
+| `thread/search/cancel` | unused | No client call or dedicated handler. | — |
+| `thread/search/stream` | unused | No client call or dedicated handler. | — |
+| `thread/search/stream/cancel` | unused | No client call or dedicated handler. | — |
 | `thread/searchOccurrences` | unused | No client call or dedicated handler. | — |
 | `thread/settings/update` | partial | Desktop realtime/model/effort/tier synchronization; disabledPluginIds is unused. | `packages/codex/src/app-server-client.ts`, `apps/desktop/src/main/codex/codex-thread-selection.ts` |
 | `thread/timeline/list` | partial | Desktop voice transcript projection; item lifecycle timestamps are unused. | `apps/desktop/src/main/codex/codex-realtime.ts` |
@@ -232,9 +237,7 @@ voices still come from
 
 ## Experimental server requests
 
-| Name | Status | Usage | Code |
-|---|---|---|---|
-| `currentTime/read` | unused | No client call or dedicated handler. | — |
+None in the pinned schema.
 
 ## Stable server notifications
 
@@ -313,6 +316,7 @@ voices still come from
 | `thread/realtime/transcript/done` | used | Consumes the notification. | `apps/desktop/src/main/codex/codex-realtime.ts` |
 | `thread/reverted` | unused | No client call or dedicated handler. | — |
 | `thread/section/changed` | n/a | SuperOne owns sidebar organization. | — |
+| `thread/search/partial` | unused | Streaming search partials; no `thread/search/stream` caller. | — |
 | `thread/settings/updated` | partial | Diagnostic logging only; no complete settings reducer. | `apps/desktop/src/main/codex/codex-notification-dispatcher.ts` |
 | `thread/started` | used | Consumes the notification. | `packages/codex/src/agent-event-mapper.ts`, `apps/desktop/src/main/codex/codex-turn.ts` |
 | `thread/status/changed` | partial | Diagnostic logging/routing only; UI state follows session lifecycle. | `apps/desktop/src/main/codex/codex-notification-dispatcher.ts` |

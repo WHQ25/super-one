@@ -1,6 +1,6 @@
 # Codex integration
 
-Pin: `@openai/codex` `0.169.0` · Ledger version: `0.169.0` · Last updated: 2026-11-15
+Pin: `@openai/codex` `0.171.0` · Ledger version: `0.171.0` · Last updated: 2026-11-22
 
 ## Upstream
 
@@ -66,6 +66,7 @@ clients without a native handler omit the capability. See the
 
 | Version | Date | Status | Upgrade doc | Commit |
 |---|---|---|---|---|
+| 0.171.0 | 2026-11-22 | executed | [0.171.0](upgrades/0.171.0.md) | — |
 | 0.169.0 | 2026-11-15 | executed | [0.169.0](upgrades/0.169.0.md) | — |
 | 0.167.0 | 2026-11-06 | executed | [0.167.0](upgrades/0.167.0.md) | — |
 | 0.165.0 | 2026-10-29 | executed | [0.165.0](upgrades/0.165.0.md) | — |

@@ -274,6 +274,15 @@ describe('Codex AgentEvent mapper', () => {
       text: 'Answer',
       moderation: { moderated: true, display: { action: 'hide', blockType: 'wellbeing' } },
     })).toEqual({ id: 'answer-1', type: 'agent_message', text: 'Answer' })
+    expect(mapCodexThreadItem({
+      id: 'answer-2',
+      type: 'agentMessage',
+      text: 'Answer',
+      moderation: {
+        moderated: true,
+        display: { version: 1, mode: 'hide', replacement: { kind: 'wellbeingPromptHelpline' } },
+      },
+    })).toEqual({ id: 'answer-2', type: 'agent_message', text: 'Answer' })
   })
 
   it('keeps async agent delivery out of the inline final response', () => {

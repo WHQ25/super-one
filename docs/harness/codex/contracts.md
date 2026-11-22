@@ -783,3 +783,17 @@ prompt survival through root cancellation in both live and snapshot projections.
 the command and extra grants are visible without opening technical details.
 No authenticated remote model invocation or physical controller UI was used in
 these checks.
+
+## Optional 0.171.0 protocol changes
+
+- `AgentMessageDisplay` changed in `0.171.0` from `{ action: string, ... }`
+  to a `version: 1` union on `mode: 'show' | 'hide' | 'block'`. `mapCodexThreadItem`
+  in `packages/codex/src/agent-event-mapper.ts` ignores `moderation` and
+  preserves `text` for both shapes.
+- MCP status/tool/resource/OAuth/elicitation payloads gained optional
+  `environmentId?: string | null` in `0.170.0+`. SuperOne omits `environmentId`,
+  relying on the upstream guarantee that omission preserves legacy name-only
+  server selection.
+- `ThreadRealtimeItem` gained `frame`, `turnInputAccepted`, `sessionEndInputSaved`,
+  and optional `observedAtMs`. `apps/desktop/src/main/codex/codex-realtime.ts`
+  maps only `transcriptSegment` and ignores non-transcript realtime items.

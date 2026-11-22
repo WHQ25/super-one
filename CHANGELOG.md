@@ -27,6 +27,7 @@ Every alpha release keeps its own notes on its GitHub Release.
 ### Changed
 
 - Upgrade `@anthropic-ai/claude-agent-sdk` from `0.3.321` to `0.3.330` (Claude Code `2.1.330`).
+- Upgrade `@openai/codex` from `0.169.0` to `0.171.0`.
 
 ### Performance
 

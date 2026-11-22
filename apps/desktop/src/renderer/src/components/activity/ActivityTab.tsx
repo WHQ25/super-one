@@ -2,7 +2,7 @@ import { mcpAppPresentationIcon } from '@superone/shared/mcp-apps-metadata'
 import { useEffect, useLayoutEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { IDockviewPanelHeaderProps } from 'dockview-core'
-import { Blocks, Bot, Bug, Globe, Maximize, MessageCirclePlus, RotateCw, Route, Shrink, Smartphone, Terminal as TerminalIcon, Volume2, VolumeOff, X } from 'lucide-react'
+import { Blocks, Bot, Bug, FileDiff, Globe, Maximize, MessageCirclePlus, RotateCw, Route, Shrink, Smartphone, Terminal as TerminalIcon, Volume2, VolumeOff, X } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { tabChipClass, TabTitle, TabActionButton } from './ActivityTabChrome'
 export { tabChipClass, TabTitle, TabActionButton } from './ActivityTabChrome'
@@ -18,7 +18,7 @@ import { BrowserFavicon } from '@/components/browser/BrowserFavicon'
 import { browserSetMuted } from '@/components/browser/browser-host-api'
 import { useDeviceTabActions } from '@/components/device/device-tab-actions'
 import { deviceFamilyIcon } from '@/components/device/device-icons'
-import { closeActivityTerminalTab, closeBrowserTab, closeDeviceTab, closeToolUiPreviewTab, closeTrajectoryTab, toggleMaximizedActivityGroup } from './activity-panel-api'
+import { closeActivityTerminalTab, closeBrowserTab, closeDeviceTab, closeReviewTab, closeToolUiPreviewTab, closeTrajectoryTab, toggleMaximizedActivityGroup } from './activity-panel-api'
 import { useTerminalAgentControl } from './activity-terminal'
 import { requestCloseSideChat } from '@/lib/side-chat-actions'
 import { ToolBrandIcon } from '@/components/chat/ToolIcon'
@@ -369,6 +369,21 @@ export function McpAppTab(props: IDockviewPanelHeaderProps<{ appInstanceId: stri
   </div>
 }
 
+export function ReviewTab(props: IDockviewPanelHeaderProps) {
+  const { t } = useTranslation()
+  const active = useIsActive(props.api)
+  const title = usePanelTitle(props.api)
+  return (
+    <div className={tabChipClass(active)}>
+      <HoverCloseSlot onClose={() => closeReviewTab(props.api.id)}>
+        <FileDiff className="size-3.5 shrink-0" />
+      </HoverCloseSlot>
+      <TabTitle>{title || t('review.title')}</TabTitle>
+      <MaximizeTabAction api={props.api} active={active} />
+    </div>
+  )
+}
+
 export const activityTabComponents: Record<string, React.FunctionComponent<IDockviewPanelHeaderProps>> = {
   'mcp-app-tab': McpAppTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
   'file-preview-tab': FilePreviewTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
@@ -377,6 +392,7 @@ export const activityTabComponents: Record<string, React.FunctionComponent<IDock
   'browser-tab': BrowserTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
   'terminal-tab': TerminalTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
   'trajectory-tab': TrajectoryTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
+  'review-tab': ReviewTab,
   'device-tab': DeviceTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
   'side-chat-tab': SideChatTab,
   'mod-pane-tab': ModPaneTab,

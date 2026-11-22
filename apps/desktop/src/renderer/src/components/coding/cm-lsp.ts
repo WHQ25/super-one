@@ -1,205 +1,16 @@
-import { ChangeSet, Prec, StateEffect, StateField, type Extension, type Text } from '@codemirror/state'
+import { Prec, StateEffect, StateField, type Extension } from '@codemirror/state'
 import { Decoration, EditorView, ViewPlugin, type DecorationSet } from '@codemirror/view'
-import {
-  LSPClient,
-  LSPPlugin,
-  Workspace,
-  jumpToDefinition,
-  languageServerExtensions,
-  type Transport,
-  type WorkspaceFile,
-} from '@codemirror/lsp-client'
+import { LSPPlugin, jumpToDefinition } from '@codemirror/lsp-client'
 import type { BundledLanguage } from 'shiki'
-import { resolveLspTarget } from '@superone/shared/lsp-languages'
-import { openNewFileTab } from '@/components/activity/activity-panel-api'
+import {
+  disposeLspClient,
+  getOrCreateLspClientEntry,
+  pathToFileUri,
+  resolveEnabledLspServer,
+} from '@/lib/lsp-client-service'
 import { getFileHighlighter, getFileHighlighterSync, getShikiTarget } from '@/lib/shiki-highlighter'
 
-function pathToFileUri(filePath: string): string {
-  const normalized = filePath.replace(/\\/g, '/')
-  if (normalized.startsWith('/')) {
-    return `file://${encodeURI(normalized)}`
-  }
-  return `file:///${encodeURI(normalized)}`
-}
-
-function fileUriToPath(uri: string): string {
-  if (!uri.startsWith('file://')) return uri
-  let path = decodeURIComponent(uri.slice('file://'.length))
-  if (/^\/[A-Za-z]:\//.test(path)) {
-    path = path.slice(1)
-  }
-  return path
-}
-
-interface TrackedWorkspaceFile extends WorkspaceFile {
-  view: EditorView
-}
-
-class SuperOneWorkspace extends Workspace {
-  files: TrackedWorkspaceFile[] = []
-  private fileVersions: Record<string, number> = Object.create(null)
-  private pendingOpenWaiters = new Map<string, Array<(view: EditorView | null) => void>>()
-
-  constructor(
-    client: LSPClient,
-    private readonly workspaceRoot: string,
-  ) {
-    super(client)
-  }
-
-  private nextVersion(uri: string): number {
-    this.fileVersions[uri] = (this.fileVersions[uri] ?? -1) + 1
-    return this.fileVersions[uri]
-  }
-
-  syncFiles() {
-    const result: Array<{ file: WorkspaceFile; prevDoc: Text; changes: ChangeSet }> = []
-    for (const file of this.files) {
-      const plugin = LSPPlugin.get(file.view)
-      if (!plugin) continue
-      const changes = plugin.unsyncedChanges
-      if (!changes.empty) {
-        result.push({ changes, file, prevDoc: file.doc })
-        file.doc = file.view.state.doc
-        file.version = this.nextVersion(file.uri)
-        plugin.clear()
-      }
-    }
-    return result
-  }
-
-  openFile(uri: string, languageId: string, view: EditorView): void {
-    const existing = this.files.find((f) => f.uri === uri)
-    if (existing) {
-      existing.view = view
-      existing.doc = view.state.doc
-    } else {
-      const file: TrackedWorkspaceFile = {
-        uri,
-        languageId,
-        version: this.nextVersion(uri),
-        doc: view.state.doc,
-        view,
-        getView: () => view,
-      }
-      this.files.push(file)
-      this.client.didOpen(file)
-    }
-    const waiters = this.pendingOpenWaiters.get(uri)
-    if (waiters) {
-      this.pendingOpenWaiters.delete(uri)
-      for (const resolve of waiters) resolve(view)
-    }
-  }
-
-  closeFile(uri: string, view: EditorView): void {
-    const file = this.files.find((f) => f.uri === uri)
-    if (file && file.view === view) {
-      this.files = this.files.filter((f) => f !== file)
-      this.client.didClose(uri)
-    }
-  }
-
-  async displayFile(uri: string): Promise<EditorView | null> {
-    const fsPath = fileUriToPath(uri)
-    const normalizedRoot = this.workspaceRoot.replace(/\\/g, '/').replace(/\/$/, '')
-    const normalizedPath = fsPath.replace(/\\/g, '/')
-    const relativePath = normalizedPath.startsWith(`${normalizedRoot}/`)
-      ? normalizedPath.slice(normalizedRoot.length + 1)
-      : fsPath
-
-    const existing = this.files.find((f) => f.uri === uri)
-    if (existing) {
-      openNewFileTab(relativePath, { fileRoot: this.workspaceRoot })
-      return existing.view
-    }
-
-    const waitForOpen = new Promise<EditorView | null>((resolve) => {
-      const list = this.pendingOpenWaiters.get(uri) ?? []
-      const timer = setTimeout(() => {
-        const remaining = this.pendingOpenWaiters.get(uri)
-        if (remaining) {
-          this.pendingOpenWaiters.set(
-            uri,
-            remaining.filter((fn) => fn !== finish),
-          )
-        }
-        resolve(null)
-      }, 2500)
-      const finish = (v: EditorView | null) => {
-        clearTimeout(timer)
-        resolve(v)
-      }
-      list.push(finish)
-      this.pendingOpenWaiters.set(uri, list)
-    })
-
-    openNewFileTab(relativePath, { fileRoot: this.workspaceRoot })
-    return waitForOpen
-  }
-}
-
-const clientCache = new Map<string, LSPClient>()
-
-function clientKey(serverId: string, workspaceRoot: string): string {
-  return `${serverId}::${workspaceRoot}`
-}
-
-function createIpcTransport(serverId: string, workspaceRoot: string): Transport {
-  const handlers = new Set<(value: string) => void>()
-  let unsubscribeIpc: (() => void) | null = null
-
-  const ensureSubscribed = () => {
-    if (unsubscribeIpc) return
-    unsubscribeIpc = window.app.onLspMessage((payload) => {
-      if (payload.serverId !== serverId || payload.workspaceRoot !== workspaceRoot) return
-      for (const handler of handlers) {
-        handler(payload.message)
-      }
-    })
-  }
-
-  return {
-    send(message: string) {
-      void window.app.sendLspMessage(serverId, workspaceRoot, message)
-    },
-    subscribe(handler: (value: string) => void) {
-      handlers.add(handler)
-      ensureSubscribed()
-    },
-    unsubscribe(handler: (value: string) => void) {
-      handlers.delete(handler)
-      if (handlers.size === 0 && unsubscribeIpc) {
-        unsubscribeIpc()
-        unsubscribeIpc = null
-      }
-    },
-  }
-}
-
-function getOrCreateClient(serverId: string, workspaceRoot: string): LSPClient {
-  const key = clientKey(serverId, workspaceRoot)
-  const existing = clientCache.get(key)
-  if (existing) return existing
-
-  const client = new LSPClient({
-    rootUri: pathToFileUri(workspaceRoot),
-    workspace: (c) => new SuperOneWorkspace(c, workspaceRoot),
-    extensions: languageServerExtensions(),
-    timeout: 8000,
-  })
-  client.connect(createIpcTransport(serverId, workspaceRoot))
-  clientCache.set(key, client)
-  return client
-}
-
-export function disposeLspClient(serverId: string, workspaceRoot: string): void {
-  const key = clientKey(serverId, workspaceRoot)
-  const client = clientCache.get(key)
-  if (!client) return
-  client.disconnect()
-  clientCache.delete(key)
-}
+export { disposeLspClient }
 
 function extractCodeBlockLanguage(codeEl: HTMLElement, fallback: string): string {
   for (const cls of Array.from(codeEl.classList)) {
@@ -470,25 +281,9 @@ export interface LoadLspExtensionOptions {
 }
 
 export async function loadLspExtension(options: LoadLspExtensionOptions): Promise<Extension> {
-  const ext = options.filePath.split('.').pop()?.toLowerCase() ?? ''
-  const langLower = options.language?.toLowerCase() ?? ''
-  const candidates = [langLower, ext].filter((v) => v && v !== 'text')
-
-  const servers = await window.app.listLspServers().catch(() => [])
-  const enabledMatch = servers.find(
-    (s) =>
-      s.installStatus === 'installed' &&
-      s.enabled &&
-      candidates.some((c) => s.languages.includes(c)),
-  )
-
-  const staticTarget = resolveLspTarget(options.language)
-  if (!enabledMatch) return []
-  const target = {
-    serverId: enabledMatch.id,
-    languageId: staticTarget?.languageId ?? candidates[0] ?? 'plaintext',
-  }
-  const client = getOrCreateClient(target.serverId, options.workspaceRoot)
+  const target = await resolveEnabledLspServer(options.filePath, options.language)
+  if (!target) return []
+  const { client } = getOrCreateLspClientEntry(target.serverId, options.workspaceRoot)
   return [
     client.plugin(pathToFileUri(options.filePath), target.languageId),
     createCmdClickJumpExtension(),

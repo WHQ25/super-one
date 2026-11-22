@@ -90,7 +90,7 @@ export default function ImagePreviewImpl({ src, alt, disableArrowKeys = false }:
         maxScale={10}
         centerOnInit
         smooth
-        wheel={{ step: 0.012 }}
+        wheel={{ wheelDisabled: true }}
         pinch={{ step: 10 }}
       >
         <Controls />

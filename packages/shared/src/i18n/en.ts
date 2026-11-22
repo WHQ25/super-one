@@ -5384,6 +5384,75 @@ export type Messages = {
       clearLogs: string
     }
   }
+  review: {
+    title: string
+    scopes: {
+      turn: string
+      session: string
+      workspace: string
+      uncommitted: string
+      unstaged: string
+      staged: string
+      committed: string
+      branch: string
+    }
+    layout: {
+      auto: string
+      autoLabel: string
+      split: string
+      unified: string
+      toggleFiles: string
+    }
+    turnLabel: string
+    filesCount: string
+    filesCountOne: string
+    filterFiles: string
+    noFilesMatch: string
+    empty: {
+      turn: string
+      noTurns: string
+      session: string
+      workspace: string
+      notRepo: string
+      selectFile: string
+      binaryFile: string
+      emptyPatch: string
+    }
+    badges: {
+      concurrent: string
+      toolFallback: string
+      staged: string
+      unstaged: string
+      untracked: string
+    }
+    actions: {
+      refresh: string
+      openFile: string
+      expandAll: string
+      collapseAll: string
+      wordWrap: string
+      richPreview: string
+      addComment: string
+      commentPlaceholder: string
+      saveComment: string
+      cancel: string
+      edit: string
+      delete: string
+      sendComments: string
+      commentsQueued: string
+      confirm: string
+    }
+    lsp: {
+      cmdClickHint: string
+      ctrlClickHint: string
+      noDefinition: string
+      loadingHover: string
+    }
+    error: {
+      loadFailed: string
+      retry: string
+    }
+  }
 }
 
 export const en: Messages = {
@@ -10858,6 +10927,75 @@ export const en: Messages = {
       clearUnusedHarness: 'This deletes harness copies that no installed harness is using. The current copy stays.',
       clearRetiredAntigravity: 'This deletes the leftover Antigravity runtime from an older build. The agy CLI on this machine stays.',
       clearLogs: 'This clears the logs. Later troubleshooting will have less to look at.',
+    },
+  },
+  review: {
+    title: 'Review',
+    scopes: {
+      turn: 'Turn',
+      session: 'Session',
+      workspace: 'Workspace',
+      uncommitted: 'Uncommitted',
+      unstaged: 'Unstaged',
+      staged: 'Staged',
+      committed: 'Committed',
+      branch: 'Branch',
+    },
+    layout: {
+      auto: 'Diff layout: Auto (click to switch)',
+      autoLabel: 'Auto',
+      split: 'Diff layout: Split (click to switch)',
+      unified: 'Diff layout: Unified (click to switch)',
+      toggleFiles: 'Toggle file list',
+    },
+    turnLabel: 'Turn {{index}}',
+    filesCount: '{{count}} files',
+    filesCountOne: '1 file',
+    filterFiles: 'Filter files…',
+    noFilesMatch: 'No files match filter',
+    empty: {
+      turn: 'No code changes recorded in this turn',
+      noTurns: 'No turns in this session yet',
+      session: 'No code changes in this conversation yet',
+      workspace: 'Working tree is clean',
+      notRepo: 'Current workspace is not a Git repository',
+      selectFile: 'Select a file to inspect its diff',
+      binaryFile: 'Binary file changed',
+      emptyPatch: 'No textual diff available for this file',
+    },
+    badges: {
+      concurrent: 'Shared workspace (filtered)',
+      toolFallback: 'Tool-level tracking',
+      staged: 'Staged',
+      unstaged: 'Unstaged',
+      untracked: 'Untracked',
+    },
+    actions: {
+      refresh: 'Refresh',
+      openFile: 'Open file',
+      expandAll: 'Expand all diffs',
+      collapseAll: 'Collapse all diffs',
+      wordWrap: 'Toggle word wrap',
+      richPreview: 'Rich Preview',
+      addComment: 'Add comment',
+      commentPlaceholder: 'Write a review comment for the agent…',
+      saveComment: 'Save comment',
+      cancel: 'Cancel',
+      edit: 'Edit',
+      delete: 'Delete',
+      sendComments: 'Send comments ({{count}})',
+      commentsQueued: '{{count}} comments in composer',
+      confirm: 'Confirm',
+    },
+    lsp: {
+      cmdClickHint: 'Cmd+Click to jump to definition',
+      ctrlClickHint: 'Ctrl+Click to jump to definition',
+      noDefinition: 'No definition found',
+      loadingHover: 'Loading documentation…',
+    },
+    error: {
+      loadFailed: 'Failed to load review diff',
+      retry: 'Retry',
     },
   },
 }

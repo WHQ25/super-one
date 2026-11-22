@@ -31,6 +31,7 @@ import type Database from 'better-sqlite3'
 import { ensureSessionFileDeliveriesSchema } from './db-session-deliveries'
 import { ensureTerminalCommandRulesSchema } from './db-terminal-command-rules'
 import { ensureScheduledSendsSchema } from './db-scheduled-sends'
+import { ensureSessionTurnDiffsSchema } from './review/turn-diff-repo'
 import { encryptSecretIfAvailable } from './crypto/secret-store'
 import log from './logger'
 
@@ -42,7 +43,7 @@ import log from './logger'
  * every launch); it decides when a pre-migration snapshot is taken and lets a
  * build recognise a database written by a newer build.
  */
-export const SCHEMA_VERSION = 20
+export const SCHEMA_VERSION = 21
 
 /**
  * The oldest schema revision that can still read this database.
@@ -742,6 +743,7 @@ function applyMigrations(db: Database.Database): void {
   // Per-project "always allow" rules for agent terminal commands
   // (docs/features/terminal-agent-tools.md §5); DDL owned by the module.
   ensureTerminalCommandRulesSchema(db)
+  ensureSessionTurnDiffsSchema(db)
   ensureSettledSessions(db)
   settleRecentSessionsOnce(db)
 }

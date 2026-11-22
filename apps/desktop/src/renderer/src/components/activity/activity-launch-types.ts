@@ -1,10 +1,10 @@
 import type { ComponentType } from 'react'
-import { Globe, Route, Smartphone, Terminal as TerminalIcon } from 'lucide-react'
+import { FileDiff, Globe, Route, Smartphone, Terminal as TerminalIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
-import { focusActivePanelContent, openBrowserTab, openDeviceTab, openTerminalTab, openTrajectoryTab } from './activity-panel-api'
+import { focusActivePanelContent, openBrowserTab, openDeviceTab, openReviewTab, openTerminalTab, openTrajectoryTab } from './activity-panel-api'
 
 export interface ActivityLaunchType {
   id: string
@@ -59,6 +59,20 @@ export function useActivityLaunchTypes(): ActivityLaunchType[] {
         const proj = cs.activeProject
         const sessionId = proj ? cs.projectSessions[proj]?._activeSessionId ?? undefined : undefined
         void openTerminalTab(projectPath, sessionId)
+      },
+    },
+    {
+      id: 'review',
+      icon: FileDiff,
+      label: t('review.title'),
+      disabled: !currentFolder,
+      onOpen: () => {
+        const projectPath = useAppStore.getState().currentFolder
+        if (!projectPath) return
+        const cs = useChatStore.getState()
+        const proj = cs.activeProject
+        const sessionId = proj ? cs.projectSessions[proj]?._activeSessionId ?? undefined : undefined
+        openReviewTab({ projectPath, sessionId, label: t('review.title') })
       },
     },
     // One entry, not one per platform. Both used to open the same tab, and since

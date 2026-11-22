@@ -34,7 +34,7 @@ function closeActiveDockTab(): void {
   const id = panel.id
   if (id.startsWith('miniapp-')) void useMiniAppStore.getState().closeApp(id.slice('miniapp-'.length))
   else if (id.startsWith('terminal-')) closeActivityTerminalTab(id.slice('terminal-'.length))
-  else if (id.startsWith('file:')) panel.api.close()
+  else if (id.startsWith('file:') || id.startsWith('review-') || id.startsWith('trajectory-')) panel.api.close()
   else closeBrowserTab(id)
 }
 

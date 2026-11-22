@@ -39,6 +39,7 @@ import type { DeviceCapture, DeviceDescriptor, DeviceFrame, DeviceInput, DeviceI
 import type { DeviceSetupKind, DeviceSetupOption } from '@superone/shared/device-setup'
 import type { DeviceEnvironmentAction, DeviceEnvironmentResult, DeviceEnvironmentState } from '@superone/shared/device-environment'
 import type { PairRemoteInput, RepairPairingInput, SyncZoneReclaimResult, SyncZoneUsage } from '@superone/shared/environment'
+import type { ReviewFileContentsPair, ReviewSessionData, ReviewWorkspaceData, ReviewWorkspaceFilter } from '@superone/shared/review-types'
 // Re-export so renderer consumers of the preload types see the correlated shape.
 export type { EnvironmentInstallProgress } from '@superone/shared/environment'
 
@@ -797,6 +798,9 @@ interface AppAPI extends WindowLayoutAPI {
    */
   getGitMentionCapabilities(folderPath: string, refresh?: boolean): Promise<GitMentionCapabilities>
   getGitDiffFile(folderPath: string, filePath: string, staged: boolean): Promise<GitFileDiff>
+  getReviewSession(sessionId: string, folderPath: string, fallbackMessages?: ChatMessage[]): Promise<ReviewSessionData>
+  getReviewWorkspace(folderPath: string, filter?: ReviewWorkspaceFilter): Promise<ReviewWorkspaceData>
+  getReviewFileContents(folderPath: string, filePath: string): Promise<ReviewFileContentsPair>
   /** The project of a local session, or null when there is no such session. */
   getSessionProject(sessionId: string): Promise<string | null>
   readProjectFile(folderPath: string, filePath: string): Promise<GitFileContent>

@@ -617,6 +617,16 @@ html:not(.dark) [data-sidebar-inner] .is-scrolling::-webkit-scrollbar-thumb:hove
   background-color: var(--popover);
 }
 
+:root {
+  --review-sticky-bg: var(--card);
+}
+.liquid-glass:not(.dark) {
+  --review-sticky-bg: oklch(0.96 0 0);
+}
+.liquid-glass.dark {
+  --review-sticky-bg: oklch(0.24 0 0);
+}
+
 /* The drag chip floats detached from window vibrancy, so the glass-mode
    `--sidebar: transparent` would make it disappear. Force an opaque surface. */
 .liquid-glass .session-drag-chip {

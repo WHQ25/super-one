@@ -1,4 +1,6 @@
+import { lazy, Suspense } from 'react'
 import type { IDockviewPanelProps } from 'dockview-core'
+import type { ReviewScope } from '@superone/shared/review-types'
 import { DesktopModUi } from '@/lib/mod-ui/DesktopModUi'
 import { ModPaneBody } from '@/components/chat/mod/ModSurfaces'
 import type { ModPaneTabParams } from './activity-panel-api'
@@ -53,6 +55,22 @@ function ModPaneDockPanel(props: IDockviewPanelProps<ModPaneTabParams>) {
   )
 }
 
+const LazyReviewPanel = lazy(() => import('@/components/review/ReviewPanel'))
+
+function ReviewDockPanel(
+  props: IDockviewPanelProps<{ sessionId?: string; projectPath?: string; initialScope?: ReviewScope }>,
+) {
+  return (
+    <Suspense fallback={<div className="flex h-full items-center justify-center text-xs text-muted-foreground">Loading…</div>}>
+      <LazyReviewPanel
+        sessionId={props.params.sessionId}
+        projectPath={props.params.projectPath}
+        initialScope={props.params.initialScope}
+      />
+    </Suspense>
+  )
+}
+
 export const activityPanelComponents: Record<string, React.FunctionComponent<IDockviewPanelProps>> = {
   'mod-pane': ModPaneDockPanel as React.FunctionComponent<IDockviewPanelProps>,
   'mcp-app': McpAppPanel as React.FunctionComponent<IDockviewPanelProps>,
@@ -62,6 +80,7 @@ export const activityPanelComponents: Record<string, React.FunctionComponent<IDo
   'browser': BrowserPanel as React.FunctionComponent<IDockviewPanelProps>,
   'terminal': TerminalHostPanel as React.FunctionComponent<IDockviewPanelProps>,
   'trajectory': TrajectoryDockPanel as React.FunctionComponent<IDockviewPanelProps>,
+  'review': ReviewDockPanel as React.FunctionComponent<IDockviewPanelProps>,
   'device': DeviceDockPanel as React.FunctionComponent<IDockviewPanelProps>,
   'side-chat': SideChatDockPanel as React.FunctionComponent<IDockviewPanelProps>,
 }

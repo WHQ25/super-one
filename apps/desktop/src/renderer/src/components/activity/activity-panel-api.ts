@@ -417,6 +417,53 @@ export function closeTrajectoryTab(sessionId: string) {
   dockApi?.panels.find((p) => p.id === panelId)?.api.close()
 }
 
+export interface OpenReviewTabOptions {
+  sessionId?: string
+  projectPath?: string
+  label?: string
+  initialScope?: 'turn' | 'session' | 'workspace'
+}
+
+export function openReviewTab(options: OpenReviewTabOptions = {}) {
+  ensureVisible()
+  const key = options.sessionId || options.projectPath || 'workspace'
+  const panelId = `review-${key}`
+  recordMosaicOpen(panelId, () => openReviewTab(options))
+  execOrDefer(() => {
+    if (!dockApi) return
+    const existing = dockApi.panels.find((p) => p.id === panelId)
+    if (existing) {
+      if (options.initialScope) {
+        existing.api.updateParameters?.({
+          sessionId: options.sessionId,
+          projectPath: options.projectPath,
+          initialScope: options.initialScope,
+        })
+      }
+      activateInMaximizedGroup(existing)
+      return
+    }
+    const position = positionInMaximizedGroup()
+    dockApi.addPanel({
+      id: panelId,
+      component: 'review',
+      tabComponent: 'review-tab',
+      title: options.label || 'Review',
+      params: {
+        sessionId: options.sessionId,
+        projectPath: options.projectPath,
+        initialScope: options.initialScope ?? 'workspace',
+      },
+      ...(position ? { position } : {}),
+    })
+  })
+}
+
+export function closeReviewTab(panelId: string) {
+  removeMosaicOpen(panelId)
+  dockApi?.panels.find((p) => p.id === panelId)?.api.close()
+}
+
 /**
  * The single side-chat tab. Fixed panel id because only one side chat exists at
  * a time — reopening lands in the same slot in the strip rather than growing it.

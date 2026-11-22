@@ -1,4 +1,6 @@
 import { registerAppIconIpc, setAppIconFile } from './app-icon-settings'
+import { TurnDiffTracker } from './review/turn-diff-tracker'
+import { registerReviewIpc } from './review/review-ipc'
 import { registerWindowLayoutIpc } from './window-layout-ipc'
 import { setConfigResourceServices } from './mcp/config-resource-services'
 import { registerSessionLinkIpc } from './environment/session-link-ipc'
@@ -562,7 +564,12 @@ const sessionManager = new SessionManagerImpl({
     clearAllGates()
     clearSessionPendingMiniAppCalls(sessionId)
   },
+  onSessionDisposed: (sessionId) => {
+    turnDiffTracker.cleanupSession(sessionId)
+  },
 })
+const turnDiffTracker = new TurnDiffTracker(sessionManager)
+turnDiffTracker.attach()
 let nodeOwnsSchedules: (connectionId: string) => boolean = () => false
 const scheduledSendService = new ScheduledSendService({
   nodeOwnsSchedules: connectionId => nodeOwnsSchedules(connectionId),
@@ -3518,6 +3525,8 @@ function registerIpcHandlers(): void {
     }
   })
 
+  registerReviewIpc(turnDiffTracker)
+
   ipcMain.handle(AgentIpcChannels.SESSION_PROJECT, async (_event, sessionId: string) => {
     // The renderer only knows the sessions it loaded; the database knows every local one.
     const { projectPathOfSession } = await import('./db-sessions')
@@ -6216,6 +6225,7 @@ function disposeAgentSessions(): Promise<void> {
 }
 
 function performQuit(): void {
+  turnDiffTracker.dispose()
   stopCollaborationWakes()
   quitting = true
   rendererAgentEventTransport.dispose()

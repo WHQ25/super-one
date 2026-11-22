@@ -2397,6 +2397,12 @@ const appAPI = {
       : ipcRenderer.invoke(AgentIpcChannels.GIT_MENTION_CAPABILITIES, folderPath),
   getGitDiffFile: (folderPath: string, filePath: string, staged: boolean) =>
     ipcRenderer.invoke(AgentIpcChannels.GIT_DIFF_FILE, folderPath, filePath, staged),
+  getReviewSession: (sessionId: string, folderPath: string, fallbackMessages?: unknown[]) =>
+    ipcRenderer.invoke(AgentIpcChannels.REVIEW_GET_SESSION, sessionId, folderPath, fallbackMessages),
+  getReviewWorkspace: (folderPath: string, filter?: unknown) =>
+    ipcRenderer.invoke(AgentIpcChannels.REVIEW_GET_WORKSPACE, folderPath, filter),
+  getReviewFileContents: (folderPath: string, filePath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.REVIEW_GET_FILE_CONTENTS, folderPath, filePath),
   getSessionProject: (sessionId: string): Promise<string | null> =>
     ipcRenderer.invoke(AgentIpcChannels.SESSION_PROJECT, sessionId),
   readProjectFile: (folderPath: string, filePath: string) =>

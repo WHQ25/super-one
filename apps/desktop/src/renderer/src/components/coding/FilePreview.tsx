@@ -119,9 +119,10 @@ function useOwnFileData(filePath: string | undefined, refreshKey: number, root?:
 interface FilePreviewProps {
   filePath: string
   fileRoot?: string
+  hideHeader?: boolean
 }
 
-export function FilePreview({ filePath, fileRoot: root }: FilePreviewProps) {
+export function FilePreview({ filePath, fileRoot: root, hideHeader = false }: FilePreviewProps) {
   const { t } = useTranslation()
   const projectRoot = useEffectiveProjectRoot()
   const fileRoot = root ?? projectRoot
@@ -330,56 +331,58 @@ export function FilePreview({ filePath, fileRoot: root }: FilePreviewProps) {
 
   return (
     <div ref={rootRef} className="flex h-full flex-col">
-      <div className="flex h-8 shrink-0 items-center gap-1 px-2">
-        <div
-          ref={breadcrumbRef}
-          title={selectedFile}
-          className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto overflow-y-hidden hide-scrollbar"
-        >
-          {pathSegments.map((segment, i) => (
-            <span key={i} className="flex shrink-0 items-center gap-0.5">
-              {i > 0 && <ChevronRight className="size-3 shrink-0 text-muted-foreground/50" />}
-              {i === pathSegments.length - 1 ? (
-                <span className="flex items-center gap-1">
-                  <FileIcon name={segment || selectedFile} size={13} className="shrink-0" />
-                  <span className="text-xs font-medium whitespace-nowrap">{segment || selectedFile}</span>
-                </span>
-              ) : (
-                <span className="text-xs text-muted-foreground whitespace-nowrap">
-                  {segment || '/'}
-                </span>
-              )}
-            </span>
-          ))}
-        </div>
-        {isDirty && <span className="size-1.5 rounded-full bg-orange-600 dark:bg-orange-400" title={t('tooltips.unsavedChanges')} />}
-        {!loadError && !isUnpreviewable && effectiveTab === 'file' && fileRoot && fileLanguage !== 'text' && !hasEnabledLsp && (
-          <button
-            type="button"
-            onClick={() => {
-              setSettingsTab('editor')
-              navigateTo('settings')
-            }}
-            title={t('settings.editor.lsp.configureTooltip')}
-            className="inline-flex h-5 shrink-0 items-center gap-1 rounded px-1.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+      {!hideHeader && (
+        <div className="flex h-8 shrink-0 items-center gap-1 px-2">
+          <div
+            ref={breadcrumbRef}
+            title={selectedFile}
+            className="flex min-w-0 flex-1 items-center gap-0.5 overflow-x-auto overflow-y-hidden hide-scrollbar"
           >
-            <span className="size-1.5 rounded-full bg-muted-foreground/40" />
-            LSP
-          </button>
-        )}
-        {!loadError && !isUnpreviewable && <McpAppOpenWithButton absolutePath={absoluteFilePath(selectedFile, fileRoot)} scope={lastTouchedPane()} />}
-        {tabs.length > 1 && (
-          <Tabs value={effectiveTab} onValueChange={handleTabChange}>
-            <TabsList>
-              {tabs.map((tab) => (
-                <TabsTrigger key={tab.key} value={tab.key} className="text-[10px]">
-                  {tab.label}
-                </TabsTrigger>
-              ))}
-            </TabsList>
-          </Tabs>
-        )}
-      </div>
+            {pathSegments.map((segment, i) => (
+              <span key={i} className="flex shrink-0 items-center gap-0.5">
+                {i > 0 && <ChevronRight className="size-3 shrink-0 text-muted-foreground/50" />}
+                {i === pathSegments.length - 1 ? (
+                  <span className="flex items-center gap-1">
+                    <FileIcon name={segment || selectedFile} size={13} className="shrink-0" />
+                    <span className="text-xs font-medium whitespace-nowrap">{segment || selectedFile}</span>
+                  </span>
+                ) : (
+                  <span className="text-xs text-muted-foreground whitespace-nowrap">
+                    {segment || '/'}
+                  </span>
+                )}
+              </span>
+            ))}
+          </div>
+          {isDirty && <span className="size-1.5 rounded-full bg-orange-600 dark:bg-orange-400" title={t('tooltips.unsavedChanges')} />}
+          {!loadError && !isUnpreviewable && effectiveTab === 'file' && fileRoot && fileLanguage !== 'text' && !hasEnabledLsp && (
+            <button
+              type="button"
+              onClick={() => {
+                setSettingsTab('editor')
+                navigateTo('settings')
+              }}
+              title={t('settings.editor.lsp.configureTooltip')}
+              className="inline-flex h-5 shrink-0 items-center gap-1 rounded px-1.5 text-[10px] font-medium text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            >
+              <span className="size-1.5 rounded-full bg-muted-foreground/40" />
+              LSP
+            </button>
+          )}
+          {!loadError && !isUnpreviewable && <McpAppOpenWithButton absolutePath={absoluteFilePath(selectedFile, fileRoot)} scope={lastTouchedPane()} />}
+          {tabs.length > 1 && (
+            <Tabs value={effectiveTab} onValueChange={handleTabChange}>
+              <TabsList>
+                {tabs.map((tab) => (
+                  <TabsTrigger key={tab.key} value={tab.key} className="text-[10px]">
+                    {tab.label}
+                  </TabsTrigger>
+                ))}
+              </TabsList>
+            </Tabs>
+          )}
+        </div>
+      )}
 
       <div className="min-h-0 flex-1 overflow-auto" style={zoom !== 1 ? { zoom } : undefined}>
         {loadError ? (

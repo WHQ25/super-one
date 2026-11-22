@@ -25,6 +25,7 @@ import { FileSelectionContextMenuZone } from './FileSelectionContextMenuZone'
 import {
   attachHorizontalGutterClip,
   captureViewSelection,
+  createLineNumberSelectionExtension,
   createLineNumbersController,
   scrollViewToLineWithFlash,
   type LineNumbersController,
@@ -257,6 +258,7 @@ export function CodeFileEditor({
       doc: initialDoc,
       extensions: [
         lineNumbersController.extension,
+        createLineNumberSelectionExtension(),
         createDiffGutterExtensions(handleGutterHover),
         highlightActiveLineGutter(),
         highlightSpecialChars(),

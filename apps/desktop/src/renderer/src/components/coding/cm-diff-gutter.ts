@@ -222,27 +222,41 @@ export function createDiffGutterExtensions(onHoverChange: (payload: GutterHoverP
     class {
       private onMove: (e: MouseEvent) => void
       private onOver: (e: MouseEvent) => void
+      private onDown: () => void
       private onLeave: () => void
 
       constructor(private view: EditorView) {
         this.onMove = (event: MouseEvent) => {
+          if (event.buttons !== 0) {
+            onHoverChange(null)
+            return
+          }
           onHoverChange(resolveHover(this.view, event))
         }
         this.onOver = (event: MouseEvent) => {
+          if (event.buttons !== 0) {
+            onHoverChange(null)
+            return
+          }
           const payload = resolveHover(this.view, event)
           if (payload) onHoverChange(payload)
+        }
+        this.onDown = () => {
+          onHoverChange(null)
         }
         this.onLeave = () => {
           onHoverChange(null)
         }
         view.dom.addEventListener('mousemove', this.onMove)
         view.dom.addEventListener('mouseover', this.onOver)
+        view.dom.addEventListener('mousedown', this.onDown)
         view.dom.addEventListener('mouseleave', this.onLeave)
       }
 
       destroy() {
         this.view.dom.removeEventListener('mousemove', this.onMove)
         this.view.dom.removeEventListener('mouseover', this.onOver)
+        this.view.dom.removeEventListener('mousedown', this.onDown)
         this.view.dom.removeEventListener('mouseleave', this.onLeave)
       }
     },

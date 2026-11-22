@@ -1,5 +1,13 @@
-import { Compartment, EditorState, type Extension, StateField } from '@codemirror/state'
-import { EditorView, lineNumbers } from '@codemirror/view'
+import {
+  Annotation,
+  Compartment,
+  EditorState,
+  RangeSetBuilder,
+  StateEffect,
+  StateField,
+  type Extension,
+} from '@codemirror/state'
+import { Decoration, EditorView, ViewPlugin, lineNumbers, type DecorationSet } from '@codemirror/view'
 import { diffChangesField, setFlashLineEffect } from './cm-diff-gutter'
 import { formatEditorSelectionQuote } from './editor-diff'
 import type { CapturedFileSelection } from './FileSelectionContextMenuZone'
@@ -152,4 +160,137 @@ export function attachHorizontalGutterClip(view: EditorView, onScroll: () => voi
   }
   view.scrollDOM.addEventListener('scroll', handleScroll, { passive: true })
   return () => view.scrollDOM.removeEventListener('scroll', handleScroll)
+}
+
+const gutterSelectAnnotation = Annotation.define<boolean>()
+const setGutterLineSelectionEffect = StateEffect.define<{ fromLine: number; toLine: number } | null>()
+const gutterSelectedLineDecoration = Decoration.line({ class: 'cm-gutter-selected-line' })
+
+const gutterLineSelectionField = StateField.define<{ fromLine: number; toLine: number } | null>({
+  create: () => null,
+  update(value, tr) {
+    for (const effect of tr.effects) {
+      if (effect.is(setGutterLineSelectionEffect)) return effect.value
+    }
+    if (tr.docChanged || (tr.selection && !tr.annotation(gutterSelectAnnotation))) {
+      return null
+    }
+    return value
+  },
+  provide: (field) =>
+    EditorView.editorAttributes.from(field, (range): Record<string, string> =>
+      range ? { class: 'cm-has-gutter-line-selection' } : {},
+    ),
+})
+
+const gutterLineSelectionDecorations = EditorView.decorations.compute(
+  [gutterLineSelectionField],
+  (state): DecorationSet => {
+    const range = state.field(gutterLineSelectionField, false)
+    if (!range) return Decoration.none
+    const fromLine = Math.max(1, Math.min(range.fromLine, state.doc.lines))
+    const toLine = Math.max(fromLine, Math.min(range.toLine, state.doc.lines))
+    const builder = new RangeSetBuilder<Decoration>()
+    for (let lineNo = fromLine; lineNo <= toLine; lineNo++) {
+      builder.add(state.doc.line(lineNo).from, state.doc.line(lineNo).from, gutterSelectedLineDecoration)
+    }
+    return builder.finish()
+  },
+)
+
+function lineRangeSelection(state: EditorState, anchorLine: number, targetLine: number): { anchor: number; head: number } {
+  const doc = state.doc
+  const clampedAnchor = Math.max(1, Math.min(anchorLine, doc.lines))
+  const clampedTarget = Math.max(1, Math.min(targetLine, doc.lines))
+
+  if (clampedTarget >= clampedAnchor) {
+    return {
+      anchor: doc.line(clampedAnchor).from,
+      head: doc.line(clampedTarget).to,
+    }
+  }
+  return {
+    anchor: doc.line(clampedAnchor).to,
+    head: doc.line(clampedTarget).from,
+  }
+}
+
+export function createLineNumberSelectionExtension(): Extension {
+  const plugin = ViewPlugin.fromClass(
+    class {
+      private anchorLine: number | null = null
+      private lastTargetLine: number | null = null
+
+      constructor(private readonly view: EditorView) {
+        this.view.dom.addEventListener('mousedown', this.onMouseDown)
+      }
+
+      private lineFromClientY(clientY: number): number {
+        const docHeight = Math.max(0, Math.min(clientY - this.view.documentTop, this.view.contentHeight))
+        const block = this.view.lineBlockAtHeight(docHeight)
+        return this.view.state.doc.lineAt(block.from).number
+      }
+
+      private selectLines(anchorLine: number, targetLine: number) {
+        const doc = this.view.state.doc
+        const clampedAnchor = Math.max(1, Math.min(anchorLine, doc.lines))
+        const clampedTarget = Math.max(1, Math.min(targetLine, doc.lines))
+        const sel = lineRangeSelection(this.view.state, clampedAnchor, clampedTarget)
+        const fromLine = Math.min(clampedAnchor, clampedTarget)
+        const toLine = Math.max(clampedAnchor, clampedTarget)
+        this.view.dispatch({
+          selection: sel,
+          annotations: gutterSelectAnnotation.of(true),
+          effects: [
+            setGutterLineSelectionEffect.of({ fromLine, toLine }),
+            EditorView.scrollIntoView(doc.line(clampedTarget).from),
+          ],
+        })
+      }
+
+      private onMouseDown = (event: MouseEvent) => {
+        if (event.button !== 0) return
+        const target = event.target as HTMLElement | null
+        const lineNumbersEl = target?.closest?.('.cm-lineNumbers')
+        if (!lineNumbersEl || !this.view.dom.contains(lineNumbersEl)) return
+
+        event.preventDefault()
+        this.view.focus()
+        const clickedLine = this.lineFromClientY(event.clientY)
+        const anchorLine = event.shiftKey
+          ? this.view.state.doc.lineAt(this.view.state.selection.main.anchor).number
+          : clickedLine
+
+        this.anchorLine = anchorLine
+        this.lastTargetLine = clickedLine
+        this.selectLines(anchorLine, clickedLine)
+
+        window.addEventListener('mousemove', this.onMouseMove)
+        window.addEventListener('mouseup', this.onMouseUp)
+        window.addEventListener('blur', this.onMouseUp)
+      }
+
+      private onMouseMove = (event: MouseEvent) => {
+        if (this.anchorLine == null) return
+        const targetLine = this.lineFromClientY(event.clientY)
+        if (targetLine === this.lastTargetLine) return
+        this.lastTargetLine = targetLine
+        this.selectLines(this.anchorLine, targetLine)
+      }
+
+      private onMouseUp = () => {
+        this.anchorLine = null
+        this.lastTargetLine = null
+        window.removeEventListener('mousemove', this.onMouseMove)
+        window.removeEventListener('mouseup', this.onMouseUp)
+        window.removeEventListener('blur', this.onMouseUp)
+      }
+
+      destroy() {
+        this.onMouseUp()
+        this.view.dom.removeEventListener('mousedown', this.onMouseDown)
+      }
+    },
+  )
+  return [gutterLineSelectionField, gutterLineSelectionDecorations, plugin]
 }

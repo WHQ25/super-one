@@ -70,6 +70,7 @@ export const codeEditorTheme = EditorView.theme({
     padding: '0 4px 0 12px',
     minWidth: 'calc(2ch + 16px)',
     textAlign: 'right',
+    cursor: 'pointer',
   },
   '.cm-activeLineGutter': {
     backgroundColor: 'transparent',
@@ -147,6 +148,12 @@ export const codeEditorTheme = EditorView.theme({
   },
   '&.cm-focused > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, .cm-selectionBackground, .cm-content ::selection': {
     backgroundColor: 'color-mix(in oklch, var(--primary) 24%, transparent) !important',
+  },
+  '.cm-line.cm-gutter-selected-line': {
+    backgroundColor: 'color-mix(in oklch, var(--primary) 24%, transparent) !important',
+  },
+  '&.cm-has-gutter-line-selection > .cm-scroller > .cm-selectionLayer .cm-selectionBackground, &.cm-has-gutter-line-selection .cm-selectionBackground': {
+    backgroundColor: 'transparent !important',
   },
   '.cm-selectionMatch': {
     backgroundColor: 'color-mix(in oklch, var(--primary) 14%, transparent)',

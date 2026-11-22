@@ -86,6 +86,50 @@ export function inputProjectPathKey(
   return paths.join('\n')
 }
 
+export function countEnvironmentAttentionSessions(
+  projectSessions: Readonly<Record<string, {
+    _sessions?: Readonly<Record<string, InputSession & { _parentSessionId?: string | null }>>
+    unseenCompletedSessions?: ReadonlySet<string>
+  } | undefined>>,
+  checkouts: ReadonlyArray<{ pathKey: string }>,
+  folderSessions?: Readonly<Record<string, ReadonlyArray<SessionHistoryEntry> | undefined>>,
+  childSessions?: Readonly<Record<string, Readonly<Record<string, ReadonlyArray<SessionHistoryEntry> | undefined>> | undefined>>,
+): number {
+  let count = 0
+  for (const checkout of checkouts) {
+    const project = projectSessions[checkout.pathKey]
+    if (!project) continue
+    const childIds = new Set<string>()
+    for (const entry of folderSessions?.[checkout.pathKey] ?? []) {
+      if (entry.parentSessionId) childIds.add(entry.sessionId)
+    }
+    const projectChildren = childSessions?.[checkout.pathKey]
+    if (projectChildren) {
+      for (const list of Object.values(projectChildren)) {
+        for (const entry of list ?? []) {
+          childIds.add(entry.sessionId)
+        }
+      }
+    }
+    const attentionIds = new Set<string>()
+    if (project._sessions) {
+      for (const [sid, session] of Object.entries(project._sessions)) {
+        if (session?._parentSessionId) childIds.add(sid)
+        if (sessionNeedsUserInput(session)) attentionIds.add(sid)
+      }
+    }
+    if (project.unseenCompletedSessions) {
+      for (const sid of project.unseenCompletedSessions) {
+        const session = project._sessions?.[sid]
+        if (isEphemeralSession(session) || childIds.has(sid)) continue
+        attentionIds.add(sid)
+      }
+    }
+    count += attentionIds.size
+  }
+  return count
+}
+
 export function isLiveSession(
   session: InputSession,
   isUnseen: boolean | undefined,

@@ -200,3 +200,17 @@ export const HoverCard: Story = {
     await expect(body.getByRole('textbox', { name: 'Display Name' })).toHaveValue('dev-server')
   },
 }
+
+export const CollapsedWithAttention: Story = {
+  args: {
+    expanded: false,
+    attentionCount: 3,
+  },
+  render: (args) => <Frame><EnvironmentSectionHeader {...args} /></Frame>,
+  play: async ({ canvasElement }) => {
+    const badge = canvasElement.querySelector('[data-slot="environment-attention-count"]')
+    await expect(badge).toBeInTheDocument()
+    await expect(badge?.querySelector('.lucide-bell')).toBeInTheDocument()
+    await expect(badge).toHaveTextContent('3')
+  },
+}

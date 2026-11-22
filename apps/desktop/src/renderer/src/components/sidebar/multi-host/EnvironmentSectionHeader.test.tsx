@@ -290,4 +290,37 @@ describe('environment focus entry', () => {
     expect(sort.closest('[data-slot="tooltip-trigger"]')).toBeNull()
     expect(screen.getByRole('button', { name: 'Add Project' }).closest('[data-slot="tooltip-trigger"]')).toBeNull()
   })
+
+  it('shows bell and attention count only when collapsed and count is positive', () => {
+    const { rerender } = render(
+      <EnvironmentSectionHeader
+        label="This Mac"
+        kind="local"
+        connection="connected"
+        expanded={false}
+        projectsStatus="ready"
+        projectsError={null}
+        onToggle={() => {}}
+        attentionCount={2}
+      />,
+    )
+    const badge = document.querySelector('[data-slot="environment-attention-count"]')
+    expect(badge).toBeInTheDocument()
+    expect(badge?.querySelector('.lucide-bell')).toBeInTheDocument()
+    expect(badge?.textContent).toBe('2')
+
+    rerender(
+      <EnvironmentSectionHeader
+        label="This Mac"
+        kind="local"
+        connection="connected"
+        expanded
+        projectsStatus="ready"
+        projectsError={null}
+        onToggle={() => {}}
+        attentionCount={2}
+      />,
+    )
+    expect(document.querySelector('[data-slot="environment-attention-count"]')).toBeNull()
+  })
 })

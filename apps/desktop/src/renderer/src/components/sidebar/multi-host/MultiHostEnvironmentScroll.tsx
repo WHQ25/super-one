@@ -377,6 +377,8 @@ function PinnedHeader({ bucket, ...props }: ListProps & { bucket: EnvironmentBuc
       onAddProject={() => props.onAddProject(bucket.connectionId)}
       onSort={props.onSort}
       upgradingLabel={props.upgradingLabels?.[bucket.connectionId]}
+      folderSessions={props.folderSessions}
+      childSessions={props.childSessions}
     />
   )
 }

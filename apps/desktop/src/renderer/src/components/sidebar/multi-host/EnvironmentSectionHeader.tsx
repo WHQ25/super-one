@@ -1,5 +1,5 @@
 import { useState } from 'react'
-import { ArrowDownUp, Plus, RotateCw, TriangleAlert } from 'lucide-react'
+import { ArrowDownUp, Bell, Plus, RotateCw, TriangleAlert } from 'lucide-react'
 import type { NodeLinkPath } from '@superone/shared/environment/node-route'
 import { useTranslation } from 'react-i18next'
 import {
@@ -139,6 +139,7 @@ export function EnvironmentSectionHeader({
   cardOpen,
   details,
   upgradingLabel,
+  attentionCount = 0,
 }: {
   label: string
   kind: EnvironmentKind
@@ -170,6 +171,7 @@ export function EnvironmentSectionHeader({
   details?: EnvironmentHoverDetails
   /** Set while this desktop is installing the node's CLI. The leading glyph becomes the loading bars. */
   upgradingLabel?: string
+  attentionCount?: number
 }) {
   const { t } = useTranslation()
   const offline = connection === 'offline'
@@ -189,6 +191,15 @@ export function EnvironmentSectionHeader({
           : <EnvironmentKindIcon kind={kind} connection={connection} path={path} unreachable={unreachable} />}
       />
       <span className="truncate">{label}</span>
+      {!open && attentionCount > 0 && (
+        <span
+          data-slot="environment-attention-count"
+          className="inline-flex shrink-0 items-center gap-0.5 rounded-full bg-sidebar-foreground/10 px-1.5 py-0.5 text-[11px] font-medium leading-none text-sidebar-foreground/80 tabular-nums"
+        >
+          <Bell className="size-3 shrink-0" />
+          <span>{attentionCount}</span>
+        </span>
+      )}
       {connection === 'needs-upgrade' && !upgrading && !unreachable && (
         <TriangleAlert className="size-3 shrink-0 text-warning" aria-label={t('sidebar.hover.needsUpgrade')} />
       )}

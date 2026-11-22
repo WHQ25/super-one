@@ -19,7 +19,7 @@ import { environmentUnreachable } from '@/lib/multi-host/unreachable-error'
 import { AutomationDialog } from '@/components/AutomationDialog'
 import { ProjectHistoryList } from '@/components/sidebar/ProjectHistoryList'
 import { ProjectSidebarRow } from '@/components/sidebar/ProjectSidebarRow'
-import { inputProjectPathKey } from '@/components/sidebar/session-state-utils'
+import { countEnvironmentAttentionSessions, inputProjectPathKey } from '@/components/sidebar/session-state-utils'
 import { useChatStore } from '@/stores/chat'
 import { hasFailedFirstSend } from '@/stores/chat-store/helpers/session-liveness'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
@@ -290,6 +290,8 @@ export function MultiHostProjectList(props: MultiHostProjectListProps) {
                 onSort={props.onSort}
                 obscured={props.obscuredEnvironmentIds?.includes(bucket.environmentId) ?? false}
                 upgradingLabel={props.upgradingLabels?.[bucket.connectionId]}
+                folderSessions={props.folderSessions}
+                childSessions={props.childSessions}
               />
               {/* A dead socket has nothing to list. Refresh and disconnect stay on the header. */}
               {!quiet && (
@@ -540,7 +542,7 @@ async function renameEnvironment(connectionId: string, name: string): Promise<vo
 }
 
 export function EnvironmentHeader({
-  bucket, expanded, refreshing, connectionBusy, sort, onToggle, onRefresh, onToggleConnection, onAddProject, onSort, obscured = false, upgradingLabel,
+  bucket, expanded, refreshing, connectionBusy, sort, onToggle, onRefresh, onToggleConnection, onAddProject, onSort, obscured = false, upgradingLabel, folderSessions, childSessions,
 }: {
   bucket: EnvironmentBucket
   expanded: boolean
@@ -555,7 +557,19 @@ export function EnvironmentHeader({
   obscured?: boolean
   /** Sentence announced by the leading spinner while this node's CLI installs. */
   upgradingLabel?: string
+  folderSessions?: Record<string, SessionHistoryEntry[]>
+  childSessions?: Record<string, Record<string, SessionHistoryEntry[]>>
 }) {
+  const attentionCount = useChatStore((state) =>
+    expanded
+      ? 0
+      : countEnvironmentAttentionSessions(
+          state.projectSessions,
+          bucket.checkouts,
+          folderSessions,
+          childSessions,
+        ),
+  )
   return (
     <EnvironmentSectionHeader
       label={bucket.label}
@@ -579,6 +593,7 @@ export function EnvironmentHeader({
       onRename={(name) => renameEnvironment(bucket.connectionId, name)}
       onEnterFocus={() => focusEnvironment(bucket.environmentId)}
       upgradingLabel={upgradingLabel}
+      attentionCount={attentionCount}
     />
   )
 }

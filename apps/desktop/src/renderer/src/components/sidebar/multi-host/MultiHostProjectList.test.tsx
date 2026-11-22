@@ -191,6 +191,39 @@ describe('environment sections', () => {
     expect(screen.getByText('remote-app')).toBeInTheDocument()
   })
 
+  it('shows bell attention count on collapsed environment for pending and non-child unseen sessions', () => {
+    const project = createDefaultProjectState()
+    project._sessions = {
+      ask: {
+        ...createDefaultPerSessionState(),
+        pendingQuestion: {
+          requestId: 'q',
+          questions: [{ question: 'Continue?', header: '', options: [], multiSelect: false }],
+        },
+      },
+      run: { ...createDefaultPerSessionState(), status: 'streaming', sessionProvider: 'claude' },
+      'child-unseen': { ...createDefaultPerSessionState(), _parentSessionId: 'ask' },
+    }
+    project.unseenCompletedSessions = new Set(['unread', 'child-unseen'])
+    useChatStore.setState({ projectSessions: { '/src/app': project } })
+    renderList({
+      collapsedEnvironmentIds: ['desktop'],
+      folderSessions: {
+        '/src/app': [
+          { sessionId: 'ask', title: 'Needs a decision', lastActiveAt: '2026-10-09T00:00:00.000Z', messageCount: 1 },
+          { sessionId: 'unread', title: 'Unseen session', lastActiveAt: '2026-10-09T00:00:00.000Z', messageCount: 1 },
+          { sessionId: 'run', title: 'Still working', lastActiveAt: '2026-10-09T00:00:00.000Z', messageCount: 1 },
+        ],
+      },
+    })
+
+    const desktopHeader = document.querySelector('[data-environment-id="desktop"] > [data-slot="environment-section-header"]')
+    const badge = desktopHeader?.querySelector('[data-slot="environment-attention-count"]')
+    expect(badge).toBeInTheDocument()
+    expect(badge?.querySelector('.lucide-bell')).toBeInTheDocument()
+    expect(badge?.textContent).toBe('2')
+  })
+
   it('gives a long device the leftover pane and grows its sessions', () => {
     const sessions = Array.from({ length: 20 }, (_, index) => ({
       sessionId: `s${index}`,

@@ -95,6 +95,32 @@ it('turns the level control into back while the hover menu stays', async () => {
   expect(onBack).toHaveBeenCalledOnce()
 })
 
+it('does not keep the back button or level menu open after pointer clicks', async () => {
+  const onBack = vi.fn()
+  const onSelectLevel = vi.fn()
+  const user = userEvent.setup()
+  render(<SidebarFocusBar
+    title="docs"
+    siblings={[{ id: 'docs', label: 'docs', current: true, icon: <Folder className="size-4" />, onSelect: vi.fn() }]}
+    levels={[{ id: 'root', label: 'super-one', onSelect: onSelectLevel }]}
+    backLabel="Back to super-one"
+    onBack={onBack}
+  />)
+  const back = screen.getByRole('button', { name: 'Back to super-one' })
+  const menu = document.querySelector('[data-sidebar-focus-levels]')!
+  expect(menu).toHaveClass('group-hover/levels:visible', 'group-has-[:focus-visible]/levels:visible')
+  expect(menu.className).not.toContain('group-focus-within/levels:visible')
+
+  await user.click(back)
+  expect(onBack).toHaveBeenCalledOnce()
+  expect(document.activeElement).not.toBe(back)
+
+  const levelButton = screen.getByRole('button', { name: 'super-one', hidden: true })
+  await user.click(levelButton)
+  expect(onSelectLevel).toHaveBeenCalledOnce()
+  expect(document.activeElement).not.toBe(levelButton)
+})
+
 it('opens the focused parent from its title while keeping sibling selection on a separate button', async () => {
   const open = vi.fn()
   const switchSibling = vi.fn()

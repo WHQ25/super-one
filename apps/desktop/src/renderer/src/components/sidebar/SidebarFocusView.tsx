@@ -217,17 +217,20 @@ export function SidebarFocusBar({
             tooltip={onBack && orderedLevels.length === 0 ? backLabel : undefined}
             data-sidebar-focus-levels-trigger
             data-testid={onBack ? 'file-tree-parent-back' : undefined}
-            onClick={onBack}
+            onClick={(event) => {
+              if (event.detail > 0) event.currentTarget.blur()
+              onBack?.()
+            }}
           >
-            <List className={onBack ? 'size-4 group-hover/levels:hidden group-focus-within/levels:hidden' : 'size-4'} />
+            <List className={onBack ? 'size-4 group-hover/levels:hidden group-has-[:focus-visible]/levels:hidden' : 'size-4'} />
             {onBack && (
-              <CircleChevronLeft className="hidden size-4 group-hover/levels:block group-focus-within/levels:block" />
+              <CircleChevronLeft className="hidden size-4 group-hover/levels:block group-has-[:focus-visible]/levels:block" />
             )}
           </IconButton>
           {orderedLevels.length > 0 && (
             <div
               data-sidebar-focus-levels
-              className="invisible absolute left-0 top-full z-30 pt-1 group-hover/levels:visible group-focus-within/levels:visible"
+              className="invisible absolute left-0 top-full z-30 pt-1 group-hover/levels:visible group-has-[:focus-visible]/levels:visible"
             >
               {/* brand-scope re-resolves popover tokens. Inside the sidebar the
                   remapped accent would paint item hover as a dark slab on this light menu. */}
@@ -237,7 +240,10 @@ export function SidebarFocusBar({
                     key={level.id}
                     type="button"
                     data-focus-level={level.id}
-                    onClick={level.onSelect}
+                    onClick={(event) => {
+                      if (event.detail > 0) event.currentTarget.blur()
+                      level.onSelect()
+                    }}
                     className="flex w-full cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-left text-xs hover:bg-accent hover:text-accent-foreground"
                   >
                     {level.icon}

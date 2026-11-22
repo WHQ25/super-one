@@ -1,6 +1,6 @@
 # Claude Agent SDK API surface
 
-Ledger version: `0.3.321` · Check: `bun scripts/harness-api-inventory.ts claude`
+Ledger version: `0.3.330` · Check: `bun scripts/harness-api-inventory.ts claude`
 
 Every upstream interface of `@anthropic-ai/claude-agent-sdk` and how SuperOne uses it. Runtimes: **desktop** (local sessions), **node** (remote node CLI through `packages/claude`), **probe** (catalog queries with `maxTurns: 0`). Status vocabulary and row format: [docs/harness/README.md](../README.md#ledger-api-surfacemd). Undeclared messages and methods SuperOne relies on are in [contracts.md](contracts.md#typed-messages-may-not-be-emitted-untyped-ones-may-be).
 
@@ -35,6 +35,7 @@ Runtime exports of `sdk.d.ts`: functions, classes and constants. Types are not l
 | `USAGE_LIMIT_ERROR_PREFIXES` | unused | Unused; we detect limits from `rate_limit_event` status `rejected`, the typed assistant error and the `/usage limit/` regex in `packages/shared/src/agent-error.ts`, not the SDK prefixes. | — |
 | `USAGE_TRANSITION_PREFIXES` | unused | Would identify "now using usage credits" notices; we show overage state from `rate_limit_event.isUsingOverage` instead. | — |
 | `USAGE_WARNING_PREFIXES` | unused | Would identify "You've used / You're close to" warnings; we show `rate_limit_event.utilization` instead. | — |
+| `archiveSession` | unused | Marks a session archived in Claude transcripts; SuperOne tracks archive state in its own SQLite DB. | — |
 | `createSdkMcpServer` | unused | Unused; we build `{type:'sdk', name, instance: new McpServer()}` by hand in `superone-mcp-server.ts` (desktop) and `host-action-mcp-server.ts` (node). | — |
 | `deleteSession` | unused | Unused; side-chat cleanup deletes the forked `.jsonl` directly with `rmSync` (`side-chat.ts`). | — |
 | `filterEscalatingDefaultMode` | unused | Pairs with `resolveSettings` to trust-filter `defaultMode`; we don't resolve settings through the SDK. | — |
@@ -46,6 +47,7 @@ Runtime exports of `sdk.d.ts`: functions, classes and constants. Types are not l
 | `importSessionToStore` | unused | Would backfill a `SessionStore`; we don't use one. | — |
 | `listSessions` | unused | Unused; `session-history.ts` has a hand-rolled `listSessions` that nothing calls. | — |
 | `listSubagents` | unused | Unused; subagent ids come from `task_*` messages and output-file paths instead. | — |
+| `matchDeniedModels` | unused | Alpha helper matching model ids against a `deniedModels` rule list; SuperOne filters models by its own catalog. | — |
 | `prewarm` | unused | Alpha `SpareProcess` whose `claim()` can overlay cwd/model; it would allow a spare process shared across sessions, but we use `startup()` keyed on the full options. | — |
 | `query` | used | The core entry: long-lived streaming sessions (desktop `createSessionQuery`, node `ClaudeLiveSession`, including explicit `priority: 'next'` steering from the host queue (`priority: 'now'` is not the product steer)), one-shot `runClaudeSdkTurn`, and the metadata probes (desktop `CONNECT_CLAUDE`, `claude-models.fetchModels`, `fetchClaudeModels`). | `apps/desktop/src/main/agent/claude-query.ts`, `packages/claude/src/claude-live-session.ts`, `apps/desktop/src/main/index.ts` |
 | `renameSession` | unused | Titles live in SuperOne SQLite (`session_rename` tool), not in the Claude transcript. | — |
@@ -53,6 +55,7 @@ Runtime exports of `sdk.d.ts`: functions, classes and constants. Types are not l
 | `startup` | used | Desktop `WarmupManager.prewarm` pre-spawns a `WarmQuery` slot (10 min TTL); `createSessionQuery` consumes it when the `keyOf` keys match. | `apps/desktop/src/main/agent/warmup-manager.ts`, `apps/desktop/src/main/agent/claude-query.ts` |
 | `tagSession` | unused | Would tag transcripts; we tag SuperOne sessions in our own DB. | — |
 | `tool` | unused | Unused; tools are registered through `McpServer.registerTool` on our own MCP servers. | — |
+| `unarchiveSession` | unused | Restores an archived Claude transcript; pairs with `archiveSession`. | — |
 
 ## Options
 
@@ -92,6 +95,7 @@ Fields of `Options` passed to `query()` / `startup()`. "(warmup key)" marks fiel
 | `maxThinkingTokens` | deprecated | Deprecated upstream in favor of `thinking`, which we use. | — |
 | `maxTurns` | partial | Set to `0` only in the metadata probes (`/help` prompt), never in chat sessions. | `packages/claude/src/fetch-models.ts`, `apps/desktop/src/main/agent/claude-models.ts`, `apps/desktop/src/main/index.ts` |
 | `mcpServers` | used | Desktop passes `{superone: in-process sdk McpServer}`; node passes the merged disk MCP plus the host-action sdk server. No entry sets `tools[].permission_policy`; per-tool MCP permissions are settings rules (backlog #20). | `apps/desktop/src/main/agent/claude-query.ts`, `apps/cli/src/session/claude-turn-runner.ts` |
+| `mcpServersDelivery` | unused | Controls whether `mcpServers` config rides on argv (`'argv'`) or stdin initialize (`'initialize'`); backlog #35. | — |
 | `model` | used | Desktop and the node live session map it via `resolveMappedClaudeModelId`; `runClaudeSdkTurn` passes the raw value (warmup key). | `apps/desktop/src/main/agent/claude-query.ts`, `packages/claude/src/claude-live-session.ts`, `packages/claude/src/run-sdk-turn.ts` |
 | `onElicitation` | used | Form and URL requests become the shared permission card through `claudeElicitationRequest` (`title` / `displayName` / `description` head it; a URL request answers `accept` when the link opens). Desktop: `createOnElicitation`, which withdraws the card when `signal` aborts. Node: bound per turn in the live session and parked on the runtime's `onElicitation`; a request between turns is declined. | `packages/claude/src/elicitation.ts`, `apps/desktop/src/main/agent/claude-permissions.ts`, `packages/claude/src/claude-live-session.ts`, `apps/cli/src/session/claude-turn-runner.ts` |
 | `onUserDialog` | unused | Would render CLI dialogs such as `refusal_fallback_prompt`. | — |

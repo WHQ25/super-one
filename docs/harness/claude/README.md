@@ -1,7 +1,7 @@
 # Claude Agent SDK integration
 
-Pin: `@anthropic-ai/claude-agent-sdk` `0.3.321` (Claude Code 2.1.321) ·
-Ledger version: `0.3.321` · Last updated: 2026-11-10
+Pin: `@anthropic-ai/claude-agent-sdk` `0.3.330` (Claude Code 2.1.330) ·
+Ledger version: `0.3.330` · Last updated: 2026-11-22
 
 ## Upstream
 
@@ -72,6 +72,7 @@ Bumps before this folder existed are only recorded in git and `CHANGELOG.md`.
 
 | Version | Date | Status | Upgrade doc | Commit |
 |---|---|---|---|---|
+| 0.3.330 | 2026-11-22 | executed | [0.3.330](upgrades/0.3.330.md) | — |
 | 0.3.321 | 2026-11-10 | executed | [0.3.321](upgrades/0.3.321.md) | — |
 | 0.3.318 | 2026-11-06 | executed | [0.3.318](upgrades/0.3.318.md) | — |
 | 0.3.310 | 2026-10-24 | executed | [0.3.310](upgrades/0.3.310.md) | — |

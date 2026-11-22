@@ -42,6 +42,9 @@ reason). Ledger rows: [api-surface.md](api-surface.md).
 | 32 | `set_has_subscribers` | 0.3.321 | Shorten stream-event hold while nobody is watching the transcript | Only applies when `CLAUDE_CODE_STREAM_EVENT_HOLD_MS` is set, which SuperOne does not set. A process starts as watched | open, deferred from [0.3.321](upgrades/0.3.321.md) |
 | 33 | `permissions.denyInsteadOfPrompting` | 0.3.321 | Deny tool prompts instead of asking, including `canUseTool` | Stops the permission, question and plan bridges. User/managed settings only | rejected: SuperOne answers prompts through `canUseTool` |
 | 34 | `system/ui_notify` and `ui_notify_cancel` | Native 2.1.321 | Scheduled or keyed mod notifications, and withdrawing one | New plaintext notice shape (title, source, key, delay). Current mods still use `ui_log` / `ui_toast` | open |
+| 35 | `mcpServersDelivery: 'initialize'` | 0.3.326 | Send `mcpServers` config over stdin initialize instead of CLI argv, avoiding exposing env/headers in process arguments | Needs verification with warmup reuse and remote-node argv handling | open, deferred from [0.3.330](upgrades/0.3.330.md) |
+| 36 | `reloadPlugins({ refuseIfBusy })` | 0.3.325 | Avoid reloading plugins while a turn is busy | Small; needs caller handling for refused reloads | open, deferred from [0.3.330](upgrades/0.3.330.md) |
+| 37 | `permissions.workingDirectoriesExclude` | 0.3.329 | Exempt paths from working-directory read/write blocks in `Settings` | Needs UI/policy exposure if SuperOne exposes working-directory boundaries | open, deferred from [0.3.330](upgrades/0.3.330.md) |
 
 ## Integration gaps
 

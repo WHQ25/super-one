@@ -24,6 +24,10 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Untracked directories expand in the sidebar changed-files tree.
 - Steered ACP wakeup events retarget cleanly, completed async subagent tools show as done in full view, and `GENERIC` tool errors no longer falsely mark ACP subagents as failed.
 
+### Changed
+
+- Upgrade `@anthropic-ai/claude-agent-sdk` from `0.3.321` to `0.3.330` (Claude Code `2.1.330`).
+
 ### Performance
 
 - Code editor minimap persists across tab switches and defers heavy initialization past tab transitions.

@@ -283,7 +283,7 @@ export class ClaudeToolApps {
  * live CLI (result shape, `isError`, cancellation). A version test fails on an
  * SDK bump so the check is repeated before View tool calls ship on it.
  */
-export const CLAUDE_MCP_CALL_VERIFIED_SDK = '0.3.321'
+export const CLAUDE_MCP_CALL_VERIFIED_SDK = '0.3.330'
 
 /** `Query.request` is internal; it is the only way to send `mcp_call`. */
 type ControlRequest = (request: Record<string, unknown>, opts?: { signal?: AbortSignal }) => Promise<unknown>

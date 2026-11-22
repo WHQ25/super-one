@@ -6,7 +6,7 @@ describe('Claude startup diagnostics', () => {
   it('rechecks the internal hook compatibility wording when upgrading the SDK', () => {
     // This fallback matches internal SDK prose, not a stable error code.
     const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
-    expect(pkg.dependencies['@anthropic-ai/claude-agent-sdk']).toBe('0.3.321')
+    expect(pkg.dependencies['@anthropic-ai/claude-agent-sdk']).toBe('0.3.330')
   })
 
   it('keeps fail-closed runtime compatibility errors actionable without dropping the guard', () => {

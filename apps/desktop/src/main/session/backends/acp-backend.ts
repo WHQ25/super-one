@@ -866,7 +866,9 @@ export class AcpBackend implements SessionBackend {
         },
         onSessionEvent: (event) => {
           if (epoch !== this.runtimeEpoch) return
-          this.routeSessionEvent(event, agentId, epoch)
+          const routed = this.retargetPromptEvent(event)
+          if (!routed) return
+          this.routeSessionEvent(routed, agentId, epoch)
         },
       })
       if (epoch !== this.runtimeEpoch || this.agentKey() !== launchKey) {
@@ -928,14 +930,18 @@ export class AcpBackend implements SessionBackend {
       (event.type === 'message_complete' ||
         event.type === 'message_interrupted' ||
         event.type === 'message_error') &&
-      this.agentWakeMessageId === event.messageId
+      (this.agentWakeMessageId === event.messageId ||
+        (!this.activePrompt &&
+          (this.liveAssistantId === event.messageId || this.currentMessageId === event.messageId)))
     ) {
       this.agentWakeMessageId = null
       if (!this.activePrompt) {
+        this.clearPromptMessageState()
         this.cancelPendingInteractions('abandoned')
       }
     } else if (event.type === 'status_change' && event.status !== 'streaming' && !this.activePrompt) {
       this.agentWakeMessageId = null
+      this.clearPromptMessageState()
       this.cancelPendingInteractions('abandoned')
       this.pendingQueued.flush()
       this.flushPendingTaskNotifications()
@@ -1146,7 +1152,7 @@ export class AcpBackend implements SessionBackend {
       this.pendingQuestions.set(requestId, {
         resolve: (answer) => {
           const messageId =
-            this.liveAssistantId ?? this.currentMessageId ?? this.agentWakeMessageId ?? openMessageId
+            openMessageId ?? this.liveAssistantId ?? this.currentMessageId ?? this.agentWakeMessageId
           if (messageId) {
             if (answer.kind === 'accepted') {
               const updatedInput = buildAnsweredQuestionInput({
@@ -1768,6 +1774,13 @@ export class AcpBackend implements SessionBackend {
     }
   }
 
+  private clearPromptMessageState(): void {
+    this.currentMessageId = null
+    this.liveAssistantId = null
+    this.promptMessageIds.clear()
+    this.interjectSplit = false
+  }
+
   /** Clear turn bookkeeping and release the host queue. */
   private finishPrompt(): void {
     // Prompt errors that never reach routeSessionEvent still end the Grok prompt.
@@ -1775,10 +1788,7 @@ export class AcpBackend implements SessionBackend {
     this.activePrompt = null
     this.terminalPermissionAbort.abort()
     this.cancelPendingInteractions('abandoned')
-    this.currentMessageId = null
-    this.liveAssistantId = null
-    this.promptMessageIds.clear()
-    this.interjectSplit = false
+    this.clearPromptMessageState()
     this.pendingQueued.flush()
     this.flushPendingTaskNotifications()
   }
@@ -1825,6 +1835,7 @@ export class AcpBackend implements SessionBackend {
     this.selectedModelId = null
     this.lastModeConfig = null
     this.agentWakeMessageId = null
+    if (!this.activePrompt) this.clearPromptMessageState()
     this.pendingPermissionMode = null
     this.applyingPermissionMode = null
     this.runtimeAgentKey = null

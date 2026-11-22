@@ -35,6 +35,10 @@ function isJumpModifier(event: MouseEvent | PointerEvent | KeyboardEvent): boole
   return isMac() ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey
 }
 
+function isHoverModifier(event: MouseEvent | PointerEvent | KeyboardEvent): boolean {
+  return event.altKey && !event.ctrlKey && !event.metaKey
+}
+
 export function useReviewLsp({
   workspaceRoot,
   filePath,
@@ -54,6 +58,7 @@ export function useReviewLsp({
   const hoverSeqRef = useRef(0)
   const defSeqRef = useRef(0)
   const modifierDownRef = useRef(false)
+  const hoverModifierDownRef = useRef(false)
 
   const clearUnderline = useCallback(() => {
     const el = underlinedElRef.current
@@ -143,19 +148,52 @@ export function useReviewLsp({
     }
   }, [clearUnderline])
 
+  const fetchAndShowHover = useCallback((props: DiffTokenEventBaseProps, seq: number) => {
+    const client = clientRef.current
+    const uri = uriRef.current
+    if (!client || !uri) return
+    void queryLspHover(client, uri, props.lineNumber - 1, props.lineCharStart).then((markdown) => {
+      if (seq !== hoverSeqRef.current || !markdown || modifierDownRef.current || !hoverModifierDownRef.current) return
+      if (!props.tokenElement.isConnected) return
+      const rect = props.tokenElement.getBoundingClientRect()
+      setHoverCard({
+        markdown,
+        rect: { left: rect.left, top: rect.top, bottom: rect.bottom, right: rect.right },
+        language: languageRef.current,
+      })
+    })
+  }, [])
+
   useEffect(() => {
     if (!lspReady) return
     const onKeyDown = (event: KeyboardEvent) => {
-      const active = isJumpModifier(event)
-      if (active && !modifierDownRef.current) {
+      if (event.key === 'Escape') {
+        clearHover()
+        return
+      }
+      const jumpActive = isJumpModifier(event)
+      if (jumpActive && !modifierDownRef.current) {
         modifierDownRef.current = true
         clearHover()
         if (hoveredTokenRef.current) {
           void checkDefinitionUnderline(hoveredTokenRef.current)
         }
-      } else if (!active && modifierDownRef.current) {
+      } else if (!jumpActive && modifierDownRef.current) {
         modifierDownRef.current = false
         clearUnderline()
+      }
+
+      const hoverActive = isHoverModifier(event)
+      if (hoverActive && !hoverModifierDownRef.current) {
+        hoverModifierDownRef.current = true
+        if (hoveredTokenRef.current && !modifierDownRef.current) {
+          cancelHoverTimer()
+          const seq = ++hoverSeqRef.current
+          fetchAndShowHover(hoveredTokenRef.current, seq)
+        }
+      } else if (!hoverActive && hoverModifierDownRef.current) {
+        hoverModifierDownRef.current = false
+        cancelHoverTimer()
       }
     }
     const onKeyUp = (event: KeyboardEvent) => {
@@ -163,9 +201,14 @@ export function useReviewLsp({
         modifierDownRef.current = false
         clearUnderline()
       }
+      if (!isHoverModifier(event)) {
+        hoverModifierDownRef.current = false
+        cancelHoverTimer()
+      }
     }
     const onBlur = () => {
       modifierDownRef.current = false
+      hoverModifierDownRef.current = false
       clearUnderline()
       clearHover()
     }
@@ -177,14 +220,16 @@ export function useReviewLsp({
       window.removeEventListener('keyup', onKeyUp)
       window.removeEventListener('blur', onBlur)
     }
-  }, [lspReady, checkDefinitionUnderline, clearUnderline, clearHover])
+  }, [lspReady, checkDefinitionUnderline, clearUnderline, clearHover, cancelHoverTimer, fetchAndShowHover])
 
   const onTokenEnter = useCallback((props: DiffTokenEventBaseProps, event: PointerEvent) => {
     if (!lspReady || props.side !== 'additions') return
     if (!props.tokenText.trim()) return
     hoveredTokenRef.current = props
     const modActive = isJumpModifier(event)
+    const hoverActive = isHoverModifier(event)
     modifierDownRef.current = modActive
+    hoverModifierDownRef.current = hoverActive
 
     if (modActive) {
       clearHover()
@@ -194,23 +239,13 @@ export function useReviewLsp({
 
     clearUnderline()
     cancelHoverTimer()
+    if (!hoverActive) return
+
     const seq = ++hoverSeqRef.current
     hoverTimerRef.current = setTimeout(() => {
-      const client = clientRef.current
-      const uri = uriRef.current
-      if (!client || !uri) return
-      void queryLspHover(client, uri, props.lineNumber - 1, props.lineCharStart).then((markdown) => {
-        if (seq !== hoverSeqRef.current || !markdown || modifierDownRef.current) return
-        if (!props.tokenElement.isConnected) return
-        const rect = props.tokenElement.getBoundingClientRect()
-        setHoverCard({
-          markdown,
-          rect: { left: rect.left, top: rect.top, bottom: rect.bottom, right: rect.right },
-          language: languageRef.current,
-        })
-      })
+      fetchAndShowHover(props, seq)
     }, 280)
-  }, [lspReady, checkDefinitionUnderline, clearHover, clearUnderline, cancelHoverTimer])
+  }, [lspReady, checkDefinitionUnderline, clearHover, clearUnderline, cancelHoverTimer, fetchAndShowHover])
 
   const onTokenLeave = useCallback(() => {
     hoveredTokenRef.current = null

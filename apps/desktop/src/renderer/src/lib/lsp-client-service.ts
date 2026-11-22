@@ -1,10 +1,16 @@
 import { ChangeSet, Text } from '@codemirror/state'
-import type { EditorView } from '@codemirror/view'
+import { keymap, type EditorView } from '@codemirror/view'
 import {
   LSPClient,
   LSPPlugin,
   Workspace,
-  languageServerExtensions,
+  findReferencesKeymap,
+  formatKeymap,
+  jumpToDefinitionKeymap,
+  renameKeymap,
+  serverCompletion,
+  serverDiagnostics,
+  signatureHelp,
   type Transport,
   type WorkspaceFile,
 } from '@codemirror/lsp-client'
@@ -237,7 +243,17 @@ export function getOrCreateLspClientEntry(serverId: string, workspaceRoot: strin
       createdWorkspace = new SharedLspWorkspace(c, workspaceRoot)
       return createdWorkspace
     },
-    extensions: languageServerExtensions(),
+    extensions: [
+      serverCompletion(),
+      keymap.of([
+        ...formatKeymap,
+        ...renameKeymap,
+        ...jumpToDefinitionKeymap,
+        ...findReferencesKeymap,
+      ]),
+      signatureHelp(),
+      serverDiagnostics(),
+    ],
     timeout: 8000,
   })
   client.connect(createIpcTransport(serverId, workspaceRoot))

@@ -1,5 +1,15 @@
 import { Prec, StateEffect, StateField, type Extension } from '@codemirror/state'
-import { Decoration, EditorView, ViewPlugin, type DecorationSet } from '@codemirror/view'
+import {
+  Decoration,
+  EditorView,
+  ViewPlugin,
+  activateHover,
+  closeHoverTooltip,
+  closeHoverTooltips,
+  hasHoverTooltips,
+  hoverTooltip,
+  type DecorationSet,
+} from '@codemirror/view'
 import { LSPPlugin, jumpToDefinition } from '@codemirror/lsp-client'
 import type { BundledLanguage } from 'shiki'
 import {
@@ -140,6 +150,185 @@ function isMacPlatform(): boolean {
 
 function isJumpModifierActive(event: MouseEvent | KeyboardEvent): boolean {
   return isMacPlatform() ? event.metaKey && !event.ctrlKey : event.ctrlKey && !event.metaKey
+}
+
+function isHoverModifierActive(event: MouseEvent | KeyboardEvent): boolean {
+  return event.altKey && !event.ctrlKey && !event.metaKey
+}
+
+const altHoverActiveViews = new WeakSet<EditorView>()
+
+function renderLspHoverItem(plugin: LSPPlugin, item: unknown): string {
+  if (typeof item === 'string') {
+    return plugin.docToHTML(item, 'markdown')
+  }
+  if (item && typeof item === 'object') {
+    const obj = item as { language?: string; value?: string; kind?: 'plaintext' | 'markdown' }
+    if (typeof obj.language === 'string' && typeof obj.value === 'string') {
+      return plugin.docToHTML(`\`\`\`${obj.language}\n${obj.value}\n\`\`\``, 'markdown')
+    }
+    if (typeof obj.value === 'string') {
+      return plugin.docToHTML({ kind: obj.kind ?? 'markdown', value: obj.value })
+    }
+  }
+  return ''
+}
+
+function renderLspHoverContents(plugin: LSPPlugin, contents: unknown): string {
+  if (!contents) return ''
+  if (Array.isArray(contents)) {
+    return contents.map((item) => renderLspHoverItem(plugin, item)).filter(Boolean).join('<br>')
+  }
+  return renderLspHoverItem(plugin, contents)
+}
+
+export function createAltHoverTooltipExtension(): Extension {
+  const tooltipExt = hoverTooltip(
+    async (view, pos) => {
+      if (!altHoverActiveViews.has(view)) return null
+      const plugin = LSPPlugin.get(view)
+      if (!plugin || plugin.client.serverCapabilities?.hoverProvider === false) return null
+      plugin.client.sync()
+      const result = (await plugin.client
+        .request('textDocument/hover', {
+          textDocument: { uri: plugin.uri },
+          position: plugin.toPosition(pos),
+        })
+        .catch(() => null)) as {
+        contents?: unknown
+        range?: { start: { line: number; character: number }; end: { line: number; character: number } }
+      } | null
+      if (!result) return null
+      const html = renderLspHoverContents(plugin, result.contents).trim()
+      if (!html) return null
+      return {
+        pos: result.range ? plugin.fromPosition(result.range.start) : pos,
+        end: result.range ? plugin.fromPosition(result.range.end) : pos,
+        create() {
+          const elt = document.createElement('div')
+          elt.className = 'cm-lsp-hover-tooltip cm-lsp-documentation'
+          elt.innerHTML = html
+          return { dom: elt }
+        },
+        above: true,
+      }
+    },
+    { hideOn: (tr) => tr.docChanged },
+  )
+
+  const controller = ViewPlugin.fromClass(
+    class {
+      private lastCoords: { x: number; y: number } | null = null
+      private activatedByAlt = false
+
+      constructor(private readonly view: EditorView) {
+        window.addEventListener('keydown', this.onKeyDown)
+        window.addEventListener('keyup', this.onKeyUp)
+        window.addEventListener('blur', this.onBlur)
+        this.view.dom.addEventListener('mousemove', this.onMouseMove)
+        this.view.dom.addEventListener('mouseleave', this.onMouseLeave)
+      }
+
+      private setAltActive(active: boolean) {
+        if (active) altHoverActiveViews.add(this.view)
+        else altHoverActiveViews.delete(this.view)
+      }
+
+      private dismissAltActivated() {
+        if (!this.activatedByAlt) return
+        this.activatedByAlt = false
+        if (hasHoverTooltips(this.view.state)) {
+          this.view.dispatch({ effects: closeHoverTooltip(tooltipExt) })
+        }
+      }
+
+      private isInsideHoverTooltip(target: EventTarget | null): HTMLElement | null {
+        if (!(target instanceof Node)) return null
+        const el = target instanceof HTMLElement ? target : target.parentElement
+        return el?.closest<HTMLElement>('.cm-tooltip-hover') ?? null
+      }
+
+      private onMouseMove = (event: MouseEvent) => {
+        this.lastCoords = { x: event.clientX, y: event.clientY }
+        const altActive = isHoverModifierActive(event)
+        this.setAltActive(altActive)
+        if (!this.activatedByAlt) return
+        if (this.isInsideHoverTooltip(event.target)) return
+        const active = this.view.state.field(tooltipExt.active, false)
+        if (!active?.length) {
+          this.activatedByAlt = false
+          return
+        }
+        const pos = this.view.posAtCoords(this.lastCoords, false)
+        const first = active[0]
+        const end = first.end ?? first.pos
+        if (pos == null || pos < first.pos || pos > end) {
+          this.dismissAltActivated()
+          if (altActive && pos != null) {
+            this.activatedByAlt = true
+            activateHover(this.view, pos, 1, { tooltip: tooltipExt })
+          }
+        }
+      }
+
+      private onMouseLeave = (event: MouseEvent) => {
+        this.lastCoords = null
+        if (!this.activatedByAlt) return
+        const tooltipEl = this.isInsideHoverTooltip(event.relatedTarget)
+        if (!tooltipEl) {
+          this.dismissAltActivated()
+          return
+        }
+        const onTooltipLeave = (leaveEvent: MouseEvent) => {
+          tooltipEl.removeEventListener('mouseleave', onTooltipLeave)
+          if (!this.view.dom.contains(leaveEvent.relatedTarget as Node | null)) {
+            this.dismissAltActivated()
+          }
+        }
+        tooltipEl.addEventListener('mouseleave', onTooltipLeave)
+      }
+
+      private onKeyDown = (event: KeyboardEvent) => {
+        if (event.key === 'Escape' && hasHoverTooltips(this.view.state)) {
+          this.activatedByAlt = false
+          this.view.dispatch({ effects: closeHoverTooltips })
+          return
+        }
+        const wasActive = altHoverActiveViews.has(this.view)
+        const active = isHoverModifierActive(event)
+        this.setAltActive(active)
+        if (active && !wasActive && this.lastCoords) {
+          const pos = this.view.posAtCoords(this.lastCoords)
+          if (pos != null) {
+            this.activatedByAlt = true
+            activateHover(this.view, pos, 1, { tooltip: tooltipExt })
+          }
+        }
+      }
+
+      private onKeyUp = (event: KeyboardEvent) => {
+        if (!isHoverModifierActive(event)) {
+          this.setAltActive(false)
+        }
+      }
+
+      private onBlur = () => {
+        this.setAltActive(false)
+        this.dismissAltActivated()
+      }
+
+      destroy() {
+        this.setAltActive(false)
+        window.removeEventListener('keydown', this.onKeyDown)
+        window.removeEventListener('keyup', this.onKeyUp)
+        window.removeEventListener('blur', this.onBlur)
+        this.view.dom.removeEventListener('mousemove', this.onMouseMove)
+        this.view.dom.removeEventListener('mouseleave', this.onMouseLeave)
+      }
+    },
+  )
+
+  return [tooltipExt, controller]
 }
 
 function createCmdHoverUnderlineExtension(): Extension {
@@ -286,6 +475,7 @@ export async function loadLspExtension(options: LoadLspExtensionOptions): Promis
   const { client } = getOrCreateLspClientEntry(target.serverId, options.workspaceRoot)
   return [
     client.plugin(pathToFileUri(options.filePath), target.languageId),
+    createAltHoverTooltipExtension(),
     createCmdClickJumpExtension(),
     createCmdHoverUnderlineExtension(),
     createLspTooltipHighlightExtension(options.isDark ?? true, options.language ?? 'typescript'),

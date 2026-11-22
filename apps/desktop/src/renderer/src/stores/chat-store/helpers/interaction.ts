@@ -390,7 +390,9 @@ export async function setSessionApiProviderIdImpl(
   const { projectPath: activeProject, sessionId, session: sess } = resolveWriteScope(get(), target)
   if (!activeProject) return
   if (!sessionId) return
-  const isCodex = (sess.sessionProvider ?? sess.preferredProvider ?? 'claude') === 'codex'
+  const provider = sess.sessionProvider ?? sess.preferredProvider ?? 'claude'
+  const isCodex = provider === 'codex'
+  const isDsh = provider === 'dsh'
   try {
     if (isCodex) assertCodexAccountSwitchAllowed(sess.apiProviderId, apiProviderId, sess.messages.length > 0)
     await patchSessionSettings(activeProject, sessionId, sess, { apiProviderId })
@@ -403,6 +405,10 @@ export async function setSessionApiProviderIdImpl(
   const isRemote = connectionIdForProjectKey(activeProject) !== 'local'
   if (isCodex) {
     void get().refreshCodexModels(false)
+  } else if (isDsh) {
+    void window.app.connectDeepseek(true, apiProviderId).then((resources) => {
+      set((s) => ({ harnessResources: { ...s.harnessResources, dsh: resources } }))
+    }).catch(() => {})
   } else if (isRemote) {
     void get().refreshClaudeResources(false)
   } else {

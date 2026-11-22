@@ -41,6 +41,7 @@ import { homedir } from 'os'
 import { getCachedHarnessResources } from '../database'
 import { resolveTestApiKey } from './provider-test-key'
 import { buildRemoteActiveService, platformDisplay, resolveChatService } from '../providers/resolver'
+import { syncDshPiAiProviders } from '../deepseek/deepseek-runtime-host'
 import { getPlatforms } from '../providers/registry'
 import { testServiceEndpoints } from '../providers/endpoint-test'
 import { discoverModels } from '../providers/model-discovery'
@@ -388,7 +389,7 @@ export class AgentService {
     this.eventSubscribers.forEach((cb) => cb(event))
   }
 
-  private broadcastProviderChanged(harnessId: 'claude' | 'codex'): void {
+  private broadcastProviderChanged(harnessId: 'claude' | 'codex' | 'dsh'): void {
     const provider = buildRemoteActiveService(resolveChatService(harnessId, null, {
       experimentalClaudeOpenAiChatEnabled: readAppSettings().experimentalClaudeOpenAiChatEnabled,
     }), harnessId)
@@ -421,19 +422,22 @@ export class AgentService {
     this.publishEnvironmentEvent({ type: 'provider_changed', harnessId: 'claude', provider: null })
   }
 
-  /** A credential/platform change can affect either harness — rebuild and re-broadcast both. */
+  /** A credential/platform change can affect any harness — rebuild and re-broadcast all. */
   providerConfigChanged(): void {
     this.markAllNeedsRebuild()
     this.codexProviderChanged?.()
+    void syncDshPiAiProviders()
     this.broadcastProviderChanged('claude')
     this.broadcastProviderChanged('codex')
+    this.broadcastProviderChanged('dsh')
   }
 
   /** One consumer's binding changed: rebuild sessions and re-broadcast its harness. */
   providerBindingChanged(consumer: ConsumerId): void {
-    const harness = consumer === 'chat:codex' ? 'codex' : 'claude'
+    const harness = consumer === 'chat:codex' ? 'codex' : consumer === 'chat:dsh' ? 'dsh' : 'claude'
     this.markAllNeedsRebuild()
     if (harness === 'codex') this.codexProviderChanged?.(false)
+    if (harness === 'dsh') void syncDshPiAiProviders()
     this.broadcastProviderChanged(harness)
   }
 

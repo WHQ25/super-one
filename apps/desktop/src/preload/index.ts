@@ -1022,8 +1022,8 @@ const appAPI = {
   connectCursor: (force?: boolean) =>
     ipcRenderer.invoke(AgentIpcChannels.CONNECT_CURSOR, force),
 
-  connectDeepseek: () =>
-    ipcRenderer.invoke(AgentIpcChannels.CONNECT_DEEPSEEK),
+  connectDeepseek: (force?: boolean, apiProviderId?: string | null) =>
+    ipcRenderer.invoke(AgentIpcChannels.CONNECT_DEEPSEEK, force, apiProviderId),
 
   readDeepseekTrajectory: (sessionId: string, cursor?: number) =>
     ipcRenderer.invoke(AgentIpcChannels.DEEPSEEK_TRAJECTORY, sessionId, cursor),

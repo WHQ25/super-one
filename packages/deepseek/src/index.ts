@@ -10,6 +10,8 @@ export {
   type DeepseekAdapterOptions,
   type DeepseekTreeOptions,
 } from './tree'
+export { resolvePiAiModelDefaults, type PiAiModelDefaults } from './pi-ai-catalog'
+export type { PiAiProviderProfile } from '@deepseek-ai/dsh-llm-pi-ai'
 export {
   DeepseekRuntime,
   type ApprovalDecision,

@@ -66,7 +66,7 @@ vi.mock('../acp/acp-recap-focus', () => ({
   notifySessionRecapReceived: vi.fn(),
 }))
 
-import { Session, type SessionConstructorOptions } from './session'
+import { resolveSendModelMetadata, Session, type SessionConstructorOptions } from './session'
 import { SessionWorktreeRemovedError } from './types'
 
 import { FakeBackend } from './session-test-backend'
@@ -4449,5 +4449,52 @@ describe('Session fenced asynchronous admission', () => {
     expect(() => runWindowControl(7, () => session.respondToQuestion('q', {}))).toThrow('held by another device')
     expect(() => runWindowControl(7, () => session.setApiProviderId('other'))).toThrow('held by another device')
     expect(backend.setPermissionModeCalls).toEqual([])
+  })
+})
+
+describe('resolveSendModelMetadata', () => {
+  const msg = (role: 'user' | 'assistant', model?: string, providerId: 'local' | 'system' = 'local'): ChatMessage => ({
+    id: `${role}-${Math.random()}`,
+    role,
+    status: 'complete',
+    content: [],
+    createdAt: new Date().toISOString(),
+    providerId,
+    ...(model ? { metadata: { model } } : {}),
+  })
+
+  it('records only model on the first send and ignores identical models', () => {
+    expect(resolveSendModelMetadata([], 'gpt-5.4')).toEqual({ model: 'gpt-5.4' })
+    expect(resolveSendModelMetadata([msg('user', 'gpt-5.4')], 'gpt-5.4')).toEqual({ model: 'gpt-5.4' })
+  })
+
+  it('records modelChange when the user sends with a different model', () => {
+    const history = [msg('user', 'deepseek-v4-pro'), msg('assistant', 'deepseek-v4-pro'), msg('assistant', 'ignored', 'system')]
+    expect(resolveSendModelMetadata(history, 'gemini-3.1-flash')).toEqual({
+      model: 'gemini-3.1-flash',
+      modelChange: { fromModel: 'deepseek-v4-pro', toModel: 'gemini-3.1-flash' },
+    })
+  })
+
+  it('persists modelChange across harnesses on Session.send', async () => {
+    const { session, backend } = makeSession({ harnessId: 'dsh' })
+    const first = session.send({ content: 'first', model: 'deepseek-v4-pro' })
+    await vi.waitFor(() => expect(backend.sendCalls).toHaveLength(1))
+    backend.resolveSend!()
+    await first
+
+    const second = session.send({ content: 'second', model: 'gemini-3.1-flash' })
+    await vi.waitFor(() => expect(backend.sendCalls).toHaveLength(2))
+    backend.resolveSend!()
+    await second
+
+    const userMessages = session.snapshot.messages.filter((m) => m.role === 'user')
+    expect(userMessages).toHaveLength(2)
+    expect(userMessages[0]?.metadata?.modelChange).toBeUndefined()
+    expect(userMessages[1]?.metadata?.model).toBe('gemini-3.1-flash')
+    expect(userMessages[1]?.metadata?.modelChange).toEqual({
+      fromModel: 'deepseek-v4-pro',
+      toModel: 'gemini-3.1-flash',
+    })
   })
 })

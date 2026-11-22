@@ -81,7 +81,7 @@ interface AppAPI extends WindowLayoutAPI {
   connectCodex(force?: boolean): Promise<CodexResources>
   connectOpenCode(force?: boolean): Promise<OpenCodeResources>
   connectCursor(force?: boolean): Promise<import('@superone/shared/agent-types').CursorResources>
-  connectDeepseek(): Promise<import('@superone/shared/agent-types').DeepseekResources>
+  connectDeepseek(force?: boolean, apiProviderId?: string | null): Promise<import('@superone/shared/agent-types').DeepseekResources>
   readDeepseekTrajectory(
     sessionId: string,
     cursor?: number,

@@ -138,6 +138,7 @@ import { SessionEventHub } from './stream/session-event-hub'
 import { recordHubEvents } from './stream/hub-recorder'
 import { deepseekTrajectorySource } from './deepseek/trajectory-source'
 import { clearTrajectoryWatches, setTrajectoryWatch } from './deepseek/trajectory-watch'
+import { resolveDshRoute } from './deepseek/deepseek-providers'
 import type { TrajectoryPayloadRef } from '@superone/shared/trajectory-types'
 import {
   getSessionCollaborationRunConfig,
@@ -406,7 +407,18 @@ bindAutomationService(automationService)
 // `apiProviderId` carries the session's chosen credential id (dynamic-follow: null follows the global binding).
 function resolveBaseProviderConfig(provider: SessionProvider, apiProviderId: string | null = null): unknown {
   if (!provider.isBase) return provider.config
-  if (provider.harnessId === 'opencode' || provider.harnessId === 'cursor' || provider.harnessId === 'dsh') return provider.config
+  if (provider.harnessId === 'opencode' || provider.harnessId === 'cursor') return provider.config
+  if (provider.harnessId === 'dsh') {
+    const base = (provider.config && typeof provider.config === 'object')
+      ? provider.config as Record<string, unknown>
+      : {}
+    const route = resolveDshRoute(apiProviderId)
+    return {
+      ...base,
+      provider: route.provider,
+      ...(route.defaultModel ? { defaultModel: route.defaultModel } : {}),
+    }
+  }
   if (isAcpProtocolHarness(provider.harnessId)) {
     const base = (provider.config && typeof provider.config === 'object')
       ? provider.config as Record<string, unknown>
@@ -550,13 +562,14 @@ const sessionManager = new SessionManagerImpl({
     }
   },
   getActiveProvider: (harnessId, apiProviderId) => {
-    if (isAcpProtocolHarness(harnessId) || harnessId === 'opencode' || harnessId === 'cursor' || harnessId === 'dsh') return null
+    if (isAcpProtocolHarness(harnessId) || harnessId === 'opencode' || harnessId === 'cursor') return null
     return buildRemoteActiveService(resolveChatService(harnessId, apiProviderId ?? null, {
       experimentalClaudeOpenAiChatEnabled: readAppSettings().experimentalClaudeOpenAiChatEnabled,
     }), harnessId)
   },
   getActiveDefaultApiProviderId: (harnessId) => {
-    if (isAcpProtocolHarness(harnessId) || harnessId === 'opencode' || harnessId === 'cursor' || harnessId === 'dsh') return null
+    if (isAcpProtocolHarness(harnessId) || harnessId === 'opencode' || harnessId === 'cursor') return null
+    if (harnessId === 'dsh') return getBinding('chat:dsh')?.credentialId ?? null
     return getBinding(harnessId === 'codex' ? 'chat:codex' : 'chat:claude')?.credentialId
       ?? (harnessId === 'codex' ? codexAccountStore().defaultProviderId() : claudeAccountStore().defaultProviderId())
   },
@@ -5194,16 +5207,19 @@ function registerIpcHandlers(): void {
     return { ...resources, probing: false, disabledModelIds }
   })
 
-  ipcMain.handle(AgentIpcChannels.CONNECT_DEEPSEEK, async () => {
+  ipcMain.handle(AgentIpcChannels.CONNECT_DEEPSEEK, async (_event, _force?: boolean, apiProviderId?: string | null) => {
     // Live in-process catalog (integration plan D7): the embedded dsh tree is
     // the source of truth, so there is no disk cache to go stale — the boot
     // paid here is the same boot the first DeepSeek session needs anyway.
     try {
-      const { getDeepseekRuntime, DEEPSEEK_DEFAULT_MODEL } = await import('./deepseek/deepseek-runtime-host')
+      const { getDeepseekRuntime, syncDshPiAiProviders, DEEPSEEK_DEFAULT_MODEL } = await import('./deepseek/deepseek-runtime-host')
       const { superoneEffortsFromDsh } = await import('@superone/deepseek/reasoning-effort')
       const runtime = await getDeepseekRuntime()
-      const models = await runtime.listModels()
-      log.info('[CONNECT_DEEPSEEK] %d models', models.length)
+      await syncDshPiAiProviders()
+      const route = resolveDshRoute(apiProviderId)
+      const models = await runtime.listModels(route.provider)
+      const defaultModel = route.defaultModel ?? DEEPSEEK_DEFAULT_MODEL
+      log.info('[CONNECT_DEEPSEEK] provider=%s %d models', route.provider, models.length)
       return {
         models: models.map((model) => {
           // dsh's effort ids only partly overlap SuperOne's vocabulary, so the
@@ -5214,9 +5230,8 @@ function registerIpcHandlers(): void {
           return {
             id: model.id,
             name: model.name,
-            description: model.provider,
             provider: model.provider,
-            isDefault: model.id === DEEPSEEK_DEFAULT_MODEL,
+            isDefault: model.id === defaultModel,
             ...(supportedEffortLevels.length > 0
               ? { supportsEffort: true, supportedEffortLevels }
               : {}),

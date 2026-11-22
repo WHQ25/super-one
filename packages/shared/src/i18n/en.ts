@@ -277,6 +277,19 @@ export type Messages = {
       cordis: { name: string; description: string }
     }
   }
+  chatModelSelector: {
+    model: string
+    models: string
+    effort: string
+    provider: string
+    defaultProvider: string
+    searchPlaceholder: string
+    searchTooltip: string
+    closeSearch: string
+    refreshModels: string
+    noModelsFound: string
+    noModels: string
+  }
   sideChat: {
     title: string
     ephemeralNotice: string
@@ -2334,6 +2347,7 @@ export type Messages = {
       recapLabel: string
       generatingRecap: string
     }
+    modelChange: string
     /** Automatic model swap row (SDK `model_fallback`). */
     modelFallback: {
       switchedTo: string
@@ -4413,6 +4427,7 @@ export type Messages = {
       default: string
       defaultLabelClaude: string
       defaultLabelCodex: string
+      defaultLabelDeepseek: string
       defaultDescClaude: string
       defaultDescCodex: string
       empty: string
@@ -5754,6 +5769,19 @@ export const en: Messages = {
           'Create custom agent presets with all Standard capabilities plus runtime inspection, plugin experimentation, and preset authoring guidance.',
       },
     },
+  },
+  chatModelSelector: {
+    model: 'Model',
+    models: 'Models',
+    effort: 'Effort',
+    provider: 'Provider',
+    defaultProvider: 'Default',
+    searchPlaceholder: 'Search models...',
+    searchTooltip: 'Search models',
+    closeSearch: 'Close search',
+    refreshModels: 'Refresh models',
+    noModelsFound: 'No models found',
+    noModels: 'No models',
   },
   sideChat: {
     title: 'Side Chat',
@@ -7917,6 +7945,7 @@ export const en: Messages = {
       recapLabel: 'Recap:',
       generatingRecap: 'Generating recap…',
     },
+    modelChange: 'Model changed from <from/> to <to/>',
     modelFallback: {
       switchedTo: 'Switched to {{model}}',
       switched: 'Switched model',
@@ -9943,6 +9972,7 @@ export const en: Messages = {
       default: 'Default',
       defaultLabelClaude: 'Claude Code (Official)',
       defaultLabelCodex: 'Codex (Official)',
+      defaultLabelDeepseek: 'DeepSeek (Official)',
       defaultDescClaude: 'Uses system environment / Claude CLI auth',
       defaultDescCodex: 'Uses Codex session auth (ChatGPT login or API key)',
       empty: 'No third-party providers configured',

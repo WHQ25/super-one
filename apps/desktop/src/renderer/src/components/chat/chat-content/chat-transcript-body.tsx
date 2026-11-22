@@ -26,6 +26,7 @@ import {
   RecappingIndicator,
 } from '../ChatMessage'
 import { ModelFallbackRow } from '../ModelFallbackRow'
+import { ModelChangeSeparator } from '../ModelChangeSeparator'
 import { PluginNoticeRow } from '../PluginNotice'
 import { ChatSuggestions } from '../ChatSuggestions'
 import { SideChatEmptyState } from '../SideChatEmptyState'
@@ -260,12 +261,14 @@ export function ChatTranscriptBody({
                       )
                     }
                     const separatorAt = row.id === msg.id ? dateSeparatorAt.get(msg.id) : undefined
+                    const modelChange = row.id === msg.id ? msg.metadata?.modelChange : undefined
                     const placedAfterRow = row.final
                       ? (anchoredPlacedAfter.get(row.source.id) ?? anchoredPlacedAfter.get(msg.id))
                       : undefined
                     return (
                       <div key={msg.id} data-message-id={row.id} className="chat-message-wrapper">
                         {separatorAt !== undefined && <MessageDateSeparator at={separatorAt} />}
+                        {modelChange && <ModelChangeSeparator meta={modelChange} models={modelCatalog} />}
                         <ChatMessage
                           message={msg}
                           sessionStatus={sessionStatus}

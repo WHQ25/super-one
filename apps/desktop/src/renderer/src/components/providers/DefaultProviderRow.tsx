@@ -40,11 +40,13 @@ export function DefaultProviderRow({
   title,
   description,
   fallback,
+  allowClear = true,
 }: {
   consumer: ConsumerId
   title: string
   description: string
   fallback: ReactNode
+  allowClear?: boolean
 }) {
   const platforms = useSettingsStore((s) => s.platforms)
   const credentials = useSettingsStore((s) => s.credentials)
@@ -72,7 +74,7 @@ export function DefaultProviderRow({
     return [...byPlatform.values()]
   }, [candidates])
   const currentId = bindings.find((b) => b.consumer === consumer)?.credentialId ?? ''
-  const current = candidates.find((c) => c.id === currentId)
+  const current = candidates.find((c) => c.id === currentId) ?? (!allowClear ? candidates[0] : undefined)
   const currentKeyName = current && groups.some((group) => group.length > 1 && group.some((item) => item.id === current.id))
     ? current.name
     : undefined
@@ -94,10 +96,12 @@ export function DefaultProviderRow({
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-64">
-          <DropdownMenuItem onClick={() => void clearBinding(consumer)} className="flex items-center justify-between gap-2">
-            {fallback}
-            {!currentId && <Check className="size-4 shrink-0 text-muted-foreground" />}
-          </DropdownMenuItem>
+          {allowClear && (
+            <DropdownMenuItem onClick={() => void clearBinding(consumer)} className="flex items-center justify-between gap-2">
+              {fallback}
+              {!currentId && <Check className="size-4 shrink-0 text-muted-foreground" />}
+            </DropdownMenuItem>
+          )}
           {groups.map((group) => {
             if (group.length === 1) {
               const c = group[0]

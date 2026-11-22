@@ -78,10 +78,11 @@ function ChatTranscript({
   const activeProject = useChatStore((s) => s.activeProject)
   // Model ids arrive raw on the wire; display names live in the harness catalogs.
   const claudeModels = useChatStore(selectClaudeModels)
+  const harnessResources = useChatStore((s) => s.harnessResources)
   const {
     messages: rawMessages, isCompacting, compactingStartedAt, isRecapping, compactError, apiRetry,
     displayedSessionId, historyHydrated,
-    sessionStatus, lastAssistantMessageId, queuedMessages, awaitingAssistantReply, acpModels,
+    sessionStatus, lastAssistantMessageId, queuedMessages, awaitingAssistantReply, acpModels, codexModels,
     sessionProvider, preferredProvider, runtimeCapabilities,
     draftId, sideChatParentId, providerSessionId,
   } = useActiveSession(useShallow((s) => ({
@@ -99,6 +100,7 @@ function ChatTranscript({
     runtimeCapabilities: s.runtimeCapabilities,
     awaitingAssistantReply: s.awaitingAssistantReply,
     acpModels: s.acpModels,
+    codexModels: s.codexModels,
     draftId: s.draftId,
     sideChatParentId: s._sideChatParentId ?? null,
     providerSessionId: s._providerSessionId,
@@ -185,7 +187,24 @@ function ChatTranscript({
   )
   // A fallback id can name a model from either catalog: model_fallback is emitted
   // by the Claude SDK and by the ACP backends.
-  const modelCatalog = useMemo(() => [...claudeModels, ...acpModels], [claudeModels, acpModels])
+  const modelCatalog = useMemo(
+    () => [
+      ...(claudeModels ?? []),
+      ...(acpModels ?? []),
+      ...(codexModels ?? []),
+      ...(harnessResources?.dsh?.models ?? []),
+      ...(harnessResources?.opencode?.models ?? []),
+      ...(harnessResources?.cursor?.models ?? []),
+    ],
+    [
+      claudeModels,
+      acpModels,
+      codexModels,
+      harnessResources?.dsh?.models,
+      harnessResources?.opencode?.models,
+      harnessResources?.cursor?.models,
+    ],
+  )
 
   const outline = useTurnOutline(displayMessages, segments)
   const { transcriptRef, messageTop, jumpToMessage } = useTranscriptJump({

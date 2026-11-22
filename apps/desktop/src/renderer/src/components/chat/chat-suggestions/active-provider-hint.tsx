@@ -4,7 +4,7 @@ import type { HarnessId } from '@superone/shared/agent-types'
 import { ProviderLabel } from '@/components/ProviderLabel'
 import { apiKeyDefault } from '@/harness-ui/api-key-defaults'
 import { useProviderScopeSync } from '@/hooks/useProviderScopeSync'
-import { consumerForHarness, resolveEffective } from '@/lib/provider-resolve'
+import { consumerForHarness, credentialsForConsumer, resolveEffective } from '@/lib/provider-resolve'
 import { useAppStore } from '@/stores/app'
 import { useActiveSession } from '@/stores/chat'
 import { useSettingsStore } from '@/stores/settings'
@@ -30,14 +30,20 @@ export function ActiveProviderHint({ provider }: { provider?: HarnessId } = {}) 
   const builtIn = apiKeyDefault(preferredProvider)
   if (!builtIn) return null
 
+  const consumer = consumerForHarness(preferredProvider)
   const effective = resolveEffective(
     platforms,
     credentials,
     bindings,
-    consumerForHarness(preferredProvider),
+    consumer,
     sessionApiProviderId,
     { experimentalClaudeOpenAiChatEnabled },
-  )
+  ) ?? (preferredProvider === 'dsh' && !sessionApiProviderId
+    ? (() => {
+        const first = credentialsForConsumer(platforms, credentials, consumer, { experimentalClaudeOpenAiChatEnabled })[0]
+        return first ? resolveEffective(platforms, credentials, bindings, consumer, first.id, { experimentalClaudeOpenAiChatEnabled }) : null
+      })()
+    : null)
 
   return (
     <span className="inline-flex items-center gap-1.5">

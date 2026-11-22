@@ -37,6 +37,7 @@ import { DeepseekQuestions } from './deepseek-questions'
 interface DeepseekConfig {
   provider?: string
   model?: string
+  defaultModel?: string
   maxTokens?: number
   /**
    * The agent preset — dsh's "mode" — this session composes from. Only read at
@@ -48,6 +49,27 @@ interface DeepseekConfig {
 
 function readConfig(config: unknown): DeepseekConfig {
   return (config && typeof config === 'object' ? config : {}) as DeepseekConfig
+}
+
+function relaxRequiredRefsInSchema(node: unknown): unknown {
+  if (Array.isArray(node)) return node.map(relaxRequiredRefsInSchema)
+  if (!node || typeof node !== 'object') return node
+  const record = node as Record<string, unknown>
+  const next: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(record)) {
+    next[key] = relaxRequiredRefsInSchema(value)
+  }
+  if (Array.isArray(next.required) && next.properties && typeof next.properties === 'object') {
+    const props = next.properties as Record<string, unknown>
+    const filtered = next.required.filter((field) => {
+      if (typeof field !== 'string') return true
+      const prop = props[field]
+      return !(prop && typeof prop === 'object' && '$ref' in prop)
+    })
+    if (filtered.length === 0) delete next.required
+    else next.required = filtered
+  }
+  return next
 }
 
 
@@ -91,6 +113,7 @@ export class DeepseekBackend implements SessionBackend {
   private listeners = new Set<(event: BackendEvent) => void>()
   private providerSessionListeners = new Set<(id: string) => void>()
   private permissionModeListeners = new Set<(mode: PermissionMode) => void>()
+  private activeProviderModelIds: Set<string> | null = null
 
   hasActiveRuntime(): boolean {
     return Boolean(this.agent || this.startPromise)
@@ -118,6 +141,23 @@ export class DeepseekBackend implements SessionBackend {
     })
   }
 
+  private isKnownModelForActiveProvider(model: string): boolean {
+    return !this.activeProviderModelIds || this.activeProviderModelIds.size === 0 || this.activeProviderModelIds.has(model)
+  }
+
+  private async resolveModelForProvider(
+    runtime: DeepseekRuntime,
+    provider: string,
+    candidate: string,
+    fallback?: string,
+  ): Promise<string> {
+    const models = await runtime.listModels(provider).catch(() => [])
+    this.activeProviderModelIds = new Set(models.map((m) => m.id))
+    if (models.length === 0 || this.activeProviderModelIds.has(candidate)) return candidate
+    if (fallback && this.activeProviderModelIds.has(fallback)) return fallback
+    return models[0]!.id
+  }
+
   private async ensureAgent(): Promise<DeepseekAgentHandle> {
     if (this.agent) return this.agent
     if (this.startPromise) return this.startPromise
@@ -127,6 +167,9 @@ export class DeepseekBackend implements SessionBackend {
     this.startPromise = (async () => {
       const runtime = await getDeepseekRuntime()
       const config = readConfig(opts.config)
+      const provider = config.provider ?? DEFAULT_PROVIDER
+      const requestedModel = opts.model ?? config.model ?? config.defaultModel ?? DEFAULT_MODEL
+      const model = await this.resolveModelForProvider(runtime, provider, requestedModel, config.defaultModel)
       // The dsh session id doubles as our provider session id, so cold resume
       // finds the persisted JSONL log by the same identity.
       const providerSessionId = opts.providerSessionId ?? randomUUID()
@@ -154,7 +197,11 @@ export class DeepseekBackend implements SessionBackend {
           // agent scope, so SuperOne's tools are registered as native dsh
           // tools that call the same executor the MCP surface calls.
           superoneTools: {
-            list: () => listSuperoneMcpTools(superoneSessionId),
+            list: () => listSuperoneMcpTools(superoneSessionId).map((tool) => (
+              tool.inputSchema && typeof tool.inputSchema === 'object' && '$defs' in tool.inputSchema
+                ? { ...tool, inputSchema: relaxRequiredRefsInSchema(tool.inputSchema) as typeof tool.inputSchema }
+                : tool
+            )),
             call: async (name, args, { signal }) => {
               // A tool that returns nothing (fire-and-forget host actions) still
               // owes the model a result block.
@@ -170,8 +217,8 @@ export class DeepseekBackend implements SessionBackend {
           },
           requestPermission: (request) => this.askPermission(request),
         },
-        provider: config.provider ?? DEFAULT_PROVIDER,
-        model: opts.model ?? config.model ?? DEFAULT_MODEL,
+        provider,
+        model,
         ...(config.maxTokens !== undefined ? { maxTokens: config.maxTokens } : {}),
         resume: Boolean(opts.providerSessionId),
         mcpServers: readDshMcpServerSpecs(opts.cwd),
@@ -185,6 +232,12 @@ export class DeepseekBackend implements SessionBackend {
       // SuperOne's mode is the source of truth: a resumed log may still hold
       // the plan mode an earlier mode switch left behind.
       runtime.setPlanMode(providerSessionId, this.permissionMode === 'plan')
+      if (opts.providerSessionId && config.provider) {
+        agent.setRoute({
+          provider,
+          model,
+        })
+      }
       // Creation synced from a fresh read; the watch covers the other case —
       // a config edit that lands while this session is already running.
       trackDshMcpConfig(opts.cwd)
@@ -217,6 +270,7 @@ export class DeepseekBackend implements SessionBackend {
     this.unregisterApproval = null
     const agent = this.agent
     this.agent = null
+    this.activeProviderModelIds = null
     await agent?.dispose()
   }
 
@@ -230,7 +284,9 @@ export class DeepseekBackend implements SessionBackend {
       await this.compactNow(agent.sessionId)
       return
     }
-    if (request.model) agent.setRoute({ model: request.model })
+    if (request.model && this.isKnownModelForActiveProvider(request.model)) {
+      agent.setRoute({ model: request.model })
+    }
     // An effort DeepSeek does not implement is dropped rather than aliased: the
     // adapter rejects an unsupported id with `UNSUPPORTED_REASONING_EFFORT`
     // before any provider I/O, so a stale `medium` off another harness would
@@ -304,6 +360,7 @@ export class DeepseekBackend implements SessionBackend {
   }
 
   async setModel(model: string): Promise<void> {
+    if (!this.isKnownModelForActiveProvider(model)) return
     // In place: the runtime rewrites the route on the next request instead of
     // rebuilding the agent (AgentOptions is create-time and readonly).
     this.agent?.setRoute({ model })

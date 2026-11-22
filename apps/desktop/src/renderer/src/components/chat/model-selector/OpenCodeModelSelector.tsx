@@ -42,7 +42,6 @@ export function OpenCodeModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?:
       models: items.map(({ model, label }) => ({
         id: model.id,
         name: label,
-        description: model.description,
       })),
     })),
     [catalog],
@@ -65,6 +64,7 @@ export function OpenCodeModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?:
       onRefreshModels={() => void refreshModels()}
       modelsLoading={modelsLoading}
       modelGroups={groups}
+      flatModels
       selectedModelId={selectedModel}
       selectedModelLabel={modelLabel}
       onSelectModel={selectModel}

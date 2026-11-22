@@ -9,7 +9,8 @@ import { is } from '@electron-toolkit/utils'
 import { join } from 'node:path'
 import log from '../logger'
 import { readAppSettings } from '../app-settings-service'
-import { DEEPSEEK_CREDENTIAL_REF, resolveDeepseekApiKey } from './deepseek-credentials'
+import { DEEPSEEK_CREDENTIAL_REF, resolveDshCredential } from './deepseek-credentials'
+import { buildDshPiAiProviders, DEEPSEEK_OFFICIAL_DEFAULT_MODEL, DEEPSEEK_OFFICIAL_PROVIDER } from './deepseek-providers'
 import { stopTrackingDshMcpConfig } from './deepseek-mcp-sync'
 import { ensurePtcNodeLauncher } from './deepseek-ptc-launcher'
 
@@ -34,8 +35,8 @@ export function dshPluginRoot(): string {
 export { DEEPSEEK_CREDENTIAL_REF } from './deepseek-credentials'
 
 /** Route defaults shared by the backend and the connect probe. */
-export const DEEPSEEK_DEFAULT_PROVIDER = 'deepseek-official'
-export const DEEPSEEK_DEFAULT_MODEL = 'deepseek-v4-pro'
+export const DEEPSEEK_DEFAULT_PROVIDER = DEEPSEEK_OFFICIAL_PROVIDER
+export const DEEPSEEK_DEFAULT_MODEL = DEEPSEEK_OFFICIAL_DEFAULT_MODEL
 /**
  * The routes SuperOne offers, and what they accept.
  *
@@ -168,11 +169,12 @@ export function getDeepseekRuntime(): Promise<DeepseekRuntime> {
       },
       // Resolved per request, so re-binding a key in SuperOne settings reaches
       // the next turn without a restart — and no secret enters process.env.
-      credentialLookup: (ref) => (ref === DEEPSEEK_CREDENTIAL_REF ? resolveDeepseekApiKey() : undefined),
+      credentialLookup: (ref) => resolveDshCredential(ref),
       deepseekAdapter: {
         apiKeyEnv: DEEPSEEK_CREDENTIAL_REF,
         models: DEEPSEEK_MODEL_CATALOG,
       },
+      piAiProviders: await buildDshPiAiProviders(),
       onApproval: async (request) => {
         const decision = approvalRouters.get(request.sessionId)?.(request)
         // No owner (session closed mid-question) fails closed.
@@ -195,6 +197,12 @@ export function getDeepseekRuntime(): Promise<DeepseekRuntime> {
 export async function syncDshSubagentModelSelection(): Promise<void> {
   const runtime = await peekDeepseekRuntime()
   await runtime?.setSubagentModelSelection(readAppSettings().dshSubagentModelSelection)
+}
+
+export async function syncDshPiAiProviders(): Promise<void> {
+  const runtime = await peekDeepseekRuntime()
+  if (!runtime) return
+  await runtime.configurePiAiProviders(await buildDshPiAiProviders())
 }
 
 export async function disposeDeepseekRuntime(): Promise<void> {

@@ -52,10 +52,12 @@ import { fileToolPath, workspaceChangeRows, workspacePath } from './workspace-ch
 import { DeepseekBackgroundJobs, toolCallSpan, type ToolCallSpan } from './background-work'
 import type {} from '@deepseek-ai/dsh-subagent'
 import type { SubagentModelSelectionSettings } from '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
+import type { PiAiProviderProfile } from '@deepseek-ai/dsh-llm-pi-ai'
 import type {} from '@deepseek-ai/dsh-workspace-changes'
 import {
   createDeepseekTree,
   deepseekAdapterPlugin,
+  updatePiAiProviders,
   updateSubagentModelSelection,
   type DeepseekAdapterOptions,
   type DeepseekTreeOptions,
@@ -708,11 +710,16 @@ export class DeepseekRuntime {
     this.adapterFiber = this.bridge.plugin(plugin, config) as { dispose: () => Promise<void> }
   }
 
+  async configurePiAiProviders(providers: Record<string, PiAiProviderProfile>): Promise<void> {
+    await updatePiAiProviders(this.root, providers)
+  }
+
   /** Live model catalog for pickers, straight from the adapter registries. */
-  async listModels(): Promise<DeepseekCatalogEntry[]> {
+  async listModels(providerId?: string): Promise<DeepseekCatalogEntry[]> {
     const llm = this.bridge.llm
     const listed: Array<{ provider: string; id: string; name: string }> = []
     for (const provider of llm.listProviders()) {
+      if (providerId && provider.id !== providerId) continue
       const list = await llm.listModels(provider.id)
       listed.push(...list.map((m) => ({ provider: m.provider, id: m.id, name: m.name })))
     }

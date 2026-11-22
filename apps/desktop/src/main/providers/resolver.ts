@@ -133,11 +133,16 @@ export function listServiceModels(consumer: ConsumerId, credentialId: string): E
 }
 
 export function resolveChatService(
-  harness: 'claude' | 'codex',
+  harness: 'claude' | 'codex' | 'dsh',
   credentialId?: string | null,
   options?: { experimentalClaudeOpenAiChatEnabled?: boolean },
 ): ResolvedService | null {
-  return resolveService(harness === 'codex' ? 'chat:codex' : 'chat:claude', {
+  const consumer: ConsumerId = harness === 'codex'
+    ? 'chat:codex'
+    : harness === 'dsh'
+      ? 'chat:dsh'
+      : 'chat:claude'
+  return resolveService(consumer, {
     credentialId,
     experimentalClaudeOpenAiChatEnabled: options?.experimentalClaudeOpenAiChatEnabled,
   })
@@ -233,7 +238,7 @@ export function platformDisplay(platformId: string): { name: string; icon?: stri
 /** Build the mobile-facing active-provider descriptor from a resolved chat service (replaces buildRemoteActiveProvider). */
 export function buildRemoteActiveService(
   resolved: ResolvedService | null,
-  harness: 'claude' | 'codex' = 'claude',
+  harness: 'claude' | 'codex' | 'dsh' = 'claude',
 ): RemoteActiveProvider | null {
   if (!resolved) return null
   return {

@@ -25,6 +25,7 @@ import {
 import type { NodeHarnessId } from '@superone/shared/environment'
 import type { ConsumerId } from '@superone/shared/platform-registry'
 import { getBinding, listCredentials, getCredentialDecrypted } from '../providers/credential-store'
+import { resolveService } from '../providers/resolver'
 import { resolveSdkClaudeBinary } from '../agent/claude-binary'
 import { resolveCursorApiKey } from '../cursor/cursor-auth'
 import { getBaseProvider } from '../session/session-provider-repo'
@@ -212,8 +213,11 @@ export function desktopHarnessAuthProbe(): HarnessAuthProbe {
         return null
       }
       if (id === 'dsh') {
-        return resolveDeepseekApiKey()
-          ? { ok: true, reason: 'DeepSeek provider credential' }
+        if (resolveDeepseekApiKey() || resolveService('chat:dsh')) {
+          return { ok: true, reason: 'DeepSeek provider credential' }
+        }
+        return listCredentials().some((c) => resolveService('chat:dsh', { credentialId: c.id }) !== null)
+          ? { ok: true, reason: 'SuperOne provider credential' }
           : null
       }
       if (id === 'acp-antigravity') {

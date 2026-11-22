@@ -84,9 +84,9 @@ export function useDeepseekPresetSelection() {
     void load()
   }, [load])
 
-  // The live composition wins over the draft: a resumed session recomposes from
-  // its own log, so the store's pick may name a preset this session never ran.
-  const selectedId = current ?? draft ?? presets[0]?.id ?? null
+  // On a blank session (e.g. prewarmed on default), the user's draft pick
+  // wins; once a turn has started, the durable log's composition is authoritative.
+  const selectedId = (!hasStarted && draft) ? draft : (current ?? draft ?? presets[0]?.id ?? null)
   const selected = presets.find((preset) => preset.id === selectedId)
   const selectedCopy = selected ? deepseekPresetCopy(selected, t) : null
 

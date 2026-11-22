@@ -142,6 +142,8 @@ export function useSelectorProviders(harness: HarnessId) {
             name: defaultLabel,
             keyName: claudeAccountKeyName(account, claudeAccounts),
           }))
+        : harness === 'dsh'
+        ? []
         : [{ id: null, brand: builtIn.brand, name: defaultLabel }]
     for (const c of filtered) {
       const { brand, name, icon } = providerDisplayForCredential(platforms, c)
@@ -152,7 +154,12 @@ export function useSelectorProviders(harness: HarnessId) {
 
   return {
     providers,
-    selectedProviderId: resolvedProviderId ?? (harness === 'codex' && codexAccounts.some((a) => a.isDefault) ? codexAccountProviderId(codexAccounts.find((a) => a.isDefault)!.id) : null),
+    selectedProviderId: resolvedProviderId
+      ?? (harness === 'codex' && codexAccounts.some((a) => a.isDefault)
+        ? codexAccountProviderId(codexAccounts.find((a) => a.isDefault)!.id)
+        : harness === 'dsh'
+          ? (filtered[0]?.id ?? null)
+          : null),
     onSelectProvider: (id: string | null) => { void setSessionApiProviderId(id) },
     onManageProviders: () => { setSettingsTab('providers'); navigateTo('settings') },
   }

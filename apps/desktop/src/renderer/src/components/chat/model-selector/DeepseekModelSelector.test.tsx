@@ -74,6 +74,10 @@ const PRESETS: DeepseekPresetRoster = {
 
 const listPresets = vi.fn<() => Promise<DeepseekPresetRoster>>()
 const setPreset = vi.fn<() => Promise<{ ok: boolean }>>()
+const connectDeepseek = vi.fn<() => Promise<{ models: ModelOption[] }>>()
+const listPlatforms = vi.fn<() => Promise<unknown[]>>()
+const listCredentials = vi.fn<() => Promise<unknown[]>>()
+const listBindings = vi.fn<() => Promise<unknown[]>>()
 
 function seedStore(resources: { models: ModelOption[] } | null): void {
   useChatStore.setState({
@@ -129,11 +133,19 @@ beforeEach(() => {
   groupedSelectorSpy.mockClear()
   listPresets.mockReset().mockResolvedValue(PRESETS)
   setPreset.mockReset().mockResolvedValue({ ok: true })
+  connectDeepseek.mockReset().mockResolvedValue({ models: [] })
+  listPlatforms.mockReset().mockResolvedValue([])
+  listCredentials.mockReset().mockResolvedValue([])
+  listBindings.mockReset().mockResolvedValue([])
   Object.assign(window, {
     app: {
       ...window.app,
       listDeepseekPresets: listPresets,
       setDeepseekPreset: setPreset,
+      connectDeepseek,
+      listPlatforms,
+      listCredentials,
+      listBindings,
     },
   })
 })
@@ -144,25 +156,25 @@ afterEach(() => {
 })
 
 describe('DeepseekModelSelector', () => {
-  it('renders the graceful placeholder for null and empty resources', () => {
+  it('renders the selector with DeepSeek label for null and empty resources', () => {
     seedStore(null)
     const { unmount } = render(<DeepseekModelSelector />)
 
-    expect(screen.getByText('DeepSeek')).toHaveClass(
-      'rounded-lg',
-      'px-2',
-      'py-1',
-      'text-xs',
-      'text-muted-foreground',
-    )
-    expect(screen.queryByTestId('model-selector')).not.toBeInTheDocument()
+    expect(screen.getByTestId('model-selector')).toBeInTheDocument()
+    expect(latestSelectorProps()).toMatchObject({
+      models: [],
+      selectedModelLabel: 'DeepSeek',
+    })
 
     unmount()
     seedStore({ models: [] })
     render(<DeepseekModelSelector />)
 
-    expect(screen.getByText('DeepSeek')).toBeInTheDocument()
-    expect(screen.queryByTestId('model-selector')).not.toBeInTheDocument()
+    expect(screen.getByTestId('model-selector')).toBeInTheDocument()
+    expect(latestSelectorProps()).toMatchObject({
+      models: [],
+      selectedModelLabel: 'DeepSeek',
+    })
   })
 
   it('renders catalog models and dispatches a selected model', () => {

@@ -22,14 +22,12 @@ describe('superoneEffortsFromDsh', () => {
 describe('dshEffortFromSuperone', () => {
   it('round-trips the shared levels', () => {
     expect(dshEffortFromSuperone('low')).toBe('low')
+    expect(dshEffortFromSuperone('medium')).toBe('medium')
     expect(dshEffortFromSuperone('high')).toBe('high')
     expect(dshEffortFromSuperone('max')).toBe('max')
   })
 
   it('refuses to alias levels DeepSeek does not implement', () => {
-    // Aliasing `medium` onto `high` would run the turn at an effort the user
-    // never picked; leaving it unset defers to the adapter's own default.
-    expect(dshEffortFromSuperone('medium')).toBeUndefined()
     expect(dshEffortFromSuperone('xhigh')).toBeUndefined()
   })
 

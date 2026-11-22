@@ -412,12 +412,20 @@ export function PreferencesPage({
 } = {}) {
   const storeProvider = useAppStore((s) => s.settingsProvider)
   const settingsProvider = provider ?? storeProvider
+  const { t } = useTranslation()
 
   if (settingsProvider === 'codex') return <CodexPreferencesPage />
   if (settingsProvider === 'claude') return <ClaudePreferencesPage />
   if (settingsProvider === 'dsh') {
     return (
       <HarnessPreferencesPage harnessId="dsh">
+        <DefaultProviderRow
+          consumer="chat:dsh"
+          title={t('settings.preferences.defaultProvider.label')}
+          description={t('settings.preferences.defaultProvider.description')}
+          fallback={<ProviderOptionLabel brandKey="deepseek" />}
+          allowClear={false}
+        />
         <DshSubagentModelsSettings />
       </HarnessPreferencesPage>
     )

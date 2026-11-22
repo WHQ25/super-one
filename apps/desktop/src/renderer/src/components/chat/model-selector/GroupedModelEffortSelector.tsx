@@ -1,6 +1,7 @@
 import { isCodexAccountProvider } from '@superone/shared/codex-accounts'
 import { codexSpeedTriggerLabel } from '@superone/shared/codex-fast-mode'
-import { useId, useMemo, useState, type ReactNode } from 'react'
+import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { LucideIcon } from 'lucide-react'
 import { AnimatePresence, motion } from 'motion/react'
 import { Check, ChevronDown, ChevronRight, RefreshCw, Search, Settings2, X, Zap } from 'lucide-react'
@@ -117,6 +118,7 @@ interface GroupedModelEffortSelectorProps {
   optionParams?: SelectorCatalogParam[]
   onOptionParamChange?: (id: string, value: string) => void
   triggerLabel?: ReactNode
+  flatModels?: boolean
   onCloseAutoFocus?: (event: Event) => void
   className?: string
 }
@@ -158,12 +160,13 @@ function RefreshModelsButton({
   onRefreshModels,
   modelsLoading,
 }: Pick<GroupedModelEffortSelectorProps, 'onRefreshModels' | 'modelsLoading'>) {
+  const { t } = useTranslation()
   if (!onRefreshModels) return null
   return (
     <IconButton
       size="xs"
       variant="nested"
-      tooltip="Refresh models"
+      tooltip={t('chatModelSelector.refreshModels')}
       disabled={modelsLoading}
       onClick={(event) => {
         event.preventDefault()
@@ -177,16 +180,57 @@ function RefreshModelsButton({
 }
 
 function SelectorScrollArea({ children, className }: { children: ReactNode; className?: string }) {
+  const rootRef = useRef<HTMLDivElement>(null)
+  const [fade, setFade] = useState({ top: false, bottom: false })
+
+  const syncFade = useCallback(() => {
+    const viewport = rootRef.current?.querySelector('[data-slot=scroll-area-viewport]') as HTMLElement | null
+    if (!viewport) return
+    const top = viewport.scrollTop > 2
+    const bottom = viewport.scrollTop + viewport.clientHeight < viewport.scrollHeight - 2
+    setFade((prev) => (prev.top === top && prev.bottom === bottom ? prev : { top, bottom }))
+  }, [])
+
+  useEffect(() => {
+    syncFade()
+    const viewport = rootRef.current?.querySelector('[data-slot=scroll-area-viewport]') as HTMLElement | null
+    if (!viewport) return
+    viewport.addEventListener('scroll', syncFade, { passive: true })
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(syncFade) : null
+    ro?.observe(viewport)
+    if (viewport.firstElementChild) ro?.observe(viewport.firstElementChild)
+    return () => {
+      viewport.removeEventListener('scroll', syncFade)
+      ro?.disconnect()
+    }
+  }, [syncFade, children])
+
   return (
-    <ScrollArea
-      type="scroll"
-      className={cn(
-        'max-h-60 min-h-0 [&_[data-slot=scroll-area-viewport]]:max-h-[inherit] [&_[data-slot=scroll-area-viewport]>div]:block!',
-        className,
-      )}
-    >
-      {children}
-    </ScrollArea>
+    <div ref={rootRef} className="relative min-h-0">
+      <ScrollArea
+        type="scroll"
+        className={cn(
+          'max-h-60 min-h-0 [&_[data-slot=scroll-area-viewport]]:max-h-[inherit] [&_[data-slot=scroll-area-viewport]>div]:block!',
+          className,
+        )}
+      >
+        {children}
+      </ScrollArea>
+      <div
+        aria-hidden
+        className={cn(
+          'pointer-events-none absolute inset-x-0 top-0 z-10 h-5 bg-gradient-to-b from-popover to-transparent transition-opacity duration-150',
+          fade.top ? 'opacity-100' : 'opacity-0',
+        )}
+      />
+      <div
+        aria-hidden
+        className={cn(
+          'pointer-events-none absolute inset-x-0 bottom-0 z-10 h-5 bg-gradient-to-t from-popover to-transparent transition-opacity duration-150',
+          fade.bottom ? 'opacity-100' : 'opacity-0',
+        )}
+      />
+    </div>
   )
 }
 
@@ -197,10 +241,12 @@ function ModelList({
   shouldKeepOpen,
   onSelectModel,
   searchActive,
+  flatGroups = false,
   emptyMessage,
 }: Pick<GroupedModelEffortSelectorProps, 'models' | 'modelGroups' | 'selectedModelId' | 'onSelectModel'> & {
   shouldKeepOpen: (model: SelectorModelOption) => boolean
   searchActive: boolean
+  flatGroups?: boolean
   emptyMessage: string
 }) {
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<string>>(new Set())
@@ -212,7 +258,24 @@ function ModelList({
   return (
     <SelectorScrollArea>
         {hasGroups
-          ? modelGroups!.map((group) => {
+          ? modelGroups!.map((group, index) => {
+              if (flatGroups) {
+                return (
+                  <div key={group.id}>
+                    {index > 0 && <DropdownMenuSeparator />}
+                    <div className="px-2 pb-1 pt-1.5 text-xs text-muted-foreground">{group.name}</div>
+                    {group.models.map((model) => (
+                      <ModelRow
+                        key={model.id}
+                        model={model}
+                        selected={model.id === selectedModelId}
+                        keepOpen={shouldKeepOpen(model)}
+                        onSelect={() => onSelectModel(model.id)}
+                      />
+                    ))}
+                  </div>
+                )
+              }
               const expanded = searchActive || expandedGroupIds.has(group.id)
               const hasSelectedModel = group.models.some((model) => model.id === selectedModelId)
               return (
@@ -469,9 +532,11 @@ export function GroupedModelEffortSelector({
   optionParams = [],
   onOptionParamChange,
   triggerLabel,
+  flatModels = false,
   onCloseAutoFocus,
   className,
 }: GroupedModelEffortSelectorProps) {
+  const { t } = useTranslation()
   const [modelsExpanded, setModelsExpanded] = useState(false)
   const [agentsExpanded, setAgentsExpanded] = useState(false)
   const [providersExpanded, setProvidersExpanded] = useState(false)
@@ -514,7 +579,7 @@ export function GroupedModelEffortSelector({
   const hasAgents = agents.length > 0 && Boolean(onSelectAgent)
   const shouldCloseAfterSelect = (modelId: string): boolean =>
     shouldCloseAfterModelSelect?.(modelId) ?? !hasSideOptions
-  const listOpen = modelsExpanded || !hasSideOptions
+  const listOpen = flatModels || modelsExpanded || !hasSideOptions
   const modelSearchAvailable = listOpen && allModels.length > 10
   const normalizedModelSearch = modelSearch.trim().toLowerCase()
   const filteredModels = useMemo(
@@ -528,6 +593,43 @@ export function GroupedModelEffortSelector({
           ?.map((group) => ({ ...group, models: group.models.filter((model) => matchesModelSearch(model, normalizedModelSearch)) }))
           .filter((group) => group.models.length > 0),
     [modelGroups, normalizedModelSearch],
+  )
+
+  const renderProviderList = () => (
+    <>
+      <SelectorScrollArea>
+        {providers.map((provider) => {
+          const selected = provider.id === selectedProviderId
+          const account = isCodexAccountProvider(provider.id)
+          return (
+            <DropdownMenuItem
+              key={provider.id ?? '__default__'}
+              onSelect={(event) => {
+                event.preventDefault()
+                onSelectProvider?.(provider.id)
+                setProvidersExpanded(false)
+              }}
+              className={cn('items-center justify-between gap-2 px-2 py-1.5', ITEM_FOCUS, selected && 'bg-muted')}
+            >
+              <span className={cn('flex min-w-0 flex-1', account ? 'flex-col gap-1' : 'items-center justify-between gap-1.5')}>
+                <ProviderOptionLabel brandKey={provider.brand} name={provider.name} icon={provider.icon} />
+                {provider.keyName && <span className="truncate text-xs text-muted-foreground">{provider.keyName}</span>}
+              </span>
+              {selected && <Check className="size-4 shrink-0 text-primary" />}
+            </DropdownMenuItem>
+          )
+        })}
+      </SelectorScrollArea>
+      {onManageProviders && (
+        <>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem onSelect={onManageProviders} className={cn('gap-2 px-2 py-1.5 text-sm text-muted-foreground', ITEM_FOCUS)}>
+            <Settings2 className="size-4 shrink-0" />
+            <span>Provider settings</span>
+          </DropdownMenuItem>
+        </>
+      )}
+    </>
   )
 
   return (
@@ -587,10 +689,10 @@ export function GroupedModelEffortSelector({
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" side="top" className="max-h-[70vh] w-72 overflow-hidden p-1" onCloseAutoFocus={onCloseAutoFocus}>
-        {hasModes && selectedMode && SelectedModeIcon && (
+        {!modelsExpanded && !agentsExpanded && !providersExpanded && hasModes && selectedMode && SelectedModeIcon && (
           <>
             <DropdownMenuGroup>
-              <DropdownMenuLabel>{modeLabel}</DropdownMenuLabel>
+              <div className="px-2 pb-1 pt-1.5 text-xs text-muted-foreground">{modeLabel}</div>
               {modesDisabled ? (
                 <DropdownMenuItem
                   disabled
@@ -713,96 +815,101 @@ export function GroupedModelEffortSelector({
           </>
         )}
 
-        {modelSearchAvailable && modelSearchOpen ? (
-          <div className="flex items-center gap-1 border-b">
-            <Command shouldFilter={false} className="min-w-0 flex-1 rounded-none [&_[data-slot=command-input-wrapper]]:border-b-0">
-              <CommandInput
-                autoFocus
-                placeholder="Search models..."
-                value={modelSearch}
-                onValueChange={setModelSearch}
-                onKeyDown={(event) => event.stopPropagation()}
-              />
-            </Command>
-            <IconButton
-              size="xs"
-              variant="nested"
-              tooltip="Close search"
-              onClick={(event) => {
-                event.preventDefault()
-                event.stopPropagation()
-                setModelSearch('')
-                setModelSearchOpen(false)
-              }}
-            >
-              <X />
-            </IconButton>
-          </div>
-        ) : (
-          <div className="flex items-center justify-between px-2 pb-1 pt-1.5">
-            <span className="text-xs text-muted-foreground">Models</span>
-            <div className="flex items-center gap-1">
-              {modelHeaderActions}
-              <RefreshModelsButton onRefreshModels={onRefreshModels} modelsLoading={modelsLoading} />
-              {modelSearchAvailable && (
+        {!(flatModels && providersExpanded) && (
+          <>
+            {modelSearchAvailable && modelSearchOpen ? (
+              <div className="flex items-center gap-1 border-b">
+                <Command shouldFilter={false} className="min-w-0 flex-1 rounded-none [&_[data-slot=command-input-wrapper]]:border-b-0 [&_[data-slot=command-input-wrapper]]:px-2">
+                  <CommandInput
+                    autoFocus
+                    placeholder={t('chatModelSelector.searchPlaceholder')}
+                    value={modelSearch}
+                    onValueChange={setModelSearch}
+                    onKeyDown={(event) => event.stopPropagation()}
+                  />
+                </Command>
                 <IconButton
                   size="xs"
                   variant="nested"
-                  tooltip="Search models"
+                  tooltip={t('chatModelSelector.closeSearch')}
                   onClick={(event) => {
                     event.preventDefault()
                     event.stopPropagation()
-                    setModelSearchOpen(true)
+                    setModelSearch('')
+                    setModelSearchOpen(false)
                   }}
                 >
-                  <Search />
+                  <X />
                 </IconButton>
-              )}
-            </div>
-          </div>
-        )}
-
-        {allModels.length === 0 && emptyModelsContent ? emptyModelsContent : <AnimatePresence initial={false}>
-          {listOpen ? (
-            <motion.div key="model-list" {...MORPH} className="overflow-hidden">
-              <ModelList
-                models={filteredModels}
-                modelGroups={filteredModelGroups}
-                selectedModelId={selectedModelId}
-                shouldKeepOpen={(model) => !shouldCloseAfterSelect(model.id)}
-                searchActive={Boolean(normalizedModelSearch)}
-                emptyMessage={normalizedModelSearch ? 'No models found' : 'No models'}
-                onSelectModel={(id) => {
-                  onSelectModel(id)
-                  if (!shouldCloseAfterSelect(id)) collapseAll()
-                }}
-              />
-            </motion.div>
-          ) : (
-            <motion.div key="model-row" {...MORPH} className="overflow-hidden">
-              <button
-                type="button"
-                onClick={() => {
-                  setAgentsExpanded(false)
-                  setProvidersExpanded(false)
-                  setModelsExpanded(true)
-                }}
-                className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted focus:bg-muted focus:outline-none"
-              >
-                <div className="min-w-0 flex-1">
-                  <div className="truncate text-sm font-medium leading-tight">{modelLabel}</div>
-                  {selectedModel?.description && (
-                    <div className="line-clamp-2 text-xs leading-tight text-muted-foreground">{selectedModel.description}</div>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between px-2 pb-1 pt-1.5">
+                <span className="text-xs text-muted-foreground">{listOpen ? t('chatModelSelector.models') : t('chatModelSelector.model')}</span>
+                <div className="flex items-center gap-1">
+                  {modelHeaderActions}
+                  {listOpen && <RefreshModelsButton onRefreshModels={onRefreshModels} modelsLoading={modelsLoading} />}
+                  {modelSearchAvailable && (
+                    <IconButton
+                      size="xs"
+                      variant="nested"
+                      tooltip={t('chatModelSelector.searchTooltip')}
+                      onClick={(event) => {
+                        event.preventDefault()
+                        event.stopPropagation()
+                        setModelSearchOpen(true)
+                      }}
+                    >
+                      <Search />
+                    </IconButton>
                   )}
                 </div>
-                <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
-              </button>
-            </motion.div>
-          )}
-        </AnimatePresence>}
+              </div>
+            )}
+
+            {allModels.length === 0 && emptyModelsContent ? emptyModelsContent : <AnimatePresence initial={false}>
+              {listOpen ? (
+                <motion.div key="model-list" {...MORPH} className="overflow-hidden">
+                  <ModelList
+                    models={filteredModels}
+                    modelGroups={filteredModelGroups}
+                    selectedModelId={selectedModelId}
+                    shouldKeepOpen={(model) => !shouldCloseAfterSelect(model.id)}
+                    searchActive={Boolean(normalizedModelSearch)}
+                    flatGroups={flatModels}
+                    emptyMessage={normalizedModelSearch ? t('chatModelSelector.noModelsFound') : t('chatModelSelector.noModels')}
+                    onSelectModel={(id) => {
+                      onSelectModel(id)
+                      if (!shouldCloseAfterSelect(id)) collapseAll()
+                    }}
+                  />
+                </motion.div>
+              ) : (
+                <motion.div key="model-row" {...MORPH} className="overflow-hidden">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setAgentsExpanded(false)
+                      setProvidersExpanded(false)
+                      setModelsExpanded(true)
+                    }}
+                    className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left transition-colors hover:bg-muted focus:bg-muted focus:outline-none"
+                  >
+                    <div className="min-w-0 flex-1">
+                      <div className="truncate text-sm font-medium leading-tight">{modelLabel}</div>
+                      {selectedModel?.description && (
+                        <div className="line-clamp-2 text-xs leading-tight text-muted-foreground">{selectedModel.description}</div>
+                      )}
+                    </div>
+                    <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+                  </button>
+                </motion.div>
+              )}
+            </AnimatePresence>}
+          </>
+        )}
 
         <AnimatePresence initial={false}>
-          {!modelsExpanded && !agentsExpanded && canSelectEffort && (
+          {!modelsExpanded && !agentsExpanded && !providersExpanded && canSelectEffort && (
             <motion.div key="effort" {...MORPH} className="overflow-hidden">
               <DropdownMenuSeparator />
               <EffortSlider
@@ -811,6 +918,7 @@ export function GroupedModelEffortSelector({
                 selectedEffortLabel={selectedEffortLabel}
                 effortLabelClassName={effortLabelClassName}
                 onSelectEffort={onSelectEffort}
+                label={t('chatModelSelector.effort')}
               />
             </motion.div>
           )}
@@ -843,8 +951,8 @@ export function GroupedModelEffortSelector({
         <AnimatePresence initial={false}>
           {listOpen && providers.length > 0 && onSelectProvider && (
             <motion.div key="provider-header" {...MORPH} className="overflow-hidden">
-              <DropdownMenuSeparator />
-              <div className="px-2 pb-1 pt-1.5 text-xs text-muted-foreground">Provider</div>
+              {!(flatModels && providersExpanded) && <DropdownMenuSeparator />}
+              <div className="px-2 pb-1 pt-1.5 text-xs text-muted-foreground">{t('chatModelSelector.provider')}</div>
             </motion.div>
           )}
         </AnimatePresence>
@@ -853,38 +961,7 @@ export function GroupedModelEffortSelector({
           {listOpen && providers.length > 0 && onSelectProvider && (
             providersExpanded ? (
               <motion.div key="provider-list" {...MORPH} className="overflow-hidden">
-                <SelectorScrollArea>
-                  {providers.map((provider) => {
-                    const selected = provider.id === selectedProviderId
-                    const account = isCodexAccountProvider(provider.id)
-                    return (
-                      <DropdownMenuItem
-                        key={provider.id ?? '__default__'}
-                        onSelect={(event) => {
-                          event.preventDefault()
-                          onSelectProvider(provider.id)
-                          setProvidersExpanded(false)
-                        }}
-                        className={cn('items-center justify-between gap-2 px-2 py-1.5', ITEM_FOCUS, selected && 'bg-muted')}
-                      >
-                        <span className={cn('flex min-w-0 flex-1', account ? 'flex-col gap-1' : 'items-center justify-between gap-1.5')}>
-                          <ProviderOptionLabel brandKey={provider.brand} name={provider.name} icon={provider.icon} />
-                          {provider.keyName && <span className="truncate text-xs text-muted-foreground">{provider.keyName}</span>}
-                        </span>
-                        {selected && <Check className="size-4 shrink-0 text-primary" />}
-                      </DropdownMenuItem>
-                    )
-                  })}
-                </SelectorScrollArea>
-                {onManageProviders && (
-                  <>
-                    <DropdownMenuSeparator />
-                    <DropdownMenuItem onSelect={onManageProviders} className={cn('gap-2 px-2 py-1.5 text-sm text-muted-foreground', ITEM_FOCUS)}>
-                      <Settings2 className="size-4 shrink-0" />
-                      <span>Provider settings</span>
-                    </DropdownMenuItem>
-                  </>
-                )}
+                {renderProviderList()}
               </motion.div>
             ) : (
               <motion.div key="provider-row" {...MORPH} className="overflow-hidden">
@@ -906,7 +983,7 @@ export function GroupedModelEffortSelector({
                       )}
                     </>
                   ) : (
-                    <span className="min-w-0 flex-1 truncate text-sm font-medium">Default</span>
+                    <span className="min-w-0 flex-1 truncate text-sm font-medium">{t('chatModelSelector.defaultProvider')}</span>
                   )}
                   <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
                 </button>

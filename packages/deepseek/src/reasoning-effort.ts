@@ -19,6 +19,7 @@ import type { EffortLevel } from '@superone/shared/agent-types'
  */
 const DSH_TO_SUPERONE: Readonly<Record<string, EffortLevel>> = {
   low: 'low',
+  medium: 'medium',
   high: 'high',
   max: 'max',
   // `off` (thinking disabled) has no SuperOne counterpart — the shared
@@ -29,11 +30,12 @@ const DSH_TO_SUPERONE: Readonly<Record<string, EffortLevel>> = {
 
 const SUPERONE_TO_DSH: Readonly<Partial<Record<EffortLevel, string>>> = {
   low: 'low',
+  medium: 'medium',
   high: 'high',
   max: 'max',
-  // `medium` / `xhigh` have no DeepSeek counterpart. They can only arrive from
-  // a session pref persisted under another harness, and mapping them to a
-  // neighbouring step would silently run a turn at an effort nobody chose.
+  // `xhigh` has no dsh counterpart. It can only arrive from a session pref
+  // persisted under another harness, and mapping it to a neighbouring step
+  // would silently run a turn at an effort nobody chose.
 }
 
 /**

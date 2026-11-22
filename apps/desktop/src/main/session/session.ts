@@ -41,6 +41,7 @@ import type {
   CodexUsageInfo,
   ContextUsageInfo,
   McpServerInfo,
+  ModelChangeMeta,
   PermissionMode,
   QuestionAnnotations,
   QueuedMessagesChangedEvent,
@@ -1787,6 +1788,9 @@ export class Session implements SessionContract {
     if (current === presetId) return
     this.providerConfig = { ...(this.providerConfig ?? {}), agentPreset: presetId ?? undefined }
     this._needsRebuild = true
+    if (this.backendStarted && this._messages.length === 0 && !this.isStreaming()) {
+      void this.backend.releaseRuntime?.('idle').catch(() => {})
+    }
     this.notifyStateChange()
   }
 
@@ -2906,6 +2910,16 @@ export class Session implements SessionContract {
     this.pendingPreamble = null
   }
 
+  private sessionCurrentModel(): string | undefined {
+    const ui = this.getUiSettings()
+    const cfg = (this.providerConfig && typeof this.providerConfig === 'object'
+      ? this.providerConfig as { model?: string; defaultModel?: string }
+      : undefined)
+    return (this.harnessId === 'codex'
+      ? (ui.selectedCodexModel ?? this.model)
+      : (this.model ?? ui.selectedModel ?? cfg?.model ?? cfg?.defaultModel)) ?? undefined
+  }
+
   private userMessageFor(request: SendMessageRequest, providerOrigin: SendProviderOrigin): ChatMessage {
     // Transcript providerId is local|remote only; host wakes are local-origin bubbles.
     const messageOrigin = providerOrigin === 'remote' ? 'remote' : 'local'
@@ -2916,7 +2930,17 @@ export class Session implements SessionContract {
           userMessageContent: [{ type: 'text' as const, text: taskNotificationDisplayText(request.content) }],
         }
       : request
-    return buildClaudeUserMessage(displayRequest, messageOrigin)
+    const msg = buildClaudeUserMessage(displayRequest, messageOrigin)
+    const requestedModel = sessionRequestSelection(this.harnessId, request).model ?? this.sessionCurrentModel()
+    const modelMeta = resolveSendModelMetadata(this._messages, requestedModel)
+    if (!modelMeta.model && !modelMeta.modelChange) return msg
+    return {
+      ...msg,
+      metadata: {
+        ...msg.metadata,
+        ...modelMeta,
+      },
+    }
   }
 
   /**
@@ -3211,4 +3235,32 @@ export class Session implements SessionContract {
   private assertNotDisposed(): void {
     if (this._status === 'disposed') throw new Error(`Session ${this.id} is disposed`)
   }
+}
+
+export function resolveSendModelMetadata(
+  messages: readonly ChatMessage[],
+  currentModel: string | undefined,
+): { model?: string; modelChange?: ModelChangeMeta } {
+  if (!currentModel) return {}
+  let previousUserModel: string | undefined
+  let previousAnyModel: string | undefined
+  for (let i = messages.length - 1; i >= 0; i -= 1) {
+    const m = messages[i]
+    if (!m || m.providerId === 'system') continue
+    const mModel = m.metadata?.model
+    if (!mModel) continue
+    if (!previousAnyModel) previousAnyModel = mModel
+    if (m.role === 'user') {
+      previousUserModel = mModel
+      break
+    }
+  }
+  const previousModel = previousUserModel ?? previousAnyModel
+  if (previousModel && previousModel !== currentModel) {
+    return {
+      model: currentModel,
+      modelChange: { fromModel: previousModel, toModel: currentModel },
+    }
+  }
+  return { model: currentModel }
 }

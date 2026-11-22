@@ -384,4 +384,43 @@ describe('runtime disposal', () => {
 
     await expect(runtime.listModels()).rejects.toThrow(/inactive context/)
   }, 30000)
+
+  it('mounts piAiProviders and updates them dynamically without restarting', async () => {
+    const runtime = await DeepseekRuntime.create({
+      ...TEST_PRESET_OPTIONS,
+      persona: 'test agent',
+      credentialLookup: (ref) => (ref === 'SUPERONE_CRED_6331' ? 'sk-test' : undefined),
+      piAiProviders: {
+        'superone-c1': {
+          displayName: 'OpenAI (Work)',
+          apiKeyEnv: 'SUPERONE_CRED_6331',
+          api: 'openai-completions',
+          baseURL: 'https://api.openai.com/v1',
+          models: [{ id: 'gpt-4o', name: 'GPT-4o', input: ['text'] }],
+        },
+      },
+    })
+
+    const initial = await runtime.listModels('superone-c1')
+    expect(initial.map((m) => ({ provider: m.provider, id: m.id, name: m.name }))).toEqual([
+      { provider: 'superone-c1', id: 'gpt-4o', name: 'GPT-4o' },
+    ])
+
+    await runtime.configurePiAiProviders({
+      'superone-c1': {
+        displayName: 'OpenAI (Work)',
+        apiKeyEnv: 'SUPERONE_CRED_6331',
+        api: 'openai-completions',
+        baseURL: 'https://api.openai.com/v1',
+        models: [{ id: 'gpt-5', name: 'GPT-5', input: ['text', 'image'] }],
+      },
+    })
+
+    const updated = await runtime.listModels('superone-c1')
+    expect(updated.map((m) => ({ provider: m.provider, id: m.id, name: m.name }))).toEqual([
+      { provider: 'superone-c1', id: 'gpt-5', name: 'GPT-5' },
+    ])
+
+    await runtime.dispose()
+  }, 30000)
 })

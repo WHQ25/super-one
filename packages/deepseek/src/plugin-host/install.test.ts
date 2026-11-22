@@ -76,7 +76,7 @@ describe('checkPeerLockstep', () => {
       peerDependencies: { '@deepseek-ai/dsh-tools': '^0.2.2' },
     })
     expect(report.mismatched).toEqual([
-      { name: '@deepseek-ai/dsh-tools', wanted: '^0.2.2', actual: '0.2.2-rc.1' },
+      { name: '@deepseek-ai/dsh-tools', wanted: '^0.2.2', actual: '0.2.2-rc.5' },
     ])
   })
 

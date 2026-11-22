@@ -140,6 +140,34 @@ describe('submitted goal draft', () => {
     expect(sessions.other.draftText).toBe('keep this draft')
     expect(useDraftsStore.getState().byConnection.local).toEqual([])
   })
+
+  it('merges host model and modelChange metadata into an optimistic user message on user_message_appended', () => {
+    const optimistic = makeMessage('msg-1', 'user')
+    const project = createDefaultProjectState()
+    project._activeSessionId = 's1'
+    project._sessions = {
+      s1: { ...createDefaultPerSessionState(), messages: [optimistic], _historyHydrated: true },
+    }
+    useChatStore.setState({ activeProject: '/p', projectSessions: { '/p': project } })
+    useChatStore.getState().handleAgentEvent({
+      type: 'user_message_appended',
+      projectPath: '/p',
+      sessionId: 's1',
+      message: {
+        ...optimistic,
+        metadata: {
+          model: 'MiniMax-M3.1-Flash',
+          modelChange: { fromModel: 'deepseek-v4-pro', toModel: 'MiniMax-M3.1-Flash' },
+        },
+      },
+    })
+    const updated = useChatStore.getState().projectSessions['/p']._sessions.s1.messages[0]
+    expect(updated?.metadata?.model).toBe('MiniMax-M3.1-Flash')
+    expect(updated?.metadata?.modelChange).toEqual({
+      fromModel: 'deepseek-v4-pro',
+      toModel: 'MiniMax-M3.1-Flash',
+    })
+  })
 })
 
 describe('session control projection', () => {

@@ -16,7 +16,7 @@ const API_KEY_DEFAULTS: Record<HarnessId, ApiKeyDefault | undefined> = {
   'acp-antigravity': undefined,
   opencode: undefined,
   cursor: undefined,
-  dsh: undefined,
+  dsh: { brand: 'deepseek', labelKey: 'resources.providers.defaultLabelDeepseek' },
 }
 
 /** Undefined: the harness has no API-key picker. */

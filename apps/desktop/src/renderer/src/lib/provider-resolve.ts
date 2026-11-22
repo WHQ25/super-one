@@ -23,6 +23,7 @@ export interface ProviderResolveOptions {
 
 export function consumerForHarness(harness: HarnessId): ConsumerId {
   if (harness === 'codex') return 'chat:codex'
+  if (harness === 'dsh') return 'chat:dsh'
   return 'chat:claude'
 }
 

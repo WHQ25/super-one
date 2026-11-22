@@ -87,7 +87,28 @@ export function reduceLifecycle(
 
     case 'user_message_appended': {
       const pendingAsyncQuestions = session.pendingAsyncQuestions?.filter(q => q.request.requestId !== event.message.id)
-      if (session.messages.some((m) => m.id === event.message.id)) return pendingAsyncQuestions ? { pendingAsyncQuestions } : {}
+      if (session.messages.some((m) => m.id === event.message.id)) {
+        const incomingMeta = event.message.metadata
+        let mergedMessages: typeof session.messages | undefined
+        if (incomingMeta && (incomingMeta.model !== undefined || incomingMeta.modelChange !== undefined)) {
+          mergedMessages = session.messages.map((m) => {
+            if (m.id !== event.message.id) return m
+            if (m.metadata?.model === incomingMeta.model && m.metadata?.modelChange === incomingMeta.modelChange) return m
+            return {
+              ...m,
+              metadata: {
+                ...m.metadata,
+                ...(incomingMeta.model !== undefined ? { model: incomingMeta.model } : {}),
+                ...(incomingMeta.modelChange !== undefined ? { modelChange: incomingMeta.modelChange } : {}),
+              },
+            }
+          })
+        }
+        return {
+          ...(pendingAsyncQuestions ? { pendingAsyncQuestions } : {}),
+          ...(mergedMessages ? { messages: mergedMessages } : {}),
+        }
+      }
       return {
         ...(pendingAsyncQuestions ? { pendingAsyncQuestions } : {}),
         // A backend-originated Codex row (the voice agent's delegation prompt)

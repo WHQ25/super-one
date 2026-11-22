@@ -14,6 +14,7 @@ import * as LlmRetry from '@deepseek-ai/dsh-llm-retry'
 import * as ImageOffload from '@deepseek-ai/dsh-compaction-image-offload'
 import ApprovalService from '@deepseek-ai/dsh-user-approval'
 import * as LlmDeepseek from '@deepseek-ai/dsh-llm-deepseek-api-key'
+import type { PiAiProviderProfile } from '@deepseek-ai/dsh-llm-pi-ai'
 import type { DeepSeekCatalogModel } from '@deepseek-ai/dsh-llm-deepseek'
 import type { SubagentModelSelectionSettings } from '@deepseek-ai/dsh-tool-subagent/model-selection-settings'
 import LocalAttachmentStore from '@deepseek-ai/dsh-attachment-local'
@@ -90,6 +91,7 @@ export interface DeepseekTreeOptions {
    * the user's credential or model selection changes.
    */
   deepseekAdapter?: DeepseekAdapterOptions
+  piAiProviders?: Record<string, PiAiProviderProfile>
   /** See `HostToolPlaneOptions.ptcNodeExecutable`. */
   ptcNodeExecutable?: string
   /**
@@ -145,6 +147,16 @@ export function deepseekAdapterPlugin(options: DeepseekAdapterOptions): {
  */
 /** Loader identity of the subagent model-selection preference row. */
 const MODEL_SELECTION_ENTRY = 'subagent-model-selection'
+const PI_AI_PROVIDERS_ENTRY = 'llm-pi-ai'
+
+export async function updatePiAiProviders(
+  root: Context,
+  providers: Record<string, PiAiProviderProfile>,
+): Promise<void> {
+  await (root.get('loader') as LoaderEntries | undefined)?.update(PI_AI_PROVIDERS_ENTRY, {
+    config: { providers },
+  })
+}
 
 /**
  * Change the subagent model-selection preference of a running tree.
@@ -343,6 +355,14 @@ export async function createDeepseekTree(options: DeepseekTreeOptions): Promise<
     const { plugin, config } = deepseekAdapterPlugin(options.deepseekAdapter)
     ctx.plugin(plugin, config)
   }
+
+  await (ctx.loader as LoaderEntries).create({
+    id: PI_AI_PROVIDERS_ENTRY,
+    name: '@deepseek-ai/dsh-llm-pi-ai',
+    config: {
+      providers: options.piAiProviders ?? {},
+    },
+  })
 
   if (options.persistenceRoot) {
     // Preserve the zstd encoding used by the previous published dsh runtime.

@@ -365,10 +365,11 @@ export function isUsableRoute(route: string, protocol: WireProtocol): boolean {
 }
 
 /** The protocols a chat harness accepts without experimental adapters. */
-export const HARNESS_CHAT_PROTOCOLS: Record<'claude' | 'codex' | 'opencode', WireProtocol[]> = {
+export const HARNESS_CHAT_PROTOCOLS: Record<'claude' | 'codex' | 'opencode' | 'dsh', WireProtocol[]> = {
   claude: ['anthropic-messages'],
   codex: ['openai-responses', 'openai-chat'],
   opencode: ['openai-responses', 'anthropic-messages', 'openai-chat'],
+  dsh: ['openai-chat', 'openai-responses', 'anthropic-messages', 'google-generative'],
 }
 
 export interface HarnessProtocolOptions {
@@ -378,7 +379,7 @@ export interface HarnessProtocolOptions {
 
 /** Harness-compatible protocols in preference order, including enabled experiments. */
 export function harnessChatProtocols(
-  harness: 'claude' | 'codex' | 'opencode',
+  harness: 'claude' | 'codex' | 'opencode' | 'dsh',
   options?: HarnessProtocolOptions,
 ): WireProtocol[] {
   if (harness === 'claude' && options?.experimentalClaudeOpenAiChatEnabled) {

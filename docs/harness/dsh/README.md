@@ -1,6 +1,6 @@
 # DeepSeek harness (dsh) integration
 
-Pin: `@deepseek-ai/dsh-*` `0.2.2-rc.1` · Ledger version: `0.2.2-rc.1` (manual inventory) · Last updated: 2026-11-06
+Pin: `@deepseek-ai/dsh-*` `0.2.2-rc.5` · Ledger version: `0.2.2-rc.1` (manual inventory) · Last updated: 2026-11-22
 
 ## Upstream
 
@@ -46,6 +46,7 @@ dsh runs in-process as a Cordis tree inside Electron main, not as a child CLI.
 
 | Version | Date | Status | Upgrade doc | Commit |
 |---|---|---|---|---|
+| 0.2.2-rc.5 | 2026-11-22 | executed | — | — |
 | 0.2.2-rc.1 | 2026-11-06 | executed | [0.2.2-rc.1](upgrades/0.2.2-rc.1.md) | — |
 | 0.1.7-rc.1 | 2026-09-24 | executed | [0.1.7-rc.1](upgrades/0.1.7-rc.1.md) | `52a63be9a` |
 | 0.1.1-rc.2 | 2026-08-23 | executed | [0.1.1-rc.2](upgrades/0.1.1-rc.2.md) | `f205e572d` |

@@ -11,9 +11,9 @@ import { getPlatforms } from '../../providers/registry'
 import type { ConfigResourceServices } from '../config-resource-services'
 import { type ResourceDef } from './types'
 
-const CONSUMERS: ConsumerId[] = ['chat:claude', 'chat:codex', 'media:image', 'media:video', 'tts', 'asr']
+const CONSUMERS: ConsumerId[] = ['chat:claude', 'chat:codex', 'chat:dsh', 'media:image', 'media:video', 'tts', 'asr']
 const CONSUMER_LABELS: Partial<Record<ConsumerId, string>> = {
-  'chat:claude': 'Claude Default Provider', 'chat:codex': 'Codex Default Provider',
+  'chat:claude': 'Claude Default Provider', 'chat:codex': 'Codex Default Provider', 'chat:dsh': 'DeepSeek Default Provider',
   'media:image': 'Default Image Provider', 'media:video': 'Default Video Provider',
   tts: 'Default Speech Provider', asr: 'Default Transcription Provider',
 }

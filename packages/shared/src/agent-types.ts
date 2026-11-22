@@ -827,6 +827,11 @@ export interface ScheduledSendRemoteTurn {
  */
 export const SCHEDULED_SEND_DEFAULT_MESSAGE = 'Continue'
 
+export interface ModelChangeMeta {
+  fromModel: string
+  toModel: string
+}
+
 export interface MessageMetadata {
   /** Exact content position of a compaction or accepted async answer. */
   transcriptBoundary?: import('./transcript-boundary').TranscriptBoundary
@@ -897,6 +902,7 @@ export interface MessageMetadata {
    * for it (see `buildModelFallbackMessage`).
    */
   modelFallback?: ModelFallbackMeta
+  modelChange?: ModelChangeMeta
   /**
    * A line an installed plugin wrote for the user, or a plugin that failed to
    * load. Present only on the synthetic transcript row minted for a

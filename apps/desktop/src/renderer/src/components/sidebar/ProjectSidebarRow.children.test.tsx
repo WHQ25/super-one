@@ -170,4 +170,37 @@ describe('project child lists', () => {
     expect(await screen.findByText('Listed child')).toBeInTheDocument()
     expect(screen.queryByText('Idle sibling')).toBeNull()
   })
+
+  it('keeps an unseen parent visible when collapsed, but hides unseen children', () => {
+    useChatStore.setState({
+      projectSessions: {
+        [folder.path]: {
+          _activeSessionId: null,
+          _sessions: {},
+          unseenCompletedSessions: new Set(['unseen-parent', 'unseen-child', 'unseen-child-of-idle']),
+          hasUnseenActivity: false,
+        } as never,
+      },
+    })
+    render(
+      <ProjectSidebarRow
+        {...callbacks}
+        folder={folder}
+        isExpanded={false}
+        sessions={[
+          session('unseen-parent', 'Unseen parent', { childCount: 1 }),
+          session('idle-parent', 'Idle parent', { childCount: 1 }),
+        ]}
+        childSessions={{
+          'unseen-parent': [session('unseen-child', 'Unseen child', { parentSessionId: 'unseen-parent' })],
+          'idle-parent': [session('unseen-child-of-idle', 'Unseen child of idle', { parentSessionId: 'idle-parent' })],
+        }}
+      />,
+    )
+
+    expect(screen.getByText('Unseen parent')).toBeInTheDocument()
+    expect(screen.queryByText('Unseen child')).toBeNull()
+    expect(screen.queryByText('Idle parent')).toBeNull()
+    expect(screen.queryByText('Unseen child of idle')).toBeNull()
+  })
 })

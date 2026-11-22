@@ -478,13 +478,14 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
     // Ordering priority is about work that wants the user — not about where the
     // user already is. The foreground session is pinned visible instead (see
     // `isPinnedGroup`), so switching to an idle session never reorders the list.
+    const isUnseen = (session: SessionHistoryEntry) =>
+      !!projectSession?.unseenCompletedSessions?.has(session.sessionId)
     const isAttention = (session: SessionHistoryEntry) => {
       const entry = projectSession?._sessions?.[session.sessionId]
-      const isUnseen = projectSession?.unseenCompletedSessions?.has(session.sessionId)
       const realtimeSessionId = useCodexRealtimeViewStore
         .getState()
         .sessions[session.sessionId]?.realtimeSessionId
-      return isLiveSession(entry, isUnseen, typeof realtimeSessionId === 'string')
+      return isLiveSession(entry, isUnseen(session), typeof realtimeSessionId === 'string')
     }
     const needsUserInput = (session: SessionHistoryEntry) =>
       sessionNeedsUserInput(projectSession?._sessions?.[session.sessionId])
@@ -505,14 +506,13 @@ export const ProjectSidebarRow = memo(function ProjectSidebarRow({
       isAttention,
       connectionId,
     )
-    // An open project shows every loaded non-settled group. Further pages arrive
-    // when that list scrolls. A collapsed project keeps sessions waiting on the
-    // user, plus the session already on screen. A running turn stays in the
-    // attention order above, and comes back when the project opens.
     const collapsedSections = {
       ...sections,
       attention: sections.attention.filter((group) =>
-        needsUserInput(group.parent) || group.children.some(needsUserInput) || isPinnedGroup(group)),
+        needsUserInput(group.parent)
+        || (!group.parent.parentSessionId && isUnseen(group.parent))
+        || group.children.some(needsUserInput)
+        || isPinnedGroup(group)),
     }
     const displayLimit = sections.attention.length + sections.scheduled.length + sections.normal.length
     const groupsToShow = visibleSidebarSessionGroups(open ? sections : collapsedSections, open, displayLimit, isPinnedGroup)

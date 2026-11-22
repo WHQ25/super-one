@@ -963,9 +963,7 @@ describe('AppSidebar interactions', () => {
     const { AppSidebar } = await import('./AppSidebar')
     render(<AppSidebar />)
 
-    // A collapsed project keeps only a prompt. An unseen completion stays inside
-    // until the project opens, then it still sorts above ordinary history.
-    expect(screen.queryByText('Unseen completed session')).toBeNull()
+    expect(await screen.findByText('Unseen completed session')).toBeInTheDocument()
     expect(screen.queryByText('Normal session 0')).toBeNull()
 
     fireEvent.click(screen.getByText('project-a'))

@@ -18,20 +18,39 @@ Every alpha release keeps its own notes on its GitHub Release.
 - Review tab in the activity panel with virtualized diffs, LSP diagnostics/hover, and sticky comments.
 - Pluggable LSP support and Editor settings, with `Alt`-held hover tooltips.
 - Click-and-drag on code editor line numbers to select line ranges.
+- Attention count badges on collapsed environments, keeping unseen root sessions visible when projects are collapsed.
+- `pi-ai` provider integration for `dsh` and a model change separator in the chat transcript when switching models.
 
 ### Fixed
 
 - Untracked directories expand in the sidebar changed-files tree.
 - Steered ACP wakeup events retarget cleanly, completed async subagent tools show as done in full view, and `GENERIC` tool errors no longer falsely mark ACP subagents as failed.
+- Antigravity background wakeups, bash terminal status updates, and prewarm effort synchronization behave reliably.
 
 ### Changed
 
-- Upgrade `@anthropic-ai/claude-agent-sdk` from `0.3.321` to `0.3.330` (Claude Code `2.1.330`).
-- Upgrade `@openai/codex` from `0.169.0` to `0.171.0`.
+- Remove the experimental badge from non-`dsh` harnesses in Settings.
+- Upgrade `@anthropic-ai/claude-agent-sdk` from `0.3.321` to `0.3.330` (Claude Code `2.1.330`), `@openai/codex` from `0.169.0` to `0.171.0`, and `@opencode/client` to `2.3.2`.
 
 ### Performance
 
 - Code editor minimap persists across tab switches and defers heavy initialization past tab transitions.
+
+## [0.84.0-alpha.1] - 2026-11-22
+
+### Added
+
+- Show attention count badge on collapsed environments and keep unseen root sessions visible when a project is collapsed in the sidebar.
+- Integrate `pi-ai` providers for `dsh` (`0.2.2-rc.5`) and render a model change separator in the chat transcript when switching models.
+
+### Changed
+
+- Remove the experimental badge from non-`dsh` harnesses in Settings.
+- Upgrade `@anthropic-ai/claude-agent-sdk` to `0.3.330`, `@openai/codex` to `0.171.0`, and `@opencode/client` to `2.3.2`.
+
+### Fixed
+
+- Stabilize Antigravity background wakeups, bash terminal status updates, and prewarm effort synchronization.
 
 ## [0.84.0-alpha] - 2026-11-22
 

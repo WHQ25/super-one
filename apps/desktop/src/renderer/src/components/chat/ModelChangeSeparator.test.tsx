@@ -12,8 +12,8 @@ vi.mock('@/components/providers/ModelGlyph', () => ({
 }))
 
 const CATALOG: ModelOption[] = [
-  { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro' },
-  { id: 'gemini-3.1-flash', name: 'Gemini 3.1 Flash' },
+  { id: 'deepseek-v4-pro', name: 'DeepSeek V4 Pro', description: '' },
+  { id: 'gemini-3.1-flash', name: 'Gemini 3.1 Flash', description: '' },
 ]
 
 describe('ModelChangeSeparator', () => {

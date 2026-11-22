@@ -2,6 +2,7 @@ import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts
 import { isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import { toast } from 'sonner'
 import type {
+  HarnessId,
   PermissionMode,
   QuestionAnnotations,
   SandboxInfo,
@@ -392,7 +393,7 @@ export async function setSessionApiProviderIdImpl(
   if (!sessionId) return
   const provider = sess.sessionProvider ?? sess.preferredProvider ?? 'claude'
   const isCodex = provider === 'codex'
-  const isDsh = provider === 'dsh'
+  const isDsh = new Set<HarnessId>(['dsh']).has(provider)
   try {
     if (isCodex) assertCodexAccountSwitchAllowed(sess.apiProviderId, apiProviderId, sess.messages.length > 0)
     await patchSessionSettings(activeProject, sessionId, sess, { apiProviderId })

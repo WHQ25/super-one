@@ -151,7 +151,9 @@ export class DeepseekBackend implements SessionBackend {
     candidate: string,
     fallback?: string,
   ): Promise<string> {
-    const models = await runtime.listModels(provider).catch(() => [])
+    const models = typeof runtime.listModels === 'function'
+      ? await runtime.listModels(provider).catch(() => [])
+      : []
     this.activeProviderModelIds = new Set(models.map((m) => m.id))
     if (models.length === 0 || this.activeProviderModelIds.has(candidate)) return candidate
     if (fallback && this.activeProviderModelIds.has(fallback)) return fallback

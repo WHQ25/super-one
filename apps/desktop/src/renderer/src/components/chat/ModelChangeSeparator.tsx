@@ -95,7 +95,7 @@ export function ModelChangeSeparator({
     <div
       role="separator"
       data-model-change={`${meta.fromModel}->${meta.toModel}`}
-      className="@container mt-2 mb-5 flex items-center justify-center gap-2 px-1 text-[11px] text-muted-foreground @sm:gap-2.5 @sm:text-xs"
+      className="@container mt-2 mb-5 flex items-center justify-center gap-2 px-1 text-xs text-muted-foreground @sm:gap-2.5"
     >
       <OrnamentalWing />
       <div className="flex min-w-0 shrink-0 items-center gap-1.5 @sm:gap-2">

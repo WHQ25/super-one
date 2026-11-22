@@ -9,7 +9,7 @@ import { useActiveSession, useScopedSessionActions } from '@/stores/chat'
 import { useSessionScope } from '@/stores/chat-store/session-scope'
 import { useAppStore } from '@/stores/app'
 import { useSettingsStore } from '@/stores/settings'
-import { consumerForHarness, credentialsForConsumer, providerDisplayForCredential, resolveEffectiveProviderId } from '@/lib/provider-resolve'
+import { consumerForHarness, credentialsForConsumer, harnessAutoSelectsFirstCredential, providerDisplayForCredential, resolveEffectiveProviderId } from '@/lib/provider-resolve'
 import { subscriptionHost } from '@/lib/provider-host'
 import { useProviderScopeSync } from '@/hooks/useProviderScopeSync'
 import { apiKeyDefaultFor } from '@/harness-ui/api-key-defaults'
@@ -142,7 +142,7 @@ export function useSelectorProviders(harness: HarnessId) {
             name: defaultLabel,
             keyName: claudeAccountKeyName(account, claudeAccounts),
           }))
-        : harness === 'dsh'
+        : harnessAutoSelectsFirstCredential(harness)
         ? []
         : [{ id: null, brand: builtIn.brand, name: defaultLabel }]
     for (const c of filtered) {
@@ -157,7 +157,7 @@ export function useSelectorProviders(harness: HarnessId) {
     selectedProviderId: resolvedProviderId
       ?? (harness === 'codex' && codexAccounts.some((a) => a.isDefault)
         ? codexAccountProviderId(codexAccounts.find((a) => a.isDefault)!.id)
-        : harness === 'dsh'
+        : harnessAutoSelectsFirstCredential(harness)
           ? (filtered[0]?.id ?? null)
           : null),
     onSelectProvider: (id: string | null) => { void setSessionApiProviderId(id) },

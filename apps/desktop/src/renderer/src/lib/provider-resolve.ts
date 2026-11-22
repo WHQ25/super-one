@@ -21,10 +21,16 @@ export interface ProviderResolveOptions {
   experimentalClaudeOpenAiChatEnabled?: boolean
 }
 
+const DSH_HARNESSES = new Set<HarnessId>(['dsh'])
+
 export function consumerForHarness(harness: HarnessId): ConsumerId {
   if (harness === 'codex') return 'chat:codex'
-  if (harness === 'dsh') return 'chat:dsh'
+  if (DSH_HARNESSES.has(harness)) return 'chat:dsh'
   return 'chat:claude'
+}
+
+export function harnessAutoSelectsFirstCredential(harness: HarnessId): boolean {
+  return DSH_HARNESSES.has(harness)
 }
 
 export interface EffectiveService {

@@ -79,14 +79,14 @@ export const CATALOG_HARNESS_META = {
     provider: 'opencode',
     labelKey: 'settings.harnesses.ids.opencode',
     descriptionKey: 'settings.harnesses.desc.opencode',
-    experimental: true,
+    experimental: false,
     configProvider: 'opencode',
   },
   cursor: {
     provider: 'cursor',
     labelKey: 'settings.harnesses.ids.cursor',
     descriptionKey: 'settings.harnesses.desc.cursor',
-    experimental: true,
+    experimental: false,
     configProvider: 'cursor',
   },
   'acp-grok': {
@@ -100,7 +100,7 @@ export const CATALOG_HARNESS_META = {
     provider: 'acp-antigravity',
     labelKey: 'settings.harnesses.ids.acp-antigravity',
     descriptionKey: 'settings.harnesses.desc.acpAntigravity',
-    experimental: true,
+    experimental: false,
     configProvider: 'acp-antigravity',
   },
   dsh: {

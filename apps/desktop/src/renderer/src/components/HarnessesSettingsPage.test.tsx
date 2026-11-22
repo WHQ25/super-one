@@ -9,6 +9,7 @@ import {
   type NodeHarnessId,
 } from '@superone/shared/environment/harness-installation'
 import { HarnessesSettingsPage, listKeyForSettingsProvider } from './HarnessesSettingsPage'
+import { CATALOG_HARNESS_META } from './harnesses-settings/HarnessesSettingsParts'
 
 vi.mock('./GrokAuthSettings', () => ({ GrokAuthSettings: () => <div>grok-account</div> }))
 vi.mock('./AntigravityAuthSettings', () => ({ AntigravityAuthSettings: () => <div>antigravity-account</div> }))
@@ -428,5 +429,12 @@ describe('first-party harness settings entries', () => {
     expect(retryButton).toBeEnabled()
     await user.click(retryButton)
     expect(installHarnessCli).toHaveBeenCalledTimes(2)
+  })
+
+  it('marks only dsh as experimental in catalog metadata', () => {
+    const experimentalIds = NODE_HARNESS_IDS.filter(
+      (id) => CATALOG_HARNESS_META[id].experimental,
+    )
+    expect(experimentalIds).toEqual(['dsh'])
   })
 })

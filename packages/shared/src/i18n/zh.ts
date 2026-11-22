@@ -1077,7 +1077,7 @@ export const zh: Messages = {
         codex: 'OpenAI Codex app-server 二进制。未打包时启用会按需下载。',
         deepseek: '实验性的进程内 DeepSeek Harness 运行时。需要 DeepSeek API Key。',
         opencode: 'OpenCode CLI / 服务。从 PATH 或配置解析的外部运行时。',
-        cursor: '实验性 Cursor Agent SDK harness。进程内托管运行时；需要 Cursor User API Key。',
+        cursor: 'Cursor Agent SDK harness。进程内托管运行时；需要 Cursor User API Key。',
         acpGrok: '通过 Agent Client Protocol 使用 Grok。',
         acpAntigravity: '通过 Agent Client Protocol 使用 Google Antigravity。',
         experimentalAcp: '本机检测到的可选 ACP agent。',

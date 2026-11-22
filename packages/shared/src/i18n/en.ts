@@ -6553,7 +6553,7 @@ export const en: Messages = {
         codex: 'OpenAI Codex app-server binary. Downloads on enable when not bundled.',
         deepseek: 'Experimental in-process DeepSeek Harness runtime. Requires a DeepSeek API key.',
         opencode: 'OpenCode CLI / server. External runtime resolved from PATH or config.',
-        cursor: 'Experimental Cursor Agent SDK harness. Managed in-process runtime; requires a Cursor User API Key.',
+        cursor: 'Cursor Agent SDK harness. Managed in-process runtime; requires a Cursor User API Key.',
         acpGrok: 'Grok via the Agent Client Protocol.',
         acpAntigravity: 'Google Antigravity via the Agent Client Protocol.',
         experimentalAcp: 'Optional ACP agent detected on this machine.',

@@ -33,6 +33,7 @@ const WORKER_POOL_OPTIONS = {
 const WORKER_HIGHLIGHTER_OPTIONS: WorkerInitializationRenderOptions = {
   langs: ['typescript', 'tsx', 'javascript', 'jsx', 'json', 'markdown'],
   theme: { light: 'pierre-light', dark: 'pierre-dark' },
+  useTokenTransformer: true,
 }
 
 export interface ReviewPanelProps {

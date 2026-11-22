@@ -212,7 +212,7 @@
     "@openai/codex": "0.171.0",
     "@opencode-ai/models": "^0.0.62",
     "@opencode-ai/sdk": "^1.18.26",
-    "@opencode/client": "2.0.27",
+    "@opencode/client": "2.3.2",
     "@pierre/diffs": "^1.6.4",
     "@replit/codemirror-vim": "^6.4.0",
     "@streamdown/math": "^1.0.2",

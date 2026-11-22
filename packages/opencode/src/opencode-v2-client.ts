@@ -158,7 +158,7 @@ export class OpenCodeV2Client {
     const sdk = await this.sdk
     const requestSignal = boundedReadSignal(signal, 10000)
     const events: OpenCodeV2Event[] = []
-    for await (const item of sdk.session.log({ sessionID, after, follow: false }, { signal: requestSignal })) {
+    for await (const item of sdk.experimental.session.log({ sessionID, after, follow: false }, { signal: requestSignal })) {
       if (item.type === 'log.synced') {
         if (item.aggregateID !== sessionID || !Number.isSafeInteger(item.seq ?? 0) || (item.seq ?? 0) < 0) throw new Error('Invalid OpenCode log watermark')
         return { events, cursor: item.seq ?? 0 }
@@ -227,15 +227,15 @@ export class OpenCodeV2Client {
   }
 
   putMcp(name: string, config: OpenCodeV2McpConfig): Promise<void> {
-    return this.call((sdk) => sdk.mcp.add({ server: name, location: this.location, config }))
+    return this.call((sdk) => sdk.experimental.mcp.add({ server: name, location: this.location, config }))
   }
 
   connectMcp(name: string, signal?: AbortSignal, assertControl?: () => void): Promise<void> {
-    return this.call((sdk) => { assertControl?.(); return sdk.mcp.connect({ server: name, location: this.location }, { signal }) })
+    return this.call((sdk) => { assertControl?.(); return sdk.experimental.mcp.connect({ server: name, location: this.location }, { signal }) })
   }
 
   disconnectMcp(name: string): Promise<void> {
-    return this.call((sdk) => sdk.mcp.disconnect({ server: name, location: this.location }))
+    return this.call((sdk) => sdk.experimental.mcp.disconnect({ server: name, location: this.location }))
   }
 
   createSession(permissions: OpenCodeV2PermissionRule[]): Promise<OpenCodeV2Session> {
@@ -260,7 +260,7 @@ export class OpenCodeV2Client {
 
   /** Session-scoped system instructions; a repeated key replaces the entry. */
   putInstruction(sessionId: string, key: string, value: string): Promise<void> {
-    return this.call((sdk) => sdk.session.instructions.entry.put({ sessionID: sessionId, key, value }))
+    return this.call((sdk) => sdk.experimental.session.instructions.entry.put({ sessionID: sessionId, key, value }))
   }
 
   async prompt(sessionId: string, input: Omit<SessionPromptInput, 'sessionID'>, signal?: AbortSignal, assertControl?: () => void): Promise<string> {

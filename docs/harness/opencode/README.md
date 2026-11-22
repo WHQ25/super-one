@@ -1,8 +1,8 @@
 # OpenCode integration
 
-V2 client pin: `@opencode/client` `2.0.27` · V2 ledger: 2.0.27 ·
+V2 client pin: `@opencode/client` `2.3.2` · V2 ledger: 2.3.2 ·
 Legacy SDK: `@opencode-ai/sdk` `^1.18.26` (installed 1.18.26) ·
-Last updated: 2026-10-13
+Last updated: 2026-11-22
 
 ## Upstream
 
@@ -115,7 +115,7 @@ runtime scope rather than mutating an unrelated live session.
 
 | Location | What |
 |---|---|
-| `packages/opencode/package.json` | `@opencode/client` 2.0.27, `@opencode-ai/sdk` |
+| `packages/opencode/package.json` | `@opencode/client` 2.3.2, `@opencode-ai/sdk` |
 | `apps/desktop/package.json` | `@opencode/client`, `@opencode-ai/sdk`, `@opencode-ai/models` |
 
 Event-source disconnects now recover the same V2 session through a durable cursor
@@ -143,7 +143,8 @@ database and cannot resume unrelated native executions.
   [upgrades/recovery-inbox-2.0.27.md](upgrades/recovery-inbox-2.0.27.md),
   [upgrades/remote-node-2.0.27.md](upgrades/remote-node-2.0.27.md),
   [upgrades/completion-2.0.27.md](upgrades/completion-2.0.27.md),
-  [upgrades/review-fixes-2.0.27.md](upgrades/review-fixes-2.0.27.md)
+  [upgrades/review-fixes-2.0.27.md](upgrades/review-fixes-2.0.27.md),
+  [upgrades/client-2.3.2.md](upgrades/client-2.3.2.md)
 
 ## Version history
 
@@ -157,3 +158,4 @@ database and cannot resume unrelated native executions.
 | Remote node V2 (client 2.0.27) | 2026-10-13 | executed | [remote-node-2.0.27.md](upgrades/remote-node-2.0.27.md) | |
 | Completion (client 2.0.27) | 2026-10-13 | executed | [completion-2.0.27.md](upgrades/completion-2.0.27.md) | |
 | Review fixes (client 2.0.27) | 2026-10-13 | executed | [review-fixes-2.0.27.md](upgrades/review-fixes-2.0.27.md) | |
+| client 2.3.2 (desktop & node V2) | 2026-11-22 | executed | [client-2.3.2.md](upgrades/client-2.3.2.md) | |

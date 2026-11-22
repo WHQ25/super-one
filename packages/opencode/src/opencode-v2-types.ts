@@ -1,7 +1,7 @@
 /** Consumed V2 shapes derived from the pinned official Promise client's types. */
 import type {
-  AgentInfo, CommandInfo, FileDiffInfo, FormField, FormInfo, FormOption, FormValue,
-  McpAddInput, McpServer, ModelInfo, ModelRef, OpenCodeEvent, PermissionRequest,
+  AgentInfo, CommandInfo, ExperimentalMcpAddInput, FileDiffInfo, FormField, FormInfo, FormOption, FormValue,
+  McpServer, ModelInfo, ModelRef, OpenCodeEvent, PermissionRequest,
   PermissionRule, ProviderInfo, SessionInfo, SessionMessageInfo, SessionStructuredError,
   ShellInfo, SkillInfo, TokenUsageInfo, SessionInboxInfo, SessionEventDurable,
 } from '@opencode/client'
@@ -13,7 +13,7 @@ export type OpenCodeV2Agent = AgentInfo
 export type OpenCodeV2Command = CommandInfo
 export type OpenCodeV2Skill = SkillInfo
 export type OpenCodeV2McpServer = McpServer
-export type OpenCodeV2McpConfig = McpAddInput['config']
+export type OpenCodeV2McpConfig = ExperimentalMcpAddInput['config']
 export type OpenCodeV2PermissionRule = PermissionRule
 export type OpenCodeV2TokenUsage = TokenUsageInfo
 export type OpenCodeV2Session = SessionInfo

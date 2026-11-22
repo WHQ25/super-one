@@ -1,8 +1,8 @@
 # OpenCode API surface
 
-Ledger version: `@opencode/client` 2.0.27 (desktop and node V2)
+Ledger version: `@opencode/client` 2.3.2 (desktop and node V2)
 
-The generated Promise client's 140 native methods are inventoried below.
+The generated Promise client's native methods are inventoried below (base 2.0.27 inventory updated for 2.3.2 `experimental.*` moves on used routes).
 Checked manually from the published `dist/promise/generated/client.d.ts`; the
 shared inventory script has no OpenCode extractor. The raw HTTP API also has
 WebSocket upgrade operations that are not generated Promise methods. This
@@ -71,11 +71,11 @@ desktop and remote nodes.
 | `session.inbox.list` | used | Authoritative pending user input and recovery reconciliation | `packages/opencode/src/opencode-inbox.ts#refresh` |
 | `session.inbox.cancel` | used | Withdraw a pending native user input with a captured control proof | `packages/opencode/src/opencode-inbox.ts#cancel` |
 | `session.inbox.update` | used | Change Queue/Steer delivery without resending accepted input | `packages/opencode/src/opencode-inbox.ts#update` |
-| `session.instructions.entry.list` | unused | Not adopted in this migration | — |
-| `session.instructions.entry.put` | used | Desktop and node V2 `putInstruction` adapter | `packages/opencode/src/opencode-v2-client.ts#putInstruction` |
-| `session.instructions.entry.remove` | unused | Not adopted in this migration | — |
+| `session.instructions.entry.list` | deprecated | Moved to `experimental.session.instructions.entry.list` in 2.3.2 | — |
+| `session.instructions.entry.put` | deprecated | Replaced by `experimental.session.instructions.entry.put` | — |
+| `session.instructions.entry.remove` | deprecated | Moved to `experimental.session.instructions.entry.remove` in 2.3.2 | — |
 | `session.generate` | unused | Not adopted in this migration | — |
-| `session.log` | used | Exclusive aggregate cursor and finite synchronization watermark for bounded event recovery | `packages/opencode/src/opencode-v2-client.ts#sessionLog` |
+| `session.log` | deprecated | Replaced by `experimental.session.log` | — |
 | `session.interrupt` | used | Desktop and node V2 `interrupt` adapter | `packages/opencode/src/opencode-v2-client.ts#interrupt` |
 | `session.background` | unused | Not adopted in this migration | — |
 | `session.message.get` | unused | Not adopted in this migration | — |
@@ -135,10 +135,10 @@ desktop and remote nodes.
 | API | Status | Usage | Code |
 |---|---|---|---|
 | `mcp.list` | used | MCP panel status and exact server-to-integration OAuth identity | `packages/opencode/src/opencode-v2-client.ts#mcpStatus`, `packages/opencode/src/opencode-v2-client.ts#nativeMcpServers` |
-| `mcp.add` | used | Desktop and node V2 `putMcp` adapter | `packages/opencode/src/opencode-v2-client.ts#putMcp` |
-| `mcp.remove` | unused | Not adopted in this migration | — |
-| `mcp.connect` | used | Desktop and node V2 `connectMcp` adapter | `packages/opencode/src/opencode-v2-client.ts#connectMcp` |
-| `mcp.disconnect` | used | Desktop and node V2 `disconnectMcp` adapter | `packages/opencode/src/opencode-v2-client.ts#disconnectMcp` |
+| `mcp.add` | deprecated | Replaced by `experimental.mcp.add` | — |
+| `mcp.remove` | deprecated | Moved to `experimental.mcp.remove` in 2.3.2 | — |
+| `mcp.connect` | deprecated | Replaced by `experimental.mcp.connect` | — |
+| `mcp.disconnect` | deprecated | Replaced by `experimental.mcp.disconnect` | — |
 | `mcp.resource.catalog` | unused | Not adopted in this migration | — |
 
 ## credential
@@ -229,6 +229,11 @@ catalog or falling back from a removed selected agent. See [contracts](contracts
 
 | API | Status | Usage | Code |
 |---|---|---|---|
+| `experimental.session.instructions.entry.put` | used | Desktop and node V2 `putInstruction` adapter | `packages/opencode/src/opencode-v2-client.ts#putInstruction` |
+| `experimental.session.log` | used | Exclusive aggregate cursor and finite synchronization watermark for bounded event recovery | `packages/opencode/src/opencode-v2-client.ts#sessionLog` |
+| `experimental.mcp.add` | used | Desktop and node V2 `putMcp` adapter | `packages/opencode/src/opencode-v2-client.ts#putMcp` |
+| `experimental.mcp.connect` | used | Desktop and node V2 `connectMcp` adapter | `packages/opencode/src/opencode-v2-client.ts#connectMcp` |
+| `experimental.mcp.disconnect` | used | Desktop and node V2 `disconnectMcp` adapter | `packages/opencode/src/opencode-v2-client.ts#disconnectMcp` |
 | `experimental.persistentPty.read` | unused | Not adopted in this migration | — |
 | `experimental.persistentPty.list` | unused | Not adopted in this migration | — |
 | `experimental.persistentPty.create` | unused | Not adopted in this migration | — |

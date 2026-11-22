@@ -1714,10 +1714,10 @@ export class AcpBackend implements SessionBackend {
         request.model?.trim() ||
         (isAntigravityAcpAgent(this.config.agentId) ? this.startOpts?.model?.trim() : '') ||
         ''
+      const turnEffort =
+        typeof request.effort === 'string' ? request.effort.trim() : ''
       if (targetModel) {
         try {
-          const turnEffort =
-            typeof request.effort === 'string' ? request.effort.trim() : ''
           const isAntigravity = isAntigravityAcpAgent(this.config.agentId)
           const modelMatches = runtime.getModelConfig()?.selectedModelId === targetModel
           if (isAntigravity && modelMatches) {
@@ -1746,6 +1746,12 @@ export class AcpBackend implements SessionBackend {
         this.resetUncommittedDegradedSession()
         await this.teardownRuntime()
         throw buildAntigravityModelCatalogError(null)
+      } else if (turnEffort && isAntigravityAcpAgent(this.config.agentId) && this.shouldApplyEffortToRuntime(runtime, turnEffort)) {
+        try {
+          await this.setSessionMode(turnEffort)
+        } catch (err) {
+          log.debug('[AcpBackend] set effort before prompt failed:', err)
+        }
       }
       this.committedProviderSessionId = runtime.sessionId
       const turn = runtime.prompt(request.content, messageId, onEvent, request.images, { onInputAccepted: delivery?.onInputAccepted })
@@ -1886,6 +1892,8 @@ export class AcpBackend implements SessionBackend {
         ? (this.requestedEffort() ?? this.lastModeConfig?.selectedModeId?.trim())
         : '')
       || ''
+    const explicitEffort = asGrokReasoningEffort(opts?.reasoningEffort)
+    if (explicitEffort) this.grokReasoningEffort = explicitEffort
     if (opts?.contextWindow != null && Number.isFinite(opts.contextWindow)) {
       await runtime.setModel(model, {
         ...(preservedEffort ? { reasoningEffort: preservedEffort } : {}),

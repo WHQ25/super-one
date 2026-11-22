@@ -17,6 +17,7 @@ import {
   noteAntigravitySubagentEvents,
   waitForAntigravitySubagentWakeup,
 } from './antigravity-subagent'
+import { hasUnreadAntigravityWakeupInboxMessage } from './antigravity-wakeup-inbox'
 
 const tempDirs: string[] = []
 
@@ -494,5 +495,139 @@ describe('antigravity background run_command and schedule wakeup', () => {
 
     expect(await waitPromise).toBe('completed')
     expect(emitted.some((e) => e.type === 'content_delta' && e.delta.type === 'text' && e.delta.text === '定时器已触发，状态正常。')).toBe(true)
+  })
+
+  it('detects unread high-priority inbox messages and ignores read or low-priority ones', () => {
+    const brainRoot = makeTempBrainRoot()
+    const parentSid = 'parent-inbox-1'
+    const messagesDir = join(brainRoot, parentSid, '.system_generated', 'messages')
+    mkdirSync(messagesDir, { recursive: true })
+
+    expect(hasUnreadAntigravityWakeupInboxMessage(parentSid, [brainRoot])).toBe(false)
+
+    writeFileSync(
+      join(messagesDir, 'msg-low.json'),
+      JSON.stringify({ id: 'msg-low', priority: 'MESSAGE_PRIORITY_LOW' }),
+      'utf8',
+    )
+    expect(hasUnreadAntigravityWakeupInboxMessage(parentSid, [brainRoot])).toBe(false)
+
+    writeFileSync(
+      join(messagesDir, 'msg-high.json'),
+      JSON.stringify({ id: 'msg-high', priority: 'MESSAGE_PRIORITY_HIGH' }),
+      'utf8',
+    )
+    expect(hasUnreadAntigravityWakeupInboxMessage(parentSid, [brainRoot])).toBe(true)
+
+    writeFileSync(
+      join(messagesDir, 'read.json'),
+      JSON.stringify({ 'msg-high': true }),
+      'utf8',
+    )
+    expect(hasUnreadAntigravityWakeupInboxMessage(parentSid, [brainRoot])).toBe(false)
+  })
+
+  it('keeps wakeup waiter alive across wave boundary while an unread high-priority inbox message is pending', async () => {
+    const brainRoot = makeTempBrainRoot()
+    const parentSid = 'parent-inbox-wave'
+    const logsDir = join(brainRoot, parentSid, '.system_generated', 'logs')
+    const messagesDir = join(brainRoot, parentSid, '.system_generated', 'messages')
+    mkdirSync(logsDir, { recursive: true })
+    mkdirSync(messagesDir, { recursive: true })
+    const transcriptPath = join(logsDir, 'transcript_full.jsonl')
+    const nowIso = new Date().toISOString()
+
+    const initialLines = [
+      JSON.stringify({ step_index: 10, type: 'USER_INPUT', status: 'DONE', created_at: nowIso, content: 'Run two tasks' }),
+      JSON.stringify({
+        step_index: 11,
+        type: 'PLANNER_RESPONSE',
+        status: 'DONE',
+        created_at: nowIso,
+        tool_calls: [{ id: 'call_bg_12', name: 'run_command', args: { CommandLine: 'echo hi', WaitMsBeforeAsync: 500 } }],
+      }),
+      JSON.stringify({
+        step_index: 12,
+        type: 'GENERIC',
+        status: 'RUNNING',
+        created_at: nowIso,
+        content: `Created At: ${nowIso}\nTool is running as a background task with task id: ${parentSid}/task-12`,
+      }),
+      JSON.stringify({ step_index: 13, type: 'PLANNER_RESPONSE', status: 'DONE', created_at: nowIso, content: '等待任务完成。' }),
+    ]
+    writeFileSync(transcriptPath, `${initialLines.join('\n')}\n`, 'utf8')
+    writeFileSync(
+      join(messagesDir, 'msg-wave-2.json'),
+      JSON.stringify({ id: 'msg-wave-2', priority: 'MESSAGE_PRIORITY_HIGH' }),
+      'utf8',
+    )
+
+    const emitted: AgentEvent[] = []
+    noteAntigravitySubagentEvents(
+      parentSid,
+      'msg-wave-1',
+      [
+        {
+          type: 'content_delta',
+          messageId: 'msg-wave-1',
+          delta: { type: 'tool_use', toolUseId: 'call_bg_12', toolName: 'Bash', input: JSON.stringify({ command: 'echo hi' }), status: 'streaming' },
+        },
+      ],
+      (ev) => emitted.push(ev),
+      [brainRoot],
+    )
+
+    let settled = false
+    const waitPromise = waitForAntigravitySubagentWakeup(parentSid, { noWakeupTimeoutMs: 50 }).then((outcome) => {
+      settled = true
+      return outcome
+    })
+
+    writeFileSync(
+      transcriptPath,
+      [
+        ...initialLines,
+        JSON.stringify({
+          step_index: 14,
+          type: 'SYSTEM_MESSAGE',
+          status: 'DONE',
+          created_at: nowIso,
+          content: `<SYSTEM_MESSAGE>\n[Message] timestamp=${nowIso} sender=${parentSid}/task-12 priority=MESSAGE_PRIORITY_HIGH content=Task id "${parentSid}/task-12" finished with result:\nCommand exited with code 0.\n</SYSTEM_MESSAGE>`,
+        }),
+        JSON.stringify({ step_index: 15, type: 'PLANNER_RESPONSE', status: 'DONE', created_at: nowIso, content: '第一波完成。' }),
+      ].join('\n') + '\n',
+      'utf8',
+    )
+
+    await new Promise((resolve) => setTimeout(resolve, 350))
+    expect(settled).toBe(false)
+
+    writeFileSync(join(messagesDir, 'read.json'), JSON.stringify({ 'msg-wave-2': true }), 'utf8')
+    writeFileSync(
+      transcriptPath,
+      [
+        ...initialLines,
+        JSON.stringify({
+          step_index: 14,
+          type: 'SYSTEM_MESSAGE',
+          status: 'DONE',
+          created_at: nowIso,
+          content: `<SYSTEM_MESSAGE>\n[Message] timestamp=${nowIso} sender=${parentSid}/task-12 priority=MESSAGE_PRIORITY_HIGH content=Task id "${parentSid}/task-12" finished with result:\nCommand exited with code 0.\n</SYSTEM_MESSAGE>`,
+        }),
+        JSON.stringify({ step_index: 15, type: 'PLANNER_RESPONSE', status: 'DONE', created_at: nowIso, content: '第一波完成。' }),
+        JSON.stringify({
+          step_index: 16,
+          type: 'SYSTEM_MESSAGE',
+          status: 'DONE',
+          created_at: nowIso,
+          content: `<SYSTEM_MESSAGE>\n[Message] timestamp=${nowIso} sender=${parentSid}/task-99 priority=MESSAGE_PRIORITY_HIGH content=Task id "${parentSid}/task-99" finished with result:\nCommand exited with code 0.\n</SYSTEM_MESSAGE>`,
+        }),
+        JSON.stringify({ step_index: 17, type: 'PLANNER_RESPONSE', status: 'DONE', created_at: nowIso, content: '第二波也完成了。' }),
+      ].join('\n') + '\n',
+      'utf8',
+    )
+
+    expect(await waitPromise).toBe('completed')
+    expect(emitted.some((e) => e.type === 'content_delta' && e.delta.type === 'text' && e.delta.text === '第二波也完成了。')).toBe(true)
   })
 })

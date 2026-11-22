@@ -88,7 +88,7 @@ function createAcpStrategy(harnessId: AcpHarnessId): HarnessStrategy {
       return catalog
         ? sessionPatchFromAcpCatalog(catalog, {
             preferSelected: session.selectedModel || null,
-            preferModeId: session.selectedAcpModeId || null,
+            preferModeId: session.selectedAcpModeId || (isAcpEffortConfigId(catalog.modeConfigId) ? (session.selectedEffort ?? null) : null),
             agentId: session.acpAgentId,
           })
         : {}
@@ -101,6 +101,15 @@ function createAcpStrategy(harnessId: AcpHarnessId): HarnessStrategy {
         model: session.selectedModel || undefined,
         ...(effort ? { effort } : {}),
         acpAgentId: session.acpAgentId ?? undefined,
+      }
+    },
+    runModel: (session) => {
+      const acpEffort = isAcpEffortConfigId(session.acpModeConfigId)
+        ? toEffortLevel(resolvedAcpMode(session))
+        : undefined
+      return {
+        model: session.selectedModel || undefined,
+        effort: acpEffort ?? session.selectedEffort ?? undefined,
       }
     },
     draftSettings: (session) => {

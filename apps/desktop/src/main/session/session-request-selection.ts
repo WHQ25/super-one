@@ -1,3 +1,4 @@
+import { isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import type { RealtimeVoiceStartRequest, SendMessageRequest, SessionSettingsPatch } from '@superone/shared/agent-types'
 import type { HarnessId, SendProviderOrigin } from './types'
 
@@ -118,6 +119,7 @@ export function requestSettingsPatch(
   return {
     ...(model !== undefined ? { selectedModel: model } : {}),
     ...(effort !== undefined ? { selectedEffort: effort } : {}),
+    ...(isAcpProtocolHarness(harnessId) && effort !== undefined ? { selectedAcpModeId: effort } : {}),
     ...(harnessId === 'opencode' && request.agent !== undefined ? { openCodeAgentId: request.agent } : {}),
   }
 }

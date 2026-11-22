@@ -27,6 +27,7 @@ vi.mock('sonner', () => ({ toast: { error: vi.fn() } }))
 const getSession = vi.fn()
 const createSession = vi.fn()
 const removeSession = vi.fn()
+const patchSessionSettings = vi.fn()
 const listProjects = vi.fn()
 const activateSession = vi.fn()
 
@@ -41,7 +42,7 @@ vi.stubGlobal('window', {
     trace: vi.fn(),
     getAppSettings: vi.fn().mockResolvedValue({ agentPreference: {} }),
   },
-  environment: { getSession, createSession, removeSession, listProjects },
+  environment: { getSession, createSession, removeSession, patchSessionSettings, listProjects },
   dispatchEvent: vi.fn(),
   addEventListener: vi.fn(),
   removeEventListener: vi.fn(),
@@ -94,6 +95,7 @@ beforeEach(() => {
   createSession.mockReset().mockImplementation(async (_connectionId: string, input: { selections?: { sessionId?: string } }) =>
     ({ sessionId: input.selections?.sessionId ?? 'node-new', title: null, lastActiveAt: '', messageCount: 0 }))
   removeSession.mockReset().mockResolvedValue(undefined)
+  patchSessionSettings.mockReset().mockResolvedValue(undefined)
   listProjects.mockReset().mockImplementation(async (connectionId: string) => connectionId === 'local'
     ? [{ projectId: 'local-project', path: '/proj/' }]
     : [{ projectId: 'node-project', path: '/work/app' }])
@@ -256,14 +258,19 @@ describe('ensureHostSession', () => {
     expect(Object.keys(p._sessions)).toEqual(['node-new'])
   })
 
-  it('keeps an empty session the host already runs on the same harness', async () => {
-    seed(NODE, 'node-live', { preferredProvider: 'claude' })
+  it('keeps an empty session the host already runs on the same harness and syncs unsent draft settings', async () => {
+    seed(NODE, 'node-live', { preferredProvider: 'claude', selectedModel: 'claude-opus-4-6', selectedEffort: 'high', permissionMode: 'acceptEdits' })
     getSession.mockResolvedValueOnce({ sessionId: 'node-live', harnessId: 'claude' })
 
     await expect(ensure(NODE).done).resolves.toBe('node-live')
 
     expect(createSession).not.toHaveBeenCalled()
     expect(removeSession).not.toHaveBeenCalled()
+    expect(patchSessionSettings).toHaveBeenCalledWith('env-1', 'node-live', expect.objectContaining({
+      model: 'claude-opus-4-6',
+      effort: 'high',
+      permissionMode: 'acceptEdits',
+    }))
     expect(project(NODE)._sessions['node-live'].hostSessionOwned).toBe(true)
   })
 
@@ -500,4 +507,28 @@ it('applies the selected directory to a prewarmed Codex session before voice sta
   await expect(prepareComposerSession(LOCAL, { projectPath: LOCAL, sessionId: 'voice' })).resolves.toBe('voice')
   expect(createSession).not.toHaveBeenCalled()
   expect(activateSession).toHaveBeenCalledWith(LOCAL, 'voice', '/proj/.wt/voice')
+})
+
+it('sends acp-antigravity thought_level from selectedAcpModeId as turn effort', () => {
+  seed(LOCAL, 'agy-1', {
+    preferredProvider: 'acp-antigravity',
+    sessionProvider: 'acp-antigravity',
+    acpAgentId: 'antigravity',
+    selectedModel: 'gemini-4-carbon',
+    selectedEffort: undefined,
+    acpModeConfigId: 'thought_level',
+    selectedAcpModeId: 'high',
+    acpModes: [
+      { id: 'low', name: 'Low', description: '' },
+      { id: 'medium', name: 'Medium', description: '' },
+      { id: 'high', name: 'High', description: '' },
+    ],
+  })
+  const request = sessionTurnRequest(useChatStore.getState(), LOCAL, 'agy-1', {
+    text: 'hello',
+    clientMessageId: 'u-agy-1',
+    firstTurn: true,
+  })
+  expect(request.model).toBe('gemini-4-carbon')
+  expect(request.effort).toBe('high')
 })

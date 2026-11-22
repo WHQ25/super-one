@@ -119,13 +119,14 @@ export function BashTerminalPresenter({
   const outputExpired = !!resultOutputPath && !bashOutput && !isStreaming
   const scrollRef = useRef<HTMLDivElement>(null)
   const sentinelRef = useRef<HTMLDivElement>(null)
-  const isLiveRunning = !!bashOutput && !bashOutput.finished
+  const taskCompleted = taskProgress?.completed === true
+  const isLiveRunning = !!bashOutput && !bashOutput.finished && !taskCompleted
   const hasResult = !!fallbackResult || isDenied
   const hasTaskState = !!taskProgress
   const treatAsBackground = backgroundActivity || runInBackground
   const isRunning = (isStreaming && !hasResult && !isPendingPermission)
     || isLiveRunning
-    || (treatAsBackground && hasTaskState && taskProgress.completed !== true)
+    || (treatAsBackground && hasTaskState && !taskCompleted)
   const backgroundFailed = taskProgress?.status === 'failed'
   const backgroundStopped = !!taskProgress?.status
     && taskProgress.status !== 'completed'

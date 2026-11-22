@@ -273,6 +273,8 @@ export async function ensureHostSession(
       sid = created.sessionId
       if (record && candidate && !desktop) void removeSession(projectPath, candidate).catch(() => {})
       if (session.continuesFrom) markContinued(set, projectPath, session.continuesFrom, sid)
+    } else if (!session.hostSessionOwned && candidate && window.environment.patchSessionSettings) {
+      await window.environment.patchSessionSettings(connectionId, candidate, draftSettings(get(), projectPath, session))
     }
   }
   if (!sid) throw new Error('No session to send to')

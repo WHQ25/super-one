@@ -949,6 +949,81 @@ describe('AcpBackend', () => {
     await backend.close()
   })
 
+  it('applies turn effort override on antigravity send and keeps it across subsequent calls', async () => {
+    let activeModel = 'gemini-4-hydrogen'
+    let activeEffort = 'medium'
+    const antigravityOptions = () => [
+      {
+        id: 'model',
+        name: 'Model',
+        category: 'model',
+        type: 'select',
+        currentValue: activeModel,
+        options: [
+          { value: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen' },
+          { value: 'gemini-4-carbon', name: 'Gemini 4 Carbon' },
+        ],
+      },
+      {
+        id: 'thought_level',
+        name: 'Thinking Level',
+        category: 'thought_level',
+        type: 'select',
+        currentValue: activeEffort,
+        options: [
+          { value: 'low', name: 'Low' },
+          { value: 'medium', name: 'Medium' },
+          { value: 'high', name: 'High' },
+        ],
+      },
+    ]
+    const setConfigOption = vi.fn(async (id: string, value: string) => {
+      if (id === 'model') {
+        activeModel = value
+        activeEffort = 'medium'
+      } else if (id === 'thought_level') {
+        activeEffort = value
+      }
+      return antigravityOptions()
+    })
+    setAcpRuntimeFactory(async () => mockRuntime({
+      getConfigOptions: () => antigravityOptions(),
+      getModelConfig: () => ({
+        configId: 'model',
+        selectedModelId: activeModel,
+        models: [
+          { id: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen', description: '' },
+          { id: 'gemini-4-carbon', name: 'Gemini 4 Carbon', description: '' },
+        ],
+      }),
+      getModeConfig: () => ({
+        configId: 'thought_level',
+        selectedModeId: activeEffort,
+        modes: [
+          { id: 'low', name: 'Low', description: '' },
+          { id: 'medium', name: 'Medium', description: '' },
+          { id: 'high', name: 'High', description: '' },
+        ],
+      }),
+      setConfigOption,
+    }))
+    const backend = new AcpBackend('acp-antigravity')
+    await backend.start({ ...startOpts({ agentId: 'antigravity' }), model: 'gemini-4-hydrogen', effort: 'medium' })
+    await new Promise((r) => setTimeout(r, 10))
+    setConfigOption.mockClear()
+
+    await backend.send({ content: 'first turn', model: 'gemini-4-carbon', effort: 'high' })
+    expect(setConfigOption).toHaveBeenCalledWith('model', 'gemini-4-carbon')
+    expect(setConfigOption).toHaveBeenCalledWith('thought_level', 'high')
+    expect(activeEffort).toBe('high')
+
+    setConfigOption.mockClear()
+    await backend.send({ content: 'second turn', model: 'gemini-4-carbon' })
+    expect(setConfigOption).not.toHaveBeenCalledWith('thought_level', 'medium')
+    expect(activeEffort).toBe('high')
+    await backend.close()
+  })
+
   it('setModel uses session/set_model when model configId is null (Grok path)', async () => {
     const setModel = vi.fn(async () => {})
     const setConfigOption = vi.fn(async () => [])

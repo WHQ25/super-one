@@ -94,4 +94,26 @@ describe('BashTerminalPresenter', () => {
     await waitFor(() => expect(screen.getByText('restored output')).not.toBeNull())
     expect(renderAnsiText).toHaveBeenCalledWith('restored output')
   })
+
+  it('does not show running state when taskProgress is completed even if bashOutput.finished is still false', () => {
+    render(
+      <BashTerminalPresenter
+        toolUseId="tool-completed"
+        command="bun install"
+        isStreaming={false}
+        backgroundActivity
+        bashOutput={{ content: 'Installed 251 packages', finished: false, outputPath: '/tmp/task-157.log' }}
+        taskProgress={{
+          status: 'completed',
+          completed: true,
+        }}
+        readOutputFile={noopReadMore}
+        readOutputMore={noopReadMore}
+        renderAnsiText={(text) => text}
+      />,
+    )
+
+    expect(screen.queryByText('Running')).toBeNull()
+    expect(screen.getByText('Bash')).toBeInTheDocument()
+  })
 })

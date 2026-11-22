@@ -451,6 +451,7 @@ function BashTerminalView(props: BashToolPresenterProps) {
   const isForegroundRunning = !props.runInBackground
     && !props.backgroundActivity
     && !isPendingPermission
+    && taskProgress?.completed !== true
     && ((props.isStreaming && !props.fallbackResult && !props.isDenied) || (!!bashOutput && !bashOutput.finished))
 
   return (

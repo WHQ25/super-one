@@ -41,6 +41,7 @@ const mockWindowAgent = {
   sendMessage: vi.fn().mockResolvedValue(undefined),
   prewarm: vi.fn().mockResolvedValue(undefined),
   watchBashOutput: vi.fn(),
+  unwatchBashOutput: vi.fn(),
 }
 
 const mockWindowApp = {
@@ -49,6 +50,7 @@ const mockWindowApp = {
   listSessionsForFolder: vi.fn().mockResolvedValue([]),
   codexListModels: vi.fn().mockResolvedValue([]),
   watchBashOutput: vi.fn(),
+  unwatchBashOutput: vi.fn(),
   getAppSettings: vi.fn().mockResolvedValue({
     analyticsEnabled: true,
     agentPreference: {
@@ -935,5 +937,59 @@ describe('native control snapshot recovery', () => {
     await syncing
     expect(useChatStore.getState().projectSessions['/p']._sessions.s._controlLease).toBeNull()
     expect(useChatStore.getState().remoteSessions['/p']).toBeUndefined()
+  })
+})
+
+describe('background bash output lifecycle', () => {
+  it('marks bash output finished and stops live watch when task_notification completes', async () => {
+    const project = createDefaultProjectState()
+    project._activeSessionId = 's1'
+    project._sessions = {
+      s1: {
+        ...createDefaultPerSessionState(),
+        messages: [makeMessage('m1', 'assistant')],
+      },
+    }
+    useChatStore.setState({
+      activeProject: '/p',
+      projectSessions: { '/p': project },
+    })
+
+    useChatStore.getState().handleAgentEvent({
+      type: 'task_started',
+      projectPath: '/p',
+      sessionId: 's1',
+      taskId: 's1/task-157',
+      toolUseId: 'call-157',
+      description: 'bun install',
+      taskType: 'local_bash',
+    })
+    useChatStore.getState().handleAgentEvent({
+      type: 'content_delta',
+      projectPath: '/p',
+      sessionId: 's1',
+      messageId: 'm1',
+      delta: {
+        type: 'tool_result',
+        toolUseId: 'call-157',
+        summary: 'Installed 251 packages',
+        outputPath: '/tmp/task-157.log',
+      },
+    })
+    useChatStore.getState().handleAgentEvent({
+      type: 'task_notification',
+      projectPath: '/p',
+      sessionId: 's1',
+      taskId: 's1/task-157',
+      toolUseId: 'call-157',
+      taskStatus: 'completed',
+      outputFile: '/tmp/task-157.log',
+      summary: 'Installed 251 packages',
+    })
+
+    expect(useChatStore.getState()._bashOutputs['call-157']?.finished).toBe(true)
+    await new Promise((resolve) => setTimeout(resolve, 10))
+    expect(mockWindowApp.watchBashOutput).not.toHaveBeenCalled()
+    expect(mockWindowApp.unwatchBashOutput).toHaveBeenCalledWith('call-157')
   })
 })

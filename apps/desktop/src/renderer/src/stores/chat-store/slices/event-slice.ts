@@ -35,7 +35,7 @@ import { clearStreamingToolInputsForSession } from '../event-reducer/shared'
 import { shouldReviveStreaming } from '../event-reducer/stream-revive'
 import { isContextUsageHeld, releaseContextUsageHold } from '../helpers/context-usage-hold'
 import { applyCachedCodexPermissionPreset } from '../helpers/prefs-cache'
-import { startBashOutputLive } from '../helpers/bash-output-live'
+import { startBashOutputLive, stopBashOutputLive } from '../helpers/bash-output-live'
 import { HARNESS_STRATEGIES } from '@/harness-ui/strategies'
 import { patchAcpResourcesFromEvent } from '../harness/acp-event-patch'
 import { omitCodexSelectionReplay } from '../helpers/codex-selection-replay'
@@ -635,18 +635,45 @@ export const createEventSlice: StateCreator<ChatStore, [], [], EventSlice> = (se
       if (event.type === 'content_delta' && event.delta.type === 'tool_result' && event.delta.outputPath) {
         const tid = event.delta.toolUseId
         const op = event.delta.outputPath
-        bashOutputUpdate = {
-          _bashOutputs: { ...s._bashOutputs, [tid]: { content: s._bashOutputs[tid]?.content ?? '', finished: false, outputPath: op } },
+        const existing = s._bashOutputs[tid]
+        if (updatedSession.taskProgress[tid]?.completed === true) {
+          if (existing && (!existing.finished || existing.outputPath !== op)) {
+            bashOutputUpdate = {
+              _bashOutputs: { ...s._bashOutputs, [tid]: { ...existing, finished: true, outputPath: op } },
+            }
+          }
+        } else {
+          bashOutputUpdate = {
+            _bashOutputs: { ...s._bashOutputs, [tid]: { content: existing?.content ?? '', finished: false, outputPath: op } },
+          }
+          setTimeout(() => {
+            const currentSession = get().projectSessions[projectPath]?._sessions[targetSid]
+            if (currentSession?.taskProgress[tid]?.completed === true) return
+            startBashOutputLive({
+              toolUseId: tid,
+              outputPath: op,
+              projectKey: projectPath,
+            })
+          }, 0)
         }
-        // Remote: EnvironmentHost → node tailWatch/readFile RPC (never local fs.watch).
-        // Local: desktop bash-output-watcher.
-        setTimeout(() => {
-          startBashOutputLive({
-            toolUseId: tid,
-            outputPath: op,
-            projectKey: projectPath,
-          })
-        }, 0)
+      } else if (
+        event.type === 'task_notification'
+        && (event.taskStatus === 'completed' || event.taskStatus === 'failed' || event.taskStatus === 'stopped')
+      ) {
+        const tid =
+          event.toolUseId
+          ?? Object.entries(updatedSession.taskProgress).find(([, entry]) => entry.taskId === event.taskId)?.[0]
+        if (tid) {
+          const existing = s._bashOutputs[tid]
+          if (existing && !existing.finished) {
+            bashOutputUpdate = {
+              _bashOutputs: { ...s._bashOutputs, [tid]: { ...existing, finished: true } },
+            }
+          }
+          setTimeout(() => {
+            stopBashOutputLive(tid)
+          }, 0)
+        }
       }
 
       let harnessUpdate: Partial<ChatStore> | undefined

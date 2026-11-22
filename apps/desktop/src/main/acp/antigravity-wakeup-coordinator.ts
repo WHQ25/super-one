@@ -23,6 +23,7 @@ import {
   type TrackedSubagent,
   type WakeupEmitContext,
 } from './antigravity-wakeup-emitter'
+import { hasUnreadAntigravityWakeupInboxMessage } from './antigravity-wakeup-inbox'
 
 const POLL_INTERVAL_MS = 250
 const IDLE_POLL_INTERVAL_MS = 1_000
@@ -151,6 +152,7 @@ function emitBackgroundWatch(
   parentRaw: string,
   now: number,
   anyActive: boolean,
+  hasUnreadInbox: boolean,
 ): void {
   const hooks = state.idleHooks
   if (!hooks) return
@@ -197,7 +199,7 @@ function emitBackgroundWatch(
   state.resumedInteractionStepIndex = null
   state.stalledWakeupToolReplay = false
 
-  if (stillRunning) {
+  if (stillRunning || hasUnreadInbox) {
     if (wakeup.completed && state.idleWakeupMessageId) {
       const targetMsgId = state.idleWakeupMessageId
       if (!state.wireWakeupStreamed) flushRemainingWakeupToolResults(state, wakeup, targetMsgId)
@@ -212,7 +214,7 @@ function emitBackgroundWatch(
   const elapsedSinceDone = state.allWorkCompletedAtMs === null ? 0 : now - state.allWorkCompletedAtMs
   const activityAnchor = state.lastWakeupActivityAtMs ?? state.allWorkCompletedAtMs
   const elapsedSinceActivity = activityAnchor === null ? 0 : now - activityAnchor
-  const noWakeupTimedOut = !wakeup.sawSystemMessage && elapsedSinceDone >= state.noWakeupTimeoutMs
+  const noWakeupTimedOut = !wakeup.sawSystemMessage && !hasUnreadInbox && elapsedSinceDone >= state.noWakeupTimeoutMs
   const plannerStalled =
     wakeup.sawSystemMessage &&
     !wakeup.completed &&
@@ -275,11 +277,12 @@ export function syncSessionSubagents(state: SessionSubagentState): void {
     0
   settleUnboundSwarmWorkersOnWakeup(state, parentRaw, swarmAfterStep, now)
 
+  const hasUnreadInbox = hasUnreadAntigravityWakeupInboxMessage(state.parentSessionId, state.brainRoots)
   const anyActiveSubagentBefore = [...state.trackedByToolUseId.values()].some((e) => !e.completed)
   const bgSummary = parentRaw
     ? syncBackgroundTasks(state.bgTasks, parentRaw, state.parentTurnEnded, state.emitEvent, {
         fallbackMessageId: state.idleWakeupMessageId ?? state.wakeupMessageId,
-        keepIdleWatch: state.backgroundWatch || state.parentTurnEnded || anyActiveSubagentBefore,
+        keepIdleWatch: state.backgroundWatch || state.parentTurnEnded || anyActiveSubagentBefore || hasUnreadInbox,
       })
     : {
         anyActiveNonDaemon: false,
@@ -337,10 +340,10 @@ export function syncSessionSubagents(state: SessionSubagentState): void {
     !state.idleHooks.isPromptActive() &&
     parentRaw
   ) {
-    emitBackgroundWatch(state, parentRaw, now, anyActive)
-  } else if (state.parentTurnEnded && !wakeupPending) {
+    emitBackgroundWatch(state, parentRaw, now, anyActive, hasUnreadInbox)
+  } else if (state.parentTurnEnded && !wakeupPending && !hasUnreadInbox) {
     settleWakeupWaiters(state, 'completed')
-  } else if (wakeupPending && state.parentTurnEnded) {
+  } else if ((wakeupPending || hasUnreadInbox) && state.parentTurnEnded) {
     const afterStepIndex =
       state.foregroundEndStepIndex ??
       state.activeWakeupMinSpawnStepIndex ??
@@ -350,7 +353,7 @@ export function syncSessionSubagents(state: SessionSubagentState): void {
       anyActive = true
     }
 
-    if (!anyActive && wakeup.completed) {
+    if (!anyActive && !hasUnreadInbox && wakeup.completed) {
       state.stalledWakeupToolReplay = false
       flushRemainingWakeupToolResults(state, wakeup, state.wakeupMessageId)
       settleWakeupWaiters(state, 'completed')
@@ -376,7 +379,7 @@ export function syncSessionSubagents(state: SessionSubagentState): void {
         const elapsedSinceDone = now - state.allWorkCompletedAtMs
         const activityAnchor = state.lastWakeupActivityAtMs ?? state.allWorkCompletedAtMs
         const elapsedSinceActivity = now - activityAnchor
-        if (!wakeup.sawSystemMessage && elapsedSinceDone >= state.noWakeupTimeoutMs) {
+        if (!wakeup.sawSystemMessage && !hasUnreadInbox && elapsedSinceDone >= state.noWakeupTimeoutMs) {
           settleWakeupWaiters(state, 'completed')
         } else if (wakeup.sawSystemMessage && elapsedSinceActivity >= state.wakeupResponseTimeoutMs) {
           settleWakeupWaiters(state, 'completed')
@@ -407,7 +410,7 @@ export function syncSessionSubagents(state: SessionSubagentState): void {
     }
   }
 
-  ensurePollingTimer(state)
+  ensurePollingTimer(state, hasUnreadInbox)
 }
 
 export function noteForegroundTurnEndedOnState(state: SessionSubagentState): void {
@@ -423,9 +426,10 @@ export function noteForegroundTurnEndedOnState(state: SessionSubagentState): voi
   }
   if (!parentRaw) return
   const anyActiveSubagent = [...state.trackedByToolUseId.values()].some((e) => !e.completed)
+  const hasUnreadInbox = hasUnreadAntigravityWakeupInboxMessage(state.parentSessionId, state.brainRoots)
   syncBackgroundTasks(state.bgTasks, parentRaw, false, state.emitEvent, {
     fallbackMessageId: state.wakeupMessageId,
-    keepIdleWatch: state.backgroundWatch || anyActiveSubagent,
+    keepIdleWatch: state.backgroundWatch || anyActiveSubagent || hasUnreadInbox,
   })
   const endStep = resolveAntigravityForegroundEndStepIndex(parentRaw)
   if (endStep !== null) {
@@ -437,13 +441,19 @@ export function noteForegroundTurnEndedOnState(state: SessionSubagentState): voi
   }
 }
 
-function desiredPollingIntervalMs(state: SessionSubagentState): number | null {
+function desiredPollingIntervalMs(state: SessionSubagentState, hasUnreadInbox = false): number | null {
   const anyActiveSubagent = [...state.trackedByToolUseId.values()].some((e) => !e.completed)
   const anyActiveBg = [...state.bgTasks.tasksByToolUseId.values()].some(
     (e) => Boolean(e.taskId) && e.wakeupRequired && !e.completed,
   )
   const wakeupPending = isEffectiveWakeupPending(state)
-  if (state.backgroundWatch || anyActiveSubagent || anyActiveBg || (wakeupPending && state.parentTurnEnded)) {
+  if (
+    state.backgroundWatch ||
+    anyActiveSubagent ||
+    anyActiveBg ||
+    (wakeupPending && state.parentTurnEnded) ||
+    (hasUnreadInbox && (state.parentTurnEnded || state.idleHooks !== undefined))
+  ) {
     return POLL_INTERVAL_MS
   }
   if (state.bgTasks.idleWatchStepIndex !== null && state.idleHooks) {
@@ -459,8 +469,8 @@ export function stopPollingTimer(state: SessionSubagentState): void {
   state.timerIntervalMs = 0
 }
 
-export function ensurePollingTimer(state: SessionSubagentState): void {
-  const desiredMs = desiredPollingIntervalMs(state)
+export function ensurePollingTimer(state: SessionSubagentState, hasUnreadInbox = false): void {
+  const desiredMs = desiredPollingIntervalMs(state, hasUnreadInbox)
   if (desiredMs === null) {
     stopPollingTimer(state)
     return

@@ -4,6 +4,7 @@ import { ensureAgentProfileApprovalSchema } from './agent-profile-approval'
 import { collaborationStore, listUnreadCollaborationMessages, onCollaborationMailboxChanged } from './collaboration-mailbox'
 import Database from 'better-sqlite3'
 import { execFileSync } from 'child_process'
+import { createHash } from 'crypto'
 import { mkdirSync, mkdtempSync, rmSync } from 'fs'
 import { tmpdir } from 'os'
 import { join } from 'path'
@@ -138,7 +139,7 @@ function ensureProjectId(projectPath: string): string {
     | { id: string }
     | undefined
   if (existing) return existing.id
-  const id = `proj-${Buffer.from(projectPath).toString('base64url').slice(0, 24)}`
+  const id = `proj-${createHash('sha1').update(projectPath).digest('base64url').slice(0, 24)}`
   state.db!.prepare('INSERT INTO projects (id, path) VALUES (?, ?)').run(id, projectPath)
   return id
 }

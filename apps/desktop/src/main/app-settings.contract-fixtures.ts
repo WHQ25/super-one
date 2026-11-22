@@ -44,6 +44,9 @@ const samples: Record<string, unknown> = {
   dshSubagentModelSelection: { enabled: true, allowedModels: [{ provider: 'deepseek-official', model: 'deepseek-flash' }] },
   sessionContinuationHint: { enabled: false, minContextTokens: 500_000 },
   schedulingProvider: 'superone',
+  lspEnabledProjects: ['/tmp/contract-project'],
+  lspEnabledServers: { typescript: false },
+  customLspServers: [{ id: 'contract-lsp', label: 'Contract LSP', command: 'contract-lsp', args: ['--stdio'], languages: ['typescript'] }],
 }
 
 export function readSetting(settings: unknown, path: string): unknown {

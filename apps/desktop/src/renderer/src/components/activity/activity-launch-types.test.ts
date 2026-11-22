@@ -22,6 +22,7 @@ vi.mock('./activity-panel-api', () => ({
   focusActivePanelContent: hoisted.focusActivePanelContent,
   openBrowserTab: vi.fn(),
   openDeviceTab: hoisted.openDeviceTab,
+  openReviewTab: vi.fn(),
   openTerminalTab: vi.fn(),
   openTrajectoryTab: hoisted.openTrajectoryTab,
 }))
@@ -74,7 +75,7 @@ beforeEach(() => {
 
 describe('activity launcher entries', () => {
   it('offers Trajectory on a dsh session', async () => {
-    expect(await launchIds()).toEqual(['browser', 'terminal', 'device', 'trajectory'])
+    expect(await launchIds()).toEqual(['browser', 'terminal', 'review', 'device', 'trajectory'])
   })
 
   it.each(['claude', 'codex', 'acp-grok', 'opencode', 'cursor'])(
@@ -84,14 +85,14 @@ describe('activity launcher entries', () => {
 
       // Absent, not disabled: a greyed-out row would imply the user could turn
       // it on, and no other harness writes a dsh log to project.
-      expect(await launchIds()).toEqual(['browser', 'terminal', 'device'])
+      expect(await launchIds()).toEqual(['browser', 'terminal', 'review', 'device'])
     },
   )
 
   it('hides Trajectory when no session is active', async () => {
     activeHarness(null)
 
-    expect(await launchIds()).toEqual(['browser', 'terminal'])
+    expect(await launchIds()).toEqual(['browser', 'terminal', 'review'])
   })
 
   it('opens the active dsh session when Trajectory is picked', async () => {
@@ -143,6 +144,6 @@ describe('activity launcher entries', () => {
     })
     vi.resetModules()
 
-    expect(await launchIds()).toEqual(['browser', 'terminal', 'device', 'trajectory'])
+    expect(await launchIds()).toEqual(['browser', 'terminal', 'review', 'device', 'trajectory'])
   })
 })

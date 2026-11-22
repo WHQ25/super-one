@@ -15,6 +15,45 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
+- Review tab in the activity panel with virtualized diffs, LSP diagnostics/hover, and sticky comments.
+- Pluggable LSP support and Editor settings, with `Alt`-held hover tooltips.
+- Click-and-drag on code editor line numbers to select line ranges.
+
+### Fixed
+
+- Untracked directories expand in the sidebar changed-files tree.
+- Steered ACP wakeup events retarget cleanly, completed async subagent tools show as done in full view, and `GENERIC` tool errors no longer falsely mark ACP subagents as failed.
+
+### Performance
+
+- Code editor minimap persists across tab switches and defers heavy initialization past tab transitions.
+
+## [0.84.0-alpha] - 2026-11-22
+
+### Added
+
+- Add Review tab in the activity panel with virtualized diffs, LSP hover/diagnostics, and sticky review comments.
+- Add pluggable LSP support and Editor settings, with `Alt`-held hover tooltips.
+- Support click-and-drag on code editor line numbers to select line ranges.
+
+### Fixed
+
+- Expand untracked directories in the sidebar changed-files tree.
+- Retarget steered ACP wakeup events and align `AskUserQuestion` handling.
+- Mark completed async subagent tools as done in full view and ignore `GENERIC` tool errors when detecting ACP subagent failure.
+
+### Performance
+
+- Keep code editor minimap mounted across tab switches and defer heavy minimap/LSP initialization past tab transitions.
+
+### Tests
+
+- Update desktop settings contract, activity launcher, and collaboration project ID test fixtures.
+
+## [0.83.0] - 2026-11-19
+
+### Added
+
 - Check out or sync branches in the location popover from another environment's checkout, a git remote, or a GitHub pull request, carrying uncommitted work if chosen and relaying incremental git bundles between hosts.
 - Generated images, video, and audio in a thread appear in a collapsible media gallery with a sidebar on wide panes, a carousel on narrow panes, and a vertical volume control.
 - Repositories with `.superone/worktree.json` narrow new worktrees via sparse-checkout and link shared ignored paths from the main checkout. Settings → Storage lists `~/.worktrees` and removes unused worktrees while keeping branches and commits in the repository.
@@ -41,62 +80,6 @@ Every alpha release keeps its own notes on its GitHub Release.
 ### Performance
 
 - Remote chats paint the visible transcript window before fetching expanded tool details and reuse cached fragments across reopen.
-
-## [0.83.0-alpha.1] - 2026-11-19
-
-### Changed
-
-- Deleted-session sync files count toward Storage → Optimize and are swept by the one-click cleanup. The separate sync storage section is gone. Upload handoff or redelivery errors show in Session Files only when there are some.
-- Sidebar icons that already read as their action (search, new session, environment actions, and the file-tree header) no longer show hover tooltips.
-
-### Fixed
-
-- Antigravity keeps the selected effort across prewarm, the live runtime, and the mode list.
-- An Antigravity wakeup does not replay a second time while that stream is already live, and the turn unlocks when the wakeup omits `user_message_chunk`.
-- A remote host whose project list fails because the socket is down shows as offline, with refresh and disconnect, instead of the raw "not connected" error.
-- Multi-host sidebar lists apply height changes before paint, so toggling Pinned, Drafts, or Offline no longer lags or bounces.
-
-### Tests
-
-- Worktree tests remove the temporary `~/.worktrees` directories they create.
-
-## [0.83.0-alpha] - 2026-11-18
-
-### Added
-
-- Check out or sync branches in the location popover from another environment's checkout, a git remote, or a GitHub pull request, with optional uncommitted work carry-over, conflict backup/save-as, progress reporting, and incremental git bundle transfers between hosts.
-- Unify generated images, video, and audio into a collapsible media gallery blended into the transcript, with a sidebar on wide panes, a carousel on narrow panes, and a vertical volume control.
-- Narrow new worktrees with `.superone/worktree.json` sparse-checkout rules and shared ignored path links, and list or remove unused `~/.worktrees` directories in Settings → Storage.
-- Drag the chat pane past its minimum width to pop it into Float Chat.
-- Show a centered HUD card for mobile file preview save confirmations and dismissible error states.
-
-### Changed
-
-- Dispatch queued Enter sends after a 100ms delay while keeping double-Enter steer within the 400ms window.
-- Soften in-chat `AskUserQuestion` result styling.
-
-### Fixed
-
-- Replace the Android QR camera with an OpenCV WeChat QRCode scanner over CameraX (with tap-to-focus, zoom, torch, and gallery fallback), and stage sanitized ASCII filenames with MIME-derived extensions when saving photos.
-- Fix Antigravity wakeup stalls after background tasks, release session holds when Antigravity subagents, swarms, or wakeup waits are stopped or cancelled (#214, #215), ignore non-launch background task patterns in transcripts, prevent away auto-recap lease leaks and retry log spam, and prevent transient startup failures from overwriting cached model catalogs.
-- Draw Claude mod themes from live answers across light and dark schemes, tinting panels, borders, and the bottom terminal consistently.
-- Split Codex remote replies at the steer boundary and pass Codex service tier selections and per-turn overrides to remote node turns.
-- Restore large remote tool bodies from cache or on-demand chunks while keeping the 32 KiB fragment budget.
-- Keep remote worktree checkouts on `session.snapshot` deadlines so collaboration spawn retries reuse the grant without orphaning or failing on an existing branch. (#205)
-- Persist and deliver scheduled sends on remote nodes, publishing schedule changes and reconciling pending rows after reconnect. (#206)
-- Preserve remote first-send drafts and original attachments in local SQLite across session switches and restarts on send failure. (#212)
-- Resolve remote git status files via `git.status` RPC for the changed file tree.
-- Keep transposed table scroll fade aligned with the sticky column.
-- Step back from parent-session focus to its project via the sidebar level menu.
-- Show tabbed ask-user answers across tool aliases in compact and expanded views, and preserve suggested task launch choices across remounts.
-
-### Performance
-
-- Reduce remote transcript payload on open and restore by painting the visible window before fetching expanded tool details and reusing cached fragments across metadata changes.
-
-### Tests
-
-- Stop schedulers in the node crash fixture and read recovered transcripts via `session.get` in `phase3-session.integration.test.ts`.
 
 ## [0.82.0] - 2026-11-16
 

@@ -179,5 +179,31 @@ describe('useSubagentJsonl remote / reload', () => {
       ),
     ).toBe(true)
     expect(parsed.resultText).toBe('Saved to /tmp/neon_cat.jpg')
+
+    const inProgressAgyRaw = [
+      JSON.stringify({
+        step_index: 1,
+        type: 'PLANNER_RESPONSE',
+        status: 'DONE',
+        tool_calls: [{ id: 'tc-1', name: 'read_file', args: { Path: '/tmp/a.ts' } }],
+      }),
+      JSON.stringify({
+        step_index: 2,
+        type: 'GENERIC',
+        status: 'DONE',
+        content: '',
+      }),
+      JSON.stringify({
+        step_index: 3,
+        type: 'PLANNER_RESPONSE',
+        status: 'DONE',
+        tool_calls: [{ id: 'tc-2', name: 'read_file', args: { Path: '/tmp/b.ts' } }],
+      }),
+    ].join('\n')
+    const inProgressParsed = parseJsonlOutput(inProgressAgyRaw)
+    const toolEntries = inProgressParsed.entries.filter((e) => e.type === 'tool')
+    expect(toolEntries).toHaveLength(2)
+    expect(toolEntries[0].completed).toBe(true)
+    expect(toolEntries[1].completed).toBeUndefined()
   })
 })

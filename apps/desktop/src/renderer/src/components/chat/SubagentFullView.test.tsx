@@ -9,8 +9,10 @@ const hoisted = vi.hoisted(() => ({
     subagentTokens: {} as Record<string, { input: number; output: number }>,
     subagentColors: {} as Record<string, number>,
     taskProgress: {} as Record<string, unknown>,
+    status: 'idle' as 'idle' | 'streaming',
   },
   remoteDetails: {} as Record<string, unknown>,
+  bashOutput: undefined as { outputPath: string; content: string; finished: boolean } | undefined,
 }))
 
 vi.mock('@superone/chat-view/use-deferred-tool-detail', () => ({
@@ -26,7 +28,7 @@ vi.mock('@/stores/chat', () => ({
     setState: vi.fn(),
     getState: () => ({}),
   }),
-  useBashOutput: () => undefined,
+  useBashOutput: () => hoisted.bashOutput,
 }))
 
 vi.mock('react-i18next', () => ({
@@ -47,11 +49,12 @@ vi.mock('./chat-shared', () => ({
 }))
 
 vi.mock('./ToolBlock', () => ({
-  ToolBlock: (props: { toolName: string; remoteDetail?: string; isError?: boolean; isTimedOut?: boolean }) => (
+  ToolBlock: (props: { toolName: string; remoteDetail?: string; status?: string; isError?: boolean; isTimedOut?: boolean }) => (
     <div
       data-testid="tool-block"
       data-tool={props.toolName}
       data-remote-detail={props.remoteDetail}
+      data-status={props.status}
       data-error={String(!!props.isError)}
       data-timeout={String(!!props.isTimedOut)}
     />
@@ -65,8 +68,9 @@ function taskInput(extra: Record<string, unknown>): string {
 }
 
 beforeEach(() => {
-  hoisted.sessionState = { messages: [], subagentTokens: {}, subagentColors: {}, taskProgress: {} }
+  hoisted.sessionState = { messages: [], subagentTokens: {}, subagentColors: {}, taskProgress: {}, status: 'idle' }
   hoisted.remoteDetails = {}
+  hoisted.bashOutput = undefined
 })
 
 describe('SubagentFullView', () => {
@@ -246,5 +250,51 @@ describe('SubagentFullView', () => {
 
     expect(container.querySelector('.animate-spin')).toBeNull()
     expect(screen.getByText('No activity recorded')).toBeInTheDocument()
+  })
+
+  it('marks finished async tool entries as complete while the subagent is still running', () => {
+    hoisted.sessionState.status = 'streaming'
+    hoisted.sessionState.messages = [{
+      role: 'assistant',
+      content: [
+        { type: 'tool_use', toolUseId: 'task-1', toolName: 'Agent', input: taskInput({ description: 'Research', run_in_background: true }) },
+        { type: 'tool_result', toolUseId: 'task-1', summary: '{"subagent_id":"sub-1","output_file":"/tmp/sub-1/transcript.jsonl"}', outputPath: '/tmp/sub-1/transcript.jsonl' },
+      ],
+    }]
+    hoisted.bashOutput = {
+      outputPath: '/tmp/sub-1/transcript.jsonl',
+      finished: false,
+      content: [
+        JSON.stringify({
+          step_index: 1,
+          type: 'PLANNER_RESPONSE',
+          status: 'DONE',
+          tool_calls: [{ id: 'tc-1', name: 'read_file', args: { Path: '/tmp/a.ts' } }],
+        }),
+        JSON.stringify({
+          step_index: 2,
+          type: 'GENERIC',
+          status: 'DONE',
+          content: 'file contents',
+        }),
+        JSON.stringify({
+          step_index: 3,
+          type: 'PLANNER_RESPONSE',
+          status: 'DONE',
+          tool_calls: [{ id: 'tc-2', name: 'grep_search', args: { Query: 'foo' } }],
+        }),
+      ].join('\n'),
+    }
+
+    render(<SubagentFullView view={{ toolUseId: 'task-1' }} />)
+
+    const tools = screen.getAllByTestId('tool-block')
+    expect(tools).toHaveLength(2)
+    expect(tools[0].getAttribute('data-tool')).toBe('Read')
+    expect(tools[0].getAttribute('data-status')).toBe('complete')
+    expect(tools[1].getAttribute('data-tool')).toBe('Grep')
+    expect(tools[1].getAttribute('data-status')).toBe('streaming')
+    hoisted.bashOutput = undefined
+    hoisted.sessionState.status = 'idle'
   })
 })

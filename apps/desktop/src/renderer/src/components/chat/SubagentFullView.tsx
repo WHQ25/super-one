@@ -223,7 +223,7 @@ function SubagentFullViewBody({ segment: shell }: { segment: SubagentSegment }) 
             // Full view: tools are expandable for detail inspection.
             <NestedToolContext.Provider value={{ defaultAutoExpand: false, allowExpand: true }}>
               <div className="space-y-2">
-                {asyncEntries.map((entry, i) => renderJsonlEntry(entry, i, isRunning))}
+                {asyncEntries.map((entry, i) => renderJsonlEntry(entry, i, isRunning && i === asyncEntries.length - 1))}
                 {asyncEntries.length === 0 && !deferred.status && (
                   <div className="px-1 py-2 text-xs text-muted-foreground">
                     {isRunning ? t('chat.subagent.running') : t('chat.subagent.noActivity', 'No activity recorded')}

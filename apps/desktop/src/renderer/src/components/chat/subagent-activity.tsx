@@ -81,17 +81,19 @@ export function AsyncToolRow({ toolName, description, isActive }: { toolName: st
  */
 export function renderJsonlEntry(entry: JsonlEntry, index: number, isStreaming = false): ReactNode {
   if (entry.type === 'tool') {
+    const entryStreaming =
+      isStreaming && !entry.completed && entry.result === undefined && !entry.isError
     // Prefer full ToolBlock whenever we have structured input (even `{}`) so
     // workflow/subagent full views match the main Grok session tool UI.
     if (entry.input != null) {
       const isImageTool = entry.toolName === 'ImageGen' || entry.toolName === 'ImageEdit'
-      const effectiveResult = entry.result ?? (isImageTool ? (isStreaming ? 'Generating image…' : 'Completed') : undefined)
+      const effectiveResult = entry.result ?? (isImageTool ? (entryStreaming ? 'Generating image…' : 'Completed') : undefined)
       return (
         <ToolBlock
           key={entry.toolUseId ?? `tool-${index}`}
           toolName={entry.toolName}
           input={entry.input}
-          status={isStreaming ? 'streaming' : 'complete'}
+          status={entryStreaming ? 'streaming' : 'complete'}
           result={effectiveResult}
           isError={entry.isError}
           autoExpand={false}
@@ -103,7 +105,7 @@ export function renderJsonlEntry(entry: JsonlEntry, index: number, isStreaming =
         key={entry.toolUseId ?? `tool-${index}`}
         toolName={entry.toolName}
         description={entry.description}
-        isActive={isStreaming}
+        isActive={entryStreaming}
       />
     )
   }

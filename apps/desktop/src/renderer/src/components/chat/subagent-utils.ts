@@ -28,6 +28,7 @@ export type JsonlToolEntry = {
   input?: string
   result?: string
   isError?: boolean
+  completed?: boolean
 }
 
 export type JsonlEntry =
@@ -102,6 +103,7 @@ function attachToolResult(
     ...entry,
     ...(result ? { result } : {}),
     ...(isError ? { isError: true } : {}),
+    ...(!result && !isError ? { completed: true } : {}),
   }
 }
 

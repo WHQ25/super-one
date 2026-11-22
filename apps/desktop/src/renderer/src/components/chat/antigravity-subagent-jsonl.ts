@@ -94,6 +94,12 @@ export function entriesFromAntigravityTranscript(
 
   for (const record of records) {
     if (record.type === 'PLANNER_RESPONSE') {
+      for (const pendingIdx of pendingToolIndices) {
+        const pendingEntry = entries[pendingIdx]
+        if (pendingEntry?.type === 'tool') {
+          entries[pendingIdx] = { ...pendingEntry, completed: true }
+        }
+      }
       pendingToolIndices.length = 0
       if (typeof record.thinking === 'string' && record.thinking.trim()) {
         entries.push({ type: 'activity', text: record.thinking.trim() })
@@ -152,6 +158,7 @@ export function entriesFromAntigravityTranscript(
         ...entry,
         ...(resultText ? { result: resultText } : {}),
         ...(isError ? { isError: true } : {}),
+        completed: true,
       }
     }
   }

@@ -36,6 +36,16 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 - Code editor minimap persists across tab switches and defers heavy initialization past tab transitions.
 
+## [0.84.0-alpha.2] - 2026-11-23
+
+### Fixed
+
+- DeepSeek: declare missing `0.2.2-rc.5` peer packages (`@deepseek-ai/dsh-error`, `@deepseek-ai/dsh-authorization`, `@deepseek-ai/dsh-host-webserver`) in the desktop manifest so packaged builds do not crash on launch with `ERR_MODULE_NOT_FOUND`.
+
+### Tests
+
+- DeepSeek: add regression test verifying desktop/deepseek `@deepseek-ai/*` alignment and required peer dependency declarations.
+
 ## [0.84.0-alpha.1] - 2026-11-22
 
 ### Added

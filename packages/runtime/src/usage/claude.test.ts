@@ -199,9 +199,146 @@ describe('readClaudeRateLimits fetch', () => {
       expect(http.mock.calls.map(([url]) => url)).toEqual([
         'https://api.anthropic.com/api/oauth/usage',
         'https://api.anthropic.com/api/oauth/usage?cedar_ember=1&skip_spend=1',
+        'https://api.anthropic.com/api/oauth/profile',
       ])
       expect(globalFetch).not.toHaveBeenCalled()
     } finally {
+      setClaudeUsageFetch((url, init) => fetch(url, init))
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('prefers rate_limit_tier and organization_type from /api/oauth/profile over stale credentials', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'claude-usage-tier-'))
+    const http = vi.fn(async (url: string) => {
+      if (url.endsWith('/profile')) {
+        return new Response(JSON.stringify({
+          organization: { organization_type: 'claude_max', rate_limit_tier: 'default_claude_max_5x' },
+        }))
+      }
+      return new Response(JSON.stringify(
+        url.includes('cedar_ember') ? { cedar_ember: { eligible: false } } : { five_hour: { utilization: 10 } },
+      ))
+    })
+    writeFileSync(join(dir, '.credentials.json'), JSON.stringify({
+      claudeAiOauth: {
+        accessToken: 'token-tier',
+        scopes: ['user:profile'],
+        subscriptionType: 'max',
+        rateLimitTier: 'default_claude_max_20x',
+      },
+    }))
+    setClaudeUsageFetch(http)
+    try {
+      const reading = await readClaudeRateLimits(dir, { force: true })
+      expect(reading.value?.planType).toBe('Max 5x')
+    } finally {
+      setClaudeUsageFetch((url, init) => fetch(url, init))
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('updates planType to Pro when /api/oauth/profile reports a downgrade from Max 20x', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'claude-usage-downgrade-'))
+    const http = vi.fn(async (url: string) => {
+      if (url.endsWith('/profile')) {
+        return new Response(JSON.stringify({
+          organization: { organization_type: 'claude_pro', rate_limit_tier: 'default_claude_pro' },
+        }))
+      }
+      return new Response(JSON.stringify(
+        url.includes('cedar_ember') ? { cedar_ember: { eligible: false } } : { five_hour: { utilization: 10 } },
+      ))
+    })
+    writeFileSync(join(dir, '.credentials.json'), JSON.stringify({
+      claudeAiOauth: {
+        accessToken: 'token-pro',
+        scopes: ['user:profile'],
+        subscriptionType: 'max',
+        rateLimitTier: 'default_claude_max_20x',
+      },
+    }))
+    setClaudeUsageFetch(http)
+    try {
+      const reading = await readClaudeRateLimits(dir, { force: true })
+      expect(reading.value?.planType).toBe('Pro')
+    } finally {
+      setClaudeUsageFetch((url, init) => fetch(url, init))
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('falls back to credentials planType when /api/oauth/profile fails', async () => {
+    const dir = mkdtempSync(join(tmpdir(), 'claude-usage-fallback-'))
+    const http = vi.fn(async (url: string) => {
+      if (url.endsWith('/profile')) return new Response('', { status: 500 })
+      return new Response(JSON.stringify(
+        url.includes('cedar_ember') ? { cedar_ember: { eligible: false } } : { five_hour: { utilization: 10 } },
+      ))
+    })
+    writeFileSync(join(dir, '.credentials.json'), JSON.stringify({
+      claudeAiOauth: {
+        accessToken: 'token-fallback',
+        scopes: ['user:profile'],
+        subscriptionType: 'max',
+        rateLimitTier: 'default_claude_max_20x',
+      },
+    }))
+    setClaudeUsageFetch(http)
+    try {
+      const reading = await readClaudeRateLimits(dir, { force: true })
+      expect(reading.value?.planType).toBe('Max 20x')
+    } finally {
+      setClaudeUsageFetch((url, init) => fetch(url, init))
+      rmSync(dir, { recursive: true, force: true })
+    }
+  })
+
+  it('caches /api/oauth/profile for 24h on automatic reads and refreshes on force or after 24h', async () => {
+    vi.useFakeTimers()
+    const start = Date.UTC(2026, 8, 30)
+    vi.setSystemTime(start)
+    const dir = mkdtempSync(join(tmpdir(), 'claude-usage-throttle-'))
+    let tier = 'default_claude_max_20x'
+    const http = vi.fn(async (url: string) => {
+      if (url.endsWith('/profile')) {
+        return new Response(JSON.stringify({
+          organization: { organization_type: 'claude_max', rate_limit_tier: tier },
+        }))
+      }
+      return new Response(JSON.stringify(
+        url.includes('cedar_ember') ? { cedar_ember: { eligible: false } } : { five_hour: { utilization: 10 } },
+      ))
+    })
+    writeFileSync(join(dir, '.credentials.json'), JSON.stringify({
+      claudeAiOauth: {
+        accessToken: 'token-throttle',
+        scopes: ['user:profile'],
+        subscriptionType: 'max',
+        rateLimitTier: 'default_claude_max_20x',
+      },
+    }))
+    setClaudeUsageFetch(http)
+    const profileCalls = () => http.mock.calls.filter(([url]) => url.endsWith('/profile')).length
+    try {
+      expect((await readClaudeRateLimits(dir)).value?.planType).toBe('Max 20x')
+      expect(profileCalls()).toBe(1)
+
+      tier = 'default_claude_max_5x'
+      vi.setSystemTime(start + 10 * 60_000)
+      expect((await readClaudeRateLimits(dir)).value?.planType).toBe('Max 20x')
+      expect(profileCalls()).toBe(1)
+
+      expect((await readClaudeRateLimits(dir, { force: true })).value?.planType).toBe('Max 5x')
+      expect(profileCalls()).toBe(2)
+
+      tier = 'default_claude_max_20x'
+      vi.setSystemTime(start + 10 * 60_000 + 24 * 60 * 60_000)
+      const afterDay = await readClaudeRateLimits(dir)
+      expect(afterDay.value?.planType).toBe('Max 20x')
+      expect(profileCalls()).toBe(3)
+    } finally {
+      vi.useRealTimers()
       setClaudeUsageFetch((url, init) => fetch(url, init))
       rmSync(dir, { recursive: true, force: true })
     }

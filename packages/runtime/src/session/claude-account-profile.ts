@@ -12,7 +12,16 @@ export function parseClaudeProfile(body: unknown): Partial<ClaudeAccount> | null
   const { account, organization } = body as { account?: Record<string, unknown>; organization?: Record<string, unknown> }
   const accountUuid = string(account?.uuid), email = string(account?.email), orgId = string(organization?.uuid)
   if (!accountUuid || !email || !orgId) return null
-  return { accountUuid, email, orgId, orgName: string(organization?.name), identityKey: `${accountUuid.toLowerCase()}|${orgId.toLowerCase()}` }
+  const orgType = string(organization?.organization_type)
+  const subscriptionType = orgType ? (orgType.startsWith('claude_') ? orgType.slice('claude_'.length) : orgType) : undefined
+  return {
+    accountUuid,
+    email,
+    orgId,
+    orgName: string(organization?.name),
+    identityKey: `${accountUuid.toLowerCase()}|${orgId.toLowerCase()}`,
+    ...(subscriptionType ? { subscriptionType } : {}),
+  }
 }
 
 export interface ReadClaudeAccountOptions {

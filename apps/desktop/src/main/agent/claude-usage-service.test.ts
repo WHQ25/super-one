@@ -55,12 +55,12 @@ describe('Claude subscription sampling at the source', () => {
     let reading = await getClaudeRateLimits(false, null)
     expect(reading?.windows[0].forecast?.basis).toBe('cycle-average')
     expect(reading?.windows[0].forecast?.confirmed).toBe(false)
-    expect(calls(false)).toBe(2)
+    expect(calls(false)).toBe(3)
     for (let m = 1; m < 5; m++) {
       vi.setSystemTime(start + m * 60_000)
       expect((await getClaudeRateLimits(false, null))?.fetchedAt).toBe(start)
     }
-    expect(calls(false)).toBe(2)
+    expect(calls(false)).toBe(3)
     for (let m = 5; m <= 25; m += 5) {
       vi.setSystemTime(start + m * 60_000)
       used += 2

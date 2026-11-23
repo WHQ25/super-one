@@ -24,6 +24,7 @@ const CLIENT_ID = '9d1c250a-e61b-44d9-88ed-5944d1962f5e'
 const SCOPES = 'user:profile user:inference user:sessions:claude_code user:mcp_servers user:file_upload'
 const REFRESH_BUFFER_MS = 5 * 60 * 1000
 const USAGE_URL = 'https://api.anthropic.com/api/oauth/usage'
+const PROFILE_URL = 'https://api.anthropic.com/api/oauth/profile'
 /**
  * The read Claude Code makes when it checks for a reset to offer: `cedar_ember=1` opts in to the
  * one-off reset grants (`null` on the plain read), `skip_spend=1` drops the spend it does not need.
@@ -33,6 +34,7 @@ const USAGE_USER_AGENT = 'claude-code/2.1.289'
 const MIN_USAGE_FETCH_INTERVAL_MS = 5 * 60 * 1000
 /** Sending the grants opt-in on every usage read draws sustained 429s on the usage endpoint. */
 const MIN_RESET_GRANTS_FETCH_INTERVAL_MS = 60 * 60 * 1000
+const MIN_PROFILE_PLAN_FETCH_INTERVAL_MS = 24 * 60 * 60 * 1000
 
 // ---------- credential store ----------
 
@@ -377,6 +379,15 @@ export function parseClaudeResetGrants(data: ClaudeUsageResponse): ClaudeResetGr
   return grants
 }
 
+type ProfilePlan = Pick<OAuthCreds, 'subscriptionType' | 'rateLimitTier'>
+
+function normalizeSubscriptionType(orgType: unknown): string | undefined {
+  if (typeof orgType !== 'string') return undefined
+  const trimmed = orgType.trim()
+  if (!trimmed) return undefined
+  return trimmed.startsWith('claude_') ? trimmed.slice('claude_'.length) : trimmed
+}
+
 export function claudePlanType(oauth: OAuthCreds): string | null {
   const sub = oauth.subscriptionType
   if (!sub) return null
@@ -405,6 +416,42 @@ export function claudeCredentialFingerprint(creds: LoadedClaudeCreds): string {
 
 const throttle = new UsageThrottle<ClaudeRateLimits>(MIN_USAGE_FETCH_INTERVAL_MS)
 const resetGrantsThrottle = new UsageThrottle<ClaudeResetGrant[]>(MIN_RESET_GRANTS_FETCH_INTERVAL_MS)
+const profilePlanThrottle = new UsageThrottle<ProfilePlan>(MIN_PROFILE_PLAN_FETCH_INTERVAL_MS)
+
+async function readProfilePlan(credentialDir: string | null, creds: LoadedClaudeCreds, accessToken: string, force: boolean, log: UsageLog): Promise<ProfilePlan | null> {
+  const { value } = await profilePlanThrottle.read(credentialDir ?? '', claudeCredentialFingerprint(creds), force, async () => {
+    try {
+      const resp = await claudeFetch(PROFILE_URL, {
+        method: 'GET',
+        headers: {
+          Authorization: `Bearer ${accessToken.trim()}`,
+          'User-Agent': USAGE_USER_AGENT,
+          'Cache-Control': 'no-cache',
+        },
+      }, 10000)
+      if (resp.status === 429) return { rateLimitedForMs: retryAfterMs(resp) ?? 0 }
+      if (!resp.ok) {
+        log.warn('[claude-usage] profile request failed status=%d', resp.status)
+        return { error: `HTTP ${resp.status}` }
+      }
+      const body = parseJson(await resp.text()) as { organization?: { organization_type?: unknown; rate_limit_tier?: unknown } } | null
+      const org = body?.organization
+      if (!org || typeof org !== 'object') return { value: {} }
+      const subscriptionType = normalizeSubscriptionType(org.organization_type)
+      const rateLimitTier = typeof org.rate_limit_tier === 'string' ? org.rate_limit_tier : undefined
+      return {
+        value: {
+          ...(subscriptionType !== undefined ? { subscriptionType } : {}),
+          ...(rateLimitTier !== undefined ? { rateLimitTier } : {}),
+        },
+      }
+    } catch (e) {
+      log.warn('[claude-usage] profile request exception: %s', String(e))
+      return { error: String(e) }
+    }
+  })
+  return value
+}
 
 /**
  * Reset grants at most once an hour per login, read after a successful usage read so the token is
@@ -452,7 +499,11 @@ export async function readClaudeRateLimits(credentialDir: string | null, opts: {
     if (!resp.ok) return { fingerprint, error: `Claude usage request failed (HTTP ${resp.status}).` }
     const data = parseJson(await resp.text()) as ClaudeUsageResponse | null
     if (!data) return { fingerprint, error: 'Claude usage response changed.' }
-    const resetGrants = await readResetGrants(credentialDir, creds, accessToken, log)
-    return { fingerprint, value: { ...parseClaudeUsage(data, claudePlanType(creds.oauth)), ...(resetGrants ? { resetGrants } : {}), fetchedAt: Date.now() } }
+    const [resetGrants, profilePlan] = await Promise.all([
+      readResetGrants(credentialDir, creds, accessToken, log),
+      readProfilePlan(credentialDir, creds, accessToken, opts.force === true, log),
+    ])
+    const plan = claudePlanType({ ...creds.oauth, ...profilePlan })
+    return { fingerprint, value: { ...parseClaudeUsage(data, plan), ...(resetGrants ? { resetGrants } : {}), fetchedAt: Date.now() } }
   }, opts.preferCached)
 }

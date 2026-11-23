@@ -41,6 +41,8 @@ export const GIT_HOST_TAG_REGEX = new RegExp(
   'g',
 )
 
+export const GITHUB_CONTEXT_REGEX = /\n*<superone-github-context>[\s\S]*?<\/superone-github-context>\n*/g
+
 /** `value` is the chip value; a malformed one is written as text, never as a tag. */
 export function wrapGitMention(value: string, displayName: string): string {
   const parsed = parseGitMentionValue(value)
@@ -69,6 +71,7 @@ export function gitTagDisplayName(name: string): string {
 /** User-visible collapse: `@main`, `@f14bf73`, `@#23 Crash`. */
 export function replaceGitTagsWithMention(text: string): string {
   return text
+    .replace(GITHUB_CONTEXT_REGEX, '')
     .replace(GIT_TAG_REGEX, (_full, _kind, name) => `@${gitTagDisplayName(String(name))}`)
     .replace(GIT_HOST_TAG_REGEX, (_full, _host, _kind, name) => `@${gitTagDisplayName(String(name))}`)
 }

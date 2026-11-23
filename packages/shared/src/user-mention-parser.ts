@@ -8,7 +8,7 @@ import {
   AGENT_REMINDER_REGEX,
   AGENT_TAG_REGEX,
 } from './agent-mention-tags'
-import { GIT_HOST_TAG_REGEX, GIT_TAG_REGEX, gitTagDisplayName, gitTagValue } from './git-mention-tags'
+import { GIT_HOST_TAG_REGEX, GIT_TAG_REGEX, GITHUB_CONTEXT_REGEX, gitTagDisplayName, gitTagValue } from './git-mention-tags'
 import { MCP_RESOURCE_REMINDER_REGEX, MCP_RESOURCE_TAG_REGEX, mcpResourceTagMention } from './mcp-app-mentions'
 import { MCP_APP_TOOLS_REMINDER_REGEX } from './mcp-app-tools'
 import { ENVIRONMENT_REMINDER_REGEX, ENVIRONMENT_TAG_REGEX, encodeEnvironmentMentionValue, type EnvironmentMentionRole } from './environment-mention'
@@ -19,6 +19,7 @@ import {
   MINIAPP_REMINDER_REGEX,
   MINIAPP_TAG_REGEX,
   PATH_REF_TAG_REGEX,
+  SESSION_CONTEXT_REGEX,
   SESSION_REMINDER_REGEX,
   SESSION_TAG_REGEX,
 } from './miniapp-prompt-tags'
@@ -221,6 +222,8 @@ export function parseUserMentions(text: string): UserTextSegment[] {
     .replace(DESKTOP_APP_REMINDER_REGEX, '')
     .replace(CHROME_BROWSER_REMINDER_REGEX, '')
     .replace(SESSION_REMINDER_REGEX, '')
+    .replace(SESSION_CONTEXT_REGEX, '')
+    .replace(GITHUB_CONTEXT_REGEX, '')
     .replace(ENVIRONMENT_REMINDER_REGEX, '')
     .replace(AGENT_REMINDER_REGEX, '')
     .replace(MCP_RESOURCE_REMINDER_REGEX, '')

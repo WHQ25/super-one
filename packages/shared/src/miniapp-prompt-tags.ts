@@ -11,6 +11,8 @@ export const SESSION_TAG_REGEX =
   /<superone-session>\s*<title>([\s\S]*?)<\/title>\s*<sessionId>([\s\S]*?)<\/sessionId>\s*<\/superone-session>/g
 export const SESSION_REMINDER_REGEX =
   /\n*<superone-session-reminder>[\s\S]*?<\/superone-session-reminder>\n*/g
+export const SESSION_CONTEXT_REGEX =
+  /\n*<superone-session-context>[\s\S]*?<\/superone-session-context>\n*/g
 
 export const DESKTOP_APP_TAG_REGEX =
   /<superone-desktop-app>\s*<name>([\s\S]*?)<\/name>\s*<bundleId>([\s\S]*?)<\/bundleId>\s*<\/superone-desktop-app>/g
@@ -43,6 +45,7 @@ export function replaceMiniAppTagsWithMention(text: string): string {
     replaceMcpResourceTagsWithMention(replaceGitTagsWithMention(text))
       .replace(MINIAPP_REMINDER_REGEX, '')
       .replace(SESSION_REMINDER_REGEX, '')
+      .replace(SESSION_CONTEXT_REGEX, '')
       .replace(ENVIRONMENT_REMINDER_REGEX, '')
       .replace(DESKTOP_APP_REMINDER_REGEX, '')
       .replace(CHROME_BROWSER_REMINDER_REGEX, '')
@@ -67,6 +70,7 @@ export function stripMiniAppMarkup(text: string): string {
     replaceMcpResourceTagsWithMention(replaceGitTagsWithMention(text))
       .replace(MINIAPP_REMINDER_REGEX, '')
       .replace(SESSION_REMINDER_REGEX, '')
+      .replace(SESSION_CONTEXT_REGEX, '')
       .replace(ENVIRONMENT_REMINDER_REGEX, '')
       .replace(DESKTOP_APP_REMINDER_REGEX, '')
       .replace(CHROME_BROWSER_REMINDER_REGEX, '')

@@ -51,6 +51,13 @@ import { chatMessageToSessionMessageBlock } from '@superone/shared/node-message-
 import type { HostActionStore } from './host-action-store'
 import { HostActionChannel } from './host-action-channel'
 import { collaborationSystemPrompt } from '../collaboration/text'
+import { ghRun } from '../git/gh-run'
+import {
+  MENTION_CONTEXT_GH_TIMEOUT_MS,
+  enrichMentionContext,
+  hasMentionContextTargets,
+  type MentionedSessionData,
+} from './mention-context'
 import {
   type ActiveHarnessRuntime,
   type AgentsConfirmOutcome,
@@ -1086,6 +1093,37 @@ export class SessionRuntime {
     return this.withProviderResume(sessionId, this.readModel?.messages(sessionId) ?? [])
   }
 
+  private readMentionedSession(sessionId: string): MentionedSessionData | null {
+    const entry = this.live.get(sessionId)
+    if (!entry || entry.isHidden) return null
+    const messages: ChatMessage[] = this.readModel
+      ? this.messages(sessionId)
+      : entry.transcript
+          .filter((block): block is typeof block & { role: 'user' | 'assistant' } =>
+            block.role === 'user' || block.role === 'assistant',
+          )
+          .map((block) => ({
+            id: block.id,
+            role: block.role,
+            status: 'complete' as const,
+            providerId: entry.providerId,
+            content: [{ type: 'text' as const, text: block.text }],
+            createdAt: new Date(block.createdAt).toISOString(),
+          }))
+    const lastUser = entry.transcript.findLast((b) => b.role === 'user')?.createdAt
+    return {
+      sessionId: entry.sessionId,
+      title: entry.title,
+      harness: entry.harnessId,
+      model: entry.model,
+      createdAt: entry.createdAt,
+      lastActiveAt: lastUser ?? entry.updatedAt ?? entry.createdAt,
+      messageCount: this.messageCount(sessionId),
+      tags: entry.tags,
+      messages,
+    }
+  }
+
   /** Details need only the original block, including when the window was a cold bounded read. */
   detailMessage(sessionId: string, messageId: string): ChatMessage | null {
     return this.readModel?.detailMessage(this.requireSessionId(sessionId), messageId) ?? null
@@ -1834,6 +1872,13 @@ export class SessionRuntime {
         : undefined
     try {
       const modelInput = mcpAppModelInput({ text: opts.text, images: opts.images?.map(image => ({ ...image, name: image.name ?? 'Attachment' })) }, this.mcpAppContextInput(session.sessionId))
+      const enrichedText = hasMentionContextTargets(modelInput.text)
+        ? await enrichMentionContext(modelInput.text, {
+            ...(session.cwd ? { gh: (args) => ghRun(session.cwd!, args, MENTION_CONTEXT_GH_TIMEOUT_MS) } : {}),
+            readSession: (targetId) => this.readMentionedSession(targetId),
+            skipSessionId: session.sessionId,
+          })
+        : modelInput.text
       // Reject preparation before the backend owns a turn; its acceptance
       // callback only records the receipt, even if readiness changes later.
       opts.inputAdmission?.beforeInput()
@@ -1842,7 +1887,7 @@ export class SessionRuntime {
         messageId: assistantId,
         clientMessageId: opts.userBlockId,
         agent: opts.agent ?? undefined,
-        text: modelInput.text,
+        text: enrichedText,
         model: opts.model && opts.model.trim() ? opts.model.trim() : undefined,
         effort: opts.effort && opts.effort.trim() ? opts.effort.trim() : undefined,
         serviceTier: opts.serviceTier,

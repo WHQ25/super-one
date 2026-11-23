@@ -9,6 +9,7 @@ import { updateMcpAppAttachments } from '@superone/shared/mcp-apps-state'
 import { applySuggestedTaskUpdate } from '@superone/shared/suggested-task'
 import { stampCompletedAt } from '@superone/shared/message-completed-at'
 import { withMcpAppContext } from './mcp-app-context'
+import { withDesktopMentionContext } from './mention-context'
 import { hostEntrypointAppsForSession } from '../mcp-apps/host-files'
 import { admitTurnAttachments } from '@superone/shared/attachment-turn'
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
@@ -860,7 +861,8 @@ export class Session implements SessionContract {
           this.flushFirstTurnPreamble()
           opts?.onAccepted?.()
           await this._liveModelSwitch
-          await this.backend.send(this.outboundRequest(request), delivery)
+          const outbound = await this.outboundRequest(request)
+          await this.backend.send(outbound, delivery)
         } catch (error) {
           if (!delivery.delivered) this.recordSendFailure(request, error)
           throw error
@@ -933,12 +935,15 @@ export class Session implements SessionContract {
         }
         this.assertNotDisposed()
         this.assertCanSend(providerOrigin)
+        const outbound = await this.outboundRequest(request)
+        this.assertNotDisposed()
+        this.assertCanSend(providerOrigin)
         opts?.beforeInput?.()
         this._delivery = delivery
         this._status = 'streaming'
         try {
           this.flushFirstTurnPreamble()
-          await this.backend.send(this.outboundRequest(request), delivery)
+          await this.backend.send(outbound, delivery)
         } finally {
           if ((this._status as SessionStatus) !== 'disposed') this._status = 'ended'
         }
@@ -3003,12 +3008,16 @@ export class Session implements SessionContract {
   }
 
   /** What crosses the runtime boundary: the turn plus session-owned defaults it omitted. */
-  private outboundRequest(request: SendMessageRequest): SendMessageRequest {
-    return withMcpAppContext(
+  private async outboundRequest(request: SendMessageRequest): Promise<SendMessageRequest> {
+    const withApp = withMcpAppContext(
       withSessionSelections(this.harnessId, request, this._uiSettings),
       this._messages,
       hostEntrypointAppsForSession({ environmentId: 'local', sessionId: this.id }),
     )
+    return withDesktopMentionContext(withApp, {
+      cwd: this.cwd,
+      sessionId: this.id,
+    })
   }
 
   /** Records explicit picks, which a turn queued before them must not replace. */

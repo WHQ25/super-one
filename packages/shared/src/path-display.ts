@@ -50,6 +50,11 @@ export function homePath(absolutePath: string): string {
 }
 
 
+function encodePathForUrl(filePath: string): string {
+  const normalized = filePath.replace(/\\/g, '/')
+  return encodeURI(normalized).replace(/#/g, '%23').replace(/\?/g, '%3F')
+}
+
 /**
  * The desktop's `local-file://` URL for an absolute path — the scheme the
  * renderer loads project and session-zone media through. One definition for
@@ -57,21 +62,26 @@ export function homePath(absolutePath: string): string {
  * renderer builds them for local files, and they have to agree on encoding.
  */
 export function toLocalFileUrl(filePath: string): string {
-  const normalized = filePath.replace(/\\/g, '/')
-  // encodeURI leaves the two characters that terminate a URL path — `#` and
-  // `?` — so a legal `report?draft.png` would parse back as `report`. Encode
-  // both; `%` and unicode are already handled by encodeURI.
-  const encoded = encodeURI(normalized).replace(/#/g, '%23').replace(/\?/g, '%3F')
-  return /^[A-Za-z]:/.test(normalized) ? `local-file:///${encoded}` : `local-file://${encoded}`
+  const encoded = encodePathForUrl(filePath)
+  return /^[A-Za-z]:/.test(encoded) ? `local-file:///${encoded}` : `local-file://${encoded}`
+}
+
+export function mediaServerUrl(filePath: string, serverPort: number): string {
+  const encoded = encodePathForUrl(filePath)
+  const withRoot = encoded.startsWith('/') ? encoded : `/${encoded}`
+  return `http://127.0.0.1:${serverPort}${withRoot}`
+}
+
+export function urlPathnameToFilePath(pathname: string): string {
+  const decoded = decodeURIComponent(pathname)
+  return decoded.replace(/^\/([A-Za-z]:)/, '$1')
 }
 
 /** The absolute path a `local-file://` URL names, or null for any other URL. */
 export function localFileUrlToPath(url: string): string | null {
   if (!url.startsWith('local-file://')) return null
   try {
-    const path = decodeURIComponent(new URL(url).pathname)
-    // Windows: `local-file:///C:/x` has pathname `/C:/x`.
-    return /^\/[A-Za-z]:/.test(path) ? path.slice(1) : path
+    return urlPathnameToFilePath(new URL(url).pathname)
   } catch {
     return null
   }

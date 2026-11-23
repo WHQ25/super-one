@@ -1,6 +1,7 @@
 import { createServer, type Server } from 'http'
 import { createReadStream, statSync } from 'fs'
 import { extname } from 'path'
+import { mediaServerUrl, urlPathnameToFilePath } from '@superone/shared/path-display'
 import { resolveRealPath } from './path-security'
 import { isMediaPathReadable } from './media-readable-roots'
 import log from './logger'
@@ -23,7 +24,13 @@ export function startMediaServer(): Promise<number> {
       }
 
       if (!req.url) { res.writeHead(400, cors).end(); return }
-      const filePath = decodeURIComponent(req.url)
+      let filePath: string
+      try {
+        filePath = urlPathnameToFilePath(new URL(req.url, 'http://127.0.0.1').pathname)
+      } catch {
+        res.writeHead(400, cors).end()
+        return
+      }
       const resolved = resolveRealPath(filePath)
 
       if (!isMediaPathReadable(resolved)) {
@@ -81,16 +88,7 @@ export function getMediaServerPort(): number {
   return port
 }
 
-/**
- * The URL the server answers for a file — the same encoding the renderer's
- * `mediaUrlFor` uses, so main-side consumers (the video poster window) and the
- * chat gallery hit identical paths.
- */
-export function mediaServerUrl(filePath: string, serverPort: number): string {
-  const normalized = filePath.replace(/\\/g, '/')
-  const withRoot = normalized.startsWith('/') ? normalized : `/${normalized}`
-  return `http://127.0.0.1:${serverPort}${encodeURI(withRoot).replace(/#/g, '%23')}`
-}
+export { mediaServerUrl }
 
 export function stopMediaServer(): void {
   server?.close()

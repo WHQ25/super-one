@@ -1,5 +1,5 @@
 export { shortenPath, homePath, toLocalFileUrl, localFileUrlToPath } from '@superone/shared/path-display'
-import { toLocalFileUrl } from '@superone/shared/path-display'
+import { mediaServerUrl, toLocalFileUrl } from '@superone/shared/path-display'
 
 export function toAssetUrl(path: string | undefined | null): string | null {
   if (!path) return null
@@ -20,10 +20,7 @@ let _portFetch: Promise<number> | null = null
 const _portListeners = new Set<(port: number) => void>()
 
 export function mediaUrlFor(filePath: string, port: number): string {
-  if (port > 0) {
-    const normalized = filePath.replace(/\\/g, '/')
-    return `http://127.0.0.1:${port}${encodeURI(normalized).replace(/#/g, '%23')}`
-  }
+  if (port > 0) return mediaServerUrl(filePath, port)
   return toLocalFileUrl(filePath)
 }
 

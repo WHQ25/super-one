@@ -130,6 +130,16 @@ describe('mediaUrlFor', () => {
       .toBe('http://127.0.0.1:41234/Users/alice/Library/Application%20Support/super-one/media-gen/out.mp4')
   })
 
+  it('prepends a leading slash and normalizes backslashes for Windows drive paths', () => {
+    expect(mediaUrlFor('C:\\Users\\Administrator\\AppData\\Roaming\\SuperOne\\sync\\e1523b22\\media-gen\\out.png', 41234))
+      .toBe('http://127.0.0.1:41234/C:/Users/Administrator/AppData/Roaming/SuperOne/sync/e1523b22/media-gen/out.png')
+  })
+
+  it('encodes # and ? in media server URLs', () => {
+    expect(mediaUrlFor('/Users/alice/a#b?c.png', 41234))
+      .toBe('http://127.0.0.1:41234/Users/alice/a%23b%3Fc.png')
+  })
+
   it('falls back to local-file when the media server is not listening yet', () => {
     expect(mediaUrlFor('/Users/alice/out.mp4', 0)).toBe('local-file:///Users/alice/out.mp4')
   })

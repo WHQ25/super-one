@@ -26,7 +26,8 @@ import { builtInCaptureRoots } from './media-output-paths'
 import { mediaGenOutputRoot } from './media-gen/paths'
 import { registerMiniAppProtocolHandlers } from './miniapp/miniapp-protocol'
 import { downloadUrl } from './browser/browser-downloads'
-import { startMediaServer, stopMediaServer, getMediaServerPort } from './media-server'
+import { startMediaServer, stopMediaServer, getMediaServerPort, mediaServerUrl } from './media-server'
+import { urlPathnameToFilePath } from '@superone/shared/path-display'
 
 type Handler = (request: Request) => Promise<Response>
 let localFile: Handler
@@ -87,5 +88,14 @@ describe('built-in media delivery', () => {
         expect(await response.text()).toBe('st-m')
       }
     }
+  })
+
+  it('roundtrips Windows drive paths between mediaServerUrl and urlPathnameToFilePath', () => {
+    const winPath = 'C:\\Users\\Administrator\\AppData\\Roaming\\SuperOne\\sync\\e1523b22\\media-gen\\out #1?.png'
+    const url = mediaServerUrl(winPath, 41234)
+    expect(url).toBe('http://127.0.0.1:41234/C:/Users/Administrator/AppData/Roaming/SuperOne/sync/e1523b22/media-gen/out%20%231%3F.png')
+    expect(urlPathnameToFilePath(new URL(url).pathname)).toBe(
+      'C:/Users/Administrator/AppData/Roaming/SuperOne/sync/e1523b22/media-gen/out #1?.png',
+    )
   })
 })

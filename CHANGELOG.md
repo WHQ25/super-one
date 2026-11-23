@@ -15,6 +15,30 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
+- Browser: refine Browser settings and enable CDP and WebMCP by default.
+
+### Fixed
+
+- Browser: isolate the Chrome bridge home directory and add Windows support.
+- Media: handle Windows drive paths in media server URLs so generated media previews load properly.
+- Sidebar: dismiss the focus-bar back menu after a pointer click.
+
+## [0.84.1-alpha] - 2026-11-23
+
+### Added
+
+- Browser: refine Browser settings and enable CDP and WebMCP by default.
+
+### Fixed
+
+- Browser: isolate the Chrome bridge home directory and add Windows support.
+- Media: handle Windows drive paths in media server URLs so generated media previews load properly.
+- Sidebar: dismiss the focus-bar back menu after a pointer click.
+
+## [0.84.0] - 2026-11-23
+
+### Added
+
 - Review tab in the activity panel with virtualized diffs, LSP diagnostics/hover, and sticky comments.
 - Pluggable LSP support and Editor settings, with `Alt`-held hover tooltips.
 - Click-and-drag on code editor line numbers to select line ranges.
@@ -35,54 +59,6 @@ Every alpha release keeps its own notes on its GitHub Release.
 ### Performance
 
 - Code editor minimap persists across tab switches and defers heavy initialization past tab transitions.
-
-## [0.84.0-alpha.2] - 2026-11-23
-
-### Fixed
-
-- DeepSeek: declare missing `0.2.2-rc.5` peer packages (`@deepseek-ai/dsh-error`, `@deepseek-ai/dsh-authorization`, `@deepseek-ai/dsh-host-webserver`) in the desktop manifest so packaged builds do not crash on launch with `ERR_MODULE_NOT_FOUND`.
-
-### Tests
-
-- DeepSeek: add regression test verifying desktop/deepseek `@deepseek-ai/*` alignment and required peer dependency declarations.
-
-## [0.84.0-alpha.1] - 2026-11-22
-
-### Added
-
-- Show attention count badge on collapsed environments and keep unseen root sessions visible when a project is collapsed in the sidebar.
-- Integrate `pi-ai` providers for `dsh` (`0.2.2-rc.5`) and render a model change separator in the chat transcript when switching models.
-
-### Changed
-
-- Remove the experimental badge from non-`dsh` harnesses in Settings.
-- Upgrade `@anthropic-ai/claude-agent-sdk` to `0.3.330`, `@openai/codex` to `0.171.0`, and `@opencode/client` to `2.3.2`.
-
-### Fixed
-
-- Stabilize Antigravity background wakeups, bash terminal status updates, and prewarm effort synchronization.
-
-## [0.84.0-alpha] - 2026-11-22
-
-### Added
-
-- Add Review tab in the activity panel with virtualized diffs, LSP hover/diagnostics, and sticky review comments.
-- Add pluggable LSP support and Editor settings, with `Alt`-held hover tooltips.
-- Support click-and-drag on code editor line numbers to select line ranges.
-
-### Fixed
-
-- Expand untracked directories in the sidebar changed-files tree.
-- Retarget steered ACP wakeup events and align `AskUserQuestion` handling.
-- Mark completed async subagent tools as done in full view and ignore `GENERIC` tool errors when detecting ACP subagent failure.
-
-### Performance
-
-- Keep code editor minimap mounted across tab switches and defer heavy minimap/LSP initialization past tab transitions.
-
-### Tests
-
-- Update desktop settings contract, activity launcher, and collaboration project ID test fixtures.
 
 ## [0.83.0] - 2026-11-19
 

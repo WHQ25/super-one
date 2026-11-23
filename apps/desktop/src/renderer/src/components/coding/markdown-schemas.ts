@@ -153,6 +153,17 @@ const ALIGNMENTS = new Set(['left', 'center', 'right', 'justify'])
  * several paragraphs lands on each of them: the wrapper itself is not in the
  * schema, and losing it would silently un-centre everything inside.
  */
+function findInheritedAlign(element: HTMLElement): string | null {
+  for (let cur: HTMLElement | null = element; cur && cur.tagName !== 'BODY'; cur = cur.parentElement) {
+    const raw = cur.getAttribute('align')
+    if (raw) {
+      const lower = raw.toLowerCase()
+      return ALIGNMENTS.has(lower) ? lower : null
+    }
+  }
+  return null
+}
+
 export const BlockAlignSchema = Extension.create({
   name: 'blockAlign',
   addGlobalAttributes() {
@@ -162,10 +173,7 @@ export const BlockAlignSchema = Extension.create({
         attributes: {
           align: {
             default: null,
-            parseHTML: (element: HTMLElement) => {
-              const raw = element.closest('[align]')?.getAttribute('align')?.toLowerCase()
-              return raw && ALIGNMENTS.has(raw) ? raw : null
-            },
+            parseHTML: (element: HTMLElement) => findInheritedAlign(element),
             renderHTML: (attrs: Record<string, unknown>) =>
               attrs.align ? { align: attrs.align as string } : {},
           },
@@ -207,6 +215,19 @@ export const AbbrSchema = Mark.create({
  * (empty) children, so it disappears from the document and the checkbox state
  * lives in the attribute instead of in editable content.
  */
+function findTaskCheckbox(element: HTMLElement): Element | null {
+  for (let child = element.firstElementChild; child; child = child.nextElementSibling) {
+    const tag = child.tagName
+    if (tag === 'INPUT' && child.getAttribute('type') === 'checkbox') return child
+    if (tag === 'P') {
+      for (let pChild = child.firstElementChild; pChild; pChild = pChild.nextElementSibling) {
+        if (pChild.tagName === 'INPUT' && pChild.getAttribute('type') === 'checkbox') return pChild
+      }
+    }
+  }
+  return null
+}
+
 export const TaskItemSchema = Extension.create({
   name: 'taskItemState',
   addGlobalAttributes() {
@@ -217,7 +238,7 @@ export const TaskItemSchema = Extension.create({
           checked: {
             default: null,
             parseHTML: (element: HTMLElement) => {
-              const box = element.querySelector(':scope > input[type="checkbox"], :scope > p > input[type="checkbox"]')
+              const box = findTaskCheckbox(element)
               return box ? box.hasAttribute('checked') : null
             },
             renderHTML: (attrs: Record<string, unknown>) =>

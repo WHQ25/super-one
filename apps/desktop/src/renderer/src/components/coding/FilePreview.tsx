@@ -5,7 +5,6 @@ import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { Button } from '@superone/ui/components/ui/button'
 import { cn } from '@superone/ui/lib/utils'
 import { Tabs, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
-import type { GitFileDiff, GitFileContent } from '@superone/shared/agent-types'
 import {
   AUDIO_EXTENSIONS,
   BINARY_IMAGE_EXTENSIONS,
@@ -34,12 +33,13 @@ import type { ModelPreviewViewState } from './ModelPreview'
 import { OfficePreview } from './OfficePreview'
 import { OfficePreviewStatus } from './office-toolbar'
 import { ImagePreview } from './ImagePreview'
-import { MarkdownEditor } from './MarkdownEditor'
 import { NotebookPreview } from './NotebookPreview'
 import { FileSelectionContextMenuZone } from './FileSelectionContextMenuZone'
+import { getFileExt, useOwnFileData, type PreviewTabKey as TabKey } from './use-file-preview-data'
 
 const ModelPreview = lazy(() => import('./ModelPreview').then((module) => ({ default: module.ModelPreview })))
 const CodeFileEditor = lazy(() => import('./CodeFileEditor').then((module) => ({ default: module.CodeFileEditor })))
+const MarkdownEditor = lazy(() => import('./MarkdownEditor').then((module) => ({ default: module.MarkdownEditor })))
 
 function previewSrc(content: string | undefined, fromPath: () => string, stream?: (path: string) => string): string {
   if (!content) return fromPath()
@@ -59,61 +59,6 @@ export function imageActionPath(fullFilePath: string, content: string | undefine
 function withImageMenu(path: string | null, child: React.ReactNode) {
   if (!path) return child
   return <ImageContextMenu savedPath={path} className="size-full">{child}</ImageContextMenu>
-}
-
-function getFileExt(fileName: string): string {
-  const dot = fileName.lastIndexOf('.')
-  return dot < 0 ? '' : fileName.slice(dot).toLowerCase()
-}
-
-type TabKey = 'preview' | 'file'
-
-function useOwnFileData(filePath: string | undefined, refreshKey: number, root?: string) {
-  const projectRoot = useEffectiveProjectRoot()
-  const fileRoot = root ?? projectRoot
-  const targetKey = `${fileRoot ?? ''}::${filePath ?? ''}`
-  const [loaded, setLoaded] = useState<{ key: string; diff: GitFileDiff | null; content: GitFileContent | null }>({
-    key: '',
-    diff: null,
-    content: null,
-  })
-  const [tab, setTab] = useState<TabKey>('file')
-  const pickedTabForPathRef = useRef<string | null>(null)
-
-  useEffect(() => {
-    if (!filePath || !fileRoot) return
-    let cancelled = false
-    Promise.all([
-      window.app.getGitDiffFile(fileRoot, filePath, false),
-      window.app.readProjectFile(fileRoot, filePath),
-    ]).then(([d, c]) => {
-      if (cancelled) return
-      setLoaded({ key: targetKey, diff: d, content: c })
-      if (c.error) return
-      if (pickedTabForPathRef.current === targetKey) return
-      pickedTabForPathRef.current = targetKey
-      const isBin =
-        c.language === 'image' ||
-        c.language === 'pdf' ||
-        c.language === 'video' ||
-        c.language === 'audio' ||
-        c.language === 'model' ||
-        c.language === 'office'
-      const isSvg = c.language === 'svg'
-      const ext = getFileExt(filePath)
-      const isMd = MARKDOWN_EXTENSIONS.has(ext)
-      const isNb = NOTEBOOK_EXTENSIONS.has(ext)
-      setTab(isBin || isSvg || isMd || isNb ? 'preview' : 'file')
-    }).catch(() => {
-      if (!cancelled && pickedTabForPathRef.current !== targetKey) {
-        setLoaded({ key: targetKey, diff: null, content: null })
-      }
-    })
-    return () => { cancelled = true }
-  }, [filePath, fileRoot, refreshKey, targetKey])
-
-  const isCurrent = loaded.key === targetKey
-  return { diff: isCurrent ? loaded.diff : null, content: isCurrent ? loaded.content : null, tab, setTab }
 }
 
 interface FilePreviewProps {
@@ -406,19 +351,21 @@ export function FilePreview({ filePath, fileRoot: root, hideHeader = false }: Fi
           </div>
         ) : (
           <>
-            {isMd && effectiveTab === 'preview' ? (
+            {isMd && effectiveTab === 'preview' && fileContent !== null ? (
               <FileSelectionContextMenuZone
                 filePath={fullFilePath}
                 fileContent={editorContent}
                 className="size-full"
               >
-                <MarkdownEditor
-                  content={editorContent}
-                  filePath={selectedFile}
-                  onDirtyChange={handleDirtyChange}
-                  onContentChange={handleContentChange}
-                  onSaved={handleSaved}
-                />
+                <Suspense fallback={<div className="size-full" />}>
+                  <MarkdownEditor
+                    content={editorContent}
+                    filePath={selectedFile}
+                    onDirtyChange={handleDirtyChange}
+                    onContentChange={handleContentChange}
+                    onSaved={handleSaved}
+                  />
+                </Suspense>
               </FileSelectionContextMenuZone>
             ) : effectiveTab === 'preview' && isNotebook ? (
               <FileSelectionContextMenuZone filePath={fullFilePath} fileContent={editorContent} className="size-full">

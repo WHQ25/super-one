@@ -88,3 +88,11 @@ export const Wide: Story = { args: { width: 1280 } }
 export const Resizable: Story = { render: (args) => <ResizablePreview {...args} /> }
 export const Empty: Story = { args: { content: '' } }
 export const LongContent: Story = { args: { content: Array.from({ length: 12 }, () => CONTENT).join('\n\n') } }
+export const LargeDocument: Story = {
+  args: {
+    filePath: '/storybook/CHANGELOG.md',
+    content: Array.from({ length: 180 }, (_, i) =>
+      `## [0.${180 - i}.0] - 2026-11-23\n\n### Added\n\n- Feature entry ${i + 1} with \`inline code\` and **emphasis**.\n- Follow-up improvement for section ${i + 1}.\n`,
+    ).join('\n'),
+  },
+}

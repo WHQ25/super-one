@@ -77,6 +77,19 @@ describe('FilePreview unified code editor mode', () => {
     expect(screen.getByRole('tab', { name: 'File' })).toHaveAttribute('data-state', 'inactive')
   })
 
+  it('renders markdown preview immediately without waiting for git diff', async () => {
+    const w = globalThis.window as unknown as Record<string, unknown>
+    w.app = {
+      getGitDiffFile: () => new Promise(() => {}),
+      readProjectFile: () => Promise.resolve({ path: 'CHANGELOG.md', content: '# Changelog', language: 'markdown' }),
+      onContentZoom: () => () => {},
+      setUnsavedEditorBuffer: vi.fn(() => Promise.resolve()),
+      saveFile: vi.fn(() => Promise.resolve({ ok: true })),
+    }
+    render(<FilePreview filePath="CHANGELOG.md" />)
+    await waitFor(() => expect(screen.getByTestId('markdown-editor')).toBeInTheDocument())
+  })
+
   it('shows Preview + File for a notebook, defaulting to rendered cells', async () => {
     const notebook = JSON.stringify({
       nbformat: 4,

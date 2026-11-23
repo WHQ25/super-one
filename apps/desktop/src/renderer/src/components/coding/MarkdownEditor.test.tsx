@@ -140,4 +140,29 @@ describe('MarkdownEditor draft echo', () => {
     await waitFor(() => expect(captured.editor?.getText()).toBe('from disk'))
     expect(codec.markdownToDoc).toHaveBeenCalledTimes(2)
   })
+
+  it('progressively hydrates large markdown documents, disables spellcheck, and debounces edits', async () => {
+    const sections = Array.from({ length: 260 }, (_, i) =>
+      `## Entry ${i + 1}\n\n- Change ${i + 1} with details and \`code\` snippet for coverage.\n- Second bullet ${i + 1} with additional changelog text.\n`,
+    ).join('\n')
+    const onContentChange = vi.fn()
+    const { container } = render(
+      <MarkdownEditor content={sections} filePath="CHANGELOG.md" onDirtyChange={() => {}} onContentChange={onContentChange} />,
+    )
+
+    await waitFor(() => expect(captured.editor?.getText()).toContain('Entry 1'))
+    expect(container.querySelector('.markdown-editor')).toHaveClass('is-large-doc')
+    expect(captured.editor?.view.dom.getAttribute('spellcheck')).toBe('false')
+
+    await waitFor(() => expect(captured.editor?.getText()).toContain('Entry 260'), { timeout: 5000 })
+
+    const editor = captured.editor!
+    act(() => {
+      editor.commands.setTextSelection(1)
+      editor.commands.insertContent('Z')
+    })
+    expect(onContentChange).not.toHaveBeenCalled()
+    await waitFor(() => expect(onContentChange).toHaveBeenCalledTimes(1), { timeout: 1000 })
+    expect(onContentChange.mock.calls[0][0]).toContain('Entry 260')
+  })
 })

@@ -136,21 +136,51 @@ export const MermaidNode = Node.create<MermaidOptions>({
 
   addProseMirrorPlugins() {
     const nodeType = this.type
+    const nonContainerBlocks = new Set(['paragraph', 'heading', 'horizontalRule', 'mermaid', 'blockMath', 'htmlComment'])
     return [
       new Plugin({
         key: new PluginKey('mermaidCodeBlockConverter'),
         appendTransaction: (transactions, _oldState, newState) => {
-          if (!transactions.some((t) => t.docChanged)) return null
-          const tr = newState.tr
+          let minFrom = Infinity
+          let maxTo = -Infinity
+          for (let ti = 0; ti < transactions.length; ti++) {
+            const tr = transactions[ti]
+            if (!tr.docChanged) continue
+            for (let si = 0; si < tr.steps.length; si++) {
+              const map = tr.mapping.maps[si]
+              map.forEach((_oldStart, _oldEnd, newStart, newEnd) => {
+                let mappedStart = newStart
+                let mappedEnd = newEnd
+                for (let j = si + 1; j < tr.steps.length; j++) {
+                  mappedStart = tr.mapping.maps[j].map(mappedStart, -1)
+                  mappedEnd = tr.mapping.maps[j].map(mappedEnd, 1)
+                }
+                for (let tj = ti + 1; tj < transactions.length; tj++) {
+                  mappedStart = transactions[tj].mapping.map(mappedStart, -1)
+                  mappedEnd = transactions[tj].mapping.map(mappedEnd, 1)
+                }
+                if (mappedStart < minFrom) minFrom = mappedStart
+                if (mappedEnd > maxTo) maxTo = mappedEnd
+              })
+            }
+          }
+          if (minFrom === Infinity) return null
+          const docSize = newState.doc.content.size
+          const from = Math.max(0, Math.min(minFrom, docSize))
+          const to = Math.max(from, Math.min(maxTo, docSize))
           const targets: Array<{ pos: number; code: string; size: number }> = []
-          newState.doc.descendants((node, pos) => {
-            if (node.type.name === 'codeBlock' && node.attrs.language === 'mermaid') {
-              targets.push({ pos, code: node.textContent, size: node.nodeSize })
+          newState.doc.nodesBetween(from, to, (node, pos) => {
+            if (node.type.name === 'codeBlock') {
+              if (node.attrs.language === 'mermaid') {
+                targets.push({ pos, code: node.textContent, size: node.nodeSize })
+              }
               return false
             }
+            if (nonContainerBlocks.has(node.type.name)) return false
             return undefined
           })
           if (targets.length === 0) return null
+          const tr = newState.tr
           for (let i = targets.length - 1; i >= 0; i--) {
             const { pos, code, size } = targets[i]
             const syntax = code

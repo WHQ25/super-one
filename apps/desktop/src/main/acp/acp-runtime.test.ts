@@ -2439,4 +2439,47 @@ describe('ACP host integration (MCP + system prompt)', () => {
     })
     expect(withoutCap.newSession?.additionalDirectories).toBeUndefined()
   })
+
+  it('forwards additionalDirectories on antigravity session/resume only when advertised', async () => {
+    const resumeCalls: Array<Record<string, unknown>> = []
+    const runAntigravityResume = async (agentCapabilities: Record<string, unknown>) => {
+      const resumeMethod =
+        (methods.agent.session as Record<string, unknown>).resume ?? 'session/resume'
+      const agentApp = agent({ name: 'antigravity-resume-dirs' })
+        .onRequest(methods.agent.initialize, async () => ({
+          protocolVersion: PROTOCOL_VERSION,
+          agentCapabilities,
+        }))
+        .onRequest(methods.agent.authenticate, async () => ({}))
+        .onRequest(resumeMethod as never, async (ctx: { params: Record<string, unknown> }) => {
+          resumeCalls.push(ctx.params)
+          return {}
+        })
+        .onRequest(methods.agent.session.new, async () => ({ sessionId: 'fallback-new' }))
+        .onNotification(methods.agent.session.cancel, async () => {})
+
+      const clientToAgent = new TransformStream<Uint8Array>()
+      const agentToClient = new TransformStream<Uint8Array>()
+      agentApp.connect(
+        ndJsonStream(agentToClient.writable, clientToAgent.readable),
+      )
+      const runtime = await createAcpRuntime({
+        launch: { agentId: 'antigravity', command: 'unused', defaultCwd: '/tmp/proj' },
+        permission: { request: async () => ({ outcome: { outcome: 'cancelled' } }) },
+        resumeSessionId: 'prior-agy-session',
+        additionalRoots: ['/tmp/other'],
+        streamFactory: async () => ({
+          stream: ndJsonStream(clientToAgent.writable, agentToClient.readable),
+          dispose: () => {},
+        }),
+      })
+      await runtime.close()
+    }
+
+    await runAntigravityResume({ sessionCapabilities: { additionalDirectories: {} } })
+    expect(resumeCalls[0]?.additionalDirectories).toEqual(['/tmp/other'])
+
+    await runAntigravityResume({ sessionCapabilities: {} })
+    expect(resumeCalls[1]?.additionalDirectories).toBeUndefined()
+  })
 })

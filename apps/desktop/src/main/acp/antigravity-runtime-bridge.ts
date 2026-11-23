@@ -280,6 +280,7 @@ export async function resumeAntigravitySession(
   mcpServers: unknown[],
   permissionMode?: PermissionMode | null,
   systemPromptAppend?: string | null,
+  additionalDirectories?: readonly string[],
 ): Promise<ActiveSession> {
   const sessionResponse: {
     sessionId: string
@@ -297,6 +298,9 @@ export async function resumeAntigravitySession(
       sessionId: resumeId,
       cwd,
       mcpServers,
+      ...(additionalDirectories && additionalDirectories.length > 0
+        ? { additionalDirectories: [...additionalDirectories] }
+        : {}),
       _meta: antigravitySessionMeta(permissionMode, systemPromptAppend),
     } as never)) as {
       configOptions?: SessionConfigOption[] | null

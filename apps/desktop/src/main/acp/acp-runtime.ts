@@ -984,6 +984,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
           mcpServers,
           opts.permissionMode,
           antigravitySystemPrompt,
+          supportsExtraRoots ? extraRoots : undefined,
         )
         sessionVia = 'load'
         log.info('[acp-runtime] session/resume ok id=%s agent=antigravity', resumeId)

@@ -1,0 +1,252 @@
+import {
+  createContext,
+  useCallback,
+  useContext,
+  useMemo,
+  useSyncExternalStore,
+  type ComponentType,
+  type ReactNode,
+} from 'react'
+import type {
+  ResolvedChainEntry,
+  ResolvedHocEntry,
+  ResolvedListEntry,
+  SlotKeyOf,
+  SlotMap,
+  SlotPropsOf,
+  SlotRegistry,
+  SlotsOfKind,
+} from './index'
+
+export interface SlotScopeMeta {
+  projectPath?: string
+  sessionId?: string
+}
+
+interface SlotScopeContextValue {
+  active: boolean
+  scope?: SlotScopeMeta
+}
+
+const SlotRegistryContext = createContext<SlotRegistry<any> | null>(null)
+const SlotScopeContext = createContext<SlotScopeContextValue>({ active: true })
+
+const EMPTY_LIST: readonly ResolvedListEntry<ComponentType<any>>[] = []
+const EMPTY_CHAIN: readonly ResolvedChainEntry<any, ReactNode>[] = []
+const EMPTY_HOC: readonly ResolvedHocEntry<ComponentType<any>>[] = []
+
+function subscribeNoop(): () => void {
+  return () => {}
+}
+
+function getNull(): null {
+  return null
+}
+
+function getEmptyList(): readonly ResolvedListEntry<ComponentType<any>>[] {
+  return EMPTY_LIST
+}
+
+function getEmptyChain(): readonly ResolvedChainEntry<any, ReactNode>[] {
+  return EMPTY_CHAIN
+}
+
+function getEmptyHoc(): readonly ResolvedHocEntry<ComponentType<any>>[] {
+  return EMPTY_HOC
+}
+
+export function SlotRegistryProvider({
+  registry,
+  children,
+}: {
+  registry: SlotRegistry<any> | null
+  children?: ReactNode
+}) {
+  return <SlotRegistryContext.Provider value={registry}>{children}</SlotRegistryContext.Provider>
+}
+
+export function SlotScopeProvider({
+  active,
+  scope,
+  children,
+}: {
+  active: boolean
+  scope?: SlotScopeMeta
+  children?: ReactNode
+}) {
+  const value = useMemo<SlotScopeContextValue>(() => ({ active, scope }), [active, scope])
+  return <SlotScopeContext.Provider value={value}>{children}</SlotScopeContext.Provider>
+}
+
+export function useSlotRegistry(): SlotRegistry<SlotMap> | null {
+  return useContext(SlotRegistryContext)
+}
+
+export function useSlotScope(): SlotScopeContextValue {
+  return useContext(SlotScopeContext)
+}
+
+function useSlotSubscription<T>(
+  slot: string,
+  read: (registry: SlotRegistry<any>) => T,
+  inactiveValue: () => T,
+): T {
+  const registry = useContext(SlotRegistryContext)
+  const { active } = useContext(SlotScopeContext)
+  const enabled = registry !== null && active
+
+  const subscribe = useCallback(
+    (listener: () => void) => (enabled && registry ? registry.subscribeSlot(slot, listener) : subscribeNoop()),
+    [enabled, registry, slot],
+  )
+  const getSnapshot = useCallback(
+    () => (enabled && registry ? read(registry) : inactiveValue()),
+    [enabled, registry, read, inactiveValue],
+  )
+
+  return useSyncExternalStore(subscribe, getSnapshot, inactiveValue)
+}
+
+export function useSlot<K extends SlotsOfKind<SlotMap, 'single'>>(
+  slot: K,
+): ComponentType<SlotPropsOf<SlotMap, K>> | null {
+  const read = useCallback(
+    (registry: SlotRegistry<any>) =>
+      registry.getSingle(slot as never) as ComponentType<SlotPropsOf<SlotMap, K>> | null,
+    [slot],
+  )
+  return useSlotSubscription(slot, read, getNull)
+}
+
+export function useSlotList<K extends SlotsOfKind<SlotMap, 'list'>>(
+  slot: K,
+): readonly ResolvedListEntry<ComponentType<SlotPropsOf<SlotMap, K>>>[] {
+  const read = useCallback(
+    (registry: SlotRegistry<any>) =>
+      registry.getList(slot as never) as readonly ResolvedListEntry<ComponentType<SlotPropsOf<SlotMap, K>>>[],
+    [slot],
+  )
+  return useSlotSubscription(slot, read, getEmptyList)
+}
+
+export function useSlotKeyed<K extends SlotsOfKind<SlotMap, 'keyed'>>(
+  slot: K,
+  key: SlotKeyOf<SlotMap, K>,
+): ComponentType<SlotPropsOf<SlotMap, K>> | null {
+  const read = useCallback(
+    (registry: SlotRegistry<any>) =>
+      registry.getKeyed(slot as never, key as never) as ComponentType<SlotPropsOf<SlotMap, K>> | null,
+    [slot, key],
+  )
+  return useSlotSubscription(slot, read, getNull)
+}
+
+export function useSlotChain<K extends SlotsOfKind<SlotMap, 'chain'>>(
+  slot: K,
+  props: SlotPropsOf<SlotMap, K>,
+  fallback: (props: SlotPropsOf<SlotMap, K>) => ReactNode,
+): ReactNode {
+  const read = useCallback(
+    (registry: SlotRegistry<any>) =>
+      registry.getChain(slot as never) as readonly ResolvedChainEntry<SlotPropsOf<SlotMap, K>, ReactNode>[],
+    [slot],
+  )
+  const entries = useSlotSubscription(slot, read, getEmptyChain)
+  if (entries.length === 0) return fallback(props)
+
+  const matching = entries.filter((entry) => !entry.match || entry.match(props))
+  if (matching.length === 0) return fallback(props)
+
+  const dispatch = (index: number): ReactNode => {
+    if (index >= matching.length) return fallback(props)
+    const entry = matching[index]
+    const next = () => dispatch(index + 1)
+    const result = entry.render(props, next)
+    return result === null || result === undefined ? next() : result
+  }
+
+  return dispatch(0)
+}
+
+function matchesHocFilter(
+  filterKey: string | ((key?: string) => boolean) | undefined,
+  key: string | undefined,
+): boolean {
+  if (filterKey === undefined) return true
+  if (typeof filterKey === 'string') return filterKey === key
+  return filterKey(key)
+}
+
+export function useSlotHoc<K extends SlotsOfKind<SlotMap, 'hoc'>>(
+  slot: K,
+  BaseComponent: ComponentType<SlotPropsOf<SlotMap, K>>,
+  filterKey?: string,
+): ComponentType<SlotPropsOf<SlotMap, K>> {
+  const read = useCallback(
+    (registry: SlotRegistry<any>) =>
+      registry.getHoc(slot as never) as readonly ResolvedHocEntry<ComponentType<SlotPropsOf<SlotMap, K>>>[],
+    [slot],
+  )
+  const entries = useSlotSubscription(slot, read, getEmptyHoc)
+
+  return useMemo(() => {
+    if (entries.length === 0) return BaseComponent
+    const matching = entries.filter((entry) => matchesHocFilter(entry.filterKey, filterKey))
+    if (matching.length === 0) return BaseComponent
+    return matching.reduceRight(
+      (Acc, entry) => entry.wrap(Acc),
+      BaseComponent,
+    )
+  }, [entries, BaseComponent, filterKey])
+}
+
+export function SlotSingle<K extends SlotsOfKind<SlotMap, 'single'>>({
+  name,
+  props,
+  fallback: Fallback,
+}: {
+  name: K
+  props: SlotPropsOf<SlotMap, K>
+  fallback?: ComponentType<SlotPropsOf<SlotMap, K>>
+}) {
+  const Resolved = useSlot(name) ?? Fallback
+  if (!Resolved) return null
+  return <Resolved {...(props as any)} />
+}
+
+export function SlotList<K extends SlotsOfKind<SlotMap, 'list'>>({
+  name,
+  props,
+}: {
+  name: K
+  props: SlotPropsOf<SlotMap, K>
+}) {
+  const items = useSlotList(name)
+  if (items.length === 0) return null
+  return (
+    <>
+      {items.map((item) => {
+        const Item = item.component
+        return <Item key={item.id} {...(props as any)} />
+      })}
+    </>
+  )
+}
+
+export function SlotHoc<K extends SlotsOfKind<SlotMap, 'hoc'>>({
+  name,
+  component,
+  filterKey,
+  props,
+  children,
+}: {
+  name: K
+  component: ComponentType<SlotPropsOf<SlotMap, K>>
+  filterKey?: string
+  props?: Omit<SlotPropsOf<SlotMap, K>, 'children'>
+  children?: ReactNode
+}) {
+  const Wrapped = useSlotHoc(name, component, filterKey)
+  const mergedProps = children !== undefined ? { ...(props as any), children } : (props as any)
+  return <Wrapped {...mergedProps} />
+}

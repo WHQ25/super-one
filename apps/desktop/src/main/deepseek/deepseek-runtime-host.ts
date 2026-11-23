@@ -83,6 +83,7 @@ export type ApprovalRouter = (request: DeepseekApprovalRequest) => Promise<Appro
 
 const approvalRouters = new Map<string, ApprovalRouter>()
 let runtimePromise: Promise<DeepseekRuntime> | null = null
+let unsubscribePluginRpcEvents: (() => void) | null = null
 
 /** Register the answerer for one session's approval questions. */
 export function registerApprovalRouter(sessionId: string, router: ApprovalRouter): () => void {
@@ -130,57 +131,63 @@ export function shippedPresetRoot(): string {
 
 export function getDeepseekRuntime(): Promise<DeepseekRuntime> {
   if (!runtimePromise) {
-    runtimePromise = (async () => DeepseekRuntime.create({
-      // `run_code` and workflows start a fresh Node; inside Electron that has
-      // to be the app binary in Node mode (see `ensurePtcNodeLauncher`).
-      ptcNodeExecutable: await ensurePtcNodeLauncher(
-        join(app.getPath('userData'), 'dsh-runtime'),
-        process.execPath,
-      ),
-      // Harness identity stays on; SuperOne additions ride the persona field
-      // (docs/harness/dsh/deepseek-harness-integration.md §12.1).
-      persona: '',
-      persistenceRoot: join(app.getPath('userData'), 'deepseek-sessions'),
-      // Passed explicitly because `dsh-attachment-local` otherwise follows
-      // `DSH_HOME` and then `~/.dsh`, and SuperOne runs with no dsh home (D3).
-      // The store keeps content-addressed image bytes: what `read_image` puts
-      // away, what the trajectory inspector reads back, and what a multimodal
-      // model route would be sent. It sits under `userData` for the same reason
-      // the session logs do — the app directory is read-only once packaged.
-      attachmentHome: join(app.getPath('userData'), 'deepseek-attachments'),
-      presetRoot: shippedPresetRoot(),
-      subagentModelSelection: readAppSettings().dshSubagentModelSelection,
-      defaultPreset: DEFAULT_DSH_AGENT_PRESET,
-      pluginRoot: dshPluginRoot(),
-      onPluginMount: (report) => {
-        // A plugin that did not load is reported, never fatal — the runtime is
-        // already up by the time this runs. Logging each one by name is what
-        // makes a silently missing tool diagnosable.
-        for (const outcome of report.outcomes) {
-          if (outcome.status === 'mounted') {
-            log.info(`[deepseek] plugin mounted: ${outcome.row.id} (${outcome.row.name}@${outcome.row.version})`)
-          } else {
-            log.error(`[deepseek] plugin ${outcome.status}: ${outcome.row.id} — ${outcome.reason ?? 'no reason given'}`)
+    runtimePromise = (async () => {
+      const runtime = await DeepseekRuntime.create({
+        // `run_code` and workflows start a fresh Node; inside Electron that has
+        // to be the app binary in Node mode (see `ensurePtcNodeLauncher`).
+        ptcNodeExecutable: await ensurePtcNodeLauncher(
+          join(app.getPath('userData'), 'dsh-runtime'),
+          process.execPath,
+        ),
+        // Harness identity stays on; SuperOne additions ride the persona field
+        // (docs/harness/dsh/deepseek-harness-integration.md §12.1).
+        persona: '',
+        persistenceRoot: join(app.getPath('userData'), 'deepseek-sessions'),
+        // Passed explicitly because `dsh-attachment-local` otherwise follows
+        // `DSH_HOME` and then `~/.dsh`, and SuperOne runs with no dsh home (D3).
+        // The store keeps content-addressed image bytes: what `read_image` puts
+        // away, what the trajectory inspector reads back, and what a multimodal
+        // model route would be sent. It sits under `userData` for the same reason
+        // the session logs do — the app directory is read-only once packaged.
+        attachmentHome: join(app.getPath('userData'), 'deepseek-attachments'),
+        presetRoot: shippedPresetRoot(),
+        subagentModelSelection: readAppSettings().dshSubagentModelSelection,
+        defaultPreset: DEFAULT_DSH_AGENT_PRESET,
+        pluginRoot: dshPluginRoot(),
+        onPluginMount: (report) => {
+          // A plugin that did not load is reported, never fatal — the runtime is
+          // already up by the time this runs. Logging each one by name is what
+          // makes a silently missing tool diagnosable.
+          for (const outcome of report.outcomes) {
+            if (outcome.status === 'mounted') {
+              log.info(`[deepseek] plugin mounted: ${outcome.row.id} (${outcome.row.name}@${outcome.row.version})`)
+            } else {
+              log.error(`[deepseek] plugin ${outcome.status}: ${outcome.row.id} — ${outcome.reason ?? 'no reason given'}`)
+            }
           }
-        }
-        if (report.registryProblem !== undefined) {
-          log.error(`[deepseek] plugin registry unusable, no plugins loaded: ${report.registryProblem}`)
-        }
-      },
-      // Resolved per request, so re-binding a key in SuperOne settings reaches
-      // the next turn without a restart — and no secret enters process.env.
-      credentialLookup: (ref) => resolveDshCredential(ref),
-      deepseekAdapter: {
-        apiKeyEnv: DEEPSEEK_CREDENTIAL_REF,
-        models: DEEPSEEK_MODEL_CATALOG,
-      },
-      piAiProviders: await buildDshPiAiProviders(),
-      onApproval: async (request) => {
-        const decision = approvalRouters.get(request.sessionId)?.(request)
-        // No owner (session closed mid-question) fails closed.
-        return decision ? await decision : 'rejected'
-      },
-    }))().catch((error: unknown) => {
+          if (report.registryProblem !== undefined) {
+            log.error(`[deepseek] plugin registry unusable, no plugins loaded: ${report.registryProblem}`)
+          }
+        },
+        // Resolved per request, so re-binding a key in SuperOne settings reaches
+        // the next turn without a restart — and no secret enters process.env.
+        credentialLookup: (ref) => resolveDshCredential(ref),
+        deepseekAdapter: {
+          apiKeyEnv: DEEPSEEK_CREDENTIAL_REF,
+          models: DEEPSEEK_MODEL_CATALOG,
+        },
+        piAiProviders: await buildDshPiAiProviders(),
+        onApproval: async (request) => {
+          const decision = approvalRouters.get(request.sessionId)?.(request)
+          // No owner (session closed mid-question) fails closed.
+          return decision ? await decision : 'rejected'
+        },
+      })
+      unsubscribePluginRpcEvents?.()
+      const { attachPluginRpcEvents } = await import('./plugin-bridge')
+      unsubscribePluginRpcEvents = attachPluginRpcEvents(runtime)
+      return runtime
+    })().catch((error: unknown) => {
       runtimePromise = null
       log.error('[deepseek] runtime boot failed', error)
       throw error
@@ -207,6 +214,8 @@ export async function syncDshPiAiProviders(): Promise<void> {
 
 export async function disposeDeepseekRuntime(): Promise<void> {
   stopTrackingDshMcpConfig()
+  unsubscribePluginRpcEvents?.()
+  unsubscribePluginRpcEvents = null
   const pending = runtimePromise
   if (!pending) return
   runtimePromise = null

@@ -1456,7 +1456,19 @@ declare global {
     environment: EnvironmentAPI
     miniapp: MiniAppAPI
     browserHost: BrowserHostAPI
+    superonePlugin: SuperonePluginAPI
   }
+}
+
+export interface SuperonePluginAPI {
+  listClientPlugins(): Promise<import('@superone/shared/dsh-plugin-client').DshClientPluginList>
+  invoke<T = unknown>(
+    pluginId: string,
+    method: string,
+    payload?: unknown,
+  ): Promise<import('@superone/shared/dsh-plugin-client').DshPluginRpcResult<T>>
+  on(pluginId: string, event: string, callback: (payload: unknown) => void): () => void
+  onPluginsChanged(callback: () => void): () => void
 }
 
 export interface BrowserHostAPI {

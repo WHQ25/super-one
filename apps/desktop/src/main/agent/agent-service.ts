@@ -1951,6 +1951,16 @@ export class AgentService {
       return await uninstallDshPlugin(id)
     })
 
+    windowIpc.handle(AgentIpcChannels.DSH_CLIENT_PLUGIN_LIST, async () => {
+      const { listDshClientPlugins } = await import('../deepseek/plugin-bridge')
+      return await listDshClientPlugins()
+    })
+
+    windowIpc.handle(AgentIpcChannels.DSH_PLUGIN_RPC_INVOKE, async (_event, pluginId: string, method: string, payload?: unknown) => {
+      const { invokeDshPluginRpc } = await import('../deepseek/plugin-bridge')
+      return await invokeDshPluginRpc(pluginId, method, payload)
+    })
+
     // --- Agents (read-only) ---
 
     windowIpc.handle(AgentIpcChannels.AGENTS_LIST, async (_event, projectPath: string) => {
@@ -2420,6 +2430,8 @@ export class AgentService {
     ipcMain.removeHandler(AgentIpcChannels.DSH_PLUGIN_INSTALL)
     ipcMain.removeHandler(AgentIpcChannels.DSH_PLUGIN_SET_DISABLED)
     ipcMain.removeHandler(AgentIpcChannels.DSH_PLUGIN_UNINSTALL)
+    ipcMain.removeHandler(AgentIpcChannels.DSH_CLIENT_PLUGIN_LIST)
+    ipcMain.removeHandler(AgentIpcChannels.DSH_PLUGIN_RPC_INVOKE)
     ipcMain.removeHandler(AgentIpcChannels.AGENTS_LIST)
     ipcMain.removeHandler(AgentIpcChannels.AGENTS_READ_FILE)
     ipcMain.removeHandler(AgentIpcChannels.MCP_LIST_CONFIG)

@@ -291,6 +291,8 @@ import type { PairedDevice, CreateAutomationRequest, RemoteDeviceConfig, UpdateA
 import type { RemoteControlCallbacks } from './remote-control-service'
 import { markStartup } from '@superone/shared/startup-marks'
 import { loadRendererPage, registerRendererProtocol, RENDERER_SCHEME, RENDERER_SCHEME_PRIVILEGES, usesRendererDevServer } from './renderer-protocol'
+import { PLUGIN_SCHEME_PRIVILEGES, registerPluginProtocol } from './deepseek/plugin-protocol'
+import { dshPluginRoot } from './deepseek/deepseek-runtime-host'
 import { migrateRendererLocalStorage } from './renderer-storage-migration'
 
 // ESM hoists every import above, so this lands once the main bundle has evaluated.
@@ -330,6 +332,7 @@ protocol.registerSchemesAsPrivileged([
   { scheme: 'superone-app', privileges: { secure: true, supportFetchAPI: true, corsEnabled: true, standard: true } },
   RENDERER_SCHEME_PRIVILEGES,
   MCP_APP_SCHEME_PRIVILEGES,
+  PLUGIN_SCHEME_PRIVILEGES,
 ])
 
 // Drives app.getPath('logs') and, on macOS, the safeStorage keychain item.
@@ -6000,6 +6003,7 @@ app.whenReady().then(async () => {
   registerMiniAppProtocolHandlers(protocol)
   registerMcpAppProtocol(protocol)
   registerRendererProtocol(join(__dirname, '../renderer'))
+  registerPluginProtocol(protocol, dshPluginRoot)
   // Built-in browser webviews use partition "persist:browser"; register the same
   // local-file handler so HTML/CSS/asset previews work there (not only in the
   // main renderer session used by in-app iframes).

@@ -1,0 +1,5 @@
+.sample-dsh-plugin-card {
+  border-color: var(--border);
+  background: var(--card);
+  color: var(--foreground);
+}

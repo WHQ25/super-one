@@ -13,6 +13,7 @@ import { DeviceDockPanel } from '@/components/device/DeviceDockPanel'
 import { SideChatPanel } from '@/components/chat/SideChatPanel'
 import { ActivityTerminalPanel } from './ActivityTerminalPanel'
 import { McpAppPanel } from '@/components/mcp-apps/McpAppPanel'
+import { PluginDockPanel } from './PluginDockPanel'
 
 function FilePreviewPanel(props: IDockviewPanelProps<{ filePath: string; fileRoot?: string }>) {
   return <FilePreview filePath={props.params.filePath} fileRoot={props.params.fileRoot} />
@@ -83,4 +84,5 @@ export const activityPanelComponents: Record<string, React.FunctionComponent<IDo
   'review': ReviewDockPanel as React.FunctionComponent<IDockviewPanelProps>,
   'device': DeviceDockPanel as React.FunctionComponent<IDockviewPanelProps>,
   'side-chat': SideChatDockPanel as React.FunctionComponent<IDockviewPanelProps>,
+  'plugin-panel': PluginDockPanel as React.FunctionComponent<IDockviewPanelProps>,
 }

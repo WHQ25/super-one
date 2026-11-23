@@ -42,6 +42,7 @@ import { DEFAULT_DSH_PERMISSION_PRESET, DSH_PERMISSION_PRESETS } from './permiss
 import { mountHostToolPlane } from './tool-plane'
 import type { LoaderEntries } from './cordis-loader'
 import { readPresetDeclarations } from './presets'
+import { PluginRpcService } from './plugin-rpc'
 
 export interface DeepseekTreeOptions {
   /**
@@ -328,6 +329,7 @@ export async function createDeepseekTree(options: DeepseekTreeOptions): Promise<
   // live in its own realm — which is why `compactSession` resolves them through
   // the agent's context rather than the bridge's.
   ctx.plugin(TokenMeter)
+  ctx.plugin(PluginRpcService)
 
   // The preset roster. A preset is an agent-plane composition mounted ONCE per
   // process under a standing scope; each session joins by having its agent

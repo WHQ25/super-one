@@ -50,14 +50,29 @@ export {
   registerDshPluginRoot,
 } from './plugin-host/resolver'
 export {
+  CLIENT_PLUGIN_API_VERSION,
   DSH_PLUGIN_REGISTRY_VERSION,
+  buildPluginAssetUrl,
   enabledPlugins,
+  normalizePluginRelativePath,
+  packageDirForName,
+  readClientPluginEntries,
   readPluginRegistry,
+  resolveContainedFile,
   updatePluginRegistry,
   resolvePluginEntryUrl,
+  type ClientPluginEntriesResult,
+  type ClientPluginEntry,
+  type ClientPluginProblem,
   type DshPluginRegistry,
   type DshPluginRow,
 } from './plugin-host/registry'
+export {
+  PluginRpcNotFoundError,
+  PluginRpcService,
+  type PluginRpcEventMessage,
+  type PluginRpcHandler,
+} from './plugin-rpc'
 export {
   DEFAULT_NPM_REGISTRY,
   checkPeerLockstep,

@@ -1,5 +1,6 @@
 import type { CodexVoicePreviews } from '@superone/shared/codex-voice-previews'
 import { windowLayoutAPI } from './window-layout-api'
+import { superonePluginAPI } from './superone-plugin-api'
 import { AGENT_PROFILE_CHANNELS, type AgentProfileManagementAPI } from '@superone/shared/agent-profile-management'
 import { CodexAccountIpcChannels } from '@superone/shared/codex-accounts'
 import { collaborationMailbox } from './collaboration-mailbox'
@@ -2736,6 +2737,7 @@ if (process.contextIsolated) {
     contextBridge.exposeInMainWorld('environment', environmentAPI)
     contextBridge.exposeInMainWorld('miniapp', miniappAPI)
     contextBridge.exposeInMainWorld('browserHost', browserHostAPI)
+    contextBridge.exposeInMainWorld('superonePlugin', superonePluginAPI)
   } catch (error) {
     console.error(error)
   }
@@ -2754,4 +2756,6 @@ if (process.contextIsolated) {
   window.miniapp = miniappAPI
   // @ts-ignore
   window.browserHost = browserHostAPI
+  // @ts-ignore
+  window.superonePlugin = superonePluginAPI
 }

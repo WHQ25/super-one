@@ -69,6 +69,8 @@ export async function listDshPlugins(): Promise<DshPluginList> {
 async function reconcile(): Promise<void> {
   const runtime = await peekDeepseekRuntime()
   await runtime?.syncPlugins()
+  const { broadcastDshPluginsChanged } = await import('./plugin-bridge')
+  broadcastDshPluginsChanged()
 }
 
 /** Project an install result onto the wire shape the renderer renders. */

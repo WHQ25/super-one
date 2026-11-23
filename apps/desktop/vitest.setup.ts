@@ -107,6 +107,12 @@ if (typeof globalThis.window !== 'undefined' && !(globalThis.window as unknown a
   ;(w.environment as Record<string, unknown>).getSession = () => Promise.resolve(null)
   // No test session draws Claude mods: the gateway answers as for any other harness.
   ;(w.environment as Record<string, unknown>).modUi = () => Promise.reject(Object.assign(new Error(MOD_UI_UNAVAILABLE), { name: MOD_UI_UNAVAILABLE }))
+  w.superonePlugin = {
+    listClientPlugins: () => Promise.resolve({ entries: [], problems: [] }),
+    invoke: () => Promise.resolve({ ok: false, error: { code: 'runtime_not_running', message: 'DeepSeek runtime is not running' } }),
+    on: () => () => {},
+    onPluginsChanged: () => () => {},
+  }
 }
 
 if (typeof (globalThis as unknown as { ResizeObserver?: unknown }).ResizeObserver === 'undefined') {

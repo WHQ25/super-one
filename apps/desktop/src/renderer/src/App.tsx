@@ -60,6 +60,9 @@ import { HeaderSessionMenu } from '@/components/chat/HeaderSessionMenu'
 import { CodexConversationViewToggle } from '@/components/chat/CodexConversationViewToggle'
 import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
+import { SlotList, SlotRegistryProvider, SlotScopeProvider } from '@superone/ui-slots/react'
+import { getAppSlotRegistry } from '@/lib/ui-slots'
 import { useSettingsStore } from '@/stores/settings'
 import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@superone/ui/lib/utils'
@@ -76,7 +79,7 @@ export { LAYOUT }
 
 const SettingsLayout = lazy(() => import('@/components/SettingsLayout').then((m) => ({ default: m.SettingsLayout })))
 
-function App(): React.JSX.Element {
+function AppContent(): React.JSX.Element {
   useAgentEvents()
   useHarnessTheme()
   useMobileUploadToasts()
@@ -129,6 +132,19 @@ function App(): React.JSX.Element {
       void useChatStore.getState().refreshCodexSkills(event.projectPath)
     })
     return () => { unsub?.() }
+  }, [])
+
+  useEffect(() => {
+    let disposed = false
+    let stop: (() => void) | undefined
+    void import('@/harness-ui/dsh/plugin-loader').then(({ startDshPluginLoader }) => {
+      if (disposed) return
+      stop = startDshPluginLoader()
+    })
+    return () => {
+      disposed = true
+      stop?.()
+    }
   }, [])
 
   // Persist unsent composers when the window is backgrounded or closing —
@@ -543,10 +559,12 @@ function App(): React.JSX.Element {
     requestHarnessScheme(modChromeScheme || null)
   }, [modChromeScheme])
   useEffect(() => () => requestHarnessScheme(null), [])
-  const isCodexSession = useActiveSession((s) => resolveProvider({
+  const activeSessionProvider = useActiveSession((s) => resolveProvider({
     sessionProvider: s.sessionProvider,
     preferredProvider: s.preferredProvider,
-  }) === 'codex')
+  }))
+  const isCodexSession = activeSessionProvider === 'codex'
+  const activeSessionSupportsUiPlugins = HARNESS_CAPABILITIES[activeSessionProvider].supportsUiPlugins
   const hasVoiceTimeline = useCodexRealtimeViewStore((state) => (
     sessionId ? state.sessions[sessionId]?.hasTimeline === true : false
   ))
@@ -703,6 +721,9 @@ function App(): React.JSX.Element {
 
           {/* Mini-app controls */}
           <div className="mr-3 flex items-center gap-1.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+            <SlotScopeProvider active={activeSessionSupportsUiPlugins} scope={{ projectPath: currentFolder ?? undefined, sessionId: sessionId || undefined }}>
+              <SlotList name="session.header.actions" props={{ sessionId, projectPath: currentFolder ?? null }} />
+            </SlotScopeProvider>
             <MiniAppMediaIndicator />
             <CodexConversationViewToggle sessionId={sessionId} enabled={isCodexSession || hasVoiceTimeline} />
             {(() => {
@@ -837,6 +858,14 @@ function HeaderTitle({ sessionId, folderPath }: { sessionId: string; folderPath:
       />
       {sessionId && folderPath ? <HeaderSessionMenu sessionId={sessionId} folderPath={folderPath} /> : null}
     </div>
+  )
+}
+
+function App(): React.JSX.Element {
+  return (
+    <SlotRegistryProvider registry={getAppSlotRegistry()}>
+      <AppContent />
+    </SlotRegistryProvider>
   )
 }
 

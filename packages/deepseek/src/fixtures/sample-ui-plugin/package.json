@@ -1,0 +1,13 @@
+{
+  "name": "@acme/dsh-sample-ui",
+  "version": "1.0.0",
+  "type": "module",
+  "main": "./server.mjs",
+  "superone": {
+    "client": {
+      "entry": "dist/client.js",
+      "styles": ["src/client.css"],
+      "apiVersion": 1
+    }
+  }
+}

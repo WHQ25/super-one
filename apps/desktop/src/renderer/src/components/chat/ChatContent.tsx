@@ -47,6 +47,12 @@ import { ChatOverlayProviders, renderActiveChatOverlay, useChatOverlays } from '
 import { ChatTranscriptBody, useTranscriptJump } from './chat-content/chat-transcript-body'
 import { useChatDensityScale } from './chat-content/use-chat-density-scale'
 import { useTranscriptFrameKey } from './chat-content/use-transcript-frame-key'
+import { SlotHoc, SlotScopeProvider } from '@superone/ui-slots/react'
+import '@/lib/ui-slots'
+
+function PassthroughSessionProviders({ children }: { children: React.ReactNode }) {
+  return <>{children}</>
+}
 
 interface ChatContentProps {
   scrollViewportRef: React.RefObject<HTMLDivElement | null>
@@ -364,9 +370,11 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
   const detailScope = useMemo(() => remoteConnectionId && displayedSessionId
     ? { client: desktopDetailClient, environmentId: remoteConnectionId, sessionId: displayedSessionId }
     : null, [remoteConnectionId, displayedSessionId])
-  const isCodexSession = resolveProvider({ sessionProvider, preferredProvider }) === 'codex'
+  const sessionHarness = resolveProvider({ sessionProvider, preferredProvider })
+  const isCodexSession = sessionHarness === 'codex'
   useCodexConversationActivation({ sessionId: displayedSessionId, projectPath, enabled: true, foreground })
-  const drawsMods = HARNESS_CAPABILITIES[resolveProvider({ sessionProvider, preferredProvider })].modUi
+  const drawsMods = HARNESS_CAPABILITIES[sessionHarness].modUi
+  const supportsUiPlugins = HARNESS_CAPABILITIES[sessionHarness].supportsUiPlugins
   const realtime = useCodexRealtimeViewStore(
     (state) => displayedSessionId
       ? state.sessions[displayedSessionId] ?? EMPTY_CODEX_REALTIME_SESSION_VIEW
@@ -509,6 +517,8 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
     >
       <ChatRootContext.Provider value={containerRef}>
       <DetailScopeProvider scope={detailScope}>
+      <SlotScopeProvider active={supportsUiPlugins} scope={{ projectPath: projectPath ?? undefined, sessionId: displayedSessionId ?? undefined }}>
+      <SlotHoc name="session.providers" component={PassthroughSessionProviders}>
       <DesktopModUi projectPath={projectPath} sessionId={displayedSessionId ?? null} enabled={drawsMods}>
       {foreground && drawsMods && projectPath && displayedSessionId ? <ModPaneDockSync projectPath={projectPath} sessionId={displayedSessionId} /> : null}
       <ModChatThemeLayer projectPath={projectPath} sessionId={displayedSessionId} enabled={drawsMods} sessionTheme={hostSessionOwned}>
@@ -568,6 +578,8 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
       )}
       </ModChatThemeLayer>
       </DesktopModUi>
+      </SlotHoc>
+      </SlotScopeProvider>
       </DetailScopeProvider>
       </ChatRootContext.Provider>
     </div>

@@ -22,8 +22,8 @@
  */
 
 import { createRequire } from 'node:module'
-import { readFile } from 'node:fs/promises'
-import { join } from 'node:path'
+import { readFile, realpath, stat } from 'node:fs/promises'
+import { extname, join, posix, sep } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { writeFileAtomic, withFileLock } from '@deepseek-ai/dsh-atomic-write'
 
@@ -202,4 +202,190 @@ export function resolvePluginEntryUrl(root: string, name: string): string | null
  */
 export function enabledPlugins(registry: DshPluginRegistry): DshPluginRow[] {
   return registry.plugins.filter((row) => row.disabled !== true)
+}
+
+export const CLIENT_PLUGIN_API_VERSION = 1
+
+export interface ClientPluginEntry {
+  id: string
+  name: string
+  version: string
+  apiVersion: 1
+  entry: string
+  styles: string[]
+  rev: string
+  entryUrl: string
+  styleUrls: string[]
+}
+
+export interface ClientPluginProblem {
+  id: string
+  name: string
+  reason: string
+}
+
+export interface ClientPluginEntriesResult {
+  entries: ClientPluginEntry[]
+  problems: ClientPluginProblem[]
+  registryProblem?: string
+}
+
+const CLIENT_ENTRY_EXTS = new Set(['.js', '.mjs'])
+const CLIENT_STYLE_EXTS = new Set(['.css'])
+
+export function normalizePluginRelativePath(raw: unknown): string | null {
+  if (typeof raw !== 'string') return null
+  const trimmed = raw.trim().replace(/\\/g, '/')
+  if (!trimmed || trimmed.startsWith('/') || trimmed.includes('\0')) return null
+  const clean = trimmed.replace(/^\.\//, '')
+  const normalized = posix.normalize(clean)
+  if (!normalized || normalized === '.' || normalized.startsWith('..') || normalized.startsWith('/')) {
+    return null
+  }
+  return normalized
+}
+
+export function packageDirForName(root: string, name: string): string {
+  const parts = name.split('/').filter(Boolean)
+  return join(root, 'node_modules', ...parts)
+}
+
+export async function resolveContainedFile(
+  pkgDir: string,
+  relPath: string,
+  allowedExts: ReadonlySet<string>,
+): Promise<{ absPath: string; mtimeMs: number; normalized: string } | null> {
+  const normalized = normalizePluginRelativePath(relPath)
+  if (!normalized) return null
+  const ext = extname(normalized).toLowerCase()
+  if (!allowedExts.has(ext)) return null
+  let pkgRoot: string
+  let targetReal: string
+  try {
+    pkgRoot = await realpath(pkgDir)
+    targetReal = await realpath(join(pkgRoot, ...normalized.split('/')))
+  } catch {
+    return null
+  }
+  if (!targetReal.startsWith(pkgRoot + sep)) return null
+  try {
+    const info = await stat(targetReal)
+    if (!info.isFile()) return null
+    return { absPath: targetReal, mtimeMs: info.mtimeMs, normalized }
+  } catch {
+    return null
+  }
+}
+
+export function buildPluginAssetUrl(pluginId: string, relPath: string, rev: string): string {
+  const encodedId = encodeURIComponent(pluginId)
+  const encodedPath = relPath.split('/').map(encodeURIComponent).join('/')
+  return `superone-plugin://pkg/${encodedId}/${encodedPath}?v=${encodeURIComponent(rev)}`
+}
+
+export async function readClientPluginEntries(pluginRoot: string): Promise<ClientPluginEntriesResult> {
+  const registry = await readPluginRegistry(pluginRoot)
+  const entries: ClientPluginEntry[] = []
+  const problems: ClientPluginProblem[] = []
+
+  for (const row of enabledPlugins(registry)) {
+    const pkgDir = packageDirForName(pluginRoot, row.name)
+    let rawPkg: string
+    try {
+      rawPkg = await readFile(join(pkgDir, 'package.json'), 'utf8')
+    } catch {
+      problems.push({ id: row.id, name: row.name, reason: `missing package.json for ${row.name}` })
+      continue
+    }
+
+    let parsedPkg: unknown
+    try {
+      parsedPkg = JSON.parse(rawPkg)
+    } catch {
+      problems.push({ id: row.id, name: row.name, reason: `invalid package.json for ${row.name}` })
+      continue
+    }
+
+    if (!parsedPkg || typeof parsedPkg !== 'object' || Array.isArray(parsedPkg)) {
+      problems.push({ id: row.id, name: row.name, reason: `package.json for ${row.name} is not an object` })
+      continue
+    }
+
+    const superoneField = (parsedPkg as Record<string, unknown>).superone
+    if (superoneField === undefined) continue
+    if (!superoneField || typeof superoneField !== 'object' || Array.isArray(superoneField)) {
+      problems.push({ id: row.id, name: row.name, reason: `invalid superone manifest field in ${row.name}` })
+      continue
+    }
+
+    const clientField = (superoneField as Record<string, unknown>).client
+    if (clientField === undefined) continue
+    if (!clientField || typeof clientField !== 'object' || Array.isArray(clientField)) {
+      problems.push({ id: row.id, name: row.name, reason: `invalid superone.client manifest field in ${row.name}` })
+      continue
+    }
+
+    const { entry, styles, apiVersion } = clientField as Record<string, unknown>
+    if (apiVersion !== CLIENT_PLUGIN_API_VERSION) {
+      problems.push({
+        id: row.id,
+        name: row.name,
+        reason: `unsupported superone.client.apiVersion in ${row.name}: expected ${CLIENT_PLUGIN_API_VERSION}, got ${String(apiVersion)}`,
+      })
+      continue
+    }
+
+    const resolvedEntry = await resolveContainedFile(pkgDir, String(entry ?? ''), CLIENT_ENTRY_EXTS)
+    if (!resolvedEntry) {
+      problems.push({
+        id: row.id,
+        name: row.name,
+        reason: `invalid or missing superone.client.entry in ${row.name}`,
+      })
+      continue
+    }
+
+    const rawStyles = styles === undefined ? [] : Array.isArray(styles) ? styles : [styles]
+    const resolvedStyles: string[] = []
+    const styleUrls: string[] = []
+    let styleFailed = false
+    for (const rawStyle of rawStyles) {
+      if (typeof rawStyle !== 'string') {
+        problems.push({ id: row.id, name: row.name, reason: `invalid superone.client.styles entry in ${row.name}` })
+        styleFailed = true
+        break
+      }
+      const resolvedStyle = await resolveContainedFile(pkgDir, rawStyle, CLIENT_STYLE_EXTS)
+      if (!resolvedStyle) {
+        problems.push({
+          id: row.id,
+          name: row.name,
+          reason: `missing or disallowed stylesheet ${rawStyle} in ${row.name}`,
+        })
+        styleFailed = true
+        break
+      }
+      resolvedStyles.push(resolvedStyle.normalized)
+      const styleRev = `${row.version}-${Math.trunc(resolvedStyle.mtimeMs)}`
+      styleUrls.push(buildPluginAssetUrl(row.id, resolvedStyle.normalized, styleRev))
+    }
+    if (styleFailed) continue
+
+    const rev = `${row.version}-${Math.trunc(resolvedEntry.mtimeMs)}`
+    entries.push({
+      id: row.id,
+      name: row.name,
+      version: row.version,
+      apiVersion: CLIENT_PLUGIN_API_VERSION,
+      entry: resolvedEntry.normalized,
+      styles: resolvedStyles,
+      rev,
+      entryUrl: buildPluginAssetUrl(row.id, resolvedEntry.normalized, rev),
+      styleUrls,
+    })
+  }
+
+  return registry.problem === undefined
+    ? { entries, problems }
+    : { entries, problems, registryProblem: registry.problem }
 }

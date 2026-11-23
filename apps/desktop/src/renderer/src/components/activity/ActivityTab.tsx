@@ -384,6 +384,20 @@ export function ReviewTab(props: IDockviewPanelHeaderProps) {
   )
 }
 
+export function PluginDockTab(props: IDockviewPanelHeaderProps) {
+  const active = useIsActive(props.api)
+  const title = usePanelTitle(props.api)
+  return (
+    <div className={tabChipClass(active)}>
+      <HoverCloseSlot onClose={() => props.api.close()}>
+        <Blocks className="size-3.5 shrink-0" />
+      </HoverCloseSlot>
+      <TabTitle>{title}</TabTitle>
+      <MaximizeTabAction api={props.api} active={active} />
+    </div>
+  )
+}
+
 export const activityTabComponents: Record<string, React.FunctionComponent<IDockviewPanelHeaderProps>> = {
   'mcp-app-tab': McpAppTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
   'file-preview-tab': FilePreviewTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
@@ -396,4 +410,5 @@ export const activityTabComponents: Record<string, React.FunctionComponent<IDock
   'device-tab': DeviceTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
   'side-chat-tab': SideChatTab,
   'mod-pane-tab': ModPaneTab,
+  'plugin-panel-tab': PluginDockTab,
 }

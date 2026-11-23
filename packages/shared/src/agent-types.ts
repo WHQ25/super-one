@@ -4765,6 +4765,10 @@ export const AgentIpcChannels = {
   DSH_PLUGIN_INSTALL: 'dsh:plugin-install',
   DSH_PLUGIN_SET_DISABLED: 'dsh:plugin-set-disabled',
   DSH_PLUGIN_UNINSTALL: 'dsh:plugin-uninstall',
+  DSH_CLIENT_PLUGIN_LIST: 'dsh:client-plugin-list',
+  DSH_PLUGIN_RPC_INVOKE: 'dsh:plugin-rpc-invoke',
+  DSH_PLUGIN_RPC_EVENT: 'dsh:plugin-rpc-event',
+  DSH_PLUGINS_CHANGED: 'dsh:plugins-changed',
 
   // MCP config
   MCP_LIST_CONFIG: 'mcp:list-config',

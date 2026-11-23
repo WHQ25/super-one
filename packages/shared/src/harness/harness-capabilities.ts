@@ -141,6 +141,7 @@ export interface HarnessCapabilities {
    * rule. Other harnesses have no equivalent settings-file rule for one tool.
    */
   supportsMcpToolPermissionRules: boolean
+  supportsUiPlugins: boolean
   /**
    * Words the harness acts on when they appear in the prompt text, for that turn
    * only. The composer highlights them; on any other harness they are plain text.
@@ -169,6 +170,7 @@ const ACP_PROTOCOL_CAPABILITIES = {
   supportsShortWidgetResult: false,
   supportsCuratedPluginDirectory: false,
   supportsMcpToolPermissionRules: false,
+  supportsUiPlugins: false,
   promptKeywords: [] as const,
 }
 
@@ -198,6 +200,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsShortWidgetResult: true,
     supportsCuratedPluginDirectory: false,
     supportsMcpToolPermissionRules: true,
+    supportsUiPlugins: false,
     // `ultrathink` adds a deeper-reasoning reminder to the turn (effort is
     // untouched); `ultracode` opts it into the Workflow tool, on messages stamped
     // human — see `claudeMessageOrigin`.
@@ -230,6 +233,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsShortWidgetResult: true,
     supportsCuratedPluginDirectory: true,
     supportsMcpToolPermissionRules: false,
+    supportsUiPlugins: false,
     promptKeywords: [],
     displayName: 'Codex',
   },
@@ -270,6 +274,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsShortWidgetResult: false,
     supportsCuratedPluginDirectory: false,
     supportsMcpToolPermissionRules: false,
+    supportsUiPlugins: false,
     promptKeywords: [],
     displayName: 'OpenCode',
   },
@@ -302,6 +307,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsShortWidgetResult: false,
     supportsCuratedPluginDirectory: false,
     supportsMcpToolPermissionRules: false,
+    supportsUiPlugins: false,
     promptKeywords: [],
     displayName: 'Cursor',
   },
@@ -343,6 +349,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsShortWidgetResult: false,
     supportsCuratedPluginDirectory: false,
     supportsMcpToolPermissionRules: false,
+    supportsUiPlugins: true,
     promptKeywords: [],
     displayName: 'DeepSeek',
   },

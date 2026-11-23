@@ -1,6 +1,8 @@
 import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
 import { SUGGEST_TASK_TOOL_NAME, type SuggestedTaskState } from '@superone/shared/suggested-task'
-import { memo, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useSlotChain, useSlotRegistry, useSlotScope } from '@superone/ui-slots/react'
+import { PluginSlotErrorBoundary, type ChatToolBlockSlotProps } from '@/lib/ui-slots'
 import { useTranslation } from 'react-i18next'
 import { Ban, ChevronRight, TriangleAlert } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
@@ -236,6 +238,16 @@ const FILE_PATH_TOOLS = new Set(['Read', 'Edit', 'Write', 'NotebookEdit', 'FileC
 
 
 
+function ToolBlockChainSlot({
+  slotProps,
+  renderBuiltin,
+}: {
+  slotProps: ChatToolBlockSlotProps
+  renderBuiltin: () => ReactNode
+}) {
+  return useSlotChain('chat.toolBlock', slotProps, renderBuiltin)
+}
+
 export const ToolBlockPresenter = memo(function ToolBlockPresenter({
   app,
   trailing,
@@ -291,6 +303,19 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
     () => (isMcp && rawResult ? unwrapMcpResultText(rawResult) : rawResult),
     [isMcp, rawResult],
   )
+  const slotRegistry = useSlotRegistry()
+  const { active: slotActive } = useSlotScope()
+  const hasToolBlockPlugins = useSyncExternalStore(
+    useCallback(
+      (listener) => (slotRegistry && slotActive ? slotRegistry.subscribeSlot('chat.toolBlock', listener) : () => {}),
+      [slotRegistry, slotActive],
+    ),
+    useCallback(
+      () => (slotRegistry && slotActive ? slotRegistry.getChain('chat.toolBlock').length > 0 : false),
+      [slotRegistry, slotActive],
+    ),
+    () => false,
+  )
   // Debug mode (dev only): highest priority — show raw input/output for matching tools
   // Set RENDERER_VITE_DEBUG_TOOL_NAMES=TodoWrite,TaskCreate to enable
   const isDebug = DEBUG_TOOL_NAMES.length > 0 &&
@@ -301,7 +326,8 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
 
   if (isHiddenToolBlock(toolName, result)) return null
 
-  if (toolName === 'Bash') {
+  const renderBuiltin = (): ReactNode => {
+    if (toolName === 'Bash') {
     const bashDisplay = bashToolDisplay(params, toolSummary)
     return ports.renderBash({
       toolUseId: toolUseId ?? '',
@@ -724,6 +750,34 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
       onExpandedChange={deferred?.onExpandedChange}
       ports={ports}
     />
+  )
+  }
+
+  if (!hasToolBlockPlugins) return renderBuiltin()
+
+  const slotProps: ChatToolBlockSlotProps = {
+    toolName,
+    toolUseId,
+    input,
+    params,
+    toolSummary,
+    filePath,
+    status,
+    isStreaming,
+    elapsedSeconds,
+    result,
+    cleanResult,
+    isError,
+    isDenied,
+    isTimedOut,
+    allowExpand,
+    grouped,
+  }
+
+  return (
+    <PluginSlotErrorBoundary resetKey={`${toolUseId ?? toolName}:${status ?? ''}`} fallback={renderBuiltin}>
+      <ToolBlockChainSlot slotProps={slotProps} renderBuiltin={renderBuiltin} />
+    </PluginSlotErrorBoundary>
   )
 })
 

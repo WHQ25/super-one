@@ -155,6 +155,59 @@ export function isDockReady(): boolean {
   return dockApi !== null
 }
 
+export const PLUGIN_PANEL_PREFIX = 'plugin:'
+
+export function pluginPanelId(panelKey: string): string {
+  return `${PLUGIN_PANEL_PREFIX}${panelKey}`
+}
+
+export function openPluginPanelTab(
+  panelKey: string,
+  title: string,
+  params?: Record<string, unknown>,
+  opts?: { reveal?: boolean; activate?: boolean },
+): void {
+  if (opts?.reveal !== false) ensureVisible()
+  const id = pluginPanelId(panelKey)
+  recordMosaicOpen(id, () => openPluginPanelTab(panelKey, title, params, opts))
+  execOrDefer(() => {
+    if (!dockApi) return
+    const existing = dockApi.panels.find((p) => p.id === id)
+    if (existing) {
+      if (existing.title !== title) existing.api.setTitle(title)
+      if (opts?.activate !== false) activateInMaximizedGroup(existing)
+      return
+    }
+    const position = positionInMaximizedGroup()
+    dockApi.addPanel({
+      id,
+      component: 'plugin-panel',
+      tabComponent: 'plugin-panel-tab',
+      title,
+      params: { ...params, panelKey },
+      ...(position ? { position } : {}),
+    })
+  })
+}
+
+export function closePluginPanelTab(panelKey: string): void {
+  const id = pluginPanelId(panelKey)
+  removeMosaicOpen(id)
+  dockApi?.panels.find((p) => p.id === id)?.api.close()
+}
+
+export function closeGhostPluginPanels(isAlive: (panelKey: string) => boolean): void {
+  if (!dockApi) return
+  for (const panel of [...dockApi.panels]) {
+    const contentComponent = (panel as { view?: { contentComponent?: string } }).view?.contentComponent
+    const isPluginPanel = panel.id.startsWith(PLUGIN_PANEL_PREFIX) || contentComponent === 'plugin-panel'
+    if (!isPluginPanel) continue
+    const panelKey = (panel.params as { panelKey?: string } | undefined)?.panelKey
+      ?? (panel.id.startsWith(PLUGIN_PANEL_PREFIX) ? panel.id.slice(PLUGIN_PANEL_PREFIX.length) : undefined)
+    if (!panelKey || !isAlive(panelKey)) panel.api.close()
+  }
+}
+
 export function closeGhostMiniAppPanels(isAlive: (instanceKey: string) => boolean): void {
   if (!dockApi) return
   for (const panel of [...dockApi.panels]) {

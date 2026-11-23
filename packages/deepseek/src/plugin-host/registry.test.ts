@@ -1,11 +1,13 @@
 import { describe, it, expect, beforeEach, afterEach } from 'vitest'
-import { mkdtemp, rm, mkdir, writeFile, readFile, realpath } from 'node:fs/promises'
+import { mkdtemp, rm, mkdir, writeFile, readFile, realpath, symlink } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import {
+  CLIENT_PLUGIN_API_VERSION,
   DSH_PLUGIN_REGISTRY_VERSION,
   enabledPlugins,
+  readClientPluginEntries,
   readPluginRegistry,
   registryPath,
   renderRegistry,
@@ -176,5 +178,193 @@ describe('resolvePluginEntryUrl', () => {
     // The resolved file must live under the plugin root — that is what makes the
     // resolver hook's importer test fire for it.
     expect(fileURLToPath(url!).startsWith(root)).toBe(true)
+  })
+})
+
+describe('readClientPluginEntries', () => {
+  async function writeFakePackage(
+    pkgName: string,
+    manifest: Record<string, unknown>,
+    files: Record<string, string> = {},
+  ): Promise<string> {
+    const pkgDir = join(root, 'node_modules', ...pkgName.split('/'))
+    await mkdir(pkgDir, { recursive: true })
+    await writeFile(join(pkgDir, 'package.json'), JSON.stringify(manifest), 'utf8')
+    for (const [rel, content] of Object.entries(files)) {
+      const target = join(pkgDir, ...rel.split('/'))
+      await mkdir(join(target, '..'), { recursive: true })
+      await writeFile(target, content, 'utf8')
+    }
+    return pkgDir
+  }
+
+  it('reads superone.client entries with apiVersion 1, including scoped packages and styles', async () => {
+    await writeFakePackage(
+      '@acme/dsh-sample',
+      {
+        name: '@acme/dsh-sample',
+        version: '1.2.3',
+        superone: {
+          client: {
+            entry: './dist/client.js',
+            styles: ['dist/client.css'],
+            apiVersion: CLIENT_PLUGIN_API_VERSION,
+          },
+        },
+      },
+      {
+        'dist/client.js': 'export default function() {}\n',
+        'dist/client.css': ':root {}\n',
+      },
+    )
+    await seed(
+      JSON.stringify({
+        version: 1,
+        plugins: [{ id: '@acme/dsh-sample', name: '@acme/dsh-sample', version: '1.2.3' }],
+      }),
+    )
+
+    const result = await readClientPluginEntries(root)
+    expect(result.problems).toEqual([])
+    expect(result.entries).toHaveLength(1)
+    expect(result.entries[0]).toMatchObject({
+      id: '@acme/dsh-sample',
+      name: '@acme/dsh-sample',
+      version: '1.2.3',
+      apiVersion: 1,
+      entry: 'dist/client.js',
+      styles: ['dist/client.css'],
+    })
+    expect(result.entries[0]!.entryUrl).toMatch(
+      /^superone-plugin:\/\/pkg\/%40acme%2Fdsh-sample\/dist\/client\.js\?v=1\.2\.3-\d+$/,
+    )
+    expect(result.entries[0]!.styleUrls[0]).toMatch(
+      /^superone-plugin:\/\/pkg\/%40acme%2Fdsh-sample\/dist\/client\.css\?v=1\.2\.3-\d+$/,
+    )
+  })
+
+  it('skips disabled rows, ignores upstream dsh.client, and skips node-only plugins', async () => {
+    await writeFakePackage(
+      'disabled-ui',
+      {
+        name: 'disabled-ui',
+        version: '1.0.0',
+        superone: { client: { entry: 'client.js', apiVersion: 1 } },
+      },
+      { 'client.js': 'export default () => {}\n' },
+    )
+    await writeFakePackage(
+      'upstream-dsh-only',
+      {
+        name: 'upstream-dsh-only',
+        version: '1.0.0',
+        dsh: { client: { entry: 'dsh-client.js' } },
+      },
+      { 'dsh-client.js': 'export default () => {}\n' },
+    )
+    await seed(
+      JSON.stringify({
+        version: 1,
+        plugins: [
+          { id: 'disabled-ui', name: 'disabled-ui', version: '1.0.0', disabled: true },
+          { id: 'upstream-dsh-only', name: 'upstream-dsh-only', version: '1.0.0' },
+        ],
+      }),
+    )
+
+    const result = await readClientPluginEntries(root)
+    expect(result.entries).toEqual([])
+    expect(result.problems).toEqual([])
+  })
+
+  it('reports problems for apiVersion mismatch, malformed manifests, and path traversal', async () => {
+    await writeFakePackage(
+      'bad-version',
+      {
+        name: 'bad-version',
+        version: '1.0.0',
+        superone: { client: { entry: 'client.js', apiVersion: 2 } },
+      },
+      { 'client.js': 'export {}\n' },
+    )
+    await writeFakePackage(
+      'traversal-entry',
+      {
+        name: 'traversal-entry',
+        version: '1.0.0',
+        superone: { client: { entry: '../escape.js', apiVersion: 1 } },
+      },
+    )
+    const malformedDir = join(root, 'node_modules', 'malformed-json')
+    await mkdir(malformedDir, { recursive: true })
+    await writeFile(join(malformedDir, 'package.json'), '{bad', 'utf8')
+
+    await seed(
+      JSON.stringify({
+        version: 1,
+        plugins: [
+          { id: 'bad-version', name: 'bad-version', version: '1.0.0' },
+          { id: 'traversal-entry', name: 'traversal-entry', version: '1.0.0' },
+          { id: 'malformed-json', name: 'malformed-json', version: '1.0.0' },
+          { id: 'missing-pkg', name: 'missing-pkg', version: '1.0.0' },
+        ],
+      }),
+    )
+
+    const result = await readClientPluginEntries(root)
+    expect(result.entries).toEqual([])
+    expect(result.problems.map((p) => p.id)).toEqual([
+      'bad-version',
+      'traversal-entry',
+      'malformed-json',
+      'missing-pkg',
+    ])
+    expect(result.problems[0]!.reason).toMatch(/apiVersion/)
+  })
+
+  it('supports symlinked local dev plugin directory while blocking escaping symlinks', async () => {
+    const externalSrc = await realpath(await mkdtemp(join(tmpdir(), 'dsh-dev-src-')))
+    const outsideSecret = join(externalSrc, '..', 'outside.js')
+    try {
+      await writeFile(
+        join(externalSrc, 'package.json'),
+        JSON.stringify({
+          name: 'linked-dev',
+          version: '0.1.0',
+          superone: { client: { entry: 'dist/client.js', apiVersion: 1 } },
+        }),
+      )
+      await mkdir(join(externalSrc, 'dist'), { recursive: true })
+      await writeFile(join(externalSrc, 'dist', 'client.js'), 'export default () => {}\n')
+      await writeFile(outsideSecret, 'secret\n')
+      await symlink(outsideSecret, join(externalSrc, 'dist', 'escape.js'))
+
+      await mkdir(join(root, 'node_modules'), { recursive: true })
+      await symlink(externalSrc, join(root, 'node_modules', 'linked-dev'))
+      await seed(
+        JSON.stringify({
+          version: 1,
+          plugins: [{ id: 'linked-dev', name: 'linked-dev', version: '0.1.0' }],
+        }),
+      )
+
+      const okResult = await readClientPluginEntries(root)
+      expect(okResult.entries).toHaveLength(1)
+
+      await writeFile(
+        join(externalSrc, 'package.json'),
+        JSON.stringify({
+          name: 'linked-dev',
+          version: '0.1.0',
+          superone: { client: { entry: 'dist/escape.js', apiVersion: 1 } },
+        }),
+      )
+      const escapedResult = await readClientPluginEntries(root)
+      expect(escapedResult.entries).toEqual([])
+      expect(escapedResult.problems).toHaveLength(1)
+    } finally {
+      await rm(externalSrc, { recursive: true, force: true })
+      await rm(outsideSecret, { force: true })
+    }
   })
 })

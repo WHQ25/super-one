@@ -1,10 +1,11 @@
 /** @vitest-environment jsdom */
 
-import { fireEvent, render, screen, waitFor } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { describe, expect, it, vi } from 'vitest'
 import type { SessionGoal, SessionGoalStatus } from '@superone/shared/agent-types'
 import type { GoalCapability } from '@superone/shared/harness/harness-capabilities'
 import { GoalIndicator } from './GoalIndicator'
+import { useToolbarChipCompact } from './composer-toolbar-compact'
 
 const PAUSABLE: GoalCapability = {
   lifecycleArgs: ['pause', 'resume', 'clear'],
@@ -218,5 +219,127 @@ describe('GoalIndicator', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Pause' }))
 
     await waitFor(() => expect(screen.getByText('agent is offline')).toBeInTheDocument())
+  })
+
+  it('keeps chip labels single-line and hides label text in compact mode', () => {
+    const { rerender } = render(
+      <GoalIndicator
+        goal={goal('complete')}
+        capability={PAUSABLE}
+        harnessName="Grok"
+        composing={false}
+        compact={false}
+        onExitCompose={vi.fn()}
+        onDismiss={vi.fn()}
+        onEdit={vi.fn()}
+        onClear={vi.fn().mockResolvedValue(undefined)}
+        onPause={vi.fn().mockResolvedValue(undefined)}
+        onResume={vi.fn().mockResolvedValue(undefined)}
+      />,
+    )
+
+    const fullChip = screen.getByRole('button', { name: 'Goal Achieved' })
+    expect(fullChip).toHaveClass('whitespace-nowrap', 'shrink-0')
+    expect(fullChip).toHaveTextContent('Goal Achieved')
+
+    rerender(
+      <GoalIndicator
+        goal={goal('complete')}
+        capability={PAUSABLE}
+        harnessName="Grok"
+        composing={false}
+        compact
+        onExitCompose={vi.fn()}
+        onDismiss={vi.fn()}
+        onEdit={vi.fn()}
+        onClear={vi.fn().mockResolvedValue(undefined)}
+        onPause={vi.fn().mockResolvedValue(undefined)}
+        onResume={vi.fn().mockResolvedValue(undefined)}
+      />,
+    )
+
+    const compactChip = screen.getByRole('button', { name: 'Goal Achieved' })
+    expect(compactChip).toHaveTextContent('')
+    expect(compactChip.querySelector('.lucide-circle-check-big')).not.toBeNull()
+  })
+
+  it('switches to compact mode when toolbar overflows and restores when space returns', () => {
+    let resizeCb: ResizeObserverCallback | null = null
+    vi.stubGlobal('ResizeObserver', class {
+      constructor(cb: ResizeObserverCallback) { resizeCb = cb }
+      observe() {}
+      disconnect() {}
+    })
+
+    let toolbarWidth = 320
+    let labelWidth = 60
+    let leftBaseWidth = 220
+    let rightWidth = 90
+
+    function TestToolbar() {
+      const { toolbarRef, leftGroupRef, rightGroupRef, compact } = useToolbarChipCompact(true, 'achieved')
+      return (
+        <div
+          ref={(el) => {
+            toolbarRef.current = el
+            if (el) Object.defineProperty(el, 'clientWidth', { configurable: true, get: () => toolbarWidth })
+          }}
+        >
+          <div
+            ref={(el) => {
+              leftGroupRef.current = el
+              if (el) {
+                Object.defineProperty(el, 'scrollWidth', {
+                  configurable: true,
+                  get: () => leftBaseWidth + (compact ? 0 : labelWidth + 4),
+                })
+              }
+            }}
+          >
+            <GoalIndicator
+              goal={goal('complete')}
+              capability={PAUSABLE}
+              harnessName="Grok"
+              composing={false}
+              compact={compact}
+              onExitCompose={vi.fn()}
+              onDismiss={vi.fn()}
+              onEdit={vi.fn()}
+              onClear={vi.fn().mockResolvedValue(undefined)}
+              onPause={vi.fn().mockResolvedValue(undefined)}
+              onResume={vi.fn().mockResolvedValue(undefined)}
+            />
+          </div>
+          <div
+            ref={(el) => {
+              rightGroupRef.current = el
+              if (el) Object.defineProperty(el, 'scrollWidth', { configurable: true, get: () => rightWidth })
+            }}
+          />
+        </div>
+      )
+    }
+
+    const origOffsetWidth = Object.getOwnPropertyDescriptor(HTMLElement.prototype, 'offsetWidth')
+    Object.defineProperty(HTMLElement.prototype, 'offsetWidth', {
+      configurable: true,
+      get() {
+        return this.hasAttribute('data-goal-label') ? labelWidth : 0
+      },
+    })
+
+    try {
+      render(<TestToolbar />)
+      expect(screen.getByRole('button', { name: 'Goal Achieved' })).toHaveTextContent('')
+
+      toolbarWidth = 420
+      act(() => {
+        resizeCb?.([], {} as ResizeObserver)
+      })
+      expect(screen.getByRole('button', { name: 'Goal Achieved' })).toHaveTextContent('Goal Achieved')
+    } finally {
+      if (origOffsetWidth) Object.defineProperty(HTMLElement.prototype, 'offsetWidth', origOffsetWidth)
+      vi.unstubAllGlobals()
+    }
   })
 })

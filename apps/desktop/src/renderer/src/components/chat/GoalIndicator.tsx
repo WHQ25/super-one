@@ -15,6 +15,7 @@ import {
 } from '@superone/ui/components/ui/popover'
 import { cn } from '@superone/ui/lib/utils'
 import { modes } from './PermissionModeList'
+import { useComposerToolbarCompact } from './composer-toolbar-compact'
 
 // Same colouring as the Codex plan chip: both are "the next send means
 // something else" postures, so they read as one family.
@@ -25,7 +26,7 @@ const GOAL_CHIP = modes.find((mode) => mode.id === 'plan')!
  * variant: that recolours its text on hover, and a chip only ever changes its
  * background so the state it reports stays legible while the pointer is on it.
  */
-const CHIP = 'inline-flex items-center gap-1 rounded-lg px-2 py-1 text-xs transition-colors'
+const CHIP = 'inline-flex shrink-0 items-center gap-1 whitespace-nowrap rounded-lg px-2 py-1 text-xs transition-colors'
 
 interface GoalIndicatorProps {
   /** `null` while goal mode is on but nothing has been set yet. */
@@ -35,6 +36,7 @@ interface GoalIndicatorProps {
   harnessName: string
   /** Goal mode: the composer's next send becomes the objective. */
   composing: boolean
+  compact?: boolean
   onExitCompose: () => void
   /** Drop an achieved goal from the composer. Local only — it is already gone
    *  on the harness side, so there is nothing to send. */
@@ -62,6 +64,7 @@ export function GoalIndicator({
   capability,
   harnessName,
   composing,
+  compact: compactProp,
   onExitCompose,
   onDismiss,
   onEdit,
@@ -70,6 +73,8 @@ export function GoalIndicator({
   onResume,
 }: GoalIndicatorProps) {
   const { t } = useTranslation()
+  const toolbarCompact = useComposerToolbarCompact()
+  const compact = compactProp ?? toolbarCompact
   const [open, setOpen] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -87,11 +92,12 @@ export function GoalIndicator({
         type="button"
         onClick={onExitCompose}
         title={t('chat.goal.exitCompose')}
+        aria-label={compact ? t('chat.goal.label') : undefined}
         className={cn('group/goal-mode', CHIP, GOAL_CHIP.color, GOAL_CHIP.hoverBg)}
       >
         <Goal className="size-3.5 shrink-0 group-hover/goal-mode:hidden" />
         <X className="hidden size-3.5 shrink-0 group-hover/goal-mode:block" />
-        <span>{t('chat.goal.label')}</span>
+        {!compact && <span data-toolbar-chip-label="">{t('chat.goal.label')}</span>}
       </button>
     )
   }
@@ -123,12 +129,13 @@ export function GoalIndicator({
       <button
         type="button"
         onClick={onDismiss}
-        title={t('chat.goal.dismiss')}
+        title={compact ? `${t('chat.goal.achieved')} — ${t('chat.goal.dismiss')}` : t('chat.goal.dismiss')}
+        aria-label={compact ? t('chat.goal.achieved') : undefined}
         className={cn('group/goal-done', CHIP, 'text-success hover:bg-success/10')}
       >
         <CircleCheckBig className="size-3.5 shrink-0 group-hover/goal-done:hidden" />
         <X className="hidden size-3.5 shrink-0 group-hover/goal-done:block" />
-        <span>{t('chat.goal.achieved')}</span>
+        {!compact && <span data-toolbar-chip-label="">{t('chat.goal.achieved')}</span>}
       </button>
     )
   }
@@ -136,9 +143,14 @@ export function GoalIndicator({
   return (
     <Popover open={open} onOpenChange={setOpen}>
       <PopoverTrigger asChild>
-        <button type="button" className={cn(CHIP, GOAL_CHIP.color, GOAL_CHIP.hoverBg)}>
+        <button
+          type="button"
+          title={compact ? t('chat.goal.label') : undefined}
+          aria-label={compact ? t('chat.goal.label') : undefined}
+          className={cn(CHIP, GOAL_CHIP.color, GOAL_CHIP.hoverBg)}
+        >
           <Goal className={cn('size-3.5 shrink-0', status === 'active' && 'animate-pulse')} />
-          <span>{t('chat.goal.label')}</span>
+          {!compact && <span data-toolbar-chip-label="">{t('chat.goal.label')}</span>}
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" side="top" className="flex w-80 flex-col gap-3">

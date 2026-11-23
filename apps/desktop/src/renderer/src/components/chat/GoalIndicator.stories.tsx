@@ -5,6 +5,7 @@ import type { SessionGoal } from '@superone/shared/agent-types'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { GoalIndicator } from './GoalIndicator'
+import { useToolbarChipCompact } from './composer-toolbar-compact'
 
 const GROK = HARNESS_CAPABILITIES['acp-grok'].goal!
 const CLAUDE = HARNESS_CAPABILITIES.claude.goal!
@@ -17,6 +18,8 @@ interface HarnessProps {
   composing?: boolean
   /** Reject every transition, to show the popover's inline error. */
   failing?: boolean
+  width?: number
+  modelLabel?: string
 }
 
 /**
@@ -24,10 +27,21 @@ interface HarnessProps {
  * composer around it. Goal transitions are local here; in the app they are a
  * `/goal …` turn or a Codex RPC and come back as a `session_goal` event.
  */
-function Harness({ harnessName, capability, initial, composing: initialComposing = false, failing = false }: HarnessProps) {
+function Harness({
+  harnessName,
+  capability,
+  initial,
+  composing: initialComposing = false,
+  failing = false,
+  width = 680,
+  modelLabel = 'Opus 5',
+}: HarnessProps) {
   const [goal, setGoal] = useState<SessionGoal | null>(initial)
   const [composing, setComposing] = useState(initialComposing)
   const [draft, setDraft] = useState('')
+  const visible = Boolean(goal || composing)
+  const labelKey = !composing && goal?.status === 'complete' ? 'achieved' : 'label'
+  const { toolbarRef, leftGroupRef, rightGroupRef, compact } = useToolbarChipCompact(visible, labelKey)
 
   const transition = (next: () => void) => async () => {
     await new Promise((r) => setTimeout(r, 300))
@@ -42,7 +56,7 @@ function Harness({ harnessName, capability, initial, composing: initialComposing
     : `Message ${harnessName}…`
 
   return (
-    <div className="w-[680px]">
+    <div style={{ width }}>
       <div className="rounded-xl border border-border bg-background px-3 py-2">
         <textarea
           value={draft}
@@ -60,26 +74,34 @@ function Harness({ harnessName, capability, initial, composing: initialComposing
           className="w-full resize-none bg-transparent text-sm outline-none placeholder:text-muted-foreground"
           placeholder={placeholder}
         />
-        <div className="mt-1.5 flex items-center gap-2 text-muted-foreground">
-          <IconButton size="sm"><Paperclip /></IconButton>
-          <span className="text-xs">Opus 5</span>
-          {(goal || composing) && (
-            <GoalIndicator
-              goal={goal}
-              capability={capability}
-              harnessName={harnessName}
-              composing={composing}
-              onExitCompose={() => setComposing(false)}
-              onDismiss={() => setGoal(null)}
-              onEdit={() => {
-                setDraft(goal?.objective ?? '')
-                setComposing(true)
-              }}
-              onClear={transition(() => setGoal(null))}
-              onPause={transition(() => setGoal((g) => (g ? { ...g, status: 'paused' } : g)))}
-              onResume={transition(() => setGoal((g) => (g ? { ...g, status: 'active' } : g)))}
-            />
-          )}
+        <div ref={toolbarRef} className="mt-1.5 flex items-center justify-between gap-2 text-muted-foreground">
+          <div ref={leftGroupRef} className="flex min-w-0 items-center gap-2">
+            <IconButton size="sm"><Paperclip /></IconButton>
+            <span className="shrink-0 whitespace-nowrap text-xs">{modelLabel}</span>
+            {visible && (
+              <GoalIndicator
+                goal={goal}
+                capability={capability}
+                harnessName={harnessName}
+                composing={composing}
+                compact={compact}
+                onExitCompose={() => setComposing(false)}
+                onDismiss={() => setGoal(null)}
+                onEdit={() => {
+                  setDraft(goal?.objective ?? '')
+                  setComposing(true)
+                }}
+                onClear={transition(() => setGoal(null))}
+                onPause={transition(() => setGoal((g) => (g ? { ...g, status: 'paused' } : g)))}
+                onResume={transition(() => setGoal((g) => (g ? { ...g, status: 'active' } : g)))}
+              />
+            )}
+          </div>
+          <div ref={rightGroupRef} className="flex shrink-0 items-center gap-1.5">
+            <span className="size-4 rounded-full border-2 border-amber-500" />
+            <span className="size-6 rounded-full border border-border" />
+            <span className="size-6 rounded-full border border-border" />
+          </div>
         </div>
       </div>
       <div className="mt-3 flex items-center gap-2">
@@ -169,4 +191,14 @@ export const LongObjective: Story = {
 /** Every transition fails — the popover keeps the error inline instead of closing. */
 export const TransitionError: Story = {
   args: { harnessName: 'Grok', capability: GROK, initial: { objective: 'Ship the login flow', status: 'active' }, failing: true },
+}
+
+export const NarrowToolbar: Story = {
+  args: {
+    harnessName: 'Codex',
+    capability: HARNESS_CAPABILITIES.codex.goal!,
+    initial: { objective: 'Ship the login flow', status: 'complete' },
+    width: 340,
+    modelLabel: 'GPT6.2 Astra · High',
+  },
 }

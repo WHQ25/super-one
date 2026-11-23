@@ -104,6 +104,7 @@ import { resolveChatInputPlaceholder } from './chat-input/resolveChatInputPlaceh
 import { ComposerVoiceEntry } from './ComposerVoiceEntry'
 import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { GoalIndicator } from './GoalIndicator'
+import { ComposerToolbarCompactProvider, useToolbarChipCompact } from './composer-toolbar-compact'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 import { cachedEnvironmentMentionLabels, loadEnvironmentMentionCandidates } from '@/lib/environment-mention-catalog'
 import { mentionQueryAllowsSpaces, sessionProjectsOnHost } from './session-mention-query'
@@ -881,6 +882,10 @@ export function ChatInput({
         },
       }
     }, [goalCapability, dispatchGoalSlash, sessionProject, displayedSessionId, sessionGoal, isStreaming, scopedInterrupt])
+
+    const toolbarChipVisible = Boolean(isCodexPlanMode || (goalCapability && goalActions && (sessionGoal || goalComposing)))
+    const toolbarChipLabelKey = `${isCodexPlanMode ? 'plan' : ''}:${!goalComposing && sessionGoal?.status === 'complete' ? 'achieved' : 'label'}`
+    const { toolbarRef, leftGroupRef, rightGroupRef, compact: toolbarChipCompact } = useToolbarChipCompact(toolbarChipVisible, toolbarChipLabelKey)
 
     /**
      * Enter goal mode, optionally seeding the composer (Edit on a live goal).
@@ -2383,37 +2388,39 @@ export function ChatInput({
         <EditorContent editor={editor} />
         <ComposerLinkPreview editor={editor} />
 
-        <div className="mt-1.5 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*,.pdf"
-              multiple
-              onChange={handleFileSelect}
-              className="hidden"
-            />
-            <ComposerActionsButton onAttach={() => fileInputRef.current?.click()} target={isRemoteLocked ? null : sessionScope ?? (activeProject && displayedSessionId ? { projectPath: activeProject, sessionId: displayedSessionId } : null)} />
-            <ModelSelector onCloseAutoFocus={(e) => { e.preventDefault(); if (editor && !editor.isDestroyed) editor.commands.focus() }} />
-            {goalCapability && goalActions && (sessionGoal || goalComposing) && (
-              <GoalIndicator
-                goal={sessionGoal}
-                capability={goalCapability}
-                harnessName={goalHarnessName}
-                composing={goalComposing}
-                onExitCompose={() => setGoalComposing(false)}
-                // Achieved goals are already gone on the harness side, so the
-                // chip is a notice: dismissing drops the local snapshot only.
-                onDismiss={() => useChatStore.setState((state) => commitPerSession(state, sessionScope ?? undefined, () => ({ sessionGoal: null })))}
-                onEdit={() => enterGoalCompose(sessionGoal?.objective)}
-                onClear={goalActions.clear}
-                onPause={goalActions.pause}
-                onResume={goalActions.resume}
+        <ComposerToolbarCompactProvider value={toolbarChipCompact}>
+          <div ref={toolbarRef} className="mt-1.5 flex items-center justify-between gap-2">
+            <div ref={leftGroupRef} className="flex min-w-0 items-center gap-2">
+              <input
+                ref={fileInputRef}
+                type="file"
+                accept="image/*,.pdf"
+                multiple
+                onChange={handleFileSelect}
+                className="hidden"
               />
-            )}
-          </div>
+              <ComposerActionsButton onAttach={() => fileInputRef.current?.click()} target={isRemoteLocked ? null : sessionScope ?? (activeProject && displayedSessionId ? { projectPath: activeProject, sessionId: displayedSessionId } : null)} />
+              <ModelSelector onCloseAutoFocus={(e) => { e.preventDefault(); if (editor && !editor.isDestroyed) editor.commands.focus() }} />
+              {goalCapability && goalActions && (sessionGoal || goalComposing) && (
+                <GoalIndicator
+                  goal={sessionGoal}
+                  capability={goalCapability}
+                  harnessName={goalHarnessName}
+                  composing={goalComposing}
+                  compact={toolbarChipCompact}
+                  onExitCompose={() => setGoalComposing(false)}
+                  // Achieved goals are already gone on the harness side, so the
+                  // chip is a notice: dismissing drops the local snapshot only.
+                  onDismiss={() => useChatStore.setState((state) => commitPerSession(state, sessionScope ?? undefined, () => ({ sessionGoal: null })))}
+                  onEdit={() => enterGoalCompose(sessionGoal?.objective)}
+                  onClear={goalActions.clear}
+                  onPause={goalActions.pause}
+                  onResume={goalActions.resume}
+                />
+              )}
+            </div>
 
-          <div className="flex min-w-0 items-center gap-1.5">
+            <div ref={rightGroupRef} className="flex min-w-0 items-center gap-1.5">
             <ModSessionMode />
             <ContextUsage />
             {(isStreaming || interruptPending) && (
@@ -2447,6 +2454,7 @@ export function ChatInput({
             )}
           </div>
         </div>
+        </ComposerToolbarCompactProvider>
 
         {isDragging && (
           <div className="pointer-events-none absolute inset-0 z-20 flex items-center justify-center rounded-[inherit] border-2 border-dashed border-primary bg-primary/10">

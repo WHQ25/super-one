@@ -14,6 +14,7 @@ import { StreamFadeBlock } from './stream-fade-block'
 import { createStreamFadePlugin, FadeBlockInnerContext } from './stream-fade'
 import type { PluggableList } from 'unified'
 import { splitByInsightBlocks } from '@superone/shared/insight-markers'
+import { parseMarkdownBlocksFast } from './markdown-blocks'
 
 export interface CopyableMarkdownRuntime {
   components: Components
@@ -73,6 +74,7 @@ function ChatMarkdown({ text, isStreaming, components, runtime, plugins }: {
       <Streamdown
         BlockComponent={streamed && options.mode !== 'static' ? StreamFadeBlock : options.BlockComponent}
         mode={options.mode}
+        parseMarkdownIntoBlocksFn={text.length >= 4096 ? parseMarkdownBlocksFast : undefined}
         className="chat-md"
         plugins={plugins}
         remarkPlugins={runtime.remarkPlugins}

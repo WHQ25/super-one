@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { Streamdown } from 'streamdown'
+import { parseMarkdownBlocksFast } from '@superone/chat-view/presenters/markdown-blocks'
 import { codePlugin, streamdownPlugins, streamdownControls, streamdownComponents, streamdownLinkSafety } from '@/components/chat/chat-shared'
 import { cn } from '@superone/ui/lib/utils'
 
@@ -124,6 +125,7 @@ export function MarkdownView({
         controls={streamdownControls}
         linkSafety={streamdownLinkSafety}
         rehypePlugins={rehypePlugins}
+        parseMarkdownIntoBlocksFn={body.length >= 4096 ? parseMarkdownBlocksFast : undefined}
       >
         {body}
       </Streamdown>

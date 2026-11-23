@@ -9,6 +9,7 @@ import type { PreviewerFile } from '@superone/shared/generative-ui/native-widget
 import { PdfPreview } from '@/components/chat/PdfPreview'
 import { OfficePreview } from '@/components/coding/OfficePreview'
 import { CopyableMarkdown } from '@/components/chat/CopyableMarkdown'
+import { VirtualMarkdownViewport } from '@/components/chat/VirtualMarkdownViewport'
 import { MarkdownAudioPlayer, MarkdownVideoPlayer } from '@/components/chat/markdown-media-player'
 import { localFileUrlToPath } from '@/lib/path-utils'
 import { isAbsoluteLocalPath } from '@/lib/file-link'
@@ -197,11 +198,15 @@ export function PreviewerStage({ file, state, mode, root, projectPath, initialMo
       )
     case 'markdown':
       return (
-        <div className={cn('h-full w-full overflow-auto py-4', card ? 'px-6 text-sm' : 'px-8')}>
+        <VirtualMarkdownViewport
+          key={file.absolutePath}
+          enabled={(state.content?.length ?? 0) >= 8192}
+          className={cn('h-full w-full overflow-auto py-4', card ? 'px-6 text-sm' : 'px-8')}
+        >
           <div className={inert}>
             <CopyableMarkdown text={state.content ?? ''} isStreaming={false} projectPath={projectPath ?? undefined} />
           </div>
-        </div>
+        </VirtualMarkdownViewport>
       )
     case 'notebook':
       return (

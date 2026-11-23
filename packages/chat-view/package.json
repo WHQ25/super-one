@@ -125,6 +125,7 @@
     "./presenters/manage-subagents-display": "./src/presenters/manage-subagents-display.ts",
     "./presenters/manage-task-display": "./src/presenters/manage-task-display.ts",
     "./presenters/mcp-resource-display": "./src/presenters/mcp-resource-display.ts",
+    "./presenters/markdown-blocks": "./src/presenters/markdown-blocks.ts",
     "./presenters/markdown-file-links": "./src/presenters/markdown-file-links.ts",
     "./presenters/markdown-media": "./src/presenters/markdown-media.ts",
     "./presenters/media-generation": "./src/presenters/media-generation.ts",

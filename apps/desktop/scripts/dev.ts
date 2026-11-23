@@ -16,8 +16,11 @@ if (ensure.exitCode !== 0) process.exit(ensure.exitCode ?? 1)
 const args = process.argv.slice(2)
 const devtools = args.includes('--devtools')
 const viteArgs = args.filter((arg) => arg !== '--devtools' && arg !== '--')
+const env = { ...process.env }
+delete env.SUPERONE_HOME
+delete env.SUPERONE_VARIANT
 const child = Bun.spawn(
   ['electron-vite', 'dev', ...viteArgs, ...(devtools ? ['--', '--devtools'] : [])],
-  { stdin: 'inherit', stdout: 'inherit', stderr: 'inherit' },
+  { env, stdin: 'inherit', stdout: 'inherit', stderr: 'inherit' },
 )
 process.exit(await child.exited)

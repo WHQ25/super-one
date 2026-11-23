@@ -1,16 +1,17 @@
-import { randomBytes, timingSafeEqual } from 'node:crypto'
+import { createHash, randomBytes, timingSafeEqual } from 'node:crypto'
 import { chmodSync, existsSync, mkdirSync, readFileSync, unlinkSync, writeFileSync } from 'node:fs'
 import { createServer, type Socket } from 'node:net'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { app } from 'electron'
+import { resolveSuperoneHome } from '@superone/runtime/fs/superone-home'
 import { extensionConnectionBrowser } from '@superone/shared/chrome-extension-browsers'
-import type { ChromeBridgeAuth } from '@superone/shared/chrome-bridge-protocol'
+import type { ChromeBridgeAuth, ChromeBridgeVariant } from '@superone/shared/chrome-bridge-protocol'
 import { bindChromeBridge, setChromeDownloadDir } from './chrome-browser'
 import { chromeBridgeHub } from './chrome-bridge-hub'
 import { installChromeExtension } from './chrome-extension-install'
 import { installChromeNativeHost } from './chrome-native-host'
 import log from '../logger'
-import { superoneHome } from '../superone-home'
 import { variant, variantId } from '../variant'
 
 const FRAME_MAX = 64 * 1024 * 1024
@@ -19,7 +20,11 @@ function tokenPath(home: string): string {
   return join(home, 'chrome-bridge.token')
 }
 
-function socketPath(home: string): string {
+export function chromeBridgeSocketPath(home: string, platform: NodeJS.Platform = process.platform): string {
+  if (platform === 'win32') {
+    const hash = createHash('sha256').update(home.toLowerCase()).digest('hex').slice(0, 16)
+    return `\\\\.\\pipe\\superone-chrome-bridge-${hash}`
+  }
   return join(home, 'chrome-bridge.sock')
 }
 
@@ -80,24 +85,31 @@ function extensionIconPath(): string {
     : join(app.getAppPath(), variant().icon)
 }
 
+export function chromeBridgeHome(variantName: ChromeBridgeVariant, userHome = homedir()): string {
+  return resolveSuperoneHome({ userHome, variant: variantName, ignoreEnv: true })
+}
+
 export function startChromeBridge(): void {
-  const home = superoneHome()
+  const variantName = variantId()
+  const userHome = app.getPath('home')
+  const home = chromeBridgeHome(variantName, userHome)
   const token = readOrCreateChromeBridgeToken(home)
   const downloads = join(home, 'chrome-downloads')
   mkdirSync(downloads, { recursive: true })
   setChromeDownloadDir(downloads)
   bindChromeBridge(chromeBridgeHub, { downloadDir: downloads })
-  const sock = socketPath(home)
-  if (existsSync(sock)) {
+  const sock = chromeBridgeSocketPath(home)
+  if (process.platform !== 'win32' && existsSync(sock)) {
     try { unlinkSync(sock) } catch { /* a live socket is replaced by listen */ }
   }
   const server = createServer((socket) => accept(socket, token))
   server.on('error', (err) => log.warn('[chrome-bridge] socket error: %s', err.message))
   server.listen(sock, () => {
-    try { chmodSync(sock, 0o600) } catch { /* best effort */ }
+    if (process.platform !== 'win32') {
+      try { chmodSync(sock, 0o600) } catch { /* best effort */ }
+    }
     log.info('[chrome-bridge] listening')
   })
-  const variantName = variantId()
   try {
     installChromeNativeHost({
       variant: variantName,
@@ -111,7 +123,7 @@ export function startChromeBridge(): void {
   try {
     const extensionDir = installChromeExtension({
       variant: variantName,
-      userHome: app.getPath('home'),
+      userHome,
       sourceDir: extensionSourcePath(),
       iconPath: extensionIconPath(),
       productName: variant().productName,

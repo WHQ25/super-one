@@ -4,6 +4,7 @@
 // no size cap. This process rejoins Chrome chunks and splits oversized socket
 // frames. Keep the chunk shape in sync with packages/shared/src/chrome-bridge-protocol.ts.
 import { execFileSync } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { readFileSync } from 'node:fs'
 import { createConnection } from 'node:net'
 import { join } from 'node:path'
@@ -60,8 +61,16 @@ if (!home) {
   process.exit(1)
 }
 
+function socketEndpoint(homeDir) {
+  if (process.platform === 'win32') {
+    const hash = createHash('sha256').update(homeDir.toLowerCase()).digest('hex').slice(0, 16)
+    return `\\\\.\\pipe\\superone-chrome-bridge-${hash}`
+  }
+  return join(homeDir, 'chrome-bridge.sock')
+}
+
 const token = readFileSync(join(home, 'chrome-bridge.token'), 'utf8').trim()
-const socket = createConnection(join(home, 'chrome-bridge.sock'))
+const socket = createConnection(socketEndpoint(home))
 socket.on('error', () => process.exit(1))
 socket.on('close', () => process.exit(0))
 

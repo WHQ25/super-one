@@ -1,10 +1,17 @@
 import { mkdtempSync, readFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import { chromeExtensionIdentity } from '@superone/shared/chrome-bridge-protocol'
 import { EXTENSION_BROWSERS } from '@superone/shared/chrome-extension-browsers'
-import { chromeHostWrapperScript, chromeNativeHostDirectories, chromeNativeHostManifest, installChromeNativeHost } from './chrome-native-host'
+import {
+  chromeHostWrapperCmd,
+  chromeHostWrapperScript,
+  chromeNativeHostDirectories,
+  chromeNativeHostManifest,
+  chromeNativeHostRegistryKeys,
+  installChromeNativeHost,
+} from './chrome-native-host'
 
 describe('chrome native host install', () => {
   it('names the same application bundles the shared path matcher knows', () => {
@@ -61,5 +68,34 @@ describe('chrome native host install', () => {
     })
     const alpha = JSON.parse(readFileSync(join(userHome, 'Library/Application Support/Google/Chrome/NativeMessagingHosts/com.superone.browser_bridge.alpha.json'), 'utf8'))
     expect(alpha.allowed_origins).toEqual([`chrome-extension://${chromeExtensionIdentity('alpha').id}/`])
+  })
+
+  it('installs a cmd wrapper, manifest, and registry entries on Windows', () => {
+    const root = mkdtempSync(join(tmpdir(), 'superone-chrome-host-win-'))
+    const home = join(root, 'superone')
+    const registerWin32 = vi.fn()
+    const cmd = chromeHostWrapperCmd('C:\\Users\\me\\.superone', 'C:\\Program Files\\SuperOne\\SuperOne.exe', 'C:\\host.mjs')
+    expect(cmd).toContain('set "ELECTRON_RUN_AS_NODE=1"')
+    expect(cmd).toContain('set "SUPERONE_HOME=C:\\Users\\me\\.superone"')
+    expect(cmd).toContain('"C:\\Program Files\\SuperOne\\SuperOne.exe" "C:\\host.mjs"')
+
+    const wrapper = installChromeNativeHost({
+      variant: 'stable',
+      home,
+      electronPath: 'C:\\SuperOne\\SuperOne.exe',
+      hostScript: 'C:\\host.mjs',
+      platform: 'win32',
+      registerWin32,
+    })
+    expect(wrapper).toBe(join(home, 'chrome-native-host.cmd'))
+    const manifestPath = join(home, 'com.superone.browser_bridge.json')
+    const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
+    expect(manifest.path).toBe(wrapper)
+    expect(manifest.allowed_origins).toEqual([`chrome-extension://${chromeExtensionIdentity('stable').id}/`])
+    expect(registerWin32).toHaveBeenCalledTimes(chromeNativeHostRegistryKeys('com.superone.browser_bridge').length)
+    expect(registerWin32).toHaveBeenCalledWith(
+      'HKCU\\Software\\Google\\Chrome\\NativeMessagingHosts\\com.superone.browser_bridge',
+      manifestPath,
+    )
   })
 })

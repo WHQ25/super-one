@@ -193,4 +193,60 @@ describe('AskUserQuestionBlockPresenter', () => {
     expect(container!.textContent).toContain('Which cache?')
     expect(container!.textContent).toContain('Redis')
   })
+
+  it('hides redundant single-question headers while preserving distinct short summaries', async () => {
+    await mount({
+      toolUseId: 'auq-redundant-ellipsis',
+      result: '"dsh UI 插件试点（PR #1–#3）已实测通过，接下来你想怎么继续？"="继续推进"',
+      params: {
+        questions: [{
+          question: 'dsh UI 插件试点（PR #1–#3）已实测通过，接下来你想怎么继续？',
+          header: 'dsh UI 插件试点（PR #1–#3）已实测…',
+          multiSelect: false,
+          options: [{ label: '继续推进', description: '' }],
+        }],
+        answers: { 'dsh UI 插件试点（PR #1–#3）已实测通过，接下来你想怎么继续？': '继续推进' },
+      },
+    })
+    expect(container!.textContent).not.toContain('dsh UI 插件试点（PR #1–#3）已实测…')
+    expect(container!.textContent).toContain('dsh UI 插件试点（PR #1–#3）已实测通过，接下来你想怎么继续？')
+
+    await act(async () => root?.unmount())
+    container?.remove()
+
+    await mount({
+      toolUseId: 'auq-redundant-exact',
+      result: '"Which database?"="Postgres"',
+      params: {
+        questions: [{
+          question: 'Which database?',
+          header: 'Which database?',
+          multiSelect: false,
+          options: [{ label: 'Postgres', description: '' }],
+        }],
+        answers: { 'Which database?': 'Postgres' },
+      },
+    })
+    const spansExact = [...container!.querySelectorAll('span')].map((el) => el.textContent)
+    expect(spansExact).not.toContain('Which database?')
+
+    await act(async () => root?.unmount())
+    container?.remove()
+
+    await mount({
+      toolUseId: 'auq-short-summary',
+      result: '"Which pricing layout do you prefer?"="Three-column"',
+      params: {
+        questions: [{
+          question: 'Which pricing layout do you prefer?',
+          header: 'Pricing layout',
+          multiSelect: false,
+          options: [{ label: 'Three-column', description: '' }],
+        }],
+        answers: { 'Which pricing layout do you prefer?': 'Three-column' },
+      },
+    })
+    expect(container!.textContent).toContain('Pricing layout')
+    expect(container!.textContent).toContain('Which pricing layout do you prefer?')
+  })
 })

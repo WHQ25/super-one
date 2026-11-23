@@ -93,6 +93,18 @@ export function AskUserQuestionResultPresenter({ text, params, renderPreview }: 
   )
 }
 
+function normalizeQuestionText(text: string): string {
+  return text.trim().replace(/\s+/g, ' ').toLowerCase()
+}
+
+function distinctQuestionHeader(header: string | undefined, question: string): string | null {
+  const trimmed = header?.trim()
+  if (!trimmed) return null
+  const stem = normalizeQuestionText(trimmed).replace(/(?:…|\.{3})+$/, '').trimEnd()
+  if (!stem || normalizeQuestionText(question).startsWith(stem)) return null
+  return trimmed
+}
+
 function QuestionNoteBox({ label, text }: { label: string; text: string }) {
   return (
     <div className="mt-2 flex items-baseline gap-2 rounded bg-muted/50 px-2 py-1 text-xs text-foreground">
@@ -356,15 +368,20 @@ export function AskUserQuestionBlockPresenter({
       )}
 
       {questions.length === 1 ? (
-        <div className="mb-2 flex items-start justify-between gap-2">
-          <div className="min-w-0">
-            {activeQuestion.header && (
-              <span className="mb-0.5 block text-xs text-muted-foreground">{activeQuestion.header}</span>
-            )}
-            <p className="text-xs font-medium text-foreground">{activeQuestion.question}</p>
-          </div>
-          <StatusBadge dismissed={isDismissed} />
-        </div>
+        (() => {
+          const summaryHeader = distinctQuestionHeader(activeQuestion.header, activeQuestion.question)
+          return (
+            <div className="mb-2 flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                {summaryHeader && (
+                  <span className="mb-0.5 block text-xs text-muted-foreground">{summaryHeader}</span>
+                )}
+                <p className="text-xs font-medium text-foreground">{activeQuestion.question}</p>
+              </div>
+              <StatusBadge dismissed={isDismissed} />
+            </div>
+          )
+        })()
       ) : (
         <p className="mb-2 text-xs font-medium text-foreground">{activeQuestion.question}</p>
       )}

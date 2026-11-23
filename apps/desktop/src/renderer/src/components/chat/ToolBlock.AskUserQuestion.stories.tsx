@@ -282,3 +282,30 @@ export const StrippedRemoteFallback: Story = {
     />
   ),
 }
+
+export const SingleQuestionRedundantHeader: Story = {
+  name: 'Answered · single question with redundant prefix header hidden',
+  render: () => (
+    <ToolBlock
+      toolName="AskUserQuestion"
+      status="complete"
+      input={JSON.stringify({
+        questions: [
+          {
+            question: 'dsh UI 插件试点（PR #1–#3）已实测通过，接下来你想怎么继续？',
+            header: 'dsh UI 插件试点（PR #1–#3）已实测…',
+            multiSelect: false,
+            options: [
+              { label: '(Recommended) 先收尾试点分支并合并回 main', description: '' },
+              { label: '继续推进 Phase 4 全平台插件化', description: '' },
+            ],
+          },
+        ],
+        answers: {
+          'dsh UI 插件试点（PR #1–#3）已实测通过，接下来你想怎么继续？': '现在有哪些 slot 了？',
+        },
+      })}
+      result={'"dsh UI 插件试点（PR #1–#3）已实测通过，接下来你想怎么继续？"="现在有哪些 slot 了？"'}
+    />
+  ),
+}

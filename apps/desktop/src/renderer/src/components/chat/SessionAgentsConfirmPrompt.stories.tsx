@@ -156,7 +156,7 @@ export const CodexModelWithoutFastTier: Story = {
 
 /**
  * The summary is all the user approves (the brief goes to session_collab_start).
- * It clamps to two lines; click it to expand.
+ * Long summaries scroll inside the panel instead of expanding on click.
  */
 export const LongSummary: Story = {
   args: { payload: codexPayload({ summary: 'Group the typecheck failures by root cause and report which ones share a fix. Start with the renderer package, then the shared contracts; skip generated files. Flag anything that looks like a stale build artifact rather than a real type error, and list the files each group touches so the fixes can be split across reviewers.' }) },

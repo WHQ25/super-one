@@ -131,13 +131,12 @@ describe('session agents confirm prompt', () => {
     expect(screen.getByText('Review failing tests')).toBeInTheDocument()
   })
 
-  it('clamps the summary until the user expands it', () => {
+  it('renders the summary as non-clickable text without clamping', () => {
     renderInChat(<SessionAgentsConfirmPrompt payload={payload()} onConfirm={vi.fn()} onReject={vi.fn()} />)
 
     const summary = screen.getByText('Review failing tests')
-    expect(summary).toHaveClass('line-clamp-2')
-    fireEvent.click(screen.getByRole('button', { name: 'Review failing tests' }))
     expect(summary).not.toHaveClass('line-clamp-2')
+    expect(screen.queryByRole('button', { name: 'Review failing tests' })).toBeNull()
   })
 
   it('keeps agent-owned fields read-only while exposing the permission mode picker', () => {

@@ -1,365 +1,32 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type ComponentType } from 'react'
-import { AlertTriangle, Bot, FolderClosed, GitBranch, Loader2, MessageSquare, RefreshCw, Server, Users } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import { Bot, Users } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Kbd } from '@superone/ui/components/ui/kbd'
 import { cn } from '@superone/ui/lib/utils'
-import { localSessionLink } from '@superone/shared/session-link'
-import { SessionChip } from '@superone/chat-view/presenters/SessionChip'
-import {
-  buildLaunchTabLabels,
-  isHandoffLaunch,
-  isLaunchModelOffered,
-  isLinkLaunch,
-  launchNameRoleLine,
-  launchWorkDir,
-  pathBasename,
-  peerSessionTitle,
-  shortSessionId,
-} from '@superone/shared/collab-request-display'
-import type {
-  SessionAgentLaunchProposal,
-  SessionAgentLaunchSettings,
-  SessionAgentProfile,
-  SessionAgentRemoteLaunch,
-  SessionAgentRequestPayload,
-} from '@superone/shared/agent-types'
-import { DesktopSessionLinkScope } from '@/lib/session-links'
-import { HARNESS_CONTROLS } from '@/harness-ui/controls'
+import { buildLaunchTabLabels, isLaunchModelOffered } from '@superone/shared/collab-request-display'
+import type { SessionAgentLaunchProposal, SessionAgentRequestPayload } from '@superone/shared/agent-types'
 import { hasOpenRadixOverlay } from '@/lib/radix-overlay'
-import { HarnessGlyph, LaunchSettingsBar } from './launch-settings-bar'
+import { HarnessGlyph } from './launch-settings-bar'
 import { ApproveRejectBar } from './PermissionActionBar'
-import { WorkDirLabel, workDirTitle, type WorkDirState } from './work-dir-label'
-import { useRemoteAgentCatalogs, type RemoteAgentCatalog } from './model-selector/useRemoteAgentCatalogs'
+import { useRemoteAgentCatalogs } from './model-selector/useRemoteAgentCatalogs'
 import { isFocusInChat, useChatRootRef } from './is-focus-in-chat'
 import { leaveDecisionField, shouldSuppressDecisionShortcut } from './composer-slot/decision-composer-policy'
+import {
+  SessionAgentsLaunchPanel,
+  remoteProfileOf,
+  type EditableLaunchConfig,
+} from './SessionAgentsLaunchPanel'
 
 interface Props {
   payload: SessionAgentRequestPayload
   onConfirm: (launches: SessionAgentLaunchProposal[]) => void
-  /** The deny reason is handed back to the agent as the tool result. */
   onReject: (feedback?: string) => void
-}
-
-/**
- * The user may only retune *how* a proposed session runs — model, effort, AI provider and
- * permission mode. Everything else (which agent, the summary, cwd, worktree, sandbox) is the
- * requesting agent's decision and is rendered read-only.
- */
-type EditableConfig = SessionAgentLaunchSettings
-
-function MetaChip({
-  icon: Icon,
-  label,
-  title,
-}: {
-  icon: ComponentType<{ className?: string }>
-  label: string
-  title?: string
-}) {
-  return (
-    <span
-      title={title ?? label}
-      className="inline-flex min-w-0 max-w-full items-center gap-1 text-xs leading-none text-muted-foreground"
-    >
-      <Icon className="size-3 shrink-0" />
-      <span className="truncate">{label}</span>
-    </span>
-  )
-}
-
-/**
- * Where a child on another machine runs: the machine, its checkout or the
- * clone it will make, the branch base, and what of this checkout it will not see.
- */
-function RemoteLaunchTarget({ remote }: { remote: SessionAgentRemoteLaunch }) {
-  const { t } = useTranslation()
-  const unseen = remote.unpushedCommits > 0 || remote.uncommittedChanges > 0
-  return (
-    <>
-      <div className="mt-1.5 flex shrink-0 flex-wrap items-center gap-x-2.5 gap-y-1">
-        <MetaChip icon={Server} label={remote.label} title={t('chat.sessionAgentsConfirm.remoteMachine', { machine: remote.label })} />
-        {remote.projectPath ? (
-          <MetaChip
-            icon={FolderClosed}
-            label={pathBasename(remote.projectPath)}
-            title={`${t('chat.sessionAgentsConfirm.workingDirectory')}: ${remote.projectPath}`}
-          />
-        ) : (
-          <MetaChip
-            icon={FolderClosed}
-            label={t('chat.sessionAgentsConfirm.remoteClone', { repository: remote.repository })}
-            title={t('chat.sessionAgentsConfirm.remoteCloneInto', { url: remote.cloneUrl, directory: remote.cloneInto ?? '' })}
-          />
-        )}
-        <MetaChip
-          icon={GitBranch}
-          label={remote.baseRef}
-          title={t('chat.sessionAgentsConfirm.remoteBranchFrom', { ref: remote.baseRef })}
-        />
-      </div>
-      {unseen && (
-        <p className="mt-1 flex shrink-0 items-start gap-1 text-xs leading-snug text-warning">
-          <AlertTriangle className="mt-px size-3 shrink-0" />
-          <span>
-            {t('chat.sessionAgentsConfirm.remoteUnseenChanges', {
-              commits: remote.unpushedCommits,
-              files: remote.uncommittedChanges,
-            })}
-          </span>
-        </p>
-      )}
-    </>
-  )
-}
-
-/** The target machine's own profile for a remote launch, once its catalog has loaded. */
-function remoteProfileOf(launch: SessionAgentLaunchProposal, catalog: RemoteAgentCatalog | undefined): SessionAgentProfile | undefined {
-  return catalog?.status === 'ready' ? catalog.profiles.find((profile) => profile.id === launch.agentId) : undefined
-}
-
-/**
- * The model control of a launch on another machine until its catalog offers
- * a picker: loading, a failed load with retry, or the target's default model
- * when it is too old to list one or lists no models for this agent.
- */
-function RemoteModelStatus({
-  remote,
-  catalog,
-  model,
-  onRetry,
-}: {
-  remote: SessionAgentRemoteLaunch
-  catalog: RemoteAgentCatalog | undefined
-  model: string | undefined
-  onRetry: () => void
-}) {
-  const { t } = useTranslation()
-  const machine = remote.label
-  if (!catalog || catalog.status === 'loading') {
-    return (
-      <span className="inline-flex min-w-0 items-center gap-1 px-1 text-xs text-muted-foreground">
-        <Loader2 className="size-3 shrink-0 animate-spin" />
-        <span className="truncate">{t('chat.sessionAgentsConfirm.remoteModelsLoading', { machine })}</span>
-      </span>
-    )
-  }
-  if (catalog.status === 'error') {
-    return (
-      <span className="inline-flex min-w-0 items-center gap-0.5 pl-1 text-xs text-error" title={catalog.message}>
-        <AlertTriangle className="size-3 shrink-0" />
-        <span className="truncate">{t('chat.sessionAgentsConfirm.remoteModelsError', { machine })}</span>
-        <IconButton size="sm" tooltip={t('chat.sessionAgentsConfirm.remoteModelsRetry')} onClick={onRetry}>
-          <RefreshCw />
-        </IconButton>
-      </span>
-    )
-  }
-  return (
-    <span
-      className="min-w-0 truncate px-1 text-xs text-muted-foreground"
-      title={t(
-        catalog.status === 'unsupported' ? 'chat.sessionAgentsConfirm.remoteCatalogUnsupported' : 'chat.sessionAgentsConfirm.remoteNoModels',
-        { machine },
-      )}
-    >
-      {model
-        ? t('chat.sessionAgentsConfirm.remoteModel', { model })
-        : t('chat.sessionAgentsConfirm.remoteDefaultModel', { machine })}
-    </span>
-  )
-}
-
-function LaunchPanel({
-  launch,
-  requested,
-  profile,
-  remoteCatalog,
-  onRetryRemoteCatalog,
-  onRefreshRemoteModels,
-  remoteModelsLoading,
-  summaryExpanded,
-  onToggleSummary,
-  onChange,
-}: {
-  launch: SessionAgentLaunchProposal
-  /** The launch as the agent proposed it, before the user's edits. */
-  requested: SessionAgentLaunchProposal
-  profile: SessionAgentProfile | undefined
-  /** The target machine's catalog for a remote launch. */
-  remoteCatalog: RemoteAgentCatalog | undefined
-  onRetryRemoteCatalog: () => void
-  /** Re-probe the target machine's catalog without hiding the models already shown. */
-  onRefreshRemoteModels?: () => void
-  remoteModelsLoading?: boolean
-  summaryExpanded: boolean
-  onToggleSummary: () => void
-  onChange: (patch: EditableConfig) => void
-}) {
-  const { t } = useTranslation()
-  const { config } = launch
-  const link = isLinkLaunch(launch)
-  const handoff = isHandoffLaunch(launch)
-  const harnessId = profile?.harnessId ?? 'claude'
-  // A remote launch picks from the target's own catalog, never this machine's.
-  const remoteProfile = config.remote ? remoteProfileOf(launch, remoteCatalog) : undefined
-  const catalogProfile = config.remote ? remoteProfile : profile
-  const { LaunchModelControl } = HARNESS_CONTROLS[harnessId]
-  const workDirState: WorkDirState = launchWorkDir(config.worktree)
-  const remotePicker = !!remoteProfile && remoteProfile.models.length > 0
-  const requestedModelMissing = !!remoteProfile && !isLaunchModelOffered(remoteProfile, requested.config)
-  const nameRole = launchNameRoleLine(launch)
-  const peerTitle = peerSessionTitle(launch)
-  const summary = launch.summary.trim()
-  const peerProject = launch.peerProjectPath ? pathBasename(launch.peerProjectPath) : null
-  const sessionShort = shortSessionId(launch.sessionId)
-
-  return (
-    <div className="flex min-h-0 flex-col px-2.5 py-2">
-      <div className="mb-1.5 flex min-w-0 shrink-0 items-center gap-1 text-xs font-medium text-foreground">
-        {link ? (
-          <>
-            <span className="shrink-0 text-muted-foreground">{t('chat.sessionAgentsConfirm.workWith')}</span>
-            {launch.sessionId ? (
-              <DesktopSessionLinkScope>
-                <SessionChip href={localSessionLink(launch.sessionId)} label={peerTitle} className="min-w-0 translate-y-0" />
-              </DesktopSessionLinkScope>
-            ) : (
-              <span className="min-w-0 truncate">{peerTitle}</span>
-            )}
-          </>
-        ) : (
-          <>
-            {handoff && (
-              <span
-                className="shrink-0 text-muted-foreground"
-                title={t('chat.sessionAgentsConfirm.handOffHint')}
-              >
-                {t('chat.sessionAgentsConfirm.handOffTo')}
-              </span>
-            )}
-            <span className="min-w-0 truncate">{nameRole}</span>
-          </>
-        )}
-      </div>
-
-      {/*
-        The summary is what the user approves; the agent passes the full brief to
-        session_collab_start. Collapsed it clamps to two lines; expanded it scrolls.
-      */}
-      <div
-        className={cn(
-          'min-h-0 transition-[max-height] duration-300 ease-out',
-          summaryExpanded ? 'max-h-[min(50vh,calc(100dvh-14rem))] overflow-y-auto overscroll-contain' : 'max-h-12',
-        )}
-      >
-        <button
-          type="button"
-          onClick={onToggleSummary}
-          title={t(summaryExpanded ? 'chat.collaboration.collapseTask' : 'chat.collaboration.expandTask')}
-          className="block w-full cursor-pointer text-left"
-        >
-          <span
-            className={cn(
-              'whitespace-pre-wrap break-words text-xs leading-snug text-foreground/90',
-              !summaryExpanded && 'line-clamp-2',
-            )}
-          >
-            {summary}
-          </span>
-        </button>
-      </div>
-
-      {link ? (
-        (sessionShort || peerProject) ? (
-          <div className="mt-1.5 flex shrink-0 flex-wrap items-center gap-x-2.5 gap-y-1">
-            {sessionShort && (
-              <MetaChip
-                icon={MessageSquare}
-                label={sessionShort}
-                title={`${t('chat.sessionAgentsConfirm.peerSession')}: ${launch.sessionId}`}
-              />
-            )}
-            {peerProject && (
-              <MetaChip
-                icon={FolderClosed}
-                label={peerProject}
-                title={
-                  launch.peerProjectPath
-                    ? `${t('chat.sessionAgentsConfirm.peerProject')}: ${launch.peerProjectPath}`
-                    : peerProject
-                }
-              />
-            )}
-          </div>
-        ) : null
-      ) : (
-        <>
-          {config.remote ? <RemoteLaunchTarget remote={config.remote} /> : (
-          <div className="mt-1.5 flex shrink-0 flex-wrap items-center gap-x-2.5 gap-y-1">
-            {config.cwd && (
-              <MetaChip
-                icon={FolderClosed}
-                label={pathBasename(config.cwd)}
-                title={`${t('chat.sessionAgentsConfirm.workingDirectory')}: ${config.cwd}`}
-              />
-            )}
-            <span
-              title={workDirTitle(workDirState, t)}
-              className="inline-flex min-w-0 max-w-full items-center gap-0.5 truncate text-xs leading-none text-muted-foreground"
-            >
-              <WorkDirLabel state={workDirState} />
-            </span>
-          </div>
-          )}
-
-          <LaunchSettingsBar harnessId={harnessId} settings={config} onChange={onChange} className="mt-2">
-            {config.remote && !remotePicker ? (
-              <RemoteModelStatus
-                remote={config.remote}
-                catalog={remoteCatalog}
-                model={config.model}
-                onRetry={onRetryRemoteCatalog}
-              />
-            ) : (
-              <LaunchModelControl
-                profile={catalogProfile}
-                catalog={config.remote ? 'profile' : 'local'}
-                apiProviderId={config.apiProviderId}
-                model={config.model ?? catalogProfile?.defaultConfig.model}
-                effort={config.effort ?? catalogProfile?.defaultConfig.effort}
-                offerFastMode
-                fastMode={config.fastMode}
-                serviceTier={config.serviceTier}
-                claudeFastMode={config.claudeFastMode}
-                onRefreshModels={config.remote ? onRefreshRemoteModels : undefined}
-                modelsLoading={config.remote ? remoteModelsLoading : undefined}
-                onChange={onChange}
-              />
-            )}
-          </LaunchSettingsBar>
-          {config.remote && requestedModelMissing && (
-            <p className="mt-1 flex shrink-0 items-start gap-1 text-xs leading-snug text-warning">
-              <AlertTriangle className="mt-px size-3 shrink-0" />
-              <span>
-                {t('chat.sessionAgentsConfirm.remoteModelUnavailable', {
-                  model: requested.config.model,
-                  machine: config.remote.label,
-                })}
-              </span>
-            </p>
-          )}
-        </>
-      )}
-    </div>
-  )
 }
 
 export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Props) {
   const { t } = useTranslation()
-  const [overrides, setOverrides] = useState<Record<string, EditableConfig>>({})
+  const [overrides, setOverrides] = useState<Record<string, EditableLaunchConfig>>({})
   const [activeTab, setActiveTab] = useState(0)
-  const [summaryExpanded, setSummaryExpanded] = useState(false)
   const [feedback, setFeedback] = useState('')
   const [feedbackFocused, setFeedbackFocused] = useState(false)
   const feedbackRef = useRef<HTMLTextAreaElement>(null)
@@ -376,19 +43,11 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
   const activeIndex = Math.min(activeTab, launches.length - 1)
   const activeLaunch = launches[activeIndex]
 
-  // Switching agents collapses the summary so a tall panel does not stick around.
-  useEffect(() => {
-    setSummaryExpanded(false)
-  }, [activeIndex])
-
   const resolved = useMemo(
     () => launches.map((launch) => {
       if (launch.config.remote) {
-        // Another machine: only its own catalog applies. Until it loads, or when the
-        // machine cannot list one, the child runs on its defaults and only how it runs is editable.
         const { permissionMode, sandboxMode, fastMode: _fastMode, serviceTier: _serviceTier, ...selection } = overrides[launch.launchId] ?? {}
         const remoteProfile = remoteProfileOf(launch, remoteCatalogs[launch.config.remote.environmentId])
-        // A model the agent asked for that the target lacks falls back to the target's default.
         const fallback = remoteProfile && !isLaunchModelOffered(remoteProfile, launch.config)
           ? {
               model: remoteProfile.defaultConfig.model ?? remoteProfile.models[0]?.id,
@@ -428,8 +87,6 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
       if (hasOpenRadixOverlay()) return
       const typing = document.activeElement === feedbackRef.current
 
-      // Tab walks the agent tabs and then the feedback field, so a single-agent prompt
-      // behaves exactly like PermissionPrompt (Tab focuses the reason box).
       if (event.key === 'Tab' && !event.ctrlKey && !event.metaKey && !event.altKey) {
         event.preventDefault()
         if (typing) {
@@ -444,7 +101,6 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
       }
 
       if (typing) {
-        // Same contract as PermissionPrompt: the feedback box submits a rejection.
         if (event.key === 'Enter' && !event.isComposing) {
           event.preventDefault()
           handleReject()
@@ -462,16 +118,12 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
       }
       if (event.key === 'Escape') {
         event.preventDefault()
-        if (summaryExpanded) {
-          setSummaryExpanded(false)
-          return
-        }
         handleReject()
       }
     }
     window.addEventListener('keydown', onKeyDown)
     return () => window.removeEventListener('keydown', onKeyDown)
-  }, [activeIndex, launches.length, handleConfirm, handleReject, chatRootRef, summaryExpanded])
+  }, [activeIndex, launches.length, handleConfirm, handleReject, chatRootRef])
 
   if (!activeLaunch) return null
 
@@ -479,7 +131,6 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
     <div
       className={cn(
         '@container mx-3 mb-1 flex min-h-0 flex-col overflow-hidden rounded-lg border border-primary/40 bg-card',
-        // Cap the whole confirm card so an expanded summary never leaves the viewport.
         'max-h-[min(80vh,calc(100dvh-5rem))]',
       )}
     >
@@ -497,42 +148,40 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
         </span>
       </div>
 
-      {/* Agent identity: a tab strip when several were requested, a plain line for a single one.
-          The strip is the only scrolling box, so the ⇥ hint stays pinned no matter how narrow. */}
       <div className={cn('mt-1.5 flex shrink-0 items-stretch gap-1 px-1.5', multiple && 'border-b border-border/50')}>
         <div role={multiple ? 'tablist' : undefined} className="flex min-w-0 flex-1 gap-0.5 overflow-x-auto">
-        {launches.map((launch, index) => {
-          const profile = profiles.find((item) => item.id === launch.agentId)
-          const selected = index === activeIndex
-          const body = (
-            <>
-              <HarnessGlyph profile={profile} launch={launch} />
-              <span className="truncate">{tabLabels[index]}</span>
-            </>
-          )
-          if (!multiple) {
-            return (
-              <span key={launch.launchId} className="flex min-w-0 items-center gap-1.5 px-1 py-1 text-xs font-medium text-foreground">
-                {body}
-              </span>
+          {launches.map((launch, index) => {
+            const profile = profiles.find((item) => item.id === launch.agentId)
+            const selected = index === activeIndex
+            const body = (
+              <>
+                <HarnessGlyph profile={profile} launch={launch} />
+                <span className="truncate">{tabLabels[index]}</span>
+              </>
             )
-          }
-          return (
-            <button
-              key={launch.launchId}
-              role="tab"
-              type="button"
-              aria-selected={selected}
-              onClick={() => setActiveTab(index)}
-              className={cn(
-                'flex min-w-0 shrink-0 cursor-pointer items-center gap-1.5 rounded-t-md border-b-2 px-2 py-1 text-xs font-medium transition-colors',
-                selected ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground',
-              )}
-            >
-              {body}
-            </button>
-          )
-        })}
+            if (!multiple) {
+              return (
+                <span key={launch.launchId} className="flex min-w-0 items-center gap-1.5 px-1 py-1 text-xs font-medium text-foreground">
+                  {body}
+                </span>
+              )
+            }
+            return (
+              <button
+                key={launch.launchId}
+                role="tab"
+                type="button"
+                aria-selected={selected}
+                onClick={() => setActiveTab(index)}
+                className={cn(
+                  'flex min-w-0 shrink-0 cursor-pointer items-center gap-1.5 rounded-t-md border-b-2 px-2 py-1 text-xs font-medium transition-colors',
+                  selected ? 'border-primary text-primary' : 'border-transparent text-muted-foreground hover:text-foreground',
+                )}
+              >
+                {body}
+              </button>
+            )
+          })}
         </div>
         {multiple && (
           <span className="flex shrink-0 items-center self-center pl-1 text-xs text-muted-foreground">
@@ -543,7 +192,7 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
       </div>
 
       <div className="flex min-h-0 flex-col overflow-y-auto">
-        <LaunchPanel
+        <SessionAgentsLaunchPanel
           key={activeLaunch.launchId}
           launch={resolved[activeIndex]}
           requested={activeLaunch}
@@ -558,8 +207,6 @@ export function SessionAgentsConfirmPrompt({ payload, onConfirm, onReject }: Pro
           remoteModelsLoading={activeLaunch.config.remote
             ? remoteRefreshing[activeLaunch.config.remote.environmentId]
             : undefined}
-          summaryExpanded={summaryExpanded}
-          onToggleSummary={() => setSummaryExpanded((value) => !value)}
           onChange={(patch) => setOverrides((current) => ({
             ...current,
             [activeLaunch.launchId]: { ...current[activeLaunch.launchId], ...patch },

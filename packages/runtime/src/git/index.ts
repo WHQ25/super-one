@@ -72,6 +72,7 @@ export {
   parseNumstat,
   worktreeInfoFromPorcelain,
   checkedOutBranchesFromPorcelain,
+  resolveExistingWorktreeLaunch,
 } from './worktree-plan'
 export {
   parseGitStatusLine,

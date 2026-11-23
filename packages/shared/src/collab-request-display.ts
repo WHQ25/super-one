@@ -77,12 +77,19 @@ export function shortSessionId(sessionId: string | undefined): string | null {
  */
 export type LaunchWorkDir =
   | { kind: 'local' }
+  | { kind: 'activeBranch'; name: string }
+  | { kind: 'activeDetached'; hash: string }
   | { kind: 'createFrom'; base: string }
   | { kind: 'attachTo'; base: string }
   | { kind: 'createBranch'; name: string }
 
 export function launchWorkDir(worktree: SessionAgentWorktreeConfig | null | undefined): LaunchWorkDir {
   if (!worktree?.enabled) return { kind: 'local' }
+  if (worktree.existing) {
+    return worktree.existingHead
+      ? { kind: 'activeDetached', hash: worktree.existingHead }
+      : { kind: 'activeBranch', name: worktree.baseBranch }
+  }
   if (worktree.mode === 'detach') return { kind: 'createFrom', base: worktree.baseBranch }
   if (worktree.mode === 'attach') return { kind: 'attachTo', base: worktree.baseBranch }
   return { kind: 'createBranch', name: worktree.branchName ?? '' }

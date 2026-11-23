@@ -237,7 +237,8 @@ export const LAUNCH_CWD_DESCRIPTION =
   'See read_manual({ domain: "product", topic: "collaboration" }).'
 
 export const LAUNCH_WORKTREE_DESCRIPTION =
-  'Host-managed worktree for same-repo isolation; leave cwd unset. ' +
+  'Host-managed worktree for same-repo isolation or attaching to an existing worktree; leave cwd unset. ' +
+  'Use mode "attach" with baseBranch to reuse an existing non-main worktree on that branch (or create one if not yet checked out). ' +
   'For parallel implementers, not for read-only review of the shared checkout. ' +
   'See read_manual({ domain: "product", topic: "collaboration" }).'
 

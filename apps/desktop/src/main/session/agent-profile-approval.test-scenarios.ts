@@ -129,6 +129,7 @@ export function registerProfileApprovalScenarios(fixture: {
       seed()
       const { parent, host } = environment()
       const pending = requestSessionAgents(parent.id, proposal('implementer', config), host)
+      await vi.waitFor(() => expect(parent.emitHostEvent).toHaveBeenCalled())
       const request = permission(parent)
       resolveSessionAgentsConfirm(request.requestId, 'decline')
       expect(parsed(await pending).status).toBe('rejected')

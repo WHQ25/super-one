@@ -1,5 +1,5 @@
 import type { Meta, StoryObj } from "@storybook/react-vite";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import type {
   SessionAgentLaunchProposal,
   SessionAgentProfile,
@@ -7,6 +7,7 @@ import type {
 } from "@superone/shared/agent-types";
 import type { SessionRef } from "@superone/shared/environment/refs";
 import { mockIpc } from "../../../../../.storybook/mock-ipc";
+import { useAppStore } from "@/stores/app";
 import { SessionScopeProvider } from "@/stores/chat";
 import { SessionAgentsConfirmPrompt } from "./SessionAgentsConfirmPrompt";
 import { ToolBlock } from "./ToolBlock";
@@ -481,71 +482,115 @@ export const GrokRoles: Story = {
 
 export const WorkingLocations: Story = {
   name: "session_collab_request · Permission Prompt · working locations",
-  ...permissionPromptStory("working locations", {
-    value: {
-      profiles,
-      launches: [
-        launch(
-          "loc-parent",
-          "claude-base",
-          "Parent working directory",
-          { model: "claude-sonnet" },
-          { name: "ParentBot", role: "Worker" },
-        ),
-        launch(
-          "loc-branch",
-          "claude-base",
-          "Fresh branch worktree",
-          {
-            model: "claude-sonnet",
-            worktree: {
-              enabled: true,
-              baseBranch: "main",
-              mode: "branch",
-              branchName: "agent/refactor",
-              carryLocalChanges: true,
-            },
-          },
-          { name: "BranchBot", role: "Worker" },
-        ),
-        launch(
-          "loc-detach",
-          "claude-base",
-          "Detached worktree",
-          {
-            model: "claude-sonnet",
-            worktree: { enabled: true, baseBranch: "main", mode: "detach" },
-          },
-          { name: "DetachBot", role: "Worker" },
-        ),
-        launch(
-          "loc-attach",
-          "claude-base",
-          "Attach existing branch",
-          {
-            model: "claude-sonnet",
-            worktree: {
-              enabled: true,
-              baseBranch: "main",
-              mode: "attach",
-              branchName: "feat/multi-agents-collab",
-            },
-          },
-          { name: "AttachBot", role: "Worker" },
-        ),
-        launch(
-          "loc-nested",
-          "codex-base",
-          "Nested sub-package cwd",
-          {
-            model: "gpt-5.4",
-            cwd: "/Users/me/projects/super-one/apps/desktop",
-          },
-          { name: "NestedBot", role: "Worker" },
-        ),
-      ],
-    },
-  }),
+  render: () => {
+    const prev = useAppStore.getState().experimentalRemoteNodesEnabled;
+    useEffect(() => {
+      useAppStore.setState({ experimentalRemoteNodesEnabled: true });
+      return () => {
+        useAppStore.setState({ experimentalRemoteNodesEnabled: prev });
+      };
+    }, [prev]);
+    return (
+      <SessionCollabRequestPermissionPrompt
+        value={{
+          profiles,
+          launches: [
+            launch(
+              "loc-parent",
+              "claude-base",
+              "Parent working directory",
+              { model: "claude-sonnet" },
+              { name: "ParentBot", role: "Worker" },
+            ),
+            launch(
+              "loc-branch",
+              "claude-base",
+              "Fresh branch worktree",
+              {
+                model: "claude-sonnet",
+                worktree: {
+                  enabled: true,
+                  baseBranch: "main",
+                  mode: "branch",
+                  branchName: "agent/refactor",
+                  carryLocalChanges: true,
+                },
+              },
+              { name: "BranchBot", role: "Worker" },
+            ),
+            launch(
+              "loc-detach",
+              "claude-base",
+              "Detached worktree",
+              {
+                model: "claude-sonnet",
+                worktree: { enabled: true, baseBranch: "main", mode: "detach" },
+              },
+              { name: "DetachBot", role: "Worker" },
+            ),
+            launch(
+              "loc-attach",
+              "claude-base",
+              "Attach existing branch",
+              {
+                model: "claude-sonnet",
+                worktree: {
+                  enabled: true,
+                  baseBranch: "main",
+                  mode: "attach",
+                  branchName: "feat/multi-agents-collab",
+                },
+              },
+              { name: "AttachBot", role: "Worker" },
+            ),
+            launch(
+              "loc-existing",
+              "claude-base",
+              "Existing branch worktree",
+              {
+                model: "claude-sonnet",
+                worktree: {
+                  enabled: true,
+                  baseBranch: "feat/existing-wt",
+                  mode: "attach",
+                  existing: true,
+                  worktreePath: "/Users/me/.worktrees/super-one/abc123",
+                },
+              },
+              { name: "ExistingBot", role: "Worker" },
+            ),
+            launch(
+              "loc-existing-detached",
+              "claude-base",
+              "Existing detached worktree",
+              {
+                model: "claude-sonnet",
+                worktree: {
+                  enabled: true,
+                  baseBranch: "9f3c1d7",
+                  mode: "attach",
+                  existing: true,
+                  existingHead: "9f3c1d7",
+                  worktreePath: "/Users/me/.worktrees/super-one/def456",
+                },
+              },
+              { name: "DetachedExistingBot", role: "Worker" },
+            ),
+            launch(
+              "loc-nested",
+              "codex-base",
+              "Nested sub-package cwd",
+              {
+                model: "gpt-5.4",
+                cwd: "/Users/me/projects/super-one/apps/desktop",
+              },
+              { name: "NestedBot", role: "Worker" },
+            ),
+          ],
+        }}
+      />
+    );
+  },
 };
 
 export const ManyAgents: Story = {

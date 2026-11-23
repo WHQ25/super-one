@@ -1,8 +1,9 @@
 import { type ComponentType } from 'react'
-import { AlertTriangle, FolderClosed, GitBranch, Loader2, MessageSquare, RefreshCw, Server } from 'lucide-react'
+import { AlertTriangle, FolderClosed, GitBranch, GitFork, Loader2, MessageSquare, RefreshCw, Server } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
+import { useAppStore } from '@/stores/app'
 import { localSessionLink } from '@superone/shared/session-link'
 import { SessionChip } from '@superone/chat-view/presenters/SessionChip'
 import {
@@ -171,6 +172,7 @@ export function SessionAgentsLaunchPanel({
   const remoteProfile = config.remote ? remoteProfileOf(launch, remoteCatalog) : undefined
   const catalogProfile = config.remote ? remoteProfile : profile
   const { LaunchModelControl } = HARNESS_CONTROLS[harnessId]
+  const remoteNodesEnabled = useAppStore((s) => s.experimentalRemoteNodesEnabled)
   const workDirState: WorkDirState = launchWorkDir(config.worktree)
   const remotePicker = !!remoteProfile && remoteProfile.models.length > 0
   const requestedModelMissing = !!remoteProfile && !isLaunchModelOffered(remoteProfile, requested.config)
@@ -251,12 +253,20 @@ export function SessionAgentsLaunchPanel({
                   title={`${t('chat.sessionAgentsConfirm.workingDirectory')}: ${config.cwd}`}
                 />
               )}
-              <span
-                title={workDirTitle(workDirState, t)}
-                className={cn('inline-flex min-w-0 max-w-full items-center gap-0.5 truncate text-xs leading-none text-muted-foreground')}
-              >
-                <WorkDirLabel state={workDirState} />
-              </span>
+              {remoteNodesEnabled && (workDirState.kind === 'activeBranch' || workDirState.kind === 'activeDetached') ? (
+                <MetaChip
+                  icon={GitFork}
+                  label={workDirState.kind === 'activeBranch' ? workDirState.name : workDirState.hash}
+                  title={workDirTitle(workDirState, t)}
+                />
+              ) : (
+                <span
+                  title={workDirTitle(workDirState, t)}
+                  className={cn('inline-flex min-w-0 max-w-full items-center gap-0.5 truncate text-xs leading-none text-muted-foreground')}
+                >
+                  <WorkDirLabel state={workDirState} />
+                </span>
+              )}
             </div>
           )}
 

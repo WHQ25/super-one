@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import { resolveExistingWorktreeLaunch, worktreeGit, worktreeInfoFromPorcelain } from '@superone/runtime/git'
 import type {
   SessionAgentLaunchProposal,
   SessionAgentProfile,
@@ -64,14 +65,14 @@ function safeLaunchConfig(raw: NodeLaunchConfig | undefined): NodeLaunchConfig {
   return safe
 }
 
-function normalizeLaunches(
+async function normalizeLaunches(
   ctx: CollaborationContext,
   input: CollaborationRequestInput,
   profileList: SessionAgentProfile[],
-): SessionAgentLaunchProposal[] {
+): Promise<SessionAgentLaunchProposal[]> {
   const parent = ctx.deps.sessions.get(input.parentSessionId)!
   const profiles = new Map(profileList.map((p) => [p.id, p]))
-  return input.launches.map((launch) => {
+  return Promise.all(input.launches.map(async (launch) => {
     if (launch.config && Object.hasOwn(launch.config, 'followsDefaults')) throw new CollaborationError('Launch bookkeeping is host-owned', 'invalid_argument')
     const mode = resolveLaunchMode(launch.mode)
     const launchId = launch.launchId?.trim() || randomUUID()
@@ -113,6 +114,27 @@ function normalizeLaunches(
     if (!profile) throw new CollaborationError(`Unknown agent profile: ${agentId}`, 'invalid_argument')
     const { summary, name, role } = normalizeLaunchLabels(mode, launch)
     const safe = safeLaunchConfig(launch.config)
+    const defaultCwd = parent.cwd ?? ctx.deps.projects.get(parent.projectId)?.path
+    const baseCwd = safe.cwd ?? defaultCwd
+    let existingResolution: ReturnType<typeof resolveExistingWorktreeLaunch> = {}
+    if (baseCwd && (safe.worktree?.enabled ? safe.worktree.mode === 'attach' : Boolean(safe.cwd))) {
+      try {
+        const raw = await worktreeGit().read(baseCwd, ['worktree', 'list', '--porcelain'])
+        existingResolution = resolveExistingWorktreeLaunch(worktreeInfoFromPorcelain(raw, baseCwd), {
+          requestedCwd: safe.cwd,
+          worktree: safe.worktree,
+        })
+      } catch {
+        // Non-git directory or unavailable — skip worktree resolution.
+      }
+    }
+    if (existingResolution.conflictBranch) {
+      throw new CollaborationError(
+        `Branch "${existingResolution.conflictBranch}" is already checked out in the main project directory. `
+        + 'Omit config.worktree to share the main checkout, or use mode "detach".',
+        'failed_precondition',
+      )
+    }
     return {
       launchId,
       mode,
@@ -125,12 +147,13 @@ function normalizeLaunches(
         ...safe,
         permissionMode: 'default',
         sandboxMode: 'off',
-        cwd: safe.cwd ?? (parent.cwd ?? ctx.deps.projects.get(parent.projectId)?.path),
+        cwd: existingResolution.cwd ?? baseCwd,
+        ...(existingResolution.worktree ? { worktree: existingResolution.worktree } : {}),
         name,
         role,
       },
     }
-  })
+  }))
 }
 
 function createGrant(
@@ -173,7 +196,7 @@ export async function requestCollaboration(
   assertLaunchCount(input.launches.length)
 
   const profileList = ctx.listProfiles()
-  const normalized = normalizeLaunches(ctx, input, profileList)
+  const normalized = await normalizeLaunches(ctx, input, profileList)
   const launchIds = new Set(normalized.map((l) => l.launchId))
   if (launchIds.size !== normalized.length) {
     throw new CollaborationError('Every confirmed launch must have a unique launchId', 'invalid_argument')

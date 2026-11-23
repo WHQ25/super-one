@@ -1,6 +1,6 @@
 import { useMemo, useState, type ReactNode } from 'react'
 import { Pressable, ScrollView, View } from 'react-native'
-import { Bot, ChevronDown, ChevronRight, FolderClosed, GitBranch, MessageSquare, Monitor, type LucideIcon } from 'lucide-react-native'
+import { Bot, ChevronDown, ChevronRight, FolderClosed, GitBranch, GitFork, MessageSquare, Monitor, type LucideIcon } from 'lucide-react-native'
 import type {
   HarnessId, ModelOption, RemoteProviderOption, SandboxMode, SessionAgentLaunchProposal, SessionAgentProfile, SessionAgentRequestPayload,
 } from '@superone/shared/agent-types'
@@ -51,6 +51,8 @@ function isHarnessId(value: string | undefined): value is HarnessId {
 /** Same wording the desktop status bar uses for a pending worktree. */
 function workDirLabel(state: LaunchWorkDir, t: (source: string) => string): { icon: LucideIcon; label: string } {
   switch (state.kind) {
+    case 'activeBranch': return { icon: GitFork, label: state.name }
+    case 'activeDetached': return { icon: GitFork, label: state.hash }
     case 'createFrom': return { icon: GitBranch, label: `${t('Create worktree from')} ${state.base}` }
     case 'attachTo': return { icon: GitBranch, label: `${t('Attach worktree to')} ${state.base}` }
     case 'createBranch': return { icon: GitBranch, label: `${t('Create worktree branch')} ${state.name || '…'}` }

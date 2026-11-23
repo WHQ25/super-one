@@ -55,9 +55,10 @@ export interface ActivateWorktreeInput {
   /**
    * `fail` is `git worktree add -b` (the UI default). `recreate-clean` reuses
    * or rebuilds a grant-owned branch already left behind, and refuses when a
-   * session still occupies that checkout.
+   * session still occupies that checkout. `reuse` (attach mode) returns an
+   * existing non-main worktree that already has `baseBranch` checked out.
    */
-  ifExists?: 'fail' | 'recreate-clean'
+  ifExists?: 'fail' | 'recreate-clean' | 'reuse'
   /** Called inside the repo lock. True when a session's cwd is this checkout. */
   isOccupied?: (path: string) => boolean
 }
@@ -65,6 +66,7 @@ export interface ActivateWorktreeInput {
 export interface ActivateWorktreeResult {
   path: string
   recordedBranch: string | null
+  created?: boolean
 }
 
 export type AssignBranchResult =
@@ -151,6 +153,20 @@ export async function activateWorktree(
     if (input.ifExists === 'recreate-clean' && mode === 'branch' && branchName?.trim()) {
       return recreateCleanBranch(git, folderPath, mainDir, baseBranch, branchName.trim(), input.isOccupied)
     }
+    if (input.ifExists === 'reuse' && mode === 'attach' && baseBranch.trim()) {
+      const targetBranch = baseBranch.trim()
+      const existing = (await listWorktrees(git, folderPath)).find(
+        (entry) => !entry.bare && entry.branch === targetBranch,
+      )
+      if (existing) {
+        if (samePath(existing.path, mainDir)) {
+          throw refused(`branch ${targetBranch} is checked out in the project`)
+        }
+        if (existsSync(existing.path)) {
+          return { path: existing.path, recordedBranch: existing.branch || targetBranch, created: false }
+        }
+      }
+    }
     const commitHash = (await git.read(folderPath, ['rev-parse', baseBranch])).trim()
     const planned = planNewWorktreePaths({ mainDir, shortHash: commitHash.slice(0, 7) })
     if (!existsSync(planned.wtDir)) mkdirSync(planned.wtDir, { recursive: true })
@@ -170,7 +186,7 @@ export async function activateWorktree(
     }
     await linkSharedPaths(git, mainDir, wtPath, config.sharedPaths)
     if (carryLocalChanges) await carryUncommittedChanges(git, folderPath, wtPath)
-    return { path: wtPath, recordedBranch: recordedBranchForMode(mode, baseBranch, branchName) }
+    return { path: wtPath, recordedBranch: recordedBranchForMode(mode, baseBranch, branchName), created: true }
   })
 }
 

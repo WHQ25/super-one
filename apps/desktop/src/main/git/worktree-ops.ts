@@ -39,12 +39,14 @@ export interface ActivateWorktreeRequest {
   mode: WorktreeMode
   branchName?: string
   carryLocalChanges?: boolean
+  ifExists?: 'fail' | 'recreate-clean' | 'reuse'
 }
 
 export interface ActivateWorktreeResult {
   ok: true
   path: string
   recordedBranch: string | null
+  created?: boolean
 }
 
 export function gitErrorMessage(err: unknown): string {
@@ -102,7 +104,7 @@ export async function activateWorktree(
   folderPath: string,
   request: ActivateWorktreeRequest,
 ): Promise<ActivateWorktreeResult> {
-  const { baseBranch, mode, branchName, carryLocalChanges } = request
+  const { baseBranch, mode, branchName, carryLocalChanges, ifExists } = request
 
   if (mode === 'branch' && (!branchName || !branchName.trim())) {
     throw new Error('Branch name is required for branch mode')
@@ -113,6 +115,7 @@ export async function activateWorktree(
     mode,
     branchName: mode === 'branch' ? sanitizeGitRef(branchName!.trim()) : undefined,
     carryLocalChanges,
+    ifExists,
   })
   invalidateLocalGitReads(folderPath)
   invalidateLocalGitReads(result.path)

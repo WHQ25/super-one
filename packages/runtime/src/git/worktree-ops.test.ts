@@ -371,4 +371,24 @@ describe('worktree space settings', () => {
     await expect(removeWorktree(g, dir)).rejects.toThrow(/main checkout/)
     expect(existsSync(join(dir, 'README.md'))).toBe(true)
   })
+
+  it('reuses an existing non-main worktree in attach mode when ifExists is reuse', async () => {
+    const existing = await activateWorktree(g, dir, { baseBranch: 'main', mode: 'branch', branchName: 'feat/reusable' })
+    expect(existing.created).toBe(true)
+
+    const reused = await activateWorktree(g, dir, {
+      baseBranch: 'feat/reusable',
+      mode: 'attach',
+      ifExists: 'reuse',
+    })
+    expect(reused).toEqual({
+      path: existing.path,
+      recordedBranch: 'feat/reusable',
+      created: false,
+    })
+
+    await expect(
+      activateWorktree(g, dir, { baseBranch: 'main', mode: 'attach', ifExists: 'reuse' }),
+    ).rejects.toThrow(/checked out in the project/)
+  })
 })

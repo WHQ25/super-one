@@ -162,11 +162,11 @@ Use `sandboxMode` and a clear “review only — do not implement” task when y
 |-------|---------|
 | `enabled` | Set to `true` to request a host-managed worktree. |
 | `baseBranch` | Branch, tag, or commit in the project-root repo to start from. |
-| `mode` | `branch` creates `branchName`; `detach` checks out `baseBranch` at detached HEAD; `attach` checks out the existing `baseBranch`. |
+| `mode` | `branch` creates `branchName`; `detach` checks out `baseBranch` at detached HEAD; `attach` connects to an existing non-main worktree on `baseBranch` (if already checked out there) or creates a new worktree for `baseBranch`. |
 | `branchName` | Required with `mode: "branch"`; it must be unique across concurrent worktrees. |
 | `carryLocalChanges` | Optional. Copy uncommitted source-checkout changes into the new worktree. Prefer sharing the parent checkout for reviewing local WIP instead of relying on this copy. |
 
-Use `attach` only when no other worktree has that branch checked out. Use `detach` only when reviewing a branch that an implementer **already owns** in another worktree (branch-checkout conflict). Pure review of the parent’s current tree does not need `detach`.
+Use `attach` when you want the child to work on an existing branch (or reuse an existing non-main worktree that already has `baseBranch` checked out). If `baseBranch` is checked out in the main project directory, omit `config.worktree` to share it instead. Use `detach` when reviewing a branch that an implementer **already owns** in another worktree and you want a separate read-only/isolated checkout rather than sharing theirs. Pure review of the parent’s current tree does not need `detach`.
 
 ## Recipes
 

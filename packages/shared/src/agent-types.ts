@@ -1199,6 +1199,9 @@ export interface SessionAgentWorktreeConfig {
   mode: WorktreeMode
   branchName?: string
   carryLocalChanges?: boolean
+  existing?: boolean
+  existingHead?: string
+  worktreePath?: string
 }
 
 export interface SessionAgentLaunchConfig {

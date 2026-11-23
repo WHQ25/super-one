@@ -5,6 +5,7 @@ import { assertAgentProfileLaunchEnabled, isAgentProfilesEnabled } from './agent
  * session and deliver its opening task.
  */
 
+import { existsSync } from 'fs'
 import { randomUUID } from 'crypto'
 import { resolve } from 'path'
 import type {
@@ -28,7 +29,7 @@ import {
   type CollaborationGrantRow as GrantRow,
 } from '@superone/runtime/collaboration'
 import type { NodeSessionSettings } from '@superone/runtime/session'
-import { activateWorktree, rollbackUnusedDesktopWorktree } from '../git/worktree-ops'
+import { activateWorktree, getWorktreeInfo, rollbackUnusedDesktopWorktree } from '../git/worktree-ops'
 import { getDb } from '../database'
 import { createSession as createSessionRecord, hideSession } from '../db-sessions'
 import log from '../logger'
@@ -353,17 +354,31 @@ async function startSessionAgentImpl(
   // Defense in depth: never file a collab child under a managed worktree leaf.
   if (isManagedWorktreePath(projectPath)) projectPath = parent.projectPath
   const sourceCwd = cwd
-  const rollbackWorktree = () => worktreeEnabled ? rollbackUnusedDesktopWorktree(sourceCwd, cwd, config.worktree!).catch(error => log.warn('[collaboration] worktree rollback failed:', error)) : Promise.resolve()
+  let createdWorktree = false
+  const rollbackWorktree = () => createdWorktree ? rollbackUnusedDesktopWorktree(sourceCwd, cwd, config.worktree!).catch(error => log.warn('[collaboration] worktree rollback failed:', error)) : Promise.resolve()
   let gitBranch: string | null = null
   if (worktreeEnabled) {
-    const worktree = await activateWorktree(cwd, {
-      baseBranch: config.worktree!.baseBranch || 'HEAD',
-      mode: config.worktree!.mode,
-      branchName: config.worktree!.branchName,
-      carryLocalChanges: config.worktree!.carryLocalChanges,
-    })
-    cwd = worktree.path
-    gitBranch = worktree.recordedBranch
+    if (config.worktree!.existing && config.worktree!.worktreePath && existsSync(config.worktree!.worktreePath)) {
+      cwd = resolve(config.worktree!.worktreePath)
+      const info = await getWorktreeInfo(cwd).catch(() => null)
+      const entry = info?.entries.find((e) => resolve(e.path) === cwd)
+      gitBranch = entry ? (entry.branch || null) : (config.worktree!.existingHead ? null : config.worktree!.baseBranch || null)
+    } else {
+      const worktree = await activateWorktree(cwd, {
+        baseBranch: config.worktree!.baseBranch || 'HEAD',
+        mode: config.worktree!.mode,
+        branchName: config.worktree!.branchName,
+        carryLocalChanges: config.worktree!.carryLocalChanges,
+        ifExists: config.worktree!.mode === 'attach' ? 'reuse' : undefined,
+      })
+      cwd = worktree.path
+      gitBranch = worktree.recordedBranch
+      createdWorktree = worktree.created !== false
+    }
+  } else if (resolve(cwd) !== resolve(projectPath)) {
+    const info = await getWorktreeInfo(cwd).catch(() => null)
+    const entry = info?.entries.find((e) => !e.isMain && resolve(e.path) === resolve(cwd))
+    if (entry) gitBranch = entry.branch || null
   }
   try { assertControl() } catch (error) { await rollbackWorktree(); throw error }
 

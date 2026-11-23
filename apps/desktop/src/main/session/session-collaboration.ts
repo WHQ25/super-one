@@ -26,6 +26,8 @@ import {
   type ApprovedLaunch,
 } from '@superone/runtime/collaboration'
 import { getDb } from '../database'
+import { getWorktreeInfo } from '../git/worktree-ops'
+import { resolveExistingWorktreeLaunch } from '@superone/runtime/git'
 import {
   findSessionAgentProfile,
   listSessionAgentProfiles,
@@ -281,6 +283,41 @@ function normalizeLaunches(
   })
 }
 
+function needsExistingWorktreeResolution(
+  launch: SessionAgentLaunchProposal,
+  rawLaunch: RequestSessionAgentsArgs['launches'][number] | undefined,
+  parent: Session,
+): boolean {
+  if (launch.mode === 'link' || launch.config.remote) return false
+  if (launch.config.worktree?.enabled) return launch.config.worktree.mode === 'attach'
+  const explicitCwd = rawLaunch?.config?.cwd?.trim()
+  return Boolean(explicitCwd && explicitCwd !== defaultLaunchCwd(parent) && explicitCwd !== parent.projectPath)
+}
+
+async function resolveExistingWorktreeLaunches(
+  launches: SessionAgentLaunchProposal[],
+  rawLaunches: RequestSessionAgentsArgs['launches'],
+  parent: Session,
+): Promise<void> {
+  await Promise.all(launches.map(async (launch, index) => {
+    if (!needsExistingWorktreeResolution(launch, rawLaunches[index], parent)) return
+    const targetCwd = launch.config.cwd?.trim() || defaultLaunchCwd(parent)
+    const info = await getWorktreeInfo(targetCwd).catch(() => null)
+    const resolution = resolveExistingWorktreeLaunch(info, {
+      requestedCwd: rawLaunches[index]?.config?.cwd?.trim(),
+      worktree: launch.config.worktree,
+    })
+    if (resolution.conflictBranch) {
+      throw new Error(
+        `Branch "${resolution.conflictBranch}" is already checked out in the main project directory. `
+        + 'Omit config.worktree to share the main checkout, or use mode "detach".',
+      )
+    }
+    if (resolution.cwd) launch.config.cwd = resolution.cwd
+    if (resolution.worktree) launch.config.worktree = resolution.worktree
+  }))
+}
+
 /**
  * Resolve the launches that target another machine, by launch index. Only
  * spawn launches of a base profile can, and a provider key must be one of the
@@ -485,6 +522,9 @@ export async function requestSessionAgents(
     ? await planRemoteLaunches(args, parent)
     : undefined
   const launches = normalizeLaunches(args, parent, remotes)
+  if (launches.some((launch, index) => needsExistingWorktreeResolution(launch, args.launches[index], parent))) {
+    await resolveExistingWorktreeLaunches(launches, args.launches, parent)
+  }
   const profiles = listSessionAgentProfiles()
   const preapproved = new Set(launches.filter((launch) => {
     const profile = profiles.find((item) => item.id === launch.agentId)

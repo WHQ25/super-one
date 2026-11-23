@@ -232,16 +232,24 @@ export async function startCollaboration(
   const projectId = config.projectId ?? parent.projectId
   let cwd = resolveCwd(ctx, config, projectId, parent.cwd)
   const sourceCwd = cwd
-  const rollbackWorktree = () => config.worktree?.enabled && !config.worktreePath ? rollbackUnusedWorktree(worktreeGit(), sourceCwd, cwd, { ...config.worktree, mode: config.worktree.mode ?? 'branch' }).catch(() => {}) : Promise.resolve()
+  let createdWorktree = false
+  const rollbackWorktree = () => createdWorktree && !config.worktreePath ? rollbackUnusedWorktree(worktreeGit(), sourceCwd, cwd, { ...config.worktree!, mode: config.worktree!.mode ?? 'branch' }).catch(() => {}) : Promise.resolve()
   if (config.worktreePath && typeof config.worktreePath === 'string' && config.worktreePath.trim()) {
     cwd = pathResolve(config.worktreePath.trim())
   } else if (config.worktree?.enabled) {
-    cwd = (await ctx.deps.workspaceGit.activateWorktree(projectId, {
-      baseBranch: config.worktree.baseBranch || 'HEAD',
-      mode: config.worktree.mode ?? 'branch',
-      branchName: config.worktree.branchName,
-      carryLocalChanges: config.worktree.carryLocalChanges,
-    })).path
+    if (config.worktree.existing && config.worktree.worktreePath && existsSync(config.worktree.worktreePath)) {
+      cwd = pathResolve(config.worktree.worktreePath)
+    } else {
+      const activated = await ctx.deps.workspaceGit.activateWorktree(projectId, {
+        baseBranch: config.worktree.baseBranch || 'HEAD',
+        mode: config.worktree.mode ?? 'branch',
+        branchName: config.worktree.branchName,
+        carryLocalChanges: config.worktree.carryLocalChanges,
+        ifExists: config.worktree.mode === 'attach' ? 'reuse' : undefined,
+      })
+      cwd = activated.path
+      createdWorktree = activated.created !== false
+    }
   }
   try { input.assertControl?.(); assertProfileEnabled() } catch (error) { await rollbackWorktree(); throw error }
 

@@ -25,6 +25,7 @@ const state = vi.hoisted(() => ({
   resolveMainWorktreeDir: vi.fn(async (folderPath: string) => {
     return state.mainWorktreeByPath.get(folderPath) ?? folderPath
   }),
+  getWorktreeInfo: vi.fn(async (_folderPath: string) => null as import('@superone/shared/agent-types').WorktreeInfo | null),
   resourceCache: {
     claude: {
       models: [{ id: 'test-model', name: 'Test Model', supportedEffortLevels: ['low', 'high'] }],
@@ -133,6 +134,7 @@ vi.mock('../git/worktree-ops', () => ({
   activateWorktree: state.activateWorktree,
   rollbackUnusedDesktopWorktree: state.rollbackWorktree,
   resolveMainWorktreeDir: (folderPath: string) => state.resolveMainWorktreeDir(folderPath),
+  getWorktreeInfo: (folderPath: string) => state.getWorktreeInfo(folderPath),
 }))
 function ensureProjectId(projectPath: string): string {
   const existing = state.db!.prepare('SELECT id FROM projects WHERE path = ?').get(projectPath) as
@@ -302,6 +304,9 @@ async function approveLaunches(
   count = 1,
   configPatch: Record<string, unknown> = {},
 ) {
+  const emitMock = parent.emitHostEvent as ReturnType<typeof vi.fn>
+  const beforeCalls = emitMock.mock.calls.length
+  let settled = false
   const promise = requestSessionAgents(parent.id, {
     launches: Array.from({ length: count }, (_, index) => ({
       launchId: `launch-${index}`,
@@ -311,8 +316,13 @@ async function approveLaunches(
       role: 'Worker',
       config: { cwd: TEST_CWD, model: 'test-model', effort: 'high', ...configPatch },
     })),
-  }, host)
-  const event = (parent.emitHostEvent as ReturnType<typeof vi.fn>).mock.calls.at(-1)?.[0] as AgentEvent | undefined
+  }, host).finally(() => { settled = true })
+  while (!settled && emitMock.mock.calls.length === beforeCalls) {
+    await Promise.resolve()
+  }
+  const event = emitMock.mock.calls.length > beforeCalls
+    ? emitMock.mock.calls.at(-1)?.[0] as AgentEvent | undefined
+    : undefined
   if (event?.type === 'permission_request') resolveSessionAgentsConfirm(event.request.requestId, 'accept', {
     [SESSION_AGENT_LAUNCHES_FIELD]: JSON.stringify(event.request.sessionAgentsConfirm!.launches),
   })
@@ -331,6 +341,8 @@ beforeEach(() => {
   state.rollbackWorktree.mockClear()
   state.mainWorktreeByPath.clear()
   state.resolveMainWorktreeDir.mockClear()
+  state.getWorktreeInfo.mockReset()
+  state.getWorktreeInfo.mockResolvedValue(null)
   state.probeHarness.mockClear()
   for (const id of ['claude', 'codex', 'acp-grok', 'opencode', 'cursor', 'dsh']) {
     state.harnessStatuses[id] = { enabled: true, state: 'ready' }
@@ -1883,6 +1895,94 @@ describe('child session project attribution', () => {
     expect(createSession.mock.calls[0][0].projectPath).toBe(TEST_CWD)
     expect(createSession.mock.calls[0][0].cwd).toBe(parentWorktree)
     rmSync(parentWorktree, { recursive: true, force: true })
+  })
+
+  it('reuses an existing non-main worktree when mode is attach and never rolls it back on failure', async () => {
+    const existingWt = mkdtempSync(join(tmpdir(), 'existing-attach-wt-'))
+    try {
+      state.projects = [{ path: TEST_CWD }]
+      state.getWorktreeInfo.mockResolvedValue({
+        isWorktree: false,
+        currentBranch: 'main',
+        entries: [
+          { path: TEST_CWD, branch: 'main', head: '111111111111', isMain: true, isCurrent: true },
+          { path: existingWt, branch: 'feat/existing', head: '222222222222', isMain: false, isCurrent: false },
+        ],
+      })
+      const parent = fakeSession('parent')
+      const { host, createSession } = fakeHost(parent)
+      const [launch] = await approveLaunches(parent, host, 1, {
+        cwd: TEST_CWD,
+        worktree: { enabled: true, baseBranch: 'feat/existing', mode: 'attach' },
+      })
+      expect(launch.config.cwd).toBe(TEST_CWD)
+      expect(launch.config.worktree).toMatchObject({
+        enabled: true,
+        mode: 'attach',
+        baseBranch: 'feat/existing',
+        existing: true,
+        worktreePath: existingWt,
+      })
+
+      await startSessionAgent('parent', { launchId: launch.launchId, task: 'Task' }, host)
+      expect(state.activateWorktree).not.toHaveBeenCalled()
+      expect(createSession.mock.calls[0][0].projectPath).toBe(TEST_CWD)
+      expect(createSession.mock.calls[0][0].cwd).toBe(existingWt)
+      expect(createSession.mock.calls[0][0].gitBranch).toBe('feat/existing')
+
+      const row = state.db!.prepare('SELECT is_worktree, worktree_path FROM sessions WHERE id = ?')
+        .get(createSession.mock.calls[0][0].id) as { is_worktree: number; worktree_path: string | null }
+      expect(row).toEqual({ is_worktree: 1, worktree_path: existingWt })
+
+      // Failure after start must not delete an existing worktree.
+      const [failLaunch] = await approveLaunches(parent, host, 1, {
+        cwd: TEST_CWD,
+        worktree: { enabled: true, baseBranch: 'feat/existing', mode: 'attach' },
+      })
+      createSession.mockImplementationOnce(() => { throw new Error('boom') })
+      await expect(startSessionAgent('parent', { launchId: failLaunch.launchId, task: 'Task' }, host)).rejects.toThrow('boom')
+      expect(state.rollbackWorktree).not.toHaveBeenCalled()
+    } finally {
+      state.getWorktreeInfo.mockReset()
+      state.getWorktreeInfo.mockResolvedValue(null)
+      rmSync(existingWt, { recursive: true, force: true })
+    }
+  })
+
+  it('normalizes cwd pointing to an existing worktree so display and db match attach', async () => {
+    const existingWt = mkdtempSync(join(tmpdir(), 'existing-cwd-wt-'))
+    try {
+      state.projects = [{ path: TEST_CWD }]
+      state.mainWorktreeByPath.set(existingWt, TEST_CWD)
+      state.getWorktreeInfo.mockResolvedValue({
+        isWorktree: true,
+        currentBranch: 'feat/by-cwd',
+        entries: [
+          { path: TEST_CWD, branch: 'main', head: '111111111111', isMain: true, isCurrent: false },
+          { path: existingWt, branch: 'feat/by-cwd', head: '222222222222', isMain: false, isCurrent: true },
+        ],
+      })
+      const parent = fakeSession('parent')
+      const { host, createSession } = fakeHost(parent)
+      const [launch] = await approveLaunches(parent, host, 1, { cwd: existingWt })
+      expect(launch.config.cwd).toBe(TEST_CWD)
+      expect(launch.config.worktree).toMatchObject({
+        enabled: true,
+        mode: 'attach',
+        baseBranch: 'feat/by-cwd',
+        existing: true,
+        worktreePath: existingWt,
+      })
+
+      await startSessionAgent('parent', { launchId: launch.launchId, task: 'Task' }, host)
+      expect(createSession.mock.calls[0][0].projectPath).toBe(TEST_CWD)
+      expect(createSession.mock.calls[0][0].cwd).toBe(existingWt)
+      expect(createSession.mock.calls[0][0].gitBranch).toBe('feat/by-cwd')
+    } finally {
+      state.getWorktreeInfo.mockReset()
+      state.getWorktreeInfo.mockResolvedValue(null)
+      rmSync(existingWt, { recursive: true, force: true })
+    }
   })
 
   it('repro: parent is a worktree session of main — default launch cwd is project root, not the worktree leaf', async () => {

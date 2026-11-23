@@ -4,10 +4,16 @@
  */
 
 import { randomUUID } from 'node:crypto'
-import { existsSync } from 'node:fs'
+import { existsSync, realpathSync } from 'node:fs'
 import { basename, dirname, join, resolve, sep } from 'node:path'
 import { homedir } from 'node:os'
-import type { WorktreeEntry, WorktreeInfo, WorktreeMode, GitDirtyStatus } from '@superone/shared/agent-types'
+import type {
+  GitDirtyStatus,
+  SessionAgentWorktreeConfig,
+  WorktreeEntry,
+  WorktreeInfo,
+  WorktreeMode,
+} from '@superone/shared/agent-types'
 import { parseWorktreePorcelain } from './worktree-porcelain'
 
 /** Map `rev-parse --git-common-dir` output to the main checkout directory. */
@@ -171,4 +177,74 @@ export function checkedOutBranchesFromPorcelain(raw: string): string[] {
     }
   }
   return branches
+}
+
+function sameCheckoutDir(a: string, b: string): boolean {
+  const norm = (value: string) => value.replace(/\\/g, '/').replace(/\/$/, '')
+  if (norm(a) === norm(b)) return true
+  try {
+    const ra = existsSync(a) ? realpathSync(a) : resolve(a)
+    const rb = existsSync(b) ? realpathSync(b) : resolve(b)
+    return norm(ra) === norm(rb)
+  } catch {
+    return norm(resolve(a)) === norm(resolve(b))
+  }
+}
+
+export function resolveExistingWorktreeLaunch(
+  info: WorktreeInfo | null | undefined,
+  input: {
+    requestedCwd?: string
+    worktree?: SessionAgentWorktreeConfig
+  },
+): {
+  cwd?: string
+  worktree?: SessionAgentWorktreeConfig
+  conflictBranch?: string
+} {
+  if (!info?.entries?.length) return {}
+  const mainEntry = info.entries.find((e) => e.isMain)
+
+  if (input.worktree?.enabled && input.worktree.mode === 'attach') {
+    const target = input.worktree.baseBranch.trim()
+    if (!target) return {}
+    const entry = info.entries.find((e) => e.branch === target)
+      ?? info.entries.find((e) => !e.isMain && (
+        sameCheckoutDir(e.path, target)
+        || basename(e.path) === target
+        || (!e.branch && target.length >= 7 && e.head.startsWith(target))
+      ))
+    if (!entry) return {}
+    if (entry.isMain) return { conflictBranch: target }
+    const shortHead = entry.head ? entry.head.slice(0, 7) : ''
+    return {
+      ...(mainEntry ? { cwd: mainEntry.path } : {}),
+      worktree: {
+        ...input.worktree,
+        baseBranch: entry.branch || shortHead || target,
+        existing: true,
+        ...(!entry.branch && shortHead ? { existingHead: shortHead } : {}),
+        worktreePath: entry.path,
+      },
+    }
+  }
+
+  if (!input.worktree?.enabled && input.requestedCwd) {
+    const currentEntry = info.entries.find((e) => !e.isMain && sameCheckoutDir(e.path, input.requestedCwd!))
+    if (!currentEntry) return {}
+    const shortHead = currentEntry.head ? currentEntry.head.slice(0, 7) : ''
+    return {
+      ...(mainEntry ? { cwd: mainEntry.path } : {}),
+      worktree: {
+        enabled: true,
+        mode: 'attach',
+        baseBranch: currentEntry.branch || shortHead || 'HEAD',
+        existing: true,
+        ...(!currentEntry.branch && shortHead ? { existingHead: shortHead } : {}),
+        worktreePath: currentEntry.path,
+      },
+    }
+  }
+
+  return {}
 }

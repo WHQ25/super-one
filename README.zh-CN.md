@@ -159,9 +159,11 @@ Claude 会话派生一个 Codex 审查者；Codex 把迁移工作移交给 DeepS
 
 ## 安装
 
-[macOS Apple Silicon](https://dl.super-one.dev/stable/latest/SuperOne-arm64.dmg) · [macOS Intel](https://dl.super-one.dev/stable/latest/SuperOne-x64.dmg) · [Windows (.exe)](https://dl.super-one.dev/stable/latest/SuperOne-Setup.exe) · [Linux AppImage](https://dl.super-one.dev/stable/latest/SuperOne-x86_64.AppImage)
+**Stable：** [macOS Apple Silicon](https://dl.super-one.dev/stable/latest/SuperOne-arm64.dmg) · [macOS Intel](https://dl.super-one.dev/stable/latest/SuperOne-x64.dmg) · [Windows (.exe)](https://dl.super-one.dev/stable/latest/SuperOne-Setup.exe) · [Linux AppImage](https://dl.super-one.dev/stable/latest/SuperOne-x86_64.AppImage)
 
-SuperOne 会从 `dl.super-one.dev` 自动更新。
+**Alpha：** [macOS Apple Silicon](https://dl.super-one.dev/alpha/latest/SuperOne-alpha-arm64.dmg) · [macOS Intel](https://dl.super-one.dev/alpha/latest/SuperOne-alpha-x64.dmg) · [Windows (.exe)](https://dl.super-one.dev/alpha/latest/SuperOne-alpha-Setup.exe) · [Linux AppImage](https://dl.super-one.dev/alpha/latest/SuperOne-alpha-x86_64.AppImage)
+
+两个版本可并存安装，均会从 `dl.super-one.dev` 自动更新。
 
 ---
 

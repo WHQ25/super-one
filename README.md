@@ -159,9 +159,11 @@ Sessions block on you, you get a notification. Answer from your phone over LAN o
 
 ## Install
 
-[macOS Apple Silicon](https://dl.super-one.dev/stable/latest/SuperOne-arm64.dmg) · [macOS Intel](https://dl.super-one.dev/stable/latest/SuperOne-x64.dmg) · [Windows (.exe)](https://dl.super-one.dev/stable/latest/SuperOne-Setup.exe) · [Linux AppImage](https://dl.super-one.dev/stable/latest/SuperOne-x86_64.AppImage)
+**Stable:** [macOS Apple Silicon](https://dl.super-one.dev/stable/latest/SuperOne-arm64.dmg) · [macOS Intel](https://dl.super-one.dev/stable/latest/SuperOne-x64.dmg) · [Windows (.exe)](https://dl.super-one.dev/stable/latest/SuperOne-Setup.exe) · [Linux AppImage](https://dl.super-one.dev/stable/latest/SuperOne-x86_64.AppImage)
 
-SuperOne auto-updates from `dl.super-one.dev`.
+**Alpha:** [macOS Apple Silicon](https://dl.super-one.dev/alpha/latest/SuperOne-alpha-arm64.dmg) · [macOS Intel](https://dl.super-one.dev/alpha/latest/SuperOne-alpha-x64.dmg) · [Windows (.exe)](https://dl.super-one.dev/alpha/latest/SuperOne-alpha-Setup.exe) · [Linux AppImage](https://dl.super-one.dev/alpha/latest/SuperOne-alpha-x86_64.AppImage)
+
+Both variants install side-by-side and auto-update from `dl.super-one.dev`.
 
 ---
 

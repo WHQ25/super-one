@@ -1,4 +1,6 @@
 import { useRef, useCallback, useEffect, useState } from 'react'
+import { useSlot } from '@superone/ui-slots/react'
+import { PluginSlotErrorBoundary } from '@/lib/ui-slots'
 import { Plus } from 'lucide-react'
 import { DockviewReact } from 'dockview-react'
 import type { DockviewReadyEvent, DockviewApi, DockviewTheme, IDockviewHeaderActionsProps, IWatermarkPanelProps } from 'dockview-core'
@@ -286,6 +288,28 @@ export function ActivityPanel({ getMaxWidth, floatChatOnResizeOverflow, transiti
     }
   }, [])
 
+  const ActivityOverride = useSlot('shell.activity.content')
+  const dockContent = (
+    <ActivityHeaderGroupProvider api={headerApi}>
+      <DockviewReact
+        theme={SUPERONE_DOCKVIEW_THEME}
+        disableAutoResizing
+        disableDnd={maximized}
+        // Shift-dragging a tab out into a floating group is off: not every tab kind
+        // (webview hosts, terminals, devices) follows a group outside the grid.
+        disableFloatingGroups
+        scrollbars="native"
+        disableTabsOverflowList
+        onReady={onReady}
+        components={activityPanelComponents}
+        tabComponents={activityTabComponents}
+        watermarkComponent={ActivityWatermark}
+        prefixHeaderActionsComponent={ActivityPrefixActions}
+        leftHeaderActionsComponent={ActivityNewTabAction}
+      />
+    </ActivityHeaderGroupProvider>
+  )
+
   return (
     <>
       <div
@@ -303,24 +327,11 @@ export function ActivityPanel({ getMaxWidth, floatChatOnResizeOverflow, transiti
             panel must never be left without an owner for its own shortcuts. */}
         <div ref={innerRef} data-activity-inner="" tabIndex={-1} className="flex h-full flex-col overflow-hidden outline-none focus-visible:shadow-none" style={{ width: fillsWindow ? '100%' : panelWidth }}>
           <div className="min-h-0 flex-1">
-            <ActivityHeaderGroupProvider api={headerApi}>
-              <DockviewReact
-                theme={SUPERONE_DOCKVIEW_THEME}
-                disableAutoResizing
-                disableDnd={maximized}
-                // Shift-dragging a tab out into a floating group is off: not every tab kind
-                // (webview hosts, terminals, devices) follows a group outside the grid.
-                disableFloatingGroups
-                scrollbars="native"
-                disableTabsOverflowList
-                onReady={onReady}
-                components={activityPanelComponents}
-                tabComponents={activityTabComponents}
-                watermarkComponent={ActivityWatermark}
-                prefixHeaderActionsComponent={ActivityPrefixActions}
-                leftHeaderActionsComponent={ActivityNewTabAction}
-              />
-            </ActivityHeaderGroupProvider>
+            {ActivityOverride ? (
+              <PluginSlotErrorBoundary fallback={dockContent}>
+                <ActivityOverride visible={visible} />
+              </PluginSlotErrorBoundary>
+            ) : dockContent}
           </div>
         </div>
       </div>

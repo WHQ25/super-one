@@ -29,6 +29,7 @@ export default defineConfig({
       '../../packages/shared/src/**/*.{test,spec}.?(c|m)[jt]s?(x)',
       '../../packages/ui/src/**/*.{test,spec}.?(c|m)[jt]s?(x)',
       '../../packages/ui-slots/src/**/*.{test,spec}.?(c|m)[jt]s?(x)',
+      '../../packages/client-kernel/src/**/*.{test,spec}.?(c|m)[jt]s?(x)',
       '../../packages/plugin-sdk/src/**/*.{test,spec}.?(c|m)[jt]s?(x)',
       // Release tooling. Without this the suite silently skipped
       // scripts/lib/channels.test.ts, which looked like coverage of the

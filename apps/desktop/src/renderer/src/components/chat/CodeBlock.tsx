@@ -1,4 +1,6 @@
-import { lazy, useCallback, useMemo } from 'react'
+import { lazy, useCallback, useMemo, type ReactNode } from 'react'
+import { SlotChain } from '@superone/ui-slots/react'
+import { PluginSlotErrorBoundary } from '@/lib/ui-slots'
 import { projectSessionKey } from '@superone/shared/remote-resource-key'
 import { useSessionScope } from '@/stores/chat-store/session-scope'
 import { useActiveSession, useChatStore } from '@/stores/chat'
@@ -79,9 +81,49 @@ export function HighlightedCodeBlock(props: HighlightedCodeBlockProps) {
   return <HighlightedCodeBlockPresenter {...props} ports={ports} runBash={projectPath ? runBash : null} />
 }
 
+function CodeFenceSlotWrapper({
+  kind,
+  code,
+  language,
+  isComplete,
+  fallback,
+}: {
+  kind: 'code' | 'mermaid'
+  code: string
+  language: string
+  isComplete: boolean
+  fallback: () => ReactNode
+}) {
+  return (
+    <PluginSlotErrorBoundary resetKey={`${kind}:${language}:${code.length}`} fallback={fallback}>
+      <SlotChain
+        name="chat.markdown.fence"
+        props={{ kind, code, language, isComplete }}
+        fallback={fallback}
+      />
+    </PluginSlotErrorBoundary>
+  )
+}
+
 const desktopStreamdownCodePorts: StreamdownCodePresenterPorts = {
-  renderHighlightedCode: (props) => <HighlightedCodeBlock {...props} />,
-  renderMermaid: (props) => <MermaidBlock {...props} />,
+  renderHighlightedCode: (props) => (
+    <CodeFenceSlotWrapper
+      kind="code"
+      code={props.code}
+      language={props.language}
+      isComplete={props.isComplete ?? true}
+      fallback={() => <HighlightedCodeBlock {...props} />}
+    />
+  ),
+  renderMermaid: (props) => (
+    <CodeFenceSlotWrapper
+      kind="mermaid"
+      code={props.code}
+      language="mermaid"
+      isComplete={props.isComplete}
+      fallback={() => <MermaidBlock {...props} />}
+    />
+  ),
 }
 
 export function createStreamdownCodeComponent(codePlugin: CodeHighlighterPlugin) {

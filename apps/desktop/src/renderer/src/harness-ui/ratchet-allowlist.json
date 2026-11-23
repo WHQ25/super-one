@@ -59,10 +59,6 @@
     "count": 4,
     "reason": "usage sources per harness account (Claude OAuth, Codex, Grok)"
   },
-  "components/activity/activity-launch-types.ts": {
-    "count": 1,
-    "reason": "dsh activity launch"
-  },
   "components/chat/AutomationConfirmPrompt.tsx": {
     "count": 8,
     "reason": "automation run config is the per-harness AgentRunConfig union"

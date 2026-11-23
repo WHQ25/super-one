@@ -84,6 +84,8 @@ const COMPONENT_KINDS: Record<string, LayoutTabKind> = {
   'miniapp-tool-preview': 'tool-preview',
   'mcp-app': 'mcp-app',
   'mod-pane': 'mod-pane',
+  'plugin-panel': 'plugin-panel',
+  review: 'review',
 }
 
 function kindOf(component: string | undefined): LayoutTabKind {

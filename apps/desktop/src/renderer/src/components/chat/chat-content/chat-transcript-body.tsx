@@ -1,4 +1,7 @@
-import { useCallback, useEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode, type RefObject } from 'react'
+import { SlotChain, SlotHoc } from '@superone/ui-slots/react'
+import { PluginSlotErrorBoundary, type ChatMessageRowSlotProps } from '@/lib/ui-slots'
+import { useSessionScope } from '@/stores/chat'
 import { useTranslation } from 'react-i18next'
 import { AnimatePresence, motion } from 'motion/react'
 import { ArrowDown, PenLine, Play, ShipWheel, Trash2 } from 'lucide-react'
@@ -136,6 +139,10 @@ function InlineModPlaced({ rows }: { rows: readonly ModPlacedRow[] }) {
   )
 }
 
+function PassthroughMessageRow({ children }: ChatMessageRowSlotProps): ReactNode {
+  return children
+}
+
 export function ChatTranscriptBody({
   displayedSessionId,
   scrollViewportRef,
@@ -178,6 +185,7 @@ export function ChatTranscriptBody({
   isRecapping,
 }: ChatTranscriptBodyProps) {
   const { t } = useTranslation()
+  const sessionScope = useSessionScope()
   const { available: modUiAvailable, placed } = useModUiState()
   const { start: placedStart, after: anchoredPlacedAfter, tail: anchoredPlacedTail } = useMemo(() => {
     if (!modUiAvailable) return { start: [], after: new Map(), tail: [] }
@@ -202,7 +210,15 @@ export function ChatTranscriptBody({
               ? <div data-testid="realtime-connecting-blank" className="flex-1" />
               : awaitingRealtimeTimeline
                 ? <p className="py-16 text-center text-sm text-muted-foreground">{t('common.loading')}</p>
-                : <ChatSuggestions draft={draftMode} />
+                : (
+                  <PluginSlotErrorBoundary resetKey={displayedSessionId ?? 'empty'} fallback={() => <ChatSuggestions draft={draftMode} />}>
+                    <SlotChain
+                      name="chat.emptyState"
+                      props={{ draftMode, sessionId: displayedSessionId ?? null, projectPath: sessionScope?.projectPath ?? null }}
+                      fallback={() => <ChatSuggestions draft={draftMode} />}
+                    />
+                  </PluginSlotErrorBoundary>
+                )
         ) : (
           <ScrollArea key={displayedSessionId ?? 'default'} className="chat-scroll-area h-full min-w-0" viewportRef={scrollViewportRef}>
             <RemoteTranscriptEdges>
@@ -269,19 +285,31 @@ export function ChatTranscriptBody({
                       <div key={msg.id} data-message-id={row.id} className="chat-message-wrapper">
                         {separatorAt !== undefined && <MessageDateSeparator at={separatorAt} />}
                         {modelChange && <ModelChangeSeparator meta={modelChange} models={modelCatalog} />}
-                        <ChatMessage
-                          message={msg}
-                          sessionStatus={sessionStatus}
-                          isLastAssistant={row.final && (msg.id === pendingMessageId || msg.id === displayLastAssistantMessageId)}
-                          pendingTurn={msg.id === pendingMessageId ? 'sending' : undefined}
-                          apiRetry={row.final && row.source.id === retryTargetMessageId ? apiRetry : undefined}
-                          onRetry={row.source.id === retryTargetMessageId ? onRetry : undefined}
-                          showFooter={row.final}
-                          sourceMessage={row.source}
-                          followingMessage={row.following}
-                          segmentId={row.id}
-                          anchors={row.anchors}
-                        />
+                        <SlotHoc
+                          name="chat.message.row"
+                          component={PassthroughMessageRow}
+                          props={{
+                            messageId: msg.id,
+                            role: msg.role,
+                            isStreaming: row.final && (msg.id === pendingMessageId || msg.id === displayLastAssistantMessageId) && sessionStatus === 'streaming',
+                            sessionId: displayedSessionId ?? null,
+                            projectPath: sessionScope?.projectPath ?? null,
+                          }}
+                        >
+                          <ChatMessage
+                            message={msg}
+                            sessionStatus={sessionStatus}
+                            isLastAssistant={row.final && (msg.id === pendingMessageId || msg.id === displayLastAssistantMessageId)}
+                            pendingTurn={msg.id === pendingMessageId ? 'sending' : undefined}
+                            apiRetry={row.final && row.source.id === retryTargetMessageId ? apiRetry : undefined}
+                            onRetry={row.source.id === retryTargetMessageId ? onRetry : undefined}
+                            showFooter={row.final}
+                            sourceMessage={row.source}
+                            followingMessage={row.following}
+                            segmentId={row.id}
+                            anchors={row.anchors}
+                          />
+                        </SlotHoc>
                         {placedAfterRow && <InlineModPlaced rows={placedAfterRow} />}
                       </div>
                     )

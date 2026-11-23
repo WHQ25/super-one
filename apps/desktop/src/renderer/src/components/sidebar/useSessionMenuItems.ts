@@ -1,6 +1,8 @@
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { useMenuItems } from '@superone/client-kernel/react'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import type { HarnessId, SessionForkMode, SessionHistoryEntry } from '@superone/shared/agent-types'
 import { chatInputAPI } from '@/components/chat/chat-input-api'
 import { buildSessionMenuItems, canSettleSession } from '@/lib/session-menu-items'
@@ -69,6 +71,21 @@ export function useSessionMenuItems(
     }
   }, [callbacks.onSwitchSession, folderPath, session.sessionId, t])
 
+  const resolvedProvider = session.provider ?? 'claude'
+  const menuCtx = useMemo(
+    () => ({
+      menuId: 'session.contextMenu',
+      sessionId: session.sessionId,
+      projectPath: folderPath,
+      provider: resolvedProvider,
+      supportsUiPlugins: HARNESS_CAPABILITIES[resolvedProvider].supportsUiPlugins,
+      hasFolder: Boolean(folderPath),
+      target: session,
+    }),
+    [session, folderPath, resolvedProvider],
+  )
+  const menuContributions = useMenuItems('session.contextMenu', menuCtx)
+
   return buildSessionMenuItems(session, folderPath, t, {
     onRename: () => callbacks.onRenameSession({ sessionId: session.sessionId, title: session.title, folderPath }),
     onPin: () => callbacks.onPinSession(session.sessionId, !session.isPinned, folderPath),
@@ -85,5 +102,5 @@ export function useSessionMenuItems(
       const title = (session.title || 'Untitled').trim()
       chatInputAPI.insertMention?.('session', session.sessionId, title)
     },
-  }, { includeTags: false, unread, allowSettle })
+  }, { includeTags: false, unread, allowSettle, menuContributions })
 }

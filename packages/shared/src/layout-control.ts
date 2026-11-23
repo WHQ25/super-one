@@ -144,6 +144,8 @@ export type LayoutTabKind =
   | 'tool-preview'
   | 'mcp-app'
   | 'mod-pane'
+  | 'plugin-panel'
+  | 'review'
   | 'other'
 
 export type LayoutTabOpener = 'agent' | 'miniapp' | 'user'

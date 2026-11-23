@@ -222,6 +222,7 @@
     "@streamdown/math": "^1.0.2",
     "@superone/chat-view": "workspace:*",
     "@superone/claude": "workspace:*",
+    "@superone/client-kernel": "workspace:*",
     "@superone/codex": "workspace:*",
     "@superone/cursor": "workspace:*",
     "@superone/deepseek": "workspace:*",

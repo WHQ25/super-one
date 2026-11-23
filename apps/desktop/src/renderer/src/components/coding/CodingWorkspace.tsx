@@ -1,7 +1,11 @@
 import { useLayoutEffect, useMemo, useState } from 'react'
+import { SlotChain, SlotScopeProvider } from '@superone/ui-slots/react'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { cn } from '@superone/ui/lib/utils'
 import { SessionMosaic } from '@/components/mosaic/SessionMosaic'
 import { useChatStore, type SessionScope } from '@/stores/chat'
+import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
+import { PluginSlotErrorBoundary } from '@/lib/ui-slots'
 import { CodingLayout } from './CodingLayout'
 
 interface CodingWorkspaceProps {
@@ -33,10 +37,26 @@ export function CodingWorkspace({ mosaicMode, compact = false }: CodingWorkspace
     )
   }, [effectiveMode, activeScope])
 
+  const singleHarness = useChatStore((s) => {
+    if (!singleScope) return null
+    const session = s.projectSessions[singleScope.projectPath]?._sessions?.[singleScope.sessionId]
+    return session ? resolveProvider({ sessionProvider: session.sessionProvider, preferredProvider: session.preferredProvider }) : null
+  })
+  const singleSupportsUiPlugins = singleHarness ? HARNESS_CAPABILITIES[singleHarness].supportsUiPlugins : false
+  const renderDefaultSingleWorkspace = () => <CodingLayout foreground={effectiveMode !== 'mosaic'} scope={singleScope} compact={compact} />
+
   return (
     <>
       <div data-layout-single className={cn('flex min-h-0 min-w-0 flex-1 flex-col', effectiveMode === 'mosaic' && 'hidden')}>
-        <CodingLayout foreground={effectiveMode !== 'mosaic'} scope={singleScope} compact={compact} />
+        <SlotScopeProvider active={singleSupportsUiPlugins} scope={singleScope}>
+          <PluginSlotErrorBoundary resetKey={singleScope?.sessionId ?? 'single'} fallback={renderDefaultSingleWorkspace}>
+            <SlotChain
+              name="workspace.view"
+              props={{ mosaicMode: effectiveMode, compact, scope: singleScope }}
+              fallback={renderDefaultSingleWorkspace}
+            />
+          </PluginSlotErrorBoundary>
+        </SlotScopeProvider>
       </div>
       <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col', effectiveMode !== 'mosaic' && 'hidden')}>
         <SessionMosaic foreground={effectiveMode === 'mosaic'} />

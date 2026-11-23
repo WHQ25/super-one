@@ -6,6 +6,7 @@ import { acpAgentIdForHarness, isAcpProtocolHarness, isAntigravityAcpAgent, isGr
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { providerSessionIdFromResume } from '@superone/shared/environment'
 import type { AdaptiveMenuEntry } from '@/lib/native-context-menu'
+import type { ResolvedMenuItem } from '@superone/client-kernel'
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { enterMiniWindow } from '@/stores/window-mini-mode'
 
@@ -62,6 +63,30 @@ export interface SessionMenuOptions {
    * Omitted means allow.
    */
   allowSettle?: boolean
+  menuContributions?: readonly ResolvedMenuItem[]
+}
+
+export function resolvedMenuItemsToAdaptiveEntries(items: readonly ResolvedMenuItem[]): AdaptiveMenuEntry[] {
+  return items.map((entry) => {
+    if (entry.submenu && entry.submenu.length > 0) {
+      return {
+        kind: 'submenu',
+        id: entry.id,
+        label: entry.label,
+        ...(entry.icon ? { icon: entry.icon as AdaptiveMenuEntry & { icon?: never } extends never ? never : any } : {}),
+        items: resolvedMenuItemsToAdaptiveEntries(entry.submenu),
+      }
+    }
+    return {
+      kind: 'item',
+      id: entry.id,
+      label: entry.label,
+      ...(entry.icon ? { icon: entry.icon as any } : {}),
+      ...(entry.disabled ? { disabled: true } : {}),
+      ...(entry.destructive ? { destructive: true } : {}),
+      onSelect: entry.onSelect,
+    }
+  })
 }
 
 /**
@@ -323,6 +348,13 @@ export function buildSessionMenuItems(
         icon: MessageCirclePlus,
         onSelect: handlers.onNewSideChat,
       },
+    )
+  }
+
+  if (options.menuContributions && options.menuContributions.length > 0) {
+    items.push(
+      { kind: 'separator' },
+      ...resolvedMenuItemsToAdaptiveEntries(options.menuContributions),
     )
   }
 

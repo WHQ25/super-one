@@ -250,3 +250,15 @@ export function SlotHoc<K extends SlotsOfKind<SlotMap, 'hoc'>>({
   const mergedProps = children !== undefined ? { ...(props as any), children } : (props as any)
   return <Wrapped {...mergedProps} />
 }
+
+export function SlotChain<K extends SlotsOfKind<SlotMap, 'chain'>>({
+  name,
+  props,
+  fallback,
+}: {
+  name: K
+  props: SlotPropsOf<SlotMap, K>
+  fallback: (props: SlotPropsOf<SlotMap, K>) => ReactNode
+}) {
+  return <>{useSlotChain(name, props, fallback)}</>
+}

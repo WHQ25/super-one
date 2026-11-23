@@ -1,4 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { SlotList } from '@superone/ui-slots/react'
+import '@/lib/ui-slots'
 import { ModSite, spinnerProps, stringProp, type SpinnerMode } from '@superone/chat-view/mod-ui'
 import { useTranslation } from 'react-i18next'
 import { AlertTriangle, ArrowDown, ArrowUp, Check, Clock, Copy, Loader2 } from 'lucide-react'
@@ -237,6 +239,7 @@ export function DurationFooter({
           </button>
         )}
         {showCopy && copyText && <SpeakReplyButton messageId={message.id} text={copyText} />}
+        <SlotList name="chat.message.assistant.actions" props={{ message, copyText, isStreaming }} />
         {(showActivity || showDuration) && (showActivity ? (
           <ModSpinner message={message}>
             {(label) => (

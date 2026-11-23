@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState, useSyncExternalStore, type ComponentType, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { AppWindow, Blocks, Bug, File, Folder, GitCommit, GitFork, Globe, MessageCirclePlus, Puzzle, Route, Smartphone, Terminal } from 'lucide-react'
+import { AppWindow, Blocks, Bug, File, FileDiff, Folder, GitCommit, GitFork, Globe, MessageCirclePlus, Puzzle, Route, Smartphone, Terminal } from 'lucide-react'
 import type { LayoutTabKind } from '@superone/shared/layout-control'
 import { projectSessionKey } from '@superone/shared/remote-resource-key'
 import { cn } from '@superone/ui/lib/utils'
@@ -33,6 +33,8 @@ const TAB_KIND_ICON: Record<LayoutTabKind, ComponentType<{ className?: string }>
   'tool-preview': Bug,
   'mcp-app': Puzzle,
   'mod-pane': Blocks,
+  'plugin-panel': Puzzle,
+  review: FileDiff,
   other: AppWindow,
 }
 
@@ -47,6 +49,8 @@ const TAB_KIND_LABEL: Record<LayoutTabKind, 'activity.tabs.terminal' | 'activity
   'tool-preview': 'activity.tabs.toolPreview',
   'mcp-app': 'activity.tabs.mcpApp',
   'mod-pane': 'activity.tabs.modPane',
+  'plugin-panel': 'activity.tabs.other',
+  review: 'activity.tabs.other',
   other: 'activity.tabs.other',
 }
 
@@ -61,6 +65,8 @@ const TAB_KIND_HINT: Record<LayoutTabKind, 'activity.tabs.hint.terminal' | 'acti
   'tool-preview': 'activity.tabs.hint.toolPreview',
   'mcp-app': 'activity.tabs.hint.mcpApp',
   'mod-pane': 'activity.tabs.hint.modPane',
+  'plugin-panel': 'activity.tabs.hint.other',
+  review: 'activity.tabs.hint.other',
   other: 'activity.tabs.hint.other',
 }
 

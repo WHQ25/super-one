@@ -2,6 +2,8 @@ import { memo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { GitFork, Smartphone } from 'lucide-react'
 import { toast } from 'sonner'
+import { SlotChain } from '@superone/ui-slots/react'
+import { PluginSlotErrorBoundary } from '@/lib/ui-slots'
 import { useChatStore, useActiveSession, useIsRemoteLocked, useRemoteControlReleased, useSessionControlHolder, useSessionRemoteController } from '@/stores/chat'
 import { useSessionScope } from '@/stores/chat-store/session-scope'
 import { applyControlHolder, applyRemoteControlChange } from '@/stores/chat-store/helpers/remote-control'
@@ -170,7 +172,13 @@ export const ChatComposerShell = memo(function ChatComposerShell({
       <CursorApiKeyDialog />
       {showTodoPopup && <TodoPopup />}
       <ChatInput autoFocusOnMount={autoFocusOnMount} onMounted={onMounted} />
-      <ChatStatusBar />
+      <PluginSlotErrorBoundary resetKey={scope?.sessionId ?? 'status-bar'} fallback={() => <ChatStatusBar />}>
+        <SlotChain
+          name="chat.statusBar"
+          props={{ sessionId: scope?.sessionId ?? null, projectPath: projectPath ?? null }}
+          fallback={() => <ChatStatusBar />}
+        />
+      </PluginSlotErrorBoundary>
     </>
   )
 })

@@ -36,25 +36,120 @@ export interface SessionProvidersSlotProps {
   children: ReactNode
 }
 
+export interface WorkspaceViewSlotProps {
+  mosaicMode: 'single' | 'mosaic'
+  compact: boolean
+  scope?: { projectPath: string; sessionId: string }
+}
+
+export interface ChatTranscriptSlotProps {
+  sessionId?: string | null
+  projectPath?: string | null
+  showRealtime: boolean
+}
+
+export interface ChatComposerSlotProps {
+  sessionId?: string | null
+  projectPath?: string | null
+  composerKind: string
+}
+
+export interface ChatStatusBarSlotProps {
+  sessionId?: string | null
+  projectPath?: string | null
+}
+
+export interface ChatStatusBarItemSlotProps {
+  sessionId?: string | null
+  projectPath?: string | null
+  compact: boolean
+}
+
+export interface ChatEmptyStateSlotProps {
+  draftMode: boolean
+  sessionId?: string | null
+  projectPath?: string | null
+}
+
+export interface ChatMessageRowSlotProps {
+  messageId: string
+  role: 'user' | 'assistant' | 'system'
+  isStreaming: boolean
+  sessionId?: string | null
+  projectPath?: string | null
+  children: ReactNode
+}
+
+export interface ChatAssistantActionSlotProps {
+  message: unknown
+  copyText?: string
+  isStreaming: boolean
+}
+
+export interface ChatMarkdownFenceSlotProps {
+  kind: 'code' | 'mermaid'
+  code: string
+  language: string
+  isComplete: boolean
+}
+
+export interface ChatComposerAreaSlotProps {
+  sessionId?: string | null
+  projectPath?: string | null
+  compact?: boolean
+}
+
+export interface ActivityLauncherSlotProps {
+  groupId?: string
+}
+
+export interface ShellTitlebarContentSlotProps {
+  showLayoutControls: boolean
+}
+
+export interface ShellSidebarContentSlotProps {
+  open?: boolean
+}
+
+export interface ShellActivityContentSlotProps {
+  visible?: boolean
+}
+
+export interface ShellSettingsPageSlotProps {
+  area: 'nav' | 'content'
+  activeTab: string
+  onSelectTab: (tabId: string) => void
+}
+
+export interface ShellOverlayItemSlotProps {
+  view: string
+}
+
 declare module '@superone/ui-slots' {
   interface SlotMap {
-    'session.providers': {
-      kind: 'hoc'
-      props: SessionProvidersSlotProps
-    }
-    'session.header.actions': {
-      kind: 'list'
-      props: SessionHeaderActionSlotProps
-    }
-    'activity.panel': {
-      kind: 'keyed'
-      props: ActivityPluginPanelSlotProps
-      key: string
-    }
-    'chat.toolBlock': {
-      kind: 'chain'
-      props: ChatToolBlockSlotProps
-    }
+    'session.providers': { kind: 'hoc'; props: SessionProvidersSlotProps }
+    'session.header.actions': { kind: 'list'; props: SessionHeaderActionSlotProps }
+    'activity.panel': { kind: 'keyed'; props: ActivityPluginPanelSlotProps; key: string }
+    'activity.launcher': { kind: 'list'; props: ActivityLauncherSlotProps }
+    'chat.toolBlock': { kind: 'chain'; props: ChatToolBlockSlotProps }
+    'workspace.view': { kind: 'chain'; props: WorkspaceViewSlotProps }
+    'chat.transcript': { kind: 'chain'; props: ChatTranscriptSlotProps }
+    'chat.composer': { kind: 'chain'; props: ChatComposerSlotProps }
+    'chat.statusBar': { kind: 'chain'; props: ChatStatusBarSlotProps }
+    'chat.statusBar.left': { kind: 'list'; props: ChatStatusBarItemSlotProps }
+    'chat.statusBar.right': { kind: 'list'; props: ChatStatusBarItemSlotProps }
+    'chat.emptyState': { kind: 'chain'; props: ChatEmptyStateSlotProps }
+    'chat.message.row': { kind: 'hoc'; props: ChatMessageRowSlotProps }
+    'chat.message.assistant.actions': { kind: 'list'; props: ChatAssistantActionSlotProps }
+    'chat.markdown.fence': { kind: 'chain'; props: ChatMarkdownFenceSlotProps }
+    'chat.composer.dock.top': { kind: 'list'; props: ChatComposerAreaSlotProps }
+    'chat.composer.toolbar.left': { kind: 'list'; props: ChatComposerAreaSlotProps }
+    'chat.composer.toolbar.right': { kind: 'list'; props: ChatComposerAreaSlotProps }
+    'shell.titlebar.content': { kind: 'single'; props: ShellTitlebarContentSlotProps }
+    'shell.sidebar.content': { kind: 'single'; props: ShellSidebarContentSlotProps }
+    'shell.activity.content': { kind: 'single'; props: ShellActivityContentSlotProps }
+    'shell.settings.pages': { kind: 'list'; props: ShellSettingsPageSlotProps }
+    'shell.overlay.items': { kind: 'list'; props: ShellOverlayItemSlotProps }
   }
 }
 

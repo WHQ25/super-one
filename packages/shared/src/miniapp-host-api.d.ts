@@ -181,7 +181,7 @@ export interface SuperOneMiniAppLayoutResult {
 
 export interface SuperOneMiniAppLayoutTab {
   tab: string
-  kind: 'file' | 'browser' | 'terminal' | 'miniapp' | 'device' | 'side-chat' | 'trajectory' | 'tool-preview' | 'mcp-app' | 'mod-pane' | 'other'
+  kind: 'file' | 'browser' | 'terminal' | 'miniapp' | 'device' | 'side-chat' | 'trajectory' | 'tool-preview' | 'mcp-app' | 'mod-pane' | 'plugin-panel' | 'review' | 'other'
   title: string
   active: boolean
   group: number

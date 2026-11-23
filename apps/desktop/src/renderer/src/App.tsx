@@ -61,8 +61,10 @@ import { CodexConversationViewToggle } from '@/components/chat/CodexConversation
 import { useCodexRealtimeViewStore } from '@/stores/codex-realtime-view'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
-import { SlotList, SlotRegistryProvider, SlotScopeProvider } from '@superone/ui-slots/react'
-import { getAppSlotRegistry } from '@/lib/ui-slots'
+import { SlotList, SlotScopeProvider } from '@superone/ui-slots/react'
+import { ClientKernelProvider } from '@superone/client-kernel/react'
+import '@/lib/ui-slots'
+import { bindDesktopLayoutAdapter, createKeybindingContextFromEvent, getAppClientKernel } from '@/lib/client-kernel'
 import { useSettingsStore } from '@/stores/settings'
 import { useShallow } from 'zustand/react/shallow'
 import { cn } from '@superone/ui/lib/utils'
@@ -135,15 +137,18 @@ function AppContent(): React.JSX.Element {
   }, [])
 
   useEffect(() => {
+    const kernel = getAppClientKernel()
+    const unbindLayout = bindDesktopLayoutAdapter(kernel)
     let disposed = false
     let stop: (() => void) | undefined
     void import('@/harness-ui/dsh/plugin-loader').then(({ startDshPluginLoader }) => {
       if (disposed) return
-      stop = startDshPluginLoader()
+      stop = startDshPluginLoader({ kernel })
     })
     return () => {
       disposed = true
       stop?.()
+      unbindLayout()
     }
   }, [])
 
@@ -269,7 +274,12 @@ function AppContent(): React.JSX.Element {
       openBrowserTab()
     }
     window.addEventListener('keydown', handler)
-    const offIpc = window.app.onBrowserNewTabShortcut(() => openBrowserTab())
+    const offIpc = window.app.onBrowserNewTabShortcut(() => {
+      const kernel = getAppClientKernel()
+      if (!kernel.keybindings.dispatchShortcut('activity.newBrowserTab', createKeybindingContextFromEvent(null))) {
+        openBrowserTab()
+      }
+    })
     return () => {
       window.removeEventListener('keydown', handler)
       offIpc()
@@ -805,6 +815,7 @@ function AppContent(): React.JSX.Element {
       <ExternalLinkConfirm />
       <MiniAppClipboardGuard />
       {import.meta.env.DEV && <DebugPanel />}
+      <SlotList name="shell.overlay.items" props={{ view }} />
       </div>
     </div>
     <McpAppHostLayer />
@@ -863,9 +874,9 @@ function HeaderTitle({ sessionId, folderPath }: { sessionId: string; folderPath:
 
 function App(): React.JSX.Element {
   return (
-    <SlotRegistryProvider registry={getAppSlotRegistry()}>
+    <ClientKernelProvider kernel={getAppClientKernel()}>
       <AppContent />
-    </SlotRegistryProvider>
+    </ClientKernelProvider>
   )
 }
 

@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useRef, useState, type CSSProperties } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
+import { useMenuItems } from '@superone/client-kernel/react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { useShallow } from 'zustand/react/shallow'
@@ -162,6 +163,20 @@ export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string
     }
   }, [sessionId, folderPath, t, afterMutate])
 
+  const headerMenuCtx = useMemo(
+    () => ({
+      menuId: 'session.headerMenu',
+      sessionId,
+      projectPath: folderPath,
+      provider: provider ?? null,
+      supportsUiPlugins: provider ? HARNESS_CAPABILITIES[provider].supportsUiPlugins : false,
+      hasFolder: Boolean(folderPath),
+      target: entry,
+    }),
+    [sessionId, folderPath, provider, entry],
+  )
+  const menuContributions = useMenuItems('session.headerMenu', headerMenuCtx)
+
   if (!entry && !isLive) return null
 
   const chatView = {
@@ -223,7 +238,7 @@ export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string
           onNewSideChat: sideChatAvailable ? () => { void requestSideChat() } : undefined,
           chatView,
         },
-        { miniWindow: 'convert', allowSettle: canSettleSession(status, { realtimeVoice, isSettled: settled, childTurnOpen }) },
+        { miniWindow: 'convert', allowSettle: canSettleSession(status, { realtimeVoice, isSettled: settled, childTurnOpen }), menuContributions },
       )
     : buildChatFormItems({ sessionId, title: '' }, folderPath, t, chatView, { miniWindow: 'convert' })
   const items = itemsFor(isSettled)

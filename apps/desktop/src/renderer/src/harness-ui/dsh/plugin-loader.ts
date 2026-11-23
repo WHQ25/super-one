@@ -1,4 +1,5 @@
-import type { SlotRegistry, SlotScopeHandle } from '@superone/ui-slots'
+import type { ClientKernel, KernelScope } from '@superone/client-kernel'
+import type { SlotRegistry } from '@superone/ui-slots'
 import {
   PLUGIN_SDK_API_VERSION,
   createSlotRegistrar,
@@ -7,7 +8,9 @@ import {
 } from '@superone/plugin-sdk'
 import type { DshClientPluginEntry, DshClientPluginList } from '@superone/shared/dsh-plugin-client'
 import { closeGhostPluginPanels, closePluginPanelTab, openPluginPanelTab } from '@/components/activity/activity-panel-api'
-import { getAppSlotRegistry } from '@/lib/ui-slots'
+import { getAppClientKernel } from '@/lib/client-kernel'
+import { useAppStore } from '@/stores/app'
+import { createIsolatedDshKernelScope } from './dsh-isolation'
 
 export interface DshPluginHostApi {
   listClientPlugins(): Promise<DshClientPluginList>
@@ -18,7 +21,9 @@ export interface DshPluginHostApi {
 
 export interface DshClientPluginManagerOptions {
   api?: DshPluginHostApi
+  kernel?: ClientKernel
   registry?: SlotRegistry
+  isGlobalShellAllowed?: () => boolean
   ensureShared?: () => Promise<unknown>
   importModule?: (url: string) => Promise<Record<string, unknown>>
   attachStylesheet?: (pluginId: string, href: string) => () => void
@@ -28,7 +33,7 @@ export interface DshClientPluginManagerOptions {
 
 interface MountedPlugin {
   rev: string
-  scope: SlotScopeHandle
+  scope: KernelScope
 }
 
 function defaultAttachStylesheet(pluginId: string, href: string): () => void {
@@ -61,7 +66,9 @@ function extractActivate(mod: Record<string, unknown>): SuperoneClientPluginActi
 export class DshClientPluginManager {
   private readonly mounted = new Map<string, MountedPlugin>()
   private readonly api: DshPluginHostApi
+  private readonly kernel: ClientKernel | null
   private readonly registry: SlotRegistry
+  private readonly isGlobalShellAllowed: () => boolean
   private readonly ensureShared: () => Promise<unknown>
   private readonly importModule: (url: string) => Promise<Record<string, unknown>>
   private readonly attachStylesheet: (pluginId: string, href: string) => () => void
@@ -72,7 +79,9 @@ export class DshClientPluginManager {
 
   constructor(options: DshClientPluginManagerOptions = {}) {
     this.api = options.api ?? window.superonePlugin
-    this.registry = options.registry ?? getAppSlotRegistry()
+    this.kernel = options.kernel ?? (options.registry ? null : getAppClientKernel())
+    this.registry = options.registry ?? this.kernel!.slots
+    this.isGlobalShellAllowed = options.isGlobalShellAllowed ?? (() => useAppStore.getState().experimentalDshGlobalShell === true)
     this.ensureShared = options.ensureShared ?? (async () => (await import('./shared-runtime')).ensureSuperoneShared())
     this.importModule = options.importModule ?? defaultImportModule
     this.attachStylesheet = options.attachStylesheet ?? defaultAttachStylesheet
@@ -124,7 +133,37 @@ export class DshClientPluginManager {
       const existing = this.mounted.get(entry.id)
       if (existing && existing.rev === entry.rev) continue
 
-      const scope = this.registry.createScope()
+      const baseScope: KernelScope = this.kernel
+        ? this.kernel.createScope()
+        : (() => {
+            const slotScope = this.registry.createScope()
+            let disposed = false
+            const noopDisposer = Object.assign(() => {}, { dispose: () => {}, [Symbol.dispose]: () => {} })
+            const disposeFn = () => {
+              disposed = true
+              slotScope.dispose()
+            }
+            const fallbackScope: KernelScope = {
+              get disposed() {
+                return disposed
+              },
+              slots: slotScope,
+              registerCommand: () => noopDisposer,
+              registerCommandMiddleware: () => noopDisposer,
+              registerKeybinding: () => noopDisposer,
+              registerMenuItem: () => noopDisposer,
+              registerThemeLayer: () => noopDisposer,
+              createChildScope: () => fallbackScope,
+              onDispose: (fn) => slotScope.onDispose(fn),
+              dispose: disposeFn,
+              [Symbol.dispose]: disposeFn,
+            }
+            return fallbackScope
+          })()
+      const scope = createIsolatedDshKernelScope(baseScope, {
+        isGlobalShellAllowed: this.isGlobalShellAllowed,
+        pluginId: entry.id,
+      })
       try {
         for (const styleUrl of entry.styleUrls) {
           scope.onDispose(this.attachStylesheet(entry.id, styleUrl))
@@ -140,11 +179,61 @@ export class DshClientPluginManager {
           rpcUnsubscribers.clear()
         })
 
+        const fallbackLayoutResult = (code: 'unsupported' | 'error', message: string) => ({
+          ok: false as const,
+          ...(code === 'unsupported' ? { unsupported: true } : {}),
+          code,
+          message,
+        })
+
         const ctx: SuperoneClientPluginContext = {
           apiVersion: PLUGIN_SDK_API_VERSION,
           pluginId: entry.id,
-          scope,
-          slots: createSlotRegistrar(scope),
+          scope: scope.slots,
+          slots: createSlotRegistrar(scope.slots),
+          commands: {
+            registerCommand: (def) => scope.registerCommand(def),
+            registerMiddleware: (commandId, mw, priority) => scope.registerCommandMiddleware(commandId, mw, priority),
+            executeCommand: <Result = unknown>(id: string, ...args: unknown[]) =>
+              this.kernel
+                ? this.kernel.commands.executeCommand<Result>(id, ...args)
+                : Promise.reject(new Error(`Kernel unavailable to execute "${id}"`)),
+          },
+          keybindings: {
+            registerKeybinding: (def) => scope.registerKeybinding(def),
+          },
+          menus: {
+            registerMenuItem: (menuId, item) => scope.registerMenuItem(menuId, item),
+          },
+          layout: {
+            openPanel: (req) =>
+              this.kernel
+                ? this.kernel.layout.openPanel({ ...req, params: { ...req.params, pluginId: entry.id } })
+                : Promise.resolve(fallbackLayoutResult('unsupported', 'Layout bus unavailable')),
+            closePanel: (panelIdOrKey) =>
+              this.kernel
+                ? this.kernel.layout.closePanel(panelIdOrKey)
+                : Promise.resolve(fallbackLayoutResult('unsupported', 'Layout bus unavailable')),
+            focusPanel: (panelIdOrKey) =>
+              this.kernel
+                ? this.kernel.layout.focusPanel(panelIdOrKey)
+                : Promise.resolve(fallbackLayoutResult('unsupported', 'Layout bus unavailable')),
+            toggleSidebar: (open) =>
+              this.kernel
+                ? this.kernel.layout.toggleSidebar(open)
+                : Promise.resolve(fallbackLayoutResult('unsupported', 'Layout bus unavailable')),
+            toggleActivityPanel: (open) =>
+              this.kernel
+                ? this.kernel.layout.toggleActivityPanel(open)
+                : Promise.resolve(fallbackLayoutResult('unsupported', 'Layout bus unavailable')),
+            setChatMode: (mode) =>
+              this.kernel
+                ? this.kernel.layout.setChatMode(mode)
+                : Promise.resolve(fallbackLayoutResult('unsupported', 'Layout bus unavailable')),
+          },
+          theme: {
+            registerLayer: (layer) => scope.registerThemeLayer(layer),
+          },
           rpc: {
             invoke: <T = unknown>(method: string, payload?: unknown) =>
               this.api.invoke<T>(entry.id, method, payload),
@@ -158,9 +247,20 @@ export class DshClientPluginManager {
             },
           },
           activity: {
-            openPanel: (panelKey: string, title: string, params?: Record<string, unknown>) =>
-              openPluginPanelTab(panelKey, title, { ...params, pluginId: entry.id }),
-            closePanel: (panelKey: string) => closePluginPanelTab(panelKey),
+            openPanel: (panelKey: string, title: string, params?: Record<string, unknown>) => {
+              if (this.kernel) {
+                void this.kernel.layout.openPanel({ panelKey, title, params: { ...params, pluginId: entry.id } })
+                return
+              }
+              openPluginPanelTab(panelKey, title, { ...params, pluginId: entry.id })
+            },
+            closePanel: (panelKey: string) => {
+              if (this.kernel) {
+                void this.kernel.layout.closePanel(panelKey)
+                return
+              }
+              closePluginPanelTab(panelKey)
+            },
           },
           onDispose: (fn: () => void) => scope.onDispose(fn),
         }

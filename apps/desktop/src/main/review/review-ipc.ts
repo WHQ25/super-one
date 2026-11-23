@@ -103,55 +103,63 @@ async function getRemoteFileContentsPair(
   return { oldContent: null, newContent, matchesDisk: newContent !== null }
 }
 
-export function registerReviewIpc(tracker: TurnDiffTracker): void {
-  ipcMain.handle(
-    AgentIpcChannels.REVIEW_GET_SESSION,
-    async (_event, sessionId: string, folderPath: string, fallbackMessages?: unknown[]): Promise<ReviewSessionData> => {
-      if (parseRemoteProjectKey(folderPath) && Array.isArray(fallbackMessages)) {
-        const turns = buildTurnsFromTranscript(
-          fallbackMessages as Parameters<typeof buildTurnsFromTranscript>[0],
-          folderPath,
-        )
-        const sessionFiles = mergeFileDiffLists(turns.map((t) => t.files))
-        const totals = sumFileDiffTotals(sessionFiles)
-        return {
-          sessionId,
-          cwd: folderPath,
-          turns,
-          sessionFiles,
-          sessionAdditions: totals.additions,
-          sessionDeletions: totals.deletions,
-          sessionSource: 'tool-fallback',
-          hasConcurrentTurns: false,
+export type ReviewIpcHandlers = ReadonlyArray<readonly [channel: string, handler: (...args: any[]) => Promise<any>]>
+
+export function createReviewIpcHandlers(tracker: TurnDiffTracker): ReviewIpcHandlers {
+  return [
+    [
+      AgentIpcChannels.REVIEW_GET_SESSION,
+      async (_event, sessionId: string, folderPath: string, fallbackMessages?: unknown[]): Promise<ReviewSessionData> => {
+        if (parseRemoteProjectKey(folderPath) && Array.isArray(fallbackMessages)) {
+          const turns = buildTurnsFromTranscript(
+            fallbackMessages as Parameters<typeof buildTurnsFromTranscript>[0],
+            folderPath,
+          )
+          const sessionFiles = mergeFileDiffLists(turns.map((t) => t.files))
+          const totals = sumFileDiffTotals(sessionFiles)
+          return {
+            sessionId,
+            cwd: folderPath,
+            turns,
+            sessionFiles,
+            sessionAdditions: totals.additions,
+            sessionDeletions: totals.deletions,
+            sessionSource: 'tool-fallback',
+            hasConcurrentTurns: false,
+          }
         }
-      }
-      return tracker.getSessionReviewData(sessionId, folderPath)
-    },
-  )
+        return tracker.getSessionReviewData(sessionId, folderPath)
+      },
+    ],
+    [
+      AgentIpcChannels.REVIEW_GET_WORKSPACE,
+      async (_event, folderPath: string, filter?: ReviewWorkspaceFilter): Promise<ReviewWorkspaceData> => {
+        if (!folderPath) {
+          return { root: '', isRepo: false, files: [], totalAdditions: 0, totalDeletions: 0 }
+        }
+        if (parseRemoteProjectKey(folderPath)) {
+          return getRemoteWorkspaceFullDiff(folderPath)
+        }
+        return getWorkspaceFullDiff(folderPath, filter)
+      },
+    ],
+    [
+      AgentIpcChannels.REVIEW_GET_FILE_CONTENTS,
+      async (_event, folderPath: string, filePath: string): Promise<ReviewFileContentsPair> => {
+        if (!folderPath || !filePath) {
+          return { oldContent: null, newContent: null, matchesDisk: false }
+        }
+        if (parseRemoteProjectKey(folderPath)) {
+          return getRemoteFileContentsPair(folderPath, filePath)
+        }
+        return getLocalFileContentsPair(folderPath, filePath)
+      },
+    ],
+  ]
+}
 
-  ipcMain.handle(
-    AgentIpcChannels.REVIEW_GET_WORKSPACE,
-    async (_event, folderPath: string, filter?: ReviewWorkspaceFilter): Promise<ReviewWorkspaceData> => {
-      if (!folderPath) {
-        return { root: '', isRepo: false, files: [], totalAdditions: 0, totalDeletions: 0 }
-      }
-      if (parseRemoteProjectKey(folderPath)) {
-        return getRemoteWorkspaceFullDiff(folderPath)
-      }
-      return getWorkspaceFullDiff(folderPath, filter)
-    },
-  )
-
-  ipcMain.handle(
-    AgentIpcChannels.REVIEW_GET_FILE_CONTENTS,
-    async (_event, folderPath: string, filePath: string): Promise<ReviewFileContentsPair> => {
-      if (!folderPath || !filePath) {
-        return { oldContent: null, newContent: null, matchesDisk: false }
-      }
-      if (parseRemoteProjectKey(folderPath)) {
-        return getRemoteFileContentsPair(folderPath, filePath)
-      }
-      return getLocalFileContentsPair(folderPath, filePath)
-    },
-  )
+export function registerReviewIpc(tracker: TurnDiffTracker): void {
+  for (const [channel, handler] of createReviewIpcHandlers(tracker)) {
+    ipcMain.handle(channel, handler)
+  }
 }

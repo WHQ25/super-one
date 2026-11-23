@@ -44,7 +44,9 @@
     "./server": "./src/server/index.ts",
     "./server/*": "./src/server/*.ts",
     "./stream": "./src/stream/index.ts",
-    "./stream/*": "./src/stream/*.ts"
+    "./stream/*": "./src/stream/*.ts",
+    "./plugin-kernel": "./src/plugin-kernel/index.ts",
+    "./plugin-kernel/*": "./src/plugin-kernel/*.ts"
   },
   "scripts": {
     "test": "vitest run",

@@ -1,6 +1,9 @@
 import { lazy, Suspense } from 'react'
+import { SlotList } from '@superone/ui-slots/react'
+import { PluginSlotErrorBoundary } from '@/lib/ui-slots'
 import { ArrowLeft, BarChart3, Bot, Brain, Code2, Cpu, Globe, HardDrive, LayoutGrid, Loader2, MousePointer2, Paintbrush, Settings, Smartphone, SquareTerminal } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import type { SettingsTab } from '@/stores/app'
 import { useAppStore } from '@/stores/app'
 import { ProvidersPage } from './ProvidersPage'
 import { RemotePage } from './RemotePage'
@@ -101,11 +104,15 @@ export function SettingsLayout() {
                 ))}
             </SettingsNavGroup>
           ))}
+          <SlotList name="shell.settings.pages" props={{ area: 'nav', activeTab: activeSettingsTab, onSelectTab: (tabId) => setSettingsTab(tabId as SettingsTab) }} />
         </nav>
       </div>
 
       {/* Content */}
       <div className="min-w-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
+        <PluginSlotErrorBoundary resetKey={activeSettingsTab} fallback={null}>
+          <SlotList name="shell.settings.pages" props={{ area: 'content', activeTab: activeSettingsTab, onSelectTab: (tabId) => setSettingsTab(tabId as SettingsTab) }} />
+        </PluginSlotErrorBoundary>
         {activeSettingsTab === 'providers' && <ProvidersPage />}
         {activeSettingsTab === 'app-settings' && <AppSettingsPage />}
         {activeSettingsTab === 'appearance' && <AppearancePage />}

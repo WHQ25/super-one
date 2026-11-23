@@ -1,4 +1,6 @@
 import { callSession } from '@/lib/session-client'
+import { SlotList } from '@superone/ui-slots/react'
+import '@/lib/ui-slots'
 import { useEnvironmentServes } from '@/hooks/use-environment-serves'
 import { StatusBarMailbox } from './chat-status-bar/StatusBarMailbox'
 import { StatusBarSchedules } from './chat-status-bar/StatusBarSchedules'
@@ -591,7 +593,11 @@ export function ChatStatusBar() {
 
         <StatusBarPermission activeProvider={activeProvider} compactIndicators={compactIndicators} />
 
+        <SlotList name="chat.statusBar.left" props={{ sessionId: activeSessionId ?? null, projectPath: currentFolder ?? null, compact: compactIndicators }} />
+
         <div className="flex-1" />
+
+        <SlotList name="chat.statusBar.right" props={{ sessionId: activeSessionId ?? null, projectPath: currentFolder ?? null, compact: compactIndicators }} />
 
         {bashActivities.length > 0 && (
           <button

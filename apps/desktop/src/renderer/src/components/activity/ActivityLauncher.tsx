@@ -1,4 +1,6 @@
 import type { IDockviewGroupPanel } from 'dockview-core'
+import { SlotList } from '@superone/ui-slots/react'
+import '@/lib/ui-slots'
 import { cn } from '@superone/ui/lib/utils'
 import { useActivityLaunchTypes } from './activity-launch-types'
 import { launchInGroup } from './activity-panel-api'
@@ -29,6 +31,7 @@ export function ActivityLauncher({ group }: { group?: IDockviewGroupPanel }) {
             )}
           </button>
         ))}
+        <SlotList name="activity.launcher" props={{ groupId: group?.id }} />
       </div>
     </div>
   )

@@ -1,4 +1,6 @@
 import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react'
+import { SlotSingle } from '@superone/ui-slots/react'
+import { PluginSlotErrorBoundary } from '@/lib/ui-slots'
 import { Plus, Settings, FolderClosed, ArrowDownUp, SquarePen, MessageSquare, Copy, Check, Smartphone, Wifi, Cloud, Monitor, RotateCw } from 'lucide-react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
@@ -86,7 +88,7 @@ const isMac = window.app.platform === 'darwin'
 
 const EMPTY_SESSIONS: SessionHistoryEntry[] = []
 
-export const AppSidebar = memo(function AppSidebar() {
+const DefaultAppSidebar = memo(function DefaultAppSidebar() {
   const { t } = useTranslation()
   const { navigateTo, selectProject, removeRecentFolder, setSidebarTab, setSelectedHostConnectionId } = useAppStore(
     useShallow((s) => ({
@@ -1266,3 +1268,11 @@ function RemoteStatusIcon() {
     </TooltipProvider>
   )
 }
+
+export const AppSidebar = memo(function AppSidebar() {
+  return (
+    <PluginSlotErrorBoundary fallback={() => <DefaultAppSidebar />}>
+      <SlotSingle name="shell.sidebar.content" props={{}} fallback={DefaultAppSidebar} />
+    </PluginSlotErrorBoundary>
+  )
+})

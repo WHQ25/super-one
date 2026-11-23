@@ -47,8 +47,8 @@ import { ChatOverlayProviders, renderActiveChatOverlay, useChatOverlays } from '
 import { ChatTranscriptBody, useTranscriptJump } from './chat-content/chat-transcript-body'
 import { useChatDensityScale } from './chat-content/use-chat-density-scale'
 import { useTranscriptFrameKey } from './chat-content/use-transcript-frame-key'
-import { SlotHoc, SlotScopeProvider } from '@superone/ui-slots/react'
-import '@/lib/ui-slots'
+import { SlotChain, SlotHoc, SlotScopeProvider } from '@superone/ui-slots/react'
+import { PluginSlotErrorBoundary } from '@/lib/ui-slots'
 
 function PassthroughSessionProviders({ children }: { children: React.ReactNode }) {
   return <>{children}</>
@@ -536,44 +536,109 @@ export function ChatContent({ scrollViewportRef, showScrollButton = false, scrol
             data-transcript-frame=""
             className="flex min-h-0 min-w-0 flex-1 flex-col -mb-3 animate-[fade-in_150ms_ease-out]"
           >
-            {showRealtime ? (
-              <CodexRealtimeTranscript
-                sessionId={displayedSessionId!}
-                projectPath={projectPath}
-                scrollViewportRef={scrollViewportRef}
-                showScrollButton={showScrollButton}
-                scrollToBottom={scrollToBottom}
-                stopAutoScroll={stopAutoScroll}
-                liquidGlass={liquidGlass}
-                threadMessages={threadMessages}
-                sessionStatus={sessionStatus}
-                needsDecision={needsDecision}
+            <PluginSlotErrorBoundary
+              resetKey={displayedSessionId ?? 'transcript'}
+              fallback={() => (
+                showRealtime ? (
+                  <CodexRealtimeTranscript
+                    sessionId={displayedSessionId!}
+                    projectPath={projectPath}
+                    scrollViewportRef={scrollViewportRef}
+                    showScrollButton={showScrollButton}
+                    scrollToBottom={scrollToBottom}
+                    stopAutoScroll={stopAutoScroll}
+                    liquidGlass={liquidGlass}
+                    threadMessages={threadMessages}
+                    sessionStatus={sessionStatus}
+                    needsDecision={needsDecision}
+                  />
+                ) : (
+                  <ChatTranscript
+                    scrollViewportRef={scrollViewportRef}
+                    showScrollButton={showScrollButton}
+                    scrollToBottom={scrollToBottom}
+                    stopAutoScroll={stopAutoScroll}
+                    liquidGlass={liquidGlass}
+                  />
+                )
+              )}
+            >
+              <SlotChain
+                name="chat.transcript"
+                props={{ sessionId: displayedSessionId ?? null, projectPath: projectPath ?? null, showRealtime }}
+                fallback={() => (
+                  showRealtime ? (
+                    <CodexRealtimeTranscript
+                      sessionId={displayedSessionId!}
+                      projectPath={projectPath}
+                      scrollViewportRef={scrollViewportRef}
+                      showScrollButton={showScrollButton}
+                      scrollToBottom={scrollToBottom}
+                      stopAutoScroll={stopAutoScroll}
+                      liquidGlass={liquidGlass}
+                      threadMessages={threadMessages}
+                      sessionStatus={sessionStatus}
+                      needsDecision={needsDecision}
+                    />
+                  ) : (
+                    <ChatTranscript
+                      scrollViewportRef={scrollViewportRef}
+                      showScrollButton={showScrollButton}
+                      scrollToBottom={scrollToBottom}
+                      stopAutoScroll={stopAutoScroll}
+                      liquidGlass={liquidGlass}
+                    />
+                  )
+                )}
               />
-            ) : (
-              <ChatTranscript
-                scrollViewportRef={scrollViewportRef}
-                showScrollButton={showScrollButton}
-                scrollToBottom={scrollToBottom}
-                stopAutoScroll={stopAutoScroll}
-                liquidGlass={liquidGlass}
+            </PluginSlotErrorBoundary>
+          </div>
+          <PluginSlotErrorBoundary
+            resetKey={displayedSessionId ?? 'composer'}
+            fallback={() => (
+              <ChatComposerSlot
+                containerRef={containerRef}
+                displayedSessionId={displayedSessionId}
+                projectPath={projectPath}
+                needsDecision={needsDecision}
+                decision={decision}
+                decisionAvailable={decisionAvailable}
+                appConsent={appConsent}
+                consentHead={consentHead}
+                appInput={appInput}
+                openedComposer={openedComposer}
+                continuation={continuation}
+                showRealtimeComposer={showRealtimeComposer}
+                publishComposerOverhang={publishComposerOverhang}
               />
             )}
-          </div>
-          <ChatComposerSlot
-            containerRef={containerRef}
-            displayedSessionId={displayedSessionId}
-            projectPath={projectPath}
-            needsDecision={needsDecision}
-            decision={decision}
-            decisionAvailable={decisionAvailable}
-            appConsent={appConsent}
-            consentHead={consentHead}
-            appInput={appInput}
-            openedComposer={openedComposer}
-            continuation={continuation}
-            showRealtimeComposer={showRealtimeComposer}
-            publishComposerOverhang={publishComposerOverhang}
-          />
+          >
+            <SlotChain
+              name="chat.composer"
+              props={{
+                sessionId: displayedSessionId ?? null,
+                projectPath: projectPath ?? null,
+                composerKind: showRealtimeComposer ? 'voice' : 'text',
+              }}
+              fallback={() => (
+                <ChatComposerSlot
+                  containerRef={containerRef}
+                  displayedSessionId={displayedSessionId}
+                  projectPath={projectPath}
+                  needsDecision={needsDecision}
+                  decision={decision}
+                  decisionAvailable={decisionAvailable}
+                  appConsent={appConsent}
+                  consentHead={consentHead}
+                  appInput={appInput}
+                  openedComposer={openedComposer}
+                  continuation={continuation}
+                  showRealtimeComposer={showRealtimeComposer}
+                  publishComposerOverhang={publishComposerOverhang}
+                />
+              )}
+            />
+          </PluginSlotErrorBoundary>
         </>
       )}
       </ModChatThemeLayer>

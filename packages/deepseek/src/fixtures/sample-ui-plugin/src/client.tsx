@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, type ComponentType } from 'react'
 import { Wrench } from 'lucide-react'
 import { Badge } from '@superone/ui/components/ui/badge'
 import { Button } from '@superone/ui/components/ui/button'
@@ -6,6 +6,9 @@ import {
   usePluginSession,
   usePluginTheme,
   type PluginActivityPanelProps,
+  type PluginComposerAreaProps,
+  type PluginMarkdownFenceProps,
+  type PluginMessageRowProps,
   type PluginToolBlockProps,
   type SuperoneClientPluginContext,
 } from '@superone/plugin-sdk'
@@ -40,7 +43,7 @@ function SampleToolBlock({
       <Button
         size="sm"
         variant="ghost"
-        onClick={() => ctx.activity.openPanel('sample:inspector', 'Sample Inspector', { toolName: props.toolName })}
+        onClick={() => void ctx.layout.openPanel({ panelKey: 'sample:inspector', title: 'Sample Inspector', params: { toolName: props.toolName } })}
       >
         Inspect
       </Button>
@@ -60,12 +63,88 @@ function SampleInspectorPanel({ panelKey, title }: PluginActivityPanelProps) {
   )
 }
 
+function SampleComposerToolbarButton({ ctx }: { ctx: SuperoneClientPluginContext }) {
+  return (
+    <button
+      type="button"
+      data-testid="sample-dsh-composer-button"
+      onClick={() => void ctx.commands.executeCommand('sample.inspect.open')}
+      className="rounded px-1.5 py-0.5 text-[11px] hover:bg-muted"
+    >
+      Sample
+    </button>
+  )
+}
+
+function SampleMarkdownFence({ code, language }: PluginMarkdownFenceProps) {
+  return (
+    <div data-testid="sample-dsh-markdown-fence" data-language={language} className="rounded border p-2 text-xs">
+      {`fence:${code.trim()}`}
+    </div>
+  )
+}
+
+function wrapSampleMessageRow(Row: ComponentType<PluginMessageRowProps>) {
+  return function SampleMessageRowWrapper(props: PluginMessageRowProps) {
+    return (
+      <div data-testid="sample-dsh-message-row" data-message-id={props.messageId}>
+        <Row {...props} />
+      </div>
+    )
+  }
+}
+
 export default function activate(ctx: SuperoneClientPluginContext) {
+  ctx.commands.registerCommand({
+    id: 'sample.inspect.open',
+    title: 'Open Sample Inspector',
+    handler: () => ctx.layout.openPanel({ panelKey: 'sample:inspector', title: 'Sample Inspector' }),
+  })
+
+  ctx.keybindings.registerKeybinding({
+    key: 'ctrl+shift+k',
+    command: 'sample.inspect.open',
+  })
+
+  ctx.menus.registerMenuItem('session.contextMenu', {
+    id: 'sample-inspect-session',
+    label: 'Inspect Session (Sample)',
+    command: 'sample.inspect.open',
+  })
+
+  ctx.menus.registerMenuItem('activity.launcher', {
+    id: 'sample-inspector-launch',
+    label: 'Sample Inspector',
+    command: 'sample.inspect.open',
+  })
+
+  ctx.theme.registerLayer({
+    lightTokens: { '--primary': { h: 278 } },
+    cssVars: { '--dsh-sample-accent': 'oklch(0.62 0.19 278)' },
+  })
+
   ctx.slots.registerToolBlock({
     id: 'sample-tool-block',
     priority: 10,
     match: (props) => props.toolName === 'sample_inspect',
     render: (props) => <SampleToolBlock props={props} ctx={ctx} />,
+  })
+
+  ctx.slots.registerComposerToolbarRight({
+    id: 'sample-composer-toolbar',
+    component: (_props: PluginComposerAreaProps) => <SampleComposerToolbarButton ctx={ctx} />,
+  })
+
+  ctx.slots.registerMarkdownFence({
+    id: 'sample-markdown-fence',
+    priority: 10,
+    match: (props) => props.language === 'dsh-card',
+    render: (props) => <SampleMarkdownFence {...props} />,
+  })
+
+  ctx.slots.registerMessageRow({
+    id: 'sample-message-row',
+    wrap: wrapSampleMessageRow,
   })
 
   ctx.slots.registerActivityPanel('sample:inspector', {

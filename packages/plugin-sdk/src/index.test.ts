@@ -36,6 +36,8 @@ describe('@superone/plugin-sdk build helper', () => {
     expect(built).toContain('"@superone/ui/components/ui/button"')
     expect(built).toContain('"@superone/ui/components/ui/badge"')
     expect(built).not.toContain('"lucide-react"')
+    expect(SUPERONE_SHARED_MODULES).toContain('@superone/client-kernel')
+    expect(SUPERONE_SHARED_MODULES).toContain('@superone/client-kernel/react')
     expect(SUPERONE_SHARED_MODULES).not.toContain('lucide-react')
   })
 })

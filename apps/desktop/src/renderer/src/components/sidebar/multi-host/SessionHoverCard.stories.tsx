@@ -153,6 +153,8 @@ const tabHints = {
   'tool-preview': 'activity.tabs.hint.toolPreview',
   'mcp-app': 'activity.tabs.hint.mcpApp',
   'mod-pane': 'activity.tabs.hint.modPane',
+  'plugin-panel': 'activity.tabs.hint.other',
+  review: 'activity.tabs.hint.other',
   other: 'activity.tabs.hint.other',
 } as const
 

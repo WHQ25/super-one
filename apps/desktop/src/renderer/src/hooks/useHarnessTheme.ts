@@ -1,6 +1,8 @@
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { useThemeOverrides } from '@superone/client-kernel/react'
+import type { ResolvedThemeOverrides } from '@superone/client-kernel'
 import { useAppStore } from '@/stores/app'
-import { useActiveSession } from '@/stores/chat'
+import { useActiveSession, useSessionScope } from '@/stores/chat'
 import type { HarnessId } from '@superone/shared/session-types'
 import {
   DESIGN_TOKENS,
@@ -76,6 +78,21 @@ function lightPaletteProps(harness: HarnessId, hue: number | null, overrides: To
   return props
 }
 
+function mergeTokenOverrides(
+  base: TokenOverrides,
+  extra?: ResolvedThemeOverrides['lightTokens'],
+): TokenOverrides {
+  if (!extra) return base
+  const entries = Object.entries(extra)
+  if (entries.length === 0) return base
+  const merged: TokenOverrides = { ...base }
+  for (const [token, patch] of entries) {
+    const key = token as DesignToken
+    merged[key] = { ...merged[key], ...patch }
+  }
+  return merged
+}
+
 function syncBrandProps(
   el: HTMLElement,
   harness: HarnessId,
@@ -83,8 +100,22 @@ function syncBrandProps(
   overrides: TokenOverrides,
   dark: boolean,
   prev: AppliedSnapshot,
+  kernelOverrides?: ResolvedThemeOverrides | null,
 ): AppliedSnapshot {
-  const next = dark ? darkPaletteProps(hue, overrides) : lightPaletteProps(harness, hue, overrides)
+  const effectiveHue = kernelOverrides?.brandHue !== undefined ? kernelOverrides.brandHue : hue
+  const effectiveOverrides = mergeTokenOverrides(
+    overrides,
+    dark ? kernelOverrides?.darkTokens : kernelOverrides?.lightTokens,
+  )
+  const next = dark
+    ? darkPaletteProps(effectiveHue, effectiveOverrides)
+    : lightPaletteProps(harness, effectiveHue, effectiveOverrides)
+
+  if (kernelOverrides?.cssVars) {
+    for (const [name, value] of Object.entries(kernelOverrides.cssVars)) {
+      if (name.startsWith('--')) next.set(name, value)
+    }
+  }
 
   for (const name of prev.props.keys()) {
     if (!next.has(name)) el.style.removeProperty(name)
@@ -104,8 +135,14 @@ function darkPaletteProps(hue: number | null, overrides: TokenOverrides): Map<st
 export function usePaneHarnessTheme(ref: RefObject<HTMLElement | null>): void {
   const dark = useDarkClass()
   const harness = useActiveHarness()
+  const scope = useSessionScope()
   const brandHue = useAppStore((s) => (dark ? s.darkBrandHues : s.brandHues)[harness])
   const overrides = useAppStore((s) => (dark ? s.darkTokenOverrides : s.tokenOverrides)[harness])
+  const themeScope = useMemo(
+    () => (scope ? { projectPath: scope.projectPath, sessionId: scope.sessionId, harness } : { harness }),
+    [scope?.projectPath, scope?.sessionId, harness],
+  )
+  const kernelOverrides = useThemeOverrides(themeScope)
 
   const appliedRef = useRef<AppliedSnapshot>(EMPTY_SNAPSHOT)
 
@@ -116,12 +153,12 @@ export function usePaneHarnessTheme(ref: RefObject<HTMLElement | null>): void {
     el.classList.toggle('brand-scope', !dark)
     let raf: number | null = requestAnimationFrame(() => {
       raf = null
-      appliedRef.current = syncBrandProps(el, harness, brandHue, overrides, dark, appliedRef.current)
+      appliedRef.current = syncBrandProps(el, harness, brandHue, overrides, dark, appliedRef.current, kernelOverrides)
     })
     return () => {
       if (raf !== null) cancelAnimationFrame(raf)
     }
-  }, [ref, harness, dark, brandHue, overrides])
+  }, [ref, harness, dark, brandHue, overrides, kernelOverrides])
 }
 
 export function useHarnessTheme(): void {
@@ -129,6 +166,7 @@ export function useHarnessTheme(): void {
   const harness = useActiveHarness()
   const brandHue = useAppStore((s) => (dark ? s.darkBrandHues : s.brandHues)[harness])
   const overrides = useAppStore((s) => (dark ? s.darkTokenOverrides : s.tokenOverrides)[harness])
+  const kernelOverrides = useThemeOverrides()
   const terminalLightPalette = useAppStore((s) => s.terminalLightPalette)
   const terminalDarkPalette = useAppStore((s) => s.terminalDarkPalette)
   const terminalFontSize = useAppStore((s) => s.terminalFontSize)
@@ -157,10 +195,10 @@ export function useHarnessTheme(): void {
 
     let raf: number | null = requestAnimationFrame(() => {
       raf = null
-      appliedRef.current = syncBrandProps(root, harness, brandHue, overrides, dark, appliedRef.current)
+      appliedRef.current = syncBrandProps(root, harness, brandHue, overrides, dark, appliedRef.current, kernelOverrides)
     })
     return () => {
       if (raf !== null) cancelAnimationFrame(raf)
     }
-  }, [harness, dark, brandHue, overrides, terminalLightPalette, terminalDarkPalette, terminalFontSize, terminalFontFamily, uiFontFamily, liquidGlass])
+  }, [harness, dark, brandHue, overrides, kernelOverrides, terminalLightPalette, terminalDarkPalette, terminalFontSize, terminalFontFamily, uiFontFamily, liquidGlass])
 }

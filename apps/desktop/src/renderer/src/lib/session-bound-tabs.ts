@@ -36,6 +36,8 @@ const TAB_KIND_ORDER: readonly LayoutTabKind[] = [
   'tool-preview',
   'mcp-app',
   'mod-pane',
+  'plugin-panel',
+  'review',
   'other',
 ]
 

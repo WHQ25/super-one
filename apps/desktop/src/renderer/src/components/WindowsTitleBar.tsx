@@ -1,7 +1,18 @@
 import { useRef } from 'react'
+import { SlotSingle } from '@superone/ui-slots/react'
+import { PluginSlotErrorBoundary } from '@/lib/ui-slots'
 import logoUrl from '@/assets/logo-text-inline.png'
 import { useWindowChromeSync } from '@/hooks/useWindowChromeSync'
 import { LayoutToggle } from '@/components/coding/LayoutToggle'
+
+function DefaultTitlebarContent({ showLayoutControls }: { showLayoutControls: boolean }) {
+  return (
+    <>
+      <img src={logoUrl} alt="SuperOne" draggable={false} className="h-[18px] w-auto shrink-0 select-none" />
+      {showLayoutControls && <LayoutToggle placement="titlebar" />}
+    </>
+  )
+}
 
 export function WindowsTitleBar({ showLayoutControls = false }: { showLayoutControls?: boolean }): React.JSX.Element | null {
   const ref = useRef<HTMLDivElement>(null)
@@ -15,8 +26,13 @@ export function WindowsTitleBar({ showLayoutControls = false }: { showLayoutCont
       className="flex h-10 shrink-0 items-center gap-3 bg-sidebar pl-3 pr-[138px] text-sidebar-foreground"
       style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
     >
-      <img src={logoUrl} alt="SuperOne" draggable={false} className="h-[18px] w-auto shrink-0 select-none" />
-      {showLayoutControls && <LayoutToggle placement="titlebar" />}
+      <PluginSlotErrorBoundary fallback={() => <DefaultTitlebarContent showLayoutControls={showLayoutControls} />}>
+        <SlotSingle
+          name="shell.titlebar.content"
+          props={{ showLayoutControls }}
+          fallback={DefaultTitlebarContent}
+        />
+      </PluginSlotErrorBoundary>
     </div>
   )
 }

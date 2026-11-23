@@ -12,6 +12,7 @@
     "typecheck": "tsc --noEmit -p tsconfig.json"
   },
   "dependencies": {
+    "@superone/client-kernel": "workspace:*",
     "@superone/shared": "workspace:*",
     "@superone/ui-slots": "workspace:*"
   },

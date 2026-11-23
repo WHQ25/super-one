@@ -1,4 +1,6 @@
 import { useRuntimeSlashCommands } from '@/harness-ui/use-runtime-slash-commands'
+import { SlotList } from '@superone/ui-slots/react'
+import '@/lib/ui-slots'
 import { commitPerSession } from '@/stores/chat-store/helpers/store-helpers'
 import { validateTurnAttachments } from '@superone/shared/attachment-validation'
 import { useRef, useState, useCallback, useMemo, useEffect } from 'react'
@@ -2370,6 +2372,8 @@ export function ChatInput({
           />
         )}
 
+        <SlotList name="chat.composer.dock.top" props={{ sessionId: displayedSessionId ?? null, projectPath: sessionProject ?? null }} />
+
         <BrowserAnnotationChips annotations={browserAnnotations} onRemove={removeBrowserAnnotation} onClear={clearBrowserAnnotations} />
 
         <ReplyCommentChips comments={replyComments} onOpen={requestReplyCommentEdit} onRemove={removeReplyComment} onClear={clearReplyComments} />
@@ -2401,6 +2405,7 @@ export function ChatInput({
               />
               <ComposerActionsButton onAttach={() => fileInputRef.current?.click()} target={isRemoteLocked ? null : sessionScope ?? (activeProject && displayedSessionId ? { projectPath: activeProject, sessionId: displayedSessionId } : null)} />
               <ModelSelector onCloseAutoFocus={(e) => { e.preventDefault(); if (editor && !editor.isDestroyed) editor.commands.focus() }} />
+              <SlotList name="chat.composer.toolbar.left" props={{ sessionId: displayedSessionId ?? null, projectPath: sessionProject ?? null, compact: toolbarChipCompact }} />
               {goalCapability && goalActions && (sessionGoal || goalComposing) && (
                 <GoalIndicator
                   goal={sessionGoal}
@@ -2421,6 +2426,7 @@ export function ChatInput({
             </div>
 
             <div ref={rightGroupRef} className="flex min-w-0 items-center gap-1.5">
+            <SlotList name="chat.composer.toolbar.right" props={{ sessionId: displayedSessionId ?? null, projectPath: sessionProject ?? null, compact: toolbarChipCompact }} />
             <ModSessionMode />
             <ContextUsage />
             {(isStreaming || interruptPending) && (

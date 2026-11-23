@@ -1,8 +1,12 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { Maximize, Pin, PinOff } from 'lucide-react'
+import { ClientKernelProvider } from '@superone/client-kernel/react'
 import { useActiveSession, useChatStore } from '@/stores/chat'
 import { SessionPane } from '@/components/chat/SessionPane'
 import { useStandaloneSessionBoot } from '@/hooks/useStandaloneSessionBoot'
+import { useKernelKeybindings } from '@/hooks/useChatKeyboardShortcuts'
+import { useHarnessTheme } from '@/hooks/useHarnessTheme'
+import { bindMiniWindowLayoutAdapter, getMiniWindowClientKernel } from '@/lib/client-kernel'
 import { exitMiniWindow } from '@/stores/window-mini-mode'
 import { useWindowChromeSync } from '@/hooks/useWindowChromeSync'
 import { ExternalLinkConfirm } from '@/components/ExternalLinkConfirm'
@@ -131,8 +135,10 @@ export function MiniWindowHeader({ initialTitle, canRestore, transparentBackgrou
   )
 }
 
-export function MiniWindowApp({ projectPath, sessionId, initialTitle, canRestore }: MiniWindowAppProps): React.JSX.Element {
+function MiniWindowAppBody({ projectPath, sessionId, initialTitle, canRestore }: MiniWindowAppProps): React.JSX.Element {
   useStandaloneSessionBoot(projectPath, sessionId)
+  useHarnessTheme()
+  useKernelKeybindings()
   const activeSessionId = useActiveSession((s) => s._activeSessionId ?? s.session?.sessionId)
   const matchesTarget = activeSessionId === sessionId
 
@@ -151,5 +157,16 @@ export function MiniWindowApp({ projectPath, sessionId, initialTitle, canRestore
       </div>
       <ExternalLinkConfirm enableInApp={false} />
     </div>
+  )
+}
+
+export function MiniWindowApp(props: MiniWindowAppProps): React.JSX.Element {
+  const kernel = getMiniWindowClientKernel()
+  useEffect(() => bindMiniWindowLayoutAdapter(kernel), [kernel])
+
+  return (
+    <ClientKernelProvider kernel={kernel}>
+      <MiniWindowAppBody {...props} />
+    </ClientKernelProvider>
   )
 }

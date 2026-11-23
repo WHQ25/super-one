@@ -1,10 +1,14 @@
-import type { ComponentType } from 'react'
-import { FileDiff, Globe, Route, Smartphone, Terminal as TerminalIcon } from 'lucide-react'
+import { useMemo, type ComponentType } from 'react'
+import { Globe, Puzzle, Smartphone, Terminal as TerminalIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { useSyncExternalStore } from 'react'
+import { useClientKernelOptional } from '@superone/client-kernel/react'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
+import { getAppClientKernel } from '@/lib/client-kernel'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
-import { focusActivePanelContent, openBrowserTab, openDeviceTab, openReviewTab, openTerminalTab, openTrajectoryTab } from './activity-panel-api'
+import { focusActivePanelContent, openBrowserTab, openDeviceTab, openTerminalTab } from './activity-panel-api'
 
 export interface ActivityLaunchType {
   id: string
@@ -17,92 +21,99 @@ export interface ActivityLaunchType {
 
 const isMac = window.app.platform === 'darwin'
 
-// The content types a user can open manually in the activity panel. Shared by the
-// empty-state launcher tab and the tab-bar "+" menu so they never drift.
 export function useActivityLaunchTypes(): ActivityLaunchType[] {
   const { t } = useTranslation()
   const currentFolder = useAppStore((s) => s.currentFolder)
-  // Trajectory reads a dsh session log, so it is offered only where one exists.
-  // Other harnesses keep their own native transcripts; projecting those onto
-  // this ledger is separate work, not a fallback.
-  const trajectorySessionId = useChatStore((s) => {
-    const project = s.activeProject ? s.projectSessions[s.activeProject] : undefined
-    const sessionId = project?._activeSessionId
-    const session = sessionId ? project?._sessions[sessionId] : undefined
-    return session && resolveProvider(session) === 'dsh' ? sessionId ?? null : null
-  })
   const activeSessionId = useChatStore((s) => {
     const project = s.activeProject ? s.projectSessions[s.activeProject] : undefined
     return project?._activeSessionId ?? null
   })
+  const activeSessionProvider = useChatStore((s) => {
+    const project = s.activeProject ? s.projectSessions[s.activeProject] : undefined
+    const sessionId = project?._activeSessionId
+    const session = sessionId ? project?._sessions[sessionId] : undefined
+    return session ? resolveProvider(session) : null
+  })
 
-  // Every launcher here is a deliberate user action, so the tab it opens takes
-  // focus — otherwise focus stays wherever it was and the panel's own shortcuts
-  // (⌘T) go dead until the next click.
-  const types: ActivityLaunchType[] = [
+  const kernel = useClientKernelOptional() ?? getAppClientKernel()
+  const launcherMenuCtx = useMemo(
+    () => ({
+      menuId: 'activity.launcher' as const,
+      sessionId: activeSessionId,
+      projectPath: currentFolder ?? null,
+      provider: activeSessionProvider,
+      supportsUiPlugins: activeSessionProvider ? HARNESS_CAPABILITIES[activeSessionProvider].supportsUiPlugins : false,
+      hasFolder: Boolean(currentFolder),
+      extra: { t },
+    }),
+    [activeSessionId, currentFolder, activeSessionProvider, t],
+  )
+  const menuVersion = useSyncExternalStore(
+    (onStoreChange) => kernel.menus.subscribeMenu('activity.launcher', onStoreChange),
+    () => kernel.menus.getVersion('activity.launcher'),
+    () => -1,
+  )
+  const contributedItems = useMemo(() => {
+    void menuVersion
+    return kernel.menus.getMenuItems('activity.launcher', launcherMenuCtx)
+  }, [kernel, launcherMenuCtx, menuVersion])
+
+  const orderedEntries: Array<{ order: number; item: ActivityLaunchType }> = [
     {
-      id: 'browser',
-      icon: Globe,
-      label: t('activity.launcher.browser'),
-      shortcut: isMac ? '⌘T' : 'Ctrl+T',
-      onOpen: () => openBrowserTab(),
-    },
-    {
-      id: 'terminal',
-      icon: TerminalIcon,
-      label: t('activity.launcher.terminal'),
-      disabled: !currentFolder,
-      onOpen: () => {
-        const projectPath = useAppStore.getState().currentFolder
-        if (!projectPath) return
-        const cs = useChatStore.getState()
-        const proj = cs.activeProject
-        const sessionId = proj ? cs.projectSessions[proj]?._activeSessionId ?? undefined : undefined
-        void openTerminalTab(projectPath, sessionId)
+      order: 10,
+      item: {
+        id: 'browser',
+        icon: Globe,
+        label: t('activity.launcher.browser'),
+        shortcut: isMac ? '⌘T' : 'Ctrl+T',
+        onOpen: () => openBrowserTab(),
       },
     },
     {
-      id: 'review',
-      icon: FileDiff,
-      label: t('review.title'),
-      disabled: !currentFolder,
-      onOpen: () => {
-        const projectPath = useAppStore.getState().currentFolder
-        if (!projectPath) return
-        const cs = useChatStore.getState()
-        const proj = cs.activeProject
-        const sessionId = proj ? cs.projectSessions[proj]?._activeSessionId ?? undefined : undefined
-        openReviewTab({ projectPath, sessionId, label: t('review.title') })
+      order: 20,
+      item: {
+        id: 'terminal',
+        icon: TerminalIcon,
+        label: t('activity.launcher.terminal'),
+        disabled: !currentFolder,
+        onOpen: () => {
+          const projectPath = useAppStore.getState().currentFolder
+          if (!projectPath) return
+          const cs = useChatStore.getState()
+          const proj = cs.activeProject
+          const sessionId = proj ? cs.projectSessions[proj]?._activeSessionId ?? undefined : undefined
+          void openTerminalTab(projectPath, sessionId)
+        },
       },
     },
-    // One entry, not one per platform. Both used to open the same tab, and since
-    // that tab shows its own picker — iOS simulators and Android devices in one
-    // list — choosing the platform out here was a decision the user then had to
-    // make again inside. Every click opens a NEW tab, which is what lets one session
-    // drive two devices at once.
     ...(activeSessionId
       ? [{
-        id: 'device',
-        icon: Smartphone,
-        label: t('activity.launcher.device'),
-        onOpen: () => { openDeviceTab(activeSessionId, t('activity.device.title')) },
-      }]
+          order: 40,
+          item: {
+            id: 'device',
+            icon: Smartphone,
+            label: t('activity.launcher.device'),
+            onOpen: () => { openDeviceTab(activeSessionId, t('activity.device.title')) },
+          },
+        }]
       : []),
-    // Absent rather than disabled on every other harness: a greyed-out row
-    // reads as "you could enable this", and nothing a user does on a Claude or
-    // Codex session will ever produce a dsh log to project.
-    ...(trajectorySessionId === null
-      ? []
-      : [{
-        id: 'trajectory',
-        icon: Route,
-        label: t('trajectory.title'),
-        onOpen: () => openTrajectoryTab(trajectorySessionId, t('trajectory.title')),
-      }]),
+    ...contributedItems.map((entry) => ({
+      order: entry.order,
+      item: {
+        id: entry.id,
+        icon: entry.icon ?? Puzzle,
+        label: entry.label,
+        shortcut: entry.shortcut,
+        disabled: entry.disabled,
+        onOpen: entry.onSelect,
+      },
+    })),
   ]
 
-  return types.map((type) => ({
-    ...type,
-    onOpen: () => { type.onOpen(); focusActivePanelContent() },
+  orderedEntries.sort((a, b) => a.order - b.order)
+
+  return orderedEntries.map(({ item }) => ({
+    ...item,
+    onOpen: () => { item.onOpen(); focusActivePanelContent() },
   }))
 }

@@ -1,4 +1,3 @@
-import { lazy, Suspense } from 'react'
 import type { IDockviewPanelProps } from 'dockview-core'
 import type { ReviewScope } from '@superone/shared/review-types'
 import { DesktopModUi } from '@/lib/mod-ui/DesktopModUi'
@@ -8,7 +7,6 @@ import { FilePreview } from '@/components/coding/FilePreview'
 import { MiniAppSlot } from '@/components/miniapp/MiniAppSlot'
 import { toolUiPreviewSlotKey } from '@/stores/miniapp-tool-preview'
 import { BrowserView } from '@/components/browser/BrowserView'
-import { TrajectoryPanel } from '@/components/trajectory/TrajectoryPanel'
 import { DeviceDockPanel } from '@/components/device/DeviceDockPanel'
 import { SideChatPanel } from '@/components/chat/SideChatPanel'
 import { ActivityTerminalPanel } from './ActivityTerminalPanel'
@@ -24,7 +22,6 @@ function MiniAppPanel(props: IDockviewPanelProps<{ instanceKey: string; appId: s
 }
 
 function ToolUiPreviewPanel(props: IDockviewPanelProps<{ previewKey: string }>) {
-  // Drawn by the mini-app host layer so it can also move into picture-in-picture.
   return <MiniAppSlot slotKey={toolUiPreviewSlotKey(props.params.previewKey)} mode="panel" className="h-full w-full" />
 }
 
@@ -37,7 +34,7 @@ function TerminalHostPanel(props: IDockviewPanelProps<{ terminalId: string }>) {
 }
 
 function TrajectoryDockPanel(props: IDockviewPanelProps<{ sessionId: string }>) {
-  return <TrajectoryPanel sessionId={props.params.sessionId} />
+  return <PluginDockPanel {...(props as any)} params={{ ...props.params, panelKey: 'trajectory' }} />
 }
 
 function SideChatDockPanel(props: IDockviewPanelProps<{ projectPath: string; sessionId: string }>) {
@@ -48,7 +45,6 @@ function ModPaneDockPanel(props: IDockviewPanelProps<ModPaneTabParams>) {
   const { projectPath, sessionId, paneId } = props.params
   return (
     <DesktopModUi projectPath={projectPath} sessionId={sessionId} enabled>
-      {/* Marks whose pane this is, so a composer's keys find its own session's pane. */}
       <div className="contents" data-mod-pane-session={sessionId} data-mod-pane-id={paneId}>
         <ModPaneBody paneId={paneId} placement="dock" className="h-full px-3 py-2" />
       </div>
@@ -56,20 +52,10 @@ function ModPaneDockPanel(props: IDockviewPanelProps<ModPaneTabParams>) {
   )
 }
 
-const LazyReviewPanel = lazy(() => import('@/components/review/ReviewPanel'))
-
 function ReviewDockPanel(
   props: IDockviewPanelProps<{ sessionId?: string; projectPath?: string; initialScope?: ReviewScope }>,
 ) {
-  return (
-    <Suspense fallback={<div className="flex h-full items-center justify-center text-xs text-muted-foreground">Loading…</div>}>
-      <LazyReviewPanel
-        sessionId={props.params.sessionId}
-        projectPath={props.params.projectPath}
-        initialScope={props.params.initialScope}
-      />
-    </Suspense>
-  )
+  return <PluginDockPanel {...(props as any)} params={{ ...props.params, panelKey: 'review' }} />
 }
 
 export const activityPanelComponents: Record<string, React.FunctionComponent<IDockviewPanelProps>> = {

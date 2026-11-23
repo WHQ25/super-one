@@ -1,6 +1,8 @@
 import { useEffect } from 'react'
 import { useChatStore, useActiveSession, lastTouchedPane, type SessionScope } from '@/stores/chat'
 import { triggerBackgroundTasksShortcut } from '@/components/chat/background-task-action'
+import { useClientKernelOptional } from '@superone/client-kernel/react'
+import { getAppClientKernel, createKeybindingContextFromEvent } from '@/lib/client-kernel'
 
 /**
  * The pane an event happened in.
@@ -17,8 +19,8 @@ import { triggerBackgroundTasksShortcut } from '@/components/chat/background-tas
  * The pane's own record of being touched covers that case, because the click
  * that opened the portal landed inside the pane first.
  */
-function scopeFromEvent(e: Event): SessionScope | undefined {
-  const el = (e.target as Element | null)?.closest?.('[data-scope-session]')
+export function scopeFromEvent(e: Event | null): SessionScope | undefined {
+  const el = (e?.target as Element | null)?.closest?.('[data-scope-session]')
   if (el instanceof HTMLElement) {
     const { scopeProject, scopeSession } = el.dataset
     if (scopeProject && scopeSession) return { projectPath: scopeProject, sessionId: scopeSession }
@@ -34,7 +36,27 @@ function scopeFromEvent(e: Event): SessionScope | undefined {
   return project?._sessions[remembered.sessionId] ? remembered : undefined
 }
 
+export function useKernelKeybindings(enabled = true) {
+  const kernel = useClientKernelOptional() ?? getAppClientKernel()
+  useEffect(() => {
+    if (!enabled) return
+    const onCapture = (e: KeyboardEvent): void => {
+      kernel.keybindings.handleKeyEvent(e, createKeybindingContextFromEvent, { capture: true })
+    }
+    const onBubble = (e: KeyboardEvent): void => {
+      kernel.keybindings.handleKeyEvent(e, createKeybindingContextFromEvent, { capture: false })
+    }
+    window.addEventListener('keydown', onCapture, { capture: true })
+    window.addEventListener('keydown', onBubble)
+    return () => {
+      window.removeEventListener('keydown', onCapture, { capture: true })
+      window.removeEventListener('keydown', onBubble)
+    }
+  }, [enabled, kernel])
+}
+
 export function useChatKeyboardShortcuts(enabled = true) {
+  useKernelKeybindings(enabled)
   const togglePlanModeShortcut = useChatStore((s) => s.togglePlanModeShortcut)
   const pendingPlanApproval = useActiveSession((s) => s.pendingPlanApproval)
   useEffect(() => {

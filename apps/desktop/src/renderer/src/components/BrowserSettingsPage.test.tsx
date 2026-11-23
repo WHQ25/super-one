@@ -54,6 +54,7 @@ function settings(overrides: Record<string, unknown> = {}) {
     cdpMockEnabled: false,
     cdpEmulateEnabled: false,
     browserDownloadDir: null,
+    chromeBridgeDisabledBrowsers: [] as string[],
     webmcpEnabled: true,
     webmcpTrustedOrigins: [] as WebmcpTrustedOrigin[],
     ...overrides,
@@ -94,8 +95,8 @@ beforeEach(() => {
 describe('browser settings — own browser', () => {
   it('walks through choosing a browser, opening or copying its extensions page, and dragging the folder', async () => {
     await renderPage()
-    expect(await screen.findByText('Extension Not Loaded')).toBeTruthy()
-    expect(screen.getByText('Choose the browser to install it in.')).toBeTruthy()
+    expect(await screen.findByText('Install Extension')).toBeTruthy()
+    expect(await screen.findByText('Choose the browser to install it in.')).toBeTruthy()
     expect(screen.getByText('chrome://extensions')).toBeTruthy()
 
     await userEvent.click(screen.getByRole('tab', { name: 'Edge' }))
@@ -129,17 +130,30 @@ describe('browser settings — own browser', () => {
     expect(screen.getByText('chrome://extensions')).toBeTruthy()
   })
 
-  it('hides the install steps once the extension is connected', async () => {
-    getChromeBridgeStatus.mockResolvedValue({ connected: true, extensionDir: '/Users/dev/.superone/dev/chrome-extension' })
+  it('shows Your Browser at the top with a control toggle and keeps Install Extension for remaining browsers', async () => {
+    getChromeBridgeStatus.mockResolvedValue({
+      connected: true,
+      browsers: ['chrome'],
+      extensionDir: '/Users/dev/.superone/dev/chrome-extension',
+    })
+    saveAppSettings.mockResolvedValue(settings({ chromeBridgeDisabledBrowsers: ['chrome'] }))
     await renderPage()
-    expect(await screen.findByText('Extension Connected')).toBeTruthy()
-    expect(screen.getByText(/Each browser with this extension connected is controlled on its own/)).toBeTruthy()
-    expect(screen.getByText('/Users/dev/.superone/dev/chrome-extension')).toBeTruthy()
-    expect(screen.queryByLabelText('Drag Folder')).toBeNull()
-    expect(screen.queryByText('Choose the browser to install it in.')).toBeNull()
+    expect(await screen.findByText('Your Browser')).toBeTruthy()
+    expect(screen.getByText('Install Extension')).toBeTruthy()
+    expect(screen.getByText('Chrome')).toBeTruthy()
+    expect(screen.getByText('Connected')).toBeTruthy()
+    expect(screen.queryByRole('tab', { name: 'Chrome' })).toBeNull()
+    expect(screen.getByRole('tab', { name: 'Edge' })).toBeTruthy()
+    expect(screen.getByLabelText('Drag Folder')).toBeTruthy()
+
+    const toggle = screen.getByRole('switch', { name: 'Allow browser control Chrome' })
+    expect(toggle).toBeChecked()
+    fireEvent.click(toggle)
+    await waitFor(() => expect(saveAppSettings).toHaveBeenCalledWith({ chromeBridgeDisabledBrowsers: ['chrome'] }))
+    expect(await screen.findByText('Connected · Control disabled')).toBeTruthy()
+
     fireEvent.click(screen.getByRole('button', { name: 'Show in Finder' }))
     expect(revealChromeExtension).toHaveBeenCalledOnce()
-    expect(startDrag).not.toHaveBeenCalled()
   })
 })
 

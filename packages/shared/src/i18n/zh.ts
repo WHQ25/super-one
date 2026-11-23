@@ -1419,6 +1419,13 @@ export const zh: Messages = {
       title: '浏览器',
       ownBrowser: {
         title: '你的浏览器',
+        installTitle: '安装扩展',
+        installAnother: '安装到其他浏览器',
+        connectedStatus: '已连接',
+        disabledStatus: '已连接 · 已禁止控制',
+        controlToggle: '允许控制浏览器',
+        allConnected: '所有支持的浏览器均已连接。',
+        unknownBrowser: '浏览器',
         disconnected: {
           label: '扩展未加载',
           description: '装上这个扩展之后，浏览器工具就可以控制你自己的 Chrome、Edge、Brave、Arc 或 Chromium。',

@@ -37,4 +37,24 @@ describe('chrome bridge connection', () => {
     expect(hub.connected).toBe(false)
     expect(seen.at(-1)).toBe(false)
   })
+
+  it('excludes disabled browsers from control while keeping them in connectedBrowsers', async () => {
+    const hub = new ChromeBridgeHub()
+    hub.attach(() => {}, 'chrome')
+    hub.attach((json) => {
+      const request = JSON.parse(json) as { id: number }
+      hub.receive(JSON.stringify({ id: request.id, result: { tabs: [] } }), 'edge')
+    }, 'edge')
+
+    hub.setDisabledBrowsers(['chrome'])
+    expect(hub.connectedBrowsers()).toEqual(['chrome', 'edge'])
+    expect(hub.browsers()).toEqual(['edge'])
+    expect(hub.connected).toBe(true)
+    await expect(hub.call('tabs.list', {}, { browserId: 'chrome' })).rejects.toThrow(/disabled in Settings/)
+    await expect(hub.call('tabs.list', {})).resolves.toEqual({ tabs: [] })
+
+    hub.setDisabledBrowsers(['chrome', 'edge'])
+    expect(hub.connected).toBe(false)
+    await expect(hub.call('tabs.list', {})).rejects.toThrow(/disabled in Settings/)
+  })
 })

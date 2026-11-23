@@ -16,7 +16,7 @@ export interface ChromeBridgeStatus {
 export function readChromeBridgeStatus(userHome = homedir()): ChromeBridgeStatus {
   return {
     connected: chromeBridgeHub.connected,
-    browsers: chromeBridgeHub.browsers(),
+    browsers: chromeBridgeHub.connectedBrowsers(),
     extensionDir: chromeExtensionDir(variantId(), userHome),
   }
 }

@@ -10,12 +10,13 @@ const BASE = {
   cdpMockEnabled: false,
   cdpEmulateEnabled: false,
   browserDownloadDir: null as string | null,
+  chromeBridgeDisabledBrowsers: [] as string[],
   webmcpEnabled: false,
   webmcpTrustedOrigins: [] as WebmcpTrustedOrigin[],
 }
 
 let settings = { ...BASE }
-let chromeStatus = { connected: false, extensionDir: '/Users/dev/.superone/dev/chrome-extension' }
+let chromeStatus = { connected: false, browsers: [] as string[], extensionDir: '/Users/dev/.superone/dev/chrome-extension' }
 
 mockIpc('app', 'getAppSettings', async () => settings)
 mockIpc('app', 'getDefaultDownloadDir', async () => '/Users/dev/Downloads')
@@ -39,10 +40,10 @@ mockIpc('app', 'onChromeBridgeStatus', () => () => {})
  * The page loads its state from `getAppSettings` on mount, so a story picks its variant by
  * seeding the shared mock during render — before that effect runs.
  */
-function seed(patch: Partial<typeof BASE>, chromeConnected = false) {
+function seed(patch: Partial<typeof BASE>, chromeConnected = false, browsers: string[] = []) {
   return (Story: () => ReactElement) => {
     settings = { ...BASE, ...patch }
-    chromeStatus = { ...chromeStatus, connected: chromeConnected }
+    chromeStatus = { ...chromeStatus, connected: chromeConnected, browsers }
     return <Story />
   }
 }
@@ -95,7 +96,7 @@ export const ExtensionNotLoaded: Story = {
 
 /** A connected extension is what makes @ Chrome use browser tools. */
 export const ExtensionConnected: Story = {
-  decorators: [seed({}, true)],
+  decorators: [seed({}, true, ['chrome'])],
 }
 
 /** CDP off — the experimental rows below WebMCP go disabled, but the WebMCP panel does not. */

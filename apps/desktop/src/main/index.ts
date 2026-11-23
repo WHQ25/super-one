@@ -60,6 +60,7 @@ import { authorizeMiniAppTools } from './miniapp/miniapp-authorization'
 import { previewApp, confirmInstall, cancelInstall, uninstallApp, packApp, getInstallMeta, getPreapproved, getPreapprovedByPath, setPreapproved, setPreapprovedByPath } from './miniapp/miniapp-packager'
 import { previewMcpbBundle, installMcpbBundle, uninstallMcpbBundle, listInstalledMcpb, revealMcpbBundle } from './mcpb/mcpb-installer'
 import { initBrowserAutomation, resolveBrowserAutomation, rejectBrowserAutomation } from './browser/browser-automation-bridge'
+import { chromeBridgeHub } from './browser/chrome-bridge-hub'
 import { startChromeBridge } from './browser/chrome-bridge-server'
 import { registerChromeBridgeIpc } from './browser/chrome-bridge-status'
 import { detachAllCdp } from './browser/browser-cdp'
@@ -1228,6 +1229,9 @@ async function applyAppSettingsPatch(patch: AppSettingsPatch): Promise<AppSettin
   }
   if (patch?.cdpEnabled === false) {
     detachAllCdp()
+  }
+  if (patch?.chromeBridgeDisabledBrowsers !== undefined) {
+    chromeBridgeHub.setDisabledBrowsers(result.chromeBridgeDisabledBrowsers)
   }
   if (patch?.experimentalClaudeOpenAiChatEnabled !== undefined) {
     sessionManager.markAllNeedsRebuild('claude')
@@ -5620,6 +5624,7 @@ function registerIpcHandlers(): void {
 
   initSuperoneMcpServer(() => mainWindow)
   initBrowserAutomation(() => mainWindow)
+  chromeBridgeHub.setDisabledBrowsers(readAppSettings().chromeBridgeDisabledBrowsers)
   startChromeBridge()
   registerChromeBridgeIpc(ipcMain, safeSend)
   setSessionHostProvider(() => sessionManager)

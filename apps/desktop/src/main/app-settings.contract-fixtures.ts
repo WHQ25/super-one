@@ -30,7 +30,7 @@ const samples: Record<string, unknown> = {
   terminalLightPalette: 'github-light', terminalDarkPalette: 'nord',
   terminalFontFamily: 'Contract Mono', uiFontFamily: 'Contract Sans',
   mermaidLightTheme: 'forest', mermaidDarkTheme: 'dark',
-  browserDownloadDir: '/tmp/downloads', computerUseDedicatedDisplayId: 'display-contract',
+  browserDownloadDir: '/tmp/downloads', chromeBridgeDisabledBrowsers: ['edge'], computerUseDedicatedDisplayId: 'display-contract',
   customAppIconPath: '/tmp/contract-icon.png', enabledExperimentalAgents: ['contract-agent'],
   webmcpTrustedOrigins: [{ origin: 'https://contract.test', tools: { search: 'fingerprint' } }],
   computerUseAlwaysAllowApps: [{ bundleId: 'test.contract', app: 'Contract' }],

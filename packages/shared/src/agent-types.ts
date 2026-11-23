@@ -6098,6 +6098,7 @@ export interface AppSettings {
    * A `browser_download` call may still override it per download.
    */
   browserDownloadDir: string | null
+  chromeBridgeDisabledBrowsers: string[]
   /** Opt-in Computer Use (desktop GUI automation). Default off. */
   computerUseEnabled: boolean
   /** Show the active Computer Use target in a floating native preview. Default on. */
@@ -6337,6 +6338,7 @@ export interface AppSettingsPatch {
   schedulingProvider?: SchedulingProvider
   /** Empty string or null resets to the OS Downloads folder. */
   browserDownloadDir?: string | null
+  chromeBridgeDisabledBrowsers?: string[]
   computerUseEnabled?: boolean
   computerUsePictureInPicture?: boolean
   computerUseDedicatedDisplayId?: string | null

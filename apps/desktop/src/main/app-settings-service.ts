@@ -136,8 +136,8 @@ const defaults: AppSettings = {
   mermaidDarkTheme: null,
   uiFontFamily: null,
   liquidGlass: false,
-  cdpEnabled: false,
-  webmcpEnabled: false,
+  cdpEnabled: true,
+  webmcpEnabled: true,
   webmcpTrustedOrigins: [],
   dshSubagentModelSelection: { enabled: false, allowedModels: [] },
   cdpCookiesEnabled: false,
@@ -146,6 +146,7 @@ const defaults: AppSettings = {
   jevFastLoopEnabled: false,
   schedulingProvider: 'native',
   browserDownloadDir: null,
+  chromeBridgeDisabledBrowsers: [],
   computerUseEnabled: false,
   computerUsePictureInPicture: true,
   computerUseDedicatedDisplayId: null,
@@ -753,6 +754,7 @@ export function readAppSettings(): AppSettings {
       jevFastLoopEnabled: typeof data.jevFastLoopEnabled === 'boolean' ? data.jevFastLoopEnabled : defaults.jevFastLoopEnabled,
       schedulingProvider: readSchedulingProvider(data.schedulingProvider),
       browserDownloadDir: readBrowserDownloadDir(data.browserDownloadDir),
+      chromeBridgeDisabledBrowsers: readEnabledExperimentalAgents(data.chromeBridgeDisabledBrowsers),
       computerUseEnabled: typeof data.computerUseEnabled === 'boolean' ? data.computerUseEnabled : defaults.computerUseEnabled,
       computerUsePictureInPicture: typeof data.computerUsePictureInPicture === 'boolean'
         ? data.computerUsePictureInPicture
@@ -848,6 +850,7 @@ export function readAppSettings(): AppSettings {
       jevFastLoopEnabled: defaults.jevFastLoopEnabled,
       schedulingProvider: defaults.schedulingProvider,
       browserDownloadDir: defaults.browserDownloadDir,
+      chromeBridgeDisabledBrowsers: defaults.chromeBridgeDisabledBrowsers,
       computerUseEnabled: defaults.computerUseEnabled,
       computerUsePictureInPicture: defaults.computerUsePictureInPicture,
       computerUseDedicatedDisplayId: defaults.computerUseDedicatedDisplayId,
@@ -996,6 +999,9 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     browserDownloadDir: patch.browserDownloadDir === undefined
       ? current.browserDownloadDir
       : readBrowserDownloadDir(patch.browserDownloadDir),
+    chromeBridgeDisabledBrowsers: patch.chromeBridgeDisabledBrowsers === undefined
+      ? current.chromeBridgeDisabledBrowsers
+      : readEnabledExperimentalAgents(patch.chromeBridgeDisabledBrowsers),
     computerUseEnabled: patch.computerUseEnabled === undefined ? current.computerUseEnabled : patch.computerUseEnabled,
     computerUsePictureInPicture: patch.computerUsePictureInPicture === undefined
       ? current.computerUsePictureInPicture

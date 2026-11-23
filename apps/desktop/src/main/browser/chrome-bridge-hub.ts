@@ -46,9 +46,13 @@ export class ChromeBridgeHub {
   private readonly events = new Set<EventListener>()
   private readonly connectionListeners = new Set<(connected: boolean) => void>()
   private readonly assemblers = new Map<string, ChromeBridgeChunkAssembler>()
+  private disabledBrowsers = new Set<string>()
   private nextId = 1
   private nextGeneration = 1
-  connected = false
+
+  get connected(): boolean {
+    return this.browsers().length > 0
+  }
 
   /** Replaces only this browser. Returns the generation the close handler must pass back. */
   attach(send: (json: string) => void, browserId = 'chrome'): number {
@@ -57,7 +61,6 @@ export class ChromeBridgeHub {
     const generation = this.nextGeneration++
     this.links.set(id, { send, generation })
     this.assemblers.delete(id)
-    this.connected = true
     this.notifyConnection()
     return generation
   }
@@ -65,7 +68,6 @@ export class ChromeBridgeHub {
   /** Drops every browser. A single socket close must use `detachBrowser`. */
   detach(reason: string, notify = true): void {
     const was = this.connected
-    this.connected = false
     this.links.clear()
     this.assemblers.clear()
     this.failPending(reason)
@@ -79,12 +81,20 @@ export class ChromeBridgeHub {
     this.links.delete(browserId)
     this.assemblers.delete(browserId)
     this.failPending(reason, browserId)
-    this.connected = this.links.size > 0
     this.notifyConnection()
   }
 
-  browsers(): string[] {
+  setDisabledBrowsers(ids: Iterable<string>): void {
+    this.disabledBrowsers = new Set(ids)
+    this.notifyConnection()
+  }
+
+  connectedBrowsers(): string[] {
     return [...this.links.keys()].sort((a, b) => this.browserRank(a) - this.browserRank(b))
+  }
+
+  browsers(): string[] {
+    return this.connectedBrowsers().filter((id) => !this.disabledBrowsers.has(id))
   }
 
   onConnection(listener: (connected: boolean) => void): () => void {
@@ -200,14 +210,22 @@ export class ChromeBridgeHub {
     if (requested) {
       const link = this.links.get(requested)
       if (!link) return { error: `Browser "${requested}" is not connected. Connected: ${this.browsers().join(', ')}.` }
+      if (this.disabledBrowsers.has(requested)) {
+        return { error: `Browser "${requested}" control is disabled in Settings.` }
+      }
       return { browserId: requested, send: link.send }
     }
-    if (this.links.size === 1) {
-      const entry = [...this.links.entries()][0]
-      if (!entry) return { error: 'Chrome bridge is not connected. Open the SuperOne extension in the browser.' }
-      return { browserId: entry[0], send: entry[1].send }
+    const enabled = this.browsers()
+    if (enabled.length === 0) {
+      return { error: 'Connected browsers are disabled in Settings.' }
     }
-    return { error: `More than one browser extension is connected (${this.browsers().join(', ')}). Pass browser.` }
+    if (enabled.length === 1) {
+      const id = enabled[0]!
+      const link = this.links.get(id)
+      if (!link) return { error: 'Chrome bridge is not connected. Open the SuperOne extension in the browser.' }
+      return { browserId: id, send: link.send }
+    }
+    return { error: `More than one browser extension is connected (${enabled.join(', ')}). Pass browser.` }
   }
 }
 

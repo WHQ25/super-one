@@ -15,6 +15,7 @@ import { Switch } from '@superone/ui/components/ui/switch'
 import { SettingsPage, SettingsRow, SettingsSection, SettingsSubheader, settingsRowClassName } from '@/components/settings/SettingsSection'
 import { SettingsFootnote } from '@/components/settings/SettingsFootnote'
 import { SettingsSegmentedControl } from '@/components/settings/SettingsSegmentedControl'
+import { ExtensionBrowserIcon } from '@/components/settings/ExtensionBrowserIcon'
 
 function ExperimentalRow({
   label,
@@ -90,7 +91,7 @@ function InstallStep({ n, children }: { n: number; children: ReactNode }) {
   )
 }
 
-function ExtensionInstallSteps({ dir }: { dir: string }) {
+function ExtensionInstallSteps({ dir, excludeBrowsers = [] }: { dir: string; excludeBrowsers?: string[] }) {
   const { t } = useTranslation()
   const [browserId, setBrowserId] = useState<ExtensionBrowserId>('chrome')
   const [installedIds, setInstalledIds] = useState<string[]>([])
@@ -99,9 +100,11 @@ function ExtensionInstallSteps({ dir }: { dir: string }) {
   const [copied, setCopied] = useState(false)
   const copiedTimer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const userPicked = useRef(false)
-  const browser = extensionBrowserById(browserId) ?? EXTENSION_BROWSERS[0]
+  const excluded = new Set(excludeBrowsers)
+  const availableBrowsers = EXTENSION_BROWSERS.filter((entry) => !excluded.has(entry.id))
   const installed = new Set(installedIds)
-  const browsers = [...EXTENSION_BROWSERS].sort((a, b) => Number(installed.has(b.id)) - Number(installed.has(a.id)))
+  const browsers = [...availableBrowsers].sort((a, b) => Number(installed.has(b.id)) - Number(installed.has(a.id)))
+  const browser = availableBrowsers.find((entry) => entry.id === browserId) ?? browsers[0]
 
   useEffect(() => {
     let mounted = true
@@ -109,13 +112,20 @@ function ExtensionInstallSteps({ dir }: { dir: string }) {
       if (!mounted || !ids?.length) return
       const known = ids.filter(isExtensionBrowserId)
       setInstalledIds(known)
-      setBrowserId((current) => userPicked.current || known.includes(current) ? current : known[0] ?? current)
+      setBrowserId((current) => {
+        if (userPicked.current && !excluded.has(current)) return current
+        const firstAvailableInstalled = known.find((id) => !excluded.has(id))
+        if (known.includes(current) && !excluded.has(current)) return current
+        return firstAvailableInstalled ?? current
+      })
     })
     return () => {
       mounted = false
       if (copiedTimer.current) clearTimeout(copiedTimer.current)
     }
-  }, [])
+  }, [excludeBrowsers.join(',')])
+
+  if (!browser) return null
 
   async function openPage() {
     setOpening(true)
@@ -175,7 +185,19 @@ function ExtensionInstallSteps({ dir }: { dir: string }) {
       </InstallStep>
       <InstallStep n={3}>
         <p className="text-xs text-muted-foreground">{t('settings.browser.ownBrowser.steps.drag')}</p>
-        {dir && <div className="mt-1.5"><ExtensionFolderDrag dir={dir} /></div>}
+        {dir && (
+          <div className="mt-1.5 flex flex-wrap items-center justify-between gap-3">
+            <ExtensionFolderDrag dir={dir} />
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 shrink-0"
+              onClick={() => void window.app.revealChromeExtension?.()}
+            >
+              {t('settings.browser.ownBrowser.show')}
+            </Button>
+          </div>
+        )}
       </InstallStep>
     </ol>
   )
@@ -191,7 +213,8 @@ export function BrowserSettingsPage() {
   const [emulateEnabled, setEmulateEnabled] = useState(false)
   const [downloadDir, setDownloadDir] = useState<string | null>(null)
   const [systemDownloadDir, setSystemDownloadDir] = useState('')
-  const [chromeStatus, setChromeStatus] = useState<{ connected: boolean; extensionDir: string } | null>(null)
+  const [disabledBrowsers, setDisabledBrowsers] = useState<string[]>([])
+  const [chromeStatus, setChromeStatus] = useState<{ connected: boolean; browsers?: string[]; extensionDir: string } | null>(null)
   const [loading, setLoading] = useState(true)
 
   useEffect(() => {
@@ -205,6 +228,7 @@ export function BrowserSettingsPage() {
       setMockEnabled(settings.cdpMockEnabled)
       setEmulateEnabled(settings.cdpEmulateEnabled)
       setDownloadDir(settings.browserDownloadDir)
+      setDisabledBrowsers(settings.chromeBridgeDisabledBrowsers ?? [])
       setLoading(false)
     })
     window.app.getDefaultDownloadDir().then((dir) => {
@@ -246,39 +270,80 @@ export function BrowserSettingsPage() {
     setWebmcpTrustedOrigins(result.webmcpTrustedOrigins)
   }
 
+  async function toggleBrowserControl(browserId: string, enabled: boolean) {
+    const next = enabled
+      ? disabledBrowsers.filter((id) => id !== browserId)
+      : [...new Set([...disabledBrowsers, browserId])]
+    const result = await window.app.saveAppSettings({ chromeBridgeDisabledBrowsers: next })
+    setDisabledBrowsers(result.chromeBridgeDisabledBrowsers ?? [])
+  }
+
   const expDisabled = loading || !cdpEnabled
 
-  const chromeConnected = chromeStatus?.connected === true
+  const connectedBrowsers = chromeStatus?.browsers ?? []
+  const chromeConnected = chromeStatus?.connected === true || connectedBrowsers.length > 0
+  const connectedSet = new Set(connectedBrowsers)
+  const disabledSet = new Set(disabledBrowsers)
+  const remainingBrowsers = EXTENSION_BROWSERS.filter((entry) => !connectedSet.has(entry.id))
 
   return (
     <SettingsPage title={t('settings.browser.title')}>
-      <SettingsSection title={t('settings.browser.ownBrowser.title')}>
-        <SettingsRow
-          label={t(chromeConnected ? 'settings.browser.ownBrowser.connected.label' : 'settings.browser.ownBrowser.disconnected.label')}
-          description={(
-            <>
-              {t(chromeConnected ? 'settings.browser.ownBrowser.connected.description' : 'settings.browser.ownBrowser.disconnected.description')}
-              {chromeConnected && chromeStatus?.extensionDir && (
-                <span className="mt-1.5 block truncate font-mono text-foreground" title={chromeStatus.extensionDir}>
-                  {chromeStatus.extensionDir}
-                </span>
-              )}
-            </>
+      {chromeConnected && (
+        <SettingsSection title={t('settings.browser.ownBrowser.title')}>
+          {connectedBrowsers.length > 0 ? (
+            connectedBrowsers.map((id) => {
+              const info = extensionBrowserById(id)
+              const label = info?.label ?? t('settings.browser.ownBrowser.unknownBrowser')
+              const enabled = !disabledSet.has(id)
+              return (
+                <SettingsRow
+                  key={id}
+                  label={(
+                    <div className="flex items-center gap-3">
+                      <ExtensionBrowserIcon id={id} className="size-9" />
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium">{label}</div>
+                        <div className="mt-0.5 flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <span className={cn('size-1.5 shrink-0 rounded-full', enabled ? 'bg-emerald-500' : 'bg-muted-foreground/50')} aria-hidden="true" />
+                          <span>{t(enabled ? 'settings.browser.ownBrowser.connectedStatus' : 'settings.browser.ownBrowser.disabledStatus')}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                >
+                  <Switch
+                    aria-label={`${t('settings.browser.ownBrowser.controlToggle')} ${label}`}
+                    checked={enabled}
+                    disabled={loading}
+                    onCheckedChange={(checked) => void toggleBrowserControl(id, checked)}
+                  />
+                </SettingsRow>
+              )
+            })
+          ) : (
+            <SettingsRow label={t('settings.browser.ownBrowser.connected.label')} />
           )}
-          footer={!chromeConnected && chromeStatus
-            ? <ExtensionInstallSteps dir={chromeStatus.extensionDir} />
-            : undefined}
-        >
-          <Button
-            variant="outline"
-            size="sm"
-            className="h-7"
-            onClick={() => void window.app.revealChromeExtension?.()}
-            disabled={!chromeStatus?.extensionDir}
-          >
-            {t('settings.browser.ownBrowser.show')}
-          </Button>
-        </SettingsRow>
+        </SettingsSection>
+      )}
+
+      <SettingsSection title={t('settings.browser.ownBrowser.installTitle')}>
+        {chromeStatus && remainingBrowsers.length > 0 ? (
+          <div className={settingsRowClassName}>
+            <ExtensionInstallSteps dir={chromeStatus.extensionDir} excludeBrowsers={connectedBrowsers} />
+          </div>
+        ) : (
+          <SettingsRow label={t('settings.browser.ownBrowser.allConnected')}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7"
+              onClick={() => void window.app.revealChromeExtension?.()}
+              disabled={!chromeStatus?.extensionDir}
+            >
+              {t('settings.browser.ownBrowser.show')}
+            </Button>
+          </SettingsRow>
+        )}
       </SettingsSection>
 
       <SettingsSection>

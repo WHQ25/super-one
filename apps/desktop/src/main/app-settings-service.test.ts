@@ -112,8 +112,8 @@ describe('app-settings-service', () => {
     suggestionMenuHarness: null,
     onboardingCompletedAt: null,
     onboardingEpoch: 0,
-    cdpEnabled: false,
-    webmcpEnabled: false,
+    cdpEnabled: true,
+    webmcpEnabled: true,
     webmcpTrustedOrigins: [],
     dshSubagentModelSelection: { enabled: false, allowedModels: [] },
     computerUseEnabled: false,
@@ -128,6 +128,7 @@ describe('app-settings-service', () => {
     jevFastLoopEnabled: false,
     schedulingProvider: 'native',
     browserDownloadDir: null,
+    chromeBridgeDisabledBrowsers: [],
     agentPreference: {
       claude: defaultClaude,
       codex: defaultCodex,
@@ -274,8 +275,8 @@ describe('app-settings-service', () => {
         suggestionMenuHarness: null,
         onboardingCompletedAt: null,
         onboardingEpoch: 0,
-        cdpEnabled: false,
-        webmcpEnabled: false,
+        cdpEnabled: true,
+        webmcpEnabled: true,
         webmcpTrustedOrigins: [],
         dshSubagentModelSelection: { enabled: false, allowedModels: [] },
         computerUseEnabled: false,
@@ -290,6 +291,7 @@ describe('app-settings-service', () => {
         jevFastLoopEnabled: false,
         schedulingProvider: 'native',
         browserDownloadDir: null,
+        chromeBridgeDisabledBrowsers: [],
         agentPreference: {
           claude: {
             defaultModel: 'claude-sonnet-4-6',
@@ -449,8 +451,8 @@ describe('app-settings-service', () => {
         suggestionMenuHarness: null,
         onboardingCompletedAt: null,
         onboardingEpoch: 0,
-        cdpEnabled: false,
-        webmcpEnabled: false,
+        cdpEnabled: true,
+        webmcpEnabled: true,
         webmcpTrustedOrigins: [],
         dshSubagentModelSelection: { enabled: false, allowedModels: [] },
         computerUseEnabled: false,
@@ -465,6 +467,7 @@ describe('app-settings-service', () => {
         jevFastLoopEnabled: false,
         schedulingProvider: 'native',
         browserDownloadDir: null,
+        chromeBridgeDisabledBrowsers: [],
         agentPreference: {
           claude: defaultClaude,
           codex: {
@@ -615,9 +618,9 @@ describe('app-settings-service', () => {
   describe('saveAppSettings', () => {
     it('persists the WebMCP feature flag independently of CDP', () => {
       mocks.readFileSync.mockImplementation(fileNotFound)
-      const saved = saveAppSettings({ webmcpEnabled: true })
-      expect(saved.webmcpEnabled).toBe(true)
-      expect(saved.cdpEnabled).toBe(false)
+      const saved = saveAppSettings({ webmcpEnabled: false })
+      expect(saved.webmcpEnabled).toBe(false)
+      expect(saved.cdpEnabled).toBe(true)
     })
 
     it('normalizes trusted WebMCP sites on save', () => {

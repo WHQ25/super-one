@@ -1367,6 +1367,13 @@ export type Messages = {
       title: string
       ownBrowser: {
         title: string
+        installTitle: string
+        installAnother: string
+        connectedStatus: string
+        disabledStatus: string
+        controlToggle: string
+        allConnected: string
+        unknownBrowser: string
         disconnected: { label: string; description: string }
         connected: { label: string; description: string }
         drag: string
@@ -6905,6 +6912,13 @@ export const en: Messages = {
       title: 'Browser',
       ownBrowser: {
         title: 'Your Browser',
+        installTitle: 'Install Extension',
+        installAnother: 'Install in Another Browser',
+        connectedStatus: 'Connected',
+        disabledStatus: 'Connected · Control disabled',
+        controlToggle: 'Allow browser control',
+        allConnected: 'All supported browsers are connected.',
+        unknownBrowser: 'Browser',
         disconnected: {
           label: 'Extension Not Loaded',
           description: 'Browser tools can drive your own Chrome, Edge, Brave, Arc, or Chromium after this extension is loaded.',

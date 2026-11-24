@@ -61,16 +61,10 @@ describe('buildSessionMenuItems fork capability gate', () => {
       .map((e) => e.id)
   }
 
-  it.each(['claude', 'acp-grok'] as const)('offers both fork modes on %s', (provider) => {
+  it.each(['claude', 'acp-grok', 'acp-antigravity', 'cursor'] as const)('offers both fork modes on %s', (provider) => {
     expect(idsFor({ ...base, provider })).toEqual(
       expect.arrayContaining(['forkWorktree', 'forkLocal']),
     )
-  })
-
-  it('hides fork on cursor, whose adapter returns a session the agent never saw', () => {
-    const ids = idsFor({ ...base, provider: 'cursor' })
-    expect(ids).not.toContain('forkWorktree')
-    expect(ids).not.toContain('forkLocal')
   })
 
   it('keeps fork on a legacy row that never recorded its harness', () => {
@@ -83,9 +77,8 @@ describe('buildSessionMenuItems fork capability gate', () => {
     expect(idsFor(base, { onNewSideChat: vi.fn() })).toContain('newSideChat')
   })
 
-  it('withholds New Side Chat on a harness that cannot fork, handler or not', () => {
-    expect(idsFor({ ...base, provider: 'cursor' }, { onNewSideChat: vi.fn() }))
-      .not.toContain('newSideChat')
+  it.each(['claude', 'acp-antigravity', 'cursor'] as const)('offers New Side Chat on %s when handler is passed', (provider) => {
+    expect(idsFor({ ...base, provider }, { onNewSideChat: vi.fn() })).toContain('newSideChat')
   })
 })
 

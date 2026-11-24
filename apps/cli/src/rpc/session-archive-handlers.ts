@@ -4,7 +4,7 @@ import { sessionMessageBlocksToChatMessages } from '@superone/shared/node-messag
 import { normalizeSessionTagList, pageSessionTagCounts } from '@superone/shared/session-tags'
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { isSessionArchiveReadTool, type ArchiveToolResult, type SessionArchiveRequest } from '@superone/shared/session-archive'
-import { countTools, extractToolIndex, findToolDetail, formatTextBlocks, formatToolIndex, messageSearchText, pageItems, pageTextBlocks, type SessionTextView } from '@superone/shared/session-transcript-view'
+import { countTools, extractToolIndex, findToolDetail, formatTextBlocks, formatToolIndex, messageSearchText, pageItems, pageTextBlocks, sliceMessagesUpTo, type SessionTextView } from '@superone/shared/session-transcript-view'
 import type { SessionLinkMetadataResult } from '@superone/shared/session-link'
 import type { RpcContext, RpcResult } from './handlers'
 import type { NodeSessionRecord } from '../session/session-runtime'
@@ -53,17 +53,27 @@ function readArchive(request: SessionArchiveRequest, ctx: RpcContext): ArchiveTo
   if (request.tool === 'session_read') {
     const session = all.find(row => row.sessionId === args.sessionId && !row.isHidden)
     if (!session) return result({ status: 'error', message: 'Session not found' }, true)
+    const forkCutoff =
+      source?.forkMeta?.sourceSessionId === session.sessionId && source.forkMeta.forkFromMessageId
+        ? source.forkMeta.forkFromMessageId
+        : null
+    const loadCatalog = (): ChatMessage[] => {
+      let cursor: number | null = null
+      const loaded: ChatMessage[] = []
+      do {
+        const page = ctx.sessions.listMessages({ sessionId: session.sessionId, cursor, limit: 100 })
+        loaded.unshift(...sessionMessageBlocksToChatMessages(page.messages, session.providerId))
+        cursor = page.hasMore ? Number(page.cursor) : null
+      } while (cursor != null)
+      return forkCutoff ? sliceMessagesUpTo(loaded, forkCutoff) : loaded
+    }
     const header = { status: 'ok', environmentId, ...entry(session, ctx, request.sourceSessionId) }
     const view = String(args.view ?? 'text')
     if (!['meta', 'text', 'user', 'assistant', 'tools', 'tool_detail'].includes(view)) return result({ status: 'error', message: 'Invalid transcript view' }, true)
-    if (view === 'meta') return result({ ...header, view })
-    let cursor: number | null = null
-    const catalog: ChatMessage[] = []
-    do {
-      const page = ctx.sessions.listMessages({ sessionId: session.sessionId, cursor, limit: 100 })
-      catalog.unshift(...sessionMessageBlocksToChatMessages(page.messages, session.providerId))
-      cursor = page.hasMore ? Number(page.cursor) : null
-    } while (cursor != null)
+    if (view === 'meta') {
+      return result({ ...header, ...(forkCutoff ? { messageCount: loadCatalog().length } : {}), view })
+    }
+    const catalog = loadCatalog()
     const messages = catalog
     if (view === 'tools' || view === 'tool_detail') {
       if (view === 'tool_detail') {

@@ -21,13 +21,15 @@ import { providerSystemPromptAppend } from '@superone/shared/agent-profile'
 import { ProjectResourceCache } from './project-resource-cache'
 import { cancelMcpReload } from '../mcp/mcp-reload-scheduler'
 import { closeSuperoneMcpHttpSessions } from '../mcp/superone-mcp-http-state'
-import { seenReceiptForResume } from '../db-sessions'
+import type { MentionedSessionData } from '@superone/runtime/session/mention-context'
+import { readDesktopMentionedSession } from './mention-context'
 import { Session } from './session'
 import { notifySessionClosed } from '../session-list-watch'
 import {
   getRuntimeIdleTimeoutMs,
   SESSION_RUNTIME_REAPER_INTERVAL_MS,
 } from './session-runtime-policy'
+import { seenReceiptForResume } from '../db-sessions'
 import type {
   LiveSessionSnapshot,
   ProjectResources,
@@ -64,6 +66,7 @@ export interface LoadedSessionData {
    * unread; a message id has been seen through that completion.
    */
   seenCompletedMessageId?: string | null
+  pendingForkPreamble?: string | null
 }
 
 export interface SessionManagerPersistence {
@@ -71,6 +74,7 @@ export interface SessionManagerPersistence {
   onSessionDisposed?: (sessionId: string) => void
   onSessionStateChange?: (snapshot: SessionStateChange) => void
   onProviderSessionIdChange?: (sid: string, providerSessionId: string) => void
+  onForkPreambleConsumed?: (sessionId: string) => void
   /** `''` marks the session unread. NULL restores the legacy "history is read" state. */
   onSeenReceipt?: (sessionId: string, receipt: string | null) => void
   loadSession?: (sessionId: string) => LoadedSessionData | null
@@ -231,6 +235,7 @@ export class SessionManagerImpl implements SessionManagerContract {
     // Only hydrate when the DB row is the same provider — harness switches must not
     // resume a Claude/Codex thread id into Grok (or vice versa).
     let resumedProviderSessionId = opts.providerSessionId?.trim() || null
+    let pendingForkPreamble = opts.pendingForkPreamble ?? null
     let selectedModel = opts.model
     let selectedEffort = opts.effort
     let restoredAccountSession = false
@@ -274,6 +279,7 @@ export class SessionManagerImpl implements SessionManagerContract {
           }
           selectedModel ??= prior.selectedModel ?? undefined
           selectedEffort ??= prior.selectedEffort ?? undefined
+          pendingForkPreamble ??= prior.pendingForkPreamble ?? null
           permissionMode = prior.permissionMode ?? permissionMode
           sandboxMode = prior.sandboxMode ?? sandboxMode
           codexPermissionPreset = prior.codexPermissionPreset ?? codexPermissionPreset
@@ -318,6 +324,9 @@ export class SessionManagerImpl implements SessionManagerContract {
       systemPromptAppend: providerSystemPromptAppend(provider.config, opts.systemPromptAppend),
       unattended: opts.unattended,
       firstTurnPreamble: opts.firstTurnPreamble,
+      pendingForkPreamble,
+      onForkPreambleConsumed: !opts.ephemeral ? this.persistence.onForkPreambleConsumed : undefined,
+      readMentionedSession: (targetId) => this.readLiveMentionedSession(targetId),
       resumedProviderSessionId: resumedProviderSessionId ?? undefined,
       homedir: homedir(),
       getProjectResources: (c) => this.projectResources.get(c),
@@ -441,6 +450,9 @@ export class SessionManagerImpl implements SessionManagerContract {
       codexServiceTier: data.codexServiceTier,
       codexPermissionPreset: data.codexPermissionPreset,
       systemPromptAppend: providerSystemPromptAppend(provider.config, data.systemPromptAppend),
+      pendingForkPreamble: data.pendingForkPreamble ?? null,
+      onForkPreambleConsumed: this.persistence.onForkPreambleConsumed,
+      readMentionedSession: (targetId) => this.readLiveMentionedSession(targetId),
       homedir: homedir(),
       getProjectResources: (c) => this.projectResources.get(c),
       invalidateProjectResources: (c) => this.projectResources.invalidate(c),
@@ -536,6 +548,23 @@ export class SessionManagerImpl implements SessionManagerContract {
         log.debug('[SessionManager] markNeedsRebuild failed for sid=%s:', session.id, err)
       }
     }
+  }
+
+  private readLiveMentionedSession(sessionId: string): Promise<MentionedSessionData | null> {
+    const live = this.sessions.get(sessionId)
+    if (live && !live.ephemeral && live.snapshot.messages.length > 0) {
+      const snap = live.snapshot
+      return Promise.resolve({
+        sessionId,
+        title: snap.title,
+        harness: snap.harnessId,
+        model: snap.selectedModel,
+        branch: snap.gitBranch,
+        messageCount: snap.messages.length,
+        messages: snap.messages,
+      })
+    }
+    return readDesktopMentionedSession(sessionId)
   }
 
   private takeDisposedReceipt(sessionId: string): string | null | undefined {

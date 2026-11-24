@@ -9,7 +9,8 @@ import { updateMcpAppAttachments } from '@superone/shared/mcp-apps-state'
 import { applySuggestedTaskUpdate } from '@superone/shared/suggested-task'
 import { stampCompletedAt } from '@superone/shared/message-completed-at'
 import { withMcpAppContext } from './mcp-app-context'
-import { withDesktopMentionContext } from './mention-context'
+import { readDesktopMentionedSession, withDesktopMentionContext } from './mention-context'
+import type { MentionedSessionData } from '@superone/runtime/session/mention-context'
 import { hostEntrypointAppsForSession } from '../mcp-apps/host-files'
 import { admitTurnAttachments } from '@superone/shared/attachment-turn'
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
@@ -190,6 +191,9 @@ export interface SessionConstructorOptions {
   ephemeral?: boolean
   /** See `SessionCreateOptions.firstTurnPreamble`. */
   firstTurnPreamble?: string
+  pendingForkPreamble?: string | null
+  onForkPreambleConsumed?: (sessionId: string) => void
+  readMentionedSession?: (sessionId: string) => Promise<MentionedSessionData | null>
 }
 
 function agentIdFromConfig(config: unknown): string | null {
@@ -248,6 +252,10 @@ export class Session implements SessionContract {
   private readonly firstTurnPreamble: string | undefined
   /** Chosen by `prepareFirstTurnPreamble`, delivered by `flushFirstTurnPreamble`. */
   private pendingPreamble: string | null = null
+  private pendingForkPreamble: string | null = null
+  private activeForkPreamble: string | null = null
+  private readonly onForkPreambleConsumed?: (sessionId: string) => void
+  private readonly readMentionedSession?: (sessionId: string) => Promise<MentionedSessionData | null>
 
   private _cwd: string
   get cwd(): string { return this._cwd }
@@ -594,6 +602,9 @@ export class Session implements SessionContract {
     this.harnessId = opts.harnessId
     this.ephemeral = opts.ephemeral ?? false
     this.firstTurnPreamble = opts.firstTurnPreamble
+    this.pendingForkPreamble = opts.pendingForkPreamble?.trim() || null
+    this.onForkPreambleConsumed = opts.onForkPreambleConsumed
+    this.readMentionedSession = opts.readMentionedSession
     this.providerConfig = opts.providerConfig
     // Admission checks the caller's grant before each call; the runtime itself is host-owned.
     this.backend = hostOwned(opts.backend)
@@ -944,6 +955,12 @@ export class Session implements SessionContract {
         try {
           this.flushFirstTurnPreamble()
           await this.backend.send(outbound, delivery)
+          if (this.activeForkPreamble) {
+            this.activeForkPreamble = null
+            try { this.onForkPreambleConsumed?.(this.id) } catch (err) {
+              log.warn('[Session] onForkPreambleConsumed hook error:', err)
+            }
+          }
         } finally {
           if ((this._status as SessionStatus) !== 'disposed') this._status = 'ended'
         }
@@ -956,7 +973,15 @@ export class Session implements SessionContract {
         }
       } catch (error) {
         // Delivered input is held: a resend could run the task twice.
-        if (!delivery.delivered) this.recordSendFailure(request, error, delivery.openedMessageIds)
+        if (!delivery.delivered) {
+          if (this.activeForkPreamble) {
+            this.pendingForkPreamble ??= this.activeForkPreamble
+            this.activeForkPreamble = null
+          }
+          this.recordSendFailure(request, error, delivery.openedMessageIds)
+        } else {
+          this.activeForkPreamble = null
+        }
         throw error
       } finally {
         if (this._delivery === delivery) this._delivery = null
@@ -2880,14 +2905,22 @@ export class Session implements SessionContract {
    * does not silently drop the instructions on the retry.
    */
   private prepareFirstTurnPreamble(request: SendMessageRequest): SendMessageRequest {
-    if (!this.firstTurnPreamble || this._messages.length > 0) return request
+    let preamble: string | undefined
+    if (this.firstTurnPreamble && this._messages.length === 0) {
+      preamble = this.firstTurnPreamble
+    } else if (this.pendingForkPreamble && !this.activeForkPreamble) {
+      preamble = this.pendingForkPreamble
+      this.activeForkPreamble = preamble
+      this.pendingForkPreamble = null
+    }
+    if (!preamble) return request
     if (this.backend.stageInstruction) {
-      this.pendingPreamble = this.firstTurnPreamble
+      this.pendingPreamble = preamble
       return request
     }
     return {
       ...request,
-      content: `${this.firstTurnPreamble}\n\n${request.content}`,
+      content: `${preamble}\n\n${request.content}`,
       userMessageContent: request.userMessageContent ?? [
         ...(request.images ?? []).map((attachment) =>
           attachment.mimeType === 'application/pdf'
@@ -3017,6 +3050,12 @@ export class Session implements SessionContract {
     return withDesktopMentionContext(withApp, {
       cwd: this.cwd,
       sessionId: this.id,
+      ...(this.readMentionedSession
+        ? {
+            readSession: async (targetId: string) =>
+              (await this.readMentionedSession!(targetId)) ?? readDesktopMentionedSession(targetId),
+          }
+        : {}),
     })
   }
 

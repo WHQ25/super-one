@@ -3,8 +3,9 @@ import type { SessionRecord } from './session-repo'
 import type { PermissionMode } from '@superone/shared/agent-types'
 import type { Session, SessionCreateOptions, SessionManager } from './types'
 
-const { getSessionRecordMock, getSessionProviderMock, forkClaudeTranscriptMock } = vi.hoisted(() => ({
+const { getSessionRecordMock, loadSessionStateBySidMock, getSessionProviderMock, forkClaudeTranscriptMock } = vi.hoisted(() => ({
   getSessionRecordMock: vi.fn(),
+  loadSessionStateBySidMock: vi.fn(() => null),
   getSessionProviderMock: vi.fn(),
   forkClaudeTranscriptMock: vi.fn(async () => 'forked-provider-id'),
 }))
@@ -12,7 +13,7 @@ const { getSessionRecordMock, getSessionProviderMock, forkClaudeTranscriptMock }
 vi.mock('../logger', () => ({
   default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() },
 }))
-vi.mock('./session-repo', () => ({ getSessionRecord: getSessionRecordMock }))
+vi.mock('./session-repo', () => ({ getSessionRecord: getSessionRecordMock, loadSessionStateBySid: loadSessionStateBySidMock }))
 vi.mock('./session-provider-repo', () => ({ getSessionProvider: getSessionProviderMock }))
 vi.mock('@superone/claude', () => ({
   forkClaudeTranscript: forkClaudeTranscriptMock,
@@ -222,17 +223,26 @@ describe('starting a side chat', () => {
     expect(created[0]!.cwd).toBe('/repo/worktree-a')
   })
 
-  it('refuses on a harness that cannot fork, instead of handing back a blank session', async () => {
-    getSessionRecordMock.mockReturnValue(makeRecord({ providerId: 'cursor-base', harnessId: 'cursor' }))
-    getSessionProviderMock.mockReturnValue({
-      id: 'cursor-base', harnessId: 'cursor', name: 'Cursor', isBase: true, config: {}, createdAt: 0, updatedAt: 0,
-    })
-    const { mgr, created } = makeManager()
+  it('opens a mention-based side chat for Antigravity and Cursor without native fork', async () => {
+    for (const [providerId, harnessId, acpAgentId] of [
+      ['acp-antigravity-base', 'acp-antigravity', 'antigravity'],
+      ['cursor-base', 'cursor', null],
+    ] as const) {
+      getSessionRecordMock.mockReturnValue(makeRecord({ providerId, harnessId, acpAgentId, title: 'Parent Thread' }))
+      getSessionProviderMock.mockReturnValue({
+        id: providerId, harnessId, name: harnessId, isBase: true, config: acpAgentId ? { agentId: acpAgentId } : {}, createdAt: 0, updatedAt: 0,
+      })
+      const { mgr, created } = makeManager()
 
-    const result = await startSideChat(mgr, { parentSessionId: PARENT_SID })
+      const result = await startSideChat(mgr, { parentSessionId: PARENT_SID })
 
-    expect(result).toEqual({ ok: false, error: expect.stringContaining('cannot fork') })
-    expect(created).toHaveLength(0)
+      expect(result.ok).toBe(true)
+      expect(created).toHaveLength(1)
+      expect(created[0]!.providerSessionId).toBeNull()
+      expect(created[0]!.firstTurnPreamble).toContain(`<superone-session><title>Parent Thread</title><sessionId>${PARENT_SID}</sessionId></superone-session>`)
+      expect(created[0]!.firstTurnPreamble).toContain(SIDE_CHAT_INSTRUCTIONS)
+      expect(forkClaudeTranscriptMock).not.toHaveBeenCalled()
+    }
   })
 
   it('refuses when the parent has no provider conversation yet', async () => {

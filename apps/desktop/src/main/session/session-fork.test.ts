@@ -272,4 +272,73 @@ describe('forkSession harness dispatch', () => {
       expect.objectContaining({ forkFromMessageId: 'a1' }),
     )
   })
+
+  it('uses mention-session fallback for Antigravity worktree, local, and truncated forks without calling Grok', async () => {
+    const worktreePath = join(tmpRoot, 'agy-wt')
+    mkdirSync(worktreePath)
+    activateWorktreeMock.mockResolvedValue({ path: worktreePath })
+    setupSource(
+      makeRecord({
+        harnessId: 'acp-antigravity',
+        providerId: 'acp-antigravity-base',
+        acpAgentId: 'antigravity',
+        providerSessionId: 'agy-src',
+        title: 'Agy Task',
+      }),
+      [
+        msg('u1', 'user'),
+        msg('a1', 'assistant'),
+        msg('u2', 'user'),
+      ],
+    )
+    getSessionProviderMock.mockReturnValue({ id: 'acp-antigravity-base', config: { agentId: 'antigravity' } })
+
+    const wtResult = await forkSession({ sessionId: 's-src', mode: 'worktree' })
+    expect(wtResult).toMatchObject({ ok: true, worktreePath })
+    expect(forkSessionRecordMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        sourceId: 's-src',
+        providerSessionId: null,
+        worktreePath,
+        forkMeta: expect.objectContaining({
+          sourceSessionId: 's-src',
+          pendingPreamble: expect.stringContaining('<superone-session><title>Agy Task</title><sessionId>s-src</sessionId></superone-session>'),
+        }),
+      }),
+    )
+
+    const truncatedLocal = await forkSession({ sessionId: 's-src', mode: 'local', forkFromMessageId: 'a1' })
+    expect(truncatedLocal.ok).toBe(true)
+    expect(forkSessionRecordMock).toHaveBeenLastCalledWith(
+      expect.objectContaining({
+        sourceId: 's-src',
+        providerSessionId: null,
+        forkFromMessageId: 'a1',
+        forkMeta: expect.objectContaining({
+          sourceSessionId: 's-src',
+          forkFromMessageId: 'a1',
+          pendingPreamble: expect.stringContaining('<upToMessageId>a1</upToMessageId>'),
+        }),
+      }),
+    )
+  })
+
+  it('allows mention-forking a session without providerSessionId when messages exist', async () => {
+    setupSource(
+      makeRecord({
+        harnessId: 'acp-antigravity',
+        providerId: 'acp-antigravity-base',
+        acpAgentId: 'antigravity',
+        providerSessionId: null,
+      }),
+      [msg('u1', 'user')],
+    )
+    getSessionProviderMock.mockReturnValue({ id: 'acp-antigravity-base', config: { agentId: 'antigravity' } })
+
+    const result = await forkSession({ sessionId: 's-src', mode: 'local' })
+    expect(result.ok).toBe(true)
+    expect(forkSessionRecordMock).toHaveBeenCalledWith(
+      expect.objectContaining({ providerSessionId: null }),
+    )
+  })
 })

@@ -109,4 +109,11 @@ describe('forkAcpTranscript', () => {
     }))
     expect(connector.mock.calls[0][0].sourceWorkspaceDir).toBeUndefined()
   })
+
+  it('refuses non-Grok ACP agents such as Antigravity instead of launching Grok', async () => {
+    await expect(
+      forkAcpTranscript(source({ acpAgentId: 'antigravity', providerConfig: { agentId: 'antigravity' } }), '/target', { messages: [] }),
+    ).rejects.toThrow(/only supported for Grok/i)
+    expect(connector).not.toHaveBeenCalled()
+  })
 })

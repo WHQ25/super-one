@@ -54,6 +54,7 @@ import { collaborationSystemPrompt } from '../collaboration/text'
 import { ghRun } from '../git/gh-run'
 import {
   MENTION_CONTEXT_GH_TIMEOUT_MS,
+  buildMentionForkPreamble,
   enrichMentionContext,
   hasMentionContextTargets,
   type MentionedSessionData,
@@ -917,6 +918,20 @@ export class SessionRuntime {
       // Forks of automation sessions are user sessions (not automation-owned).
       isAutomation: false,
       automationId: null,
+      ...(!providerResume
+        ? {
+            forkMeta: {
+              sourceSessionId: source.sessionId,
+              ...(input.forkFromMessageId ? { forkFromMessageId: input.forkFromMessageId } : {}),
+              pendingPreamble: buildMentionForkPreamble({
+                sourceSessionId: source.sessionId,
+                sourceTitle: source.title,
+                forkFromMessageId: input.forkFromMessageId,
+                mode: cwd && cwd !== source.cwd ? 'worktree' : 'local',
+              }),
+            },
+          }
+        : {}),
     }
     this.live.set(session.sessionId, session)
     this.persist(session)
@@ -1872,13 +1887,17 @@ export class SessionRuntime {
         : undefined
     try {
       const modelInput = mcpAppModelInput({ text: opts.text, images: opts.images?.map(image => ({ ...image, name: image.name ?? 'Attachment' })) }, this.mcpAppContextInput(session.sessionId))
-      const enrichedText = hasMentionContextTargets(modelInput.text)
-        ? await enrichMentionContext(modelInput.text, {
+      const pendingForkPreamble = session.forkMeta?.pendingPreamble?.trim() || null
+      const textWithFork = pendingForkPreamble
+        ? `${pendingForkPreamble}\n\n${modelInput.text}`
+        : modelInput.text
+      const enrichedText = hasMentionContextTargets(textWithFork)
+        ? await enrichMentionContext(textWithFork, {
             ...(session.cwd ? { gh: (args) => ghRun(session.cwd!, args, MENTION_CONTEXT_GH_TIMEOUT_MS) } : {}),
             readSession: (targetId) => this.readMentionedSession(targetId),
             skipSessionId: session.sessionId,
           })
-        : modelInput.text
+        : textWithFork
       // Reject preparation before the backend owns a turn; its acceptance
       // callback only records the receipt, even if readiness changes later.
       opts.inputAdmission?.beforeInput()
@@ -1963,6 +1982,13 @@ export class SessionRuntime {
 
       if (result.finalText) markStarted()
       if (opts.inputAdmission && !started) throw inputFailure
+      if (started && session.forkMeta?.pendingPreamble) {
+        session.forkMeta = {
+          sourceSessionId: session.forkMeta.sourceSessionId,
+          ...(session.forkMeta.forkFromMessageId ? { forkFromMessageId: session.forkMeta.forkFromMessageId } : {}),
+        }
+        this.persist(session)
+      }
       if (session.closed) {
         // close() already tombstoned the session; do not overwrite status.
       } else if (abort.signal.aborted) {

@@ -235,6 +235,43 @@ describe('SessionRuntime.fork', () => {
     store.save(live)
     const forked = rt.fork({ sourceSessionId: created.sessionId, forkFromMessageId: 'a1' })
     expect(forked.transcript.map((t) => t.id)).toEqual(['u1', 'a1'])
+    expect(forked.forkMeta).toMatchObject({
+      sourceSessionId: created.sessionId,
+      forkFromMessageId: 'a1',
+      pendingPreamble: expect.stringContaining('<upToMessageId>a1</upToMessageId>'),
+    })
+  })
+
+  it('delivers mention-fork preamble with truncated context once on first turn', async () => {
+    const { store, events, leases } = memoryPorts()
+    const seenTexts: string[] = []
+    const rt = new SessionRuntime(store, events, leases, 'env-1', async (opts) => {
+      seenTexts.push(opts.text)
+      opts.onInputAccepted?.()
+      return { finalText: 'ok' }
+    })
+    const created = rt.create({ projectId: 'p1', harnessId: 'acp-antigravity', title: 'Agy' })
+    const live = (rt as unknown as { live: Map<string, NodeSessionRecord> }).live.get(created.sessionId)!
+    live.transcript = [
+      { id: 'u1', role: 'user', text: 'first step', createdAt: 1 },
+      { id: 'a1', role: 'assistant', text: 'cutoff reply', createdAt: 2 },
+      { id: 'u2', role: 'user', text: 'future after cutoff', createdAt: 3 },
+    ]
+    store.save(live)
+
+    const forked = rt.fork({ sourceSessionId: created.sessionId, forkFromMessageId: 'a1' })
+    await rt.send({ sessionId: forked.sessionId, text: 'try new approach', client: { clientSessionId: 'c1' }, leaseId: 'l1', generation: '1' })
+    await vi.waitFor(() => expect(rt.get(forked.sessionId)?.status).toBe('idle'))
+    await rt.send({ sessionId: forked.sessionId, text: 'follow up', client: { clientSessionId: 'c1' }, leaseId: 'l1', generation: '1' })
+    await vi.waitFor(() => expect(seenTexts).toHaveLength(2))
+
+    expect(seenTexts).toHaveLength(2)
+    expect(seenTexts[0]).toContain('<superone-session-context>')
+    expect(seenTexts[0]).toContain('first step')
+    expect(seenTexts[0]).toContain('cutoff reply')
+    expect(seenTexts[0]).not.toContain('future after cutoff')
+    expect(seenTexts[1]).toBe('follow up')
+    expect(rt.get(forked.sessionId)?.forkMeta?.pendingPreamble).toBeUndefined()
   })
 
   it('rejects empty session with no resume', () => {

@@ -10,6 +10,7 @@ import { acpAgentIdForHarness, isConcreteHarnessId, resolveLegacyHarnessId } fro
 import { sealCodexMetadata, sealStreamingTools } from '@superone/shared/content-delta'
 import type { ChatMessage, ContentBlock, EffortLevel, ImageAttachment, ChatMessageContext } from '@superone/shared/agent-types'
 import { BASE_SESSION_PROVIDER_DEFINITIONS } from '@superone/shared/session-provider-definitions'
+import type { ForkContextMeta } from '@superone/runtime/session/mention-context'
 import type { HarnessId, MessagePersistMode } from './types'
 
 export function serializeMessageContent(msg: ChatMessage): string {
@@ -110,6 +111,7 @@ export interface SessionRecord {
    * `''`: the latest completion is unread. A message id has been seen.
    */
   seenCompletedMessageId: string | null
+  forkMeta?: ForkContextMeta | null
 }
 
 function normalizeCodexThreadId(value: string | null | undefined): string | null {
@@ -156,6 +158,7 @@ interface SessionRow {
   selected_effort: string | null
   codex_service_tier: string | null
   seen_completed_message_id?: string | null
+  fork_meta_json?: string | null
 }
 
 interface MessageRow {
@@ -172,9 +175,31 @@ interface MessageRow {
   resume_point_id: string | null
 }
 
+function parseForkMeta(raw: string | null | undefined): ForkContextMeta | null {
+  if (!raw) return null
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return null
+    const obj = parsed as Record<string, unknown>
+    if (typeof obj.sourceSessionId !== 'string' || !obj.sourceSessionId.trim()) return null
+    return {
+      sourceSessionId: obj.sourceSessionId.trim(),
+      ...(typeof obj.forkFromMessageId === 'string' && obj.forkFromMessageId.trim()
+        ? { forkFromMessageId: obj.forkFromMessageId.trim() }
+        : {}),
+      ...(typeof obj.pendingPreamble === 'string' && obj.pendingPreamble.trim()
+        ? { pendingPreamble: obj.pendingPreamble }
+        : {}),
+    }
+  } catch {
+    return null
+  }
+}
+
 function rowToRecord(row: SessionRow, projectPath: string): SessionRecord {
   const providerId = row.provider_id ?? inferLegacyProviderId(row)
   const harnessId = deriveHarnessId(row)
+  const forkMeta = parseForkMeta(row.fork_meta_json)
   return {
     id: row.id,
     projectPath,
@@ -198,6 +223,7 @@ function rowToRecord(row: SessionRow, projectPath: string): SessionRecord {
     selectedEffort: (row.selected_effort as EffortLevel | null) ?? null,
     codexServiceTier: row.codex_service_tier ?? null,
     seenCompletedMessageId: row.seen_completed_message_id ?? null,
+    ...(forkMeta ? { forkMeta } : {}),
   }
 }
 
@@ -354,6 +380,25 @@ export function updateAcpAgentId(sid: string, acpAgentId: string | null): void {
 
 export function updateSessionTitle(sid: string, title: string): void {
   getDb().prepare('UPDATE sessions SET title = ? WHERE id = ?').run(title, sid)
+}
+
+export function getSessionForkMeta(sid: string): ForkContextMeta | null {
+  try {
+    const row = getDb().prepare('SELECT fork_meta_json FROM sessions WHERE id = ?').get(sid) as { fork_meta_json?: string | null } | undefined
+    return parseForkMeta(row?.fork_meta_json)
+  } catch {
+    return null
+  }
+}
+
+export function clearSessionForkPreamble(sid: string): void {
+  const meta = getSessionForkMeta(sid)
+  if (!meta?.pendingPreamble) return
+  const next: ForkContextMeta = {
+    sourceSessionId: meta.sourceSessionId,
+    ...(meta.forkFromMessageId ? { forkFromMessageId: meta.forkFromMessageId } : {}),
+  }
+  getDb().prepare('UPDATE sessions SET fork_meta_json = ? WHERE id = ?').run(JSON.stringify(next), sid)
 }
 
 export function deleteSessionRecord(sid: string): void {
@@ -641,7 +686,7 @@ export function saveSessionStateBySid(input: SaveSessionStateInput): void {
 export interface ForkSessionRecordInput {
   sourceId: string
   newId: string
-  providerSessionId: string
+  providerSessionId: string | null
   /** Worktree directory of the fork, or null for a local fork in the main repo. */
   worktreePath: string | null
   /** Branch of the forked worktree, or null when detached / a local fork. */
@@ -654,6 +699,7 @@ export interface ForkSessionRecordInput {
    * full copy so SQLite never disagrees with the underlying transcript.
    */
   forkFromMessageId?: string
+  forkMeta?: ForkContextMeta | null
 }
 
 function rewriteForkedMessageMetadata(
@@ -732,10 +778,13 @@ export function forkSessionRecord(input: ForkSessionRecordInput): void {
         randomUUID(), input.newId, i, m.role,
         m.status === 'streaming' ? 'interrupted' : m.status,
         m.content_json, m.created_at, m.provider_id,
-        rewriteForkedMessageMetadata(m.metadata_json, source.harnessId, input.providerSessionId),
+        rewriteForkedMessageMetadata(m.metadata_json, source.harnessId, input.providerSessionId ?? ''),
         now,
       )
     })
+    if (input.forkMeta) {
+      db.prepare('UPDATE sessions SET fork_meta_json = ? WHERE id = ?').run(JSON.stringify(input.forkMeta), input.newId)
+    }
   })()
 
   notifySessionList(source.projectPath)

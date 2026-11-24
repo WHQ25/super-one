@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import type { SessionForkRequest, SessionForkResult } from '@superone/shared/agent-types'
+import { buildMentionForkPreamble, type ForkContextMeta } from '@superone/runtime/session/mention-context'
 import log from '../logger'
 import { gitRun } from '../git-run'
 import { activateWorktree, gitErrorMessage } from '../git/worktree-ops'
@@ -33,23 +34,39 @@ async function persistFork(
   assertControl: () => void,
 ): Promise<SessionForkResult> {
   try { assertControl() } catch (error) { await rollback(); throw error }
-  let newProviderSessionId: string
-  try {
-    newProviderSessionId = await harness.forkTranscript(
-      {
-        apiProviderId: record.apiProviderId,
-        ...(harness.id === 'opencode' ? { sessionId: record.id } : {}),
-        providerSessionId: record.providerSessionId!,
-        projectPath: record.projectPath,
-        cwd: sourceCwd,
-        providerConfig: getSessionProvider(record.providerId)?.config,
-      },
-      targetCwd,
-      ctx,
-    )
-  } catch (err) {
-    await rollback()
-    return { ok: false, error: `Fork transcript failed: ${err instanceof Error ? err.message : String(err)}` }
+  let newProviderSessionId: string | null = null
+  let forkMeta: ForkContextMeta | null = null
+  if (harness.forkTranscript && record.providerSessionId) {
+    try {
+      newProviderSessionId = await harness.forkTranscript(
+        {
+          apiProviderId: record.apiProviderId,
+          acpAgentId: record.acpAgentId,
+          ...(harness.id === 'opencode' ? { sessionId: record.id } : {}),
+          providerSessionId: record.providerSessionId,
+          projectPath: record.projectPath,
+          cwd: sourceCwd,
+          providerConfig: getSessionProvider(record.providerId)?.config,
+        },
+        targetCwd,
+        ctx,
+      )
+    } catch (err) {
+      await rollback()
+      return { ok: false, error: `Fork transcript failed: ${err instanceof Error ? err.message : String(err)}` }
+    }
+  } else {
+    const mode = worktreePath ? 'worktree' : 'local'
+    forkMeta = {
+      sourceSessionId: record.id,
+      ...(ctx.forkFromMessageId ? { forkFromMessageId: ctx.forkFromMessageId } : {}),
+      pendingPreamble: buildMentionForkPreamble({
+        sourceSessionId: record.id,
+        sourceTitle: record.title,
+        forkFromMessageId: ctx.forkFromMessageId,
+        mode,
+      }),
+    }
   }
 
   try { assertControl() } catch (error) { await rollback(); throw error }
@@ -63,6 +80,7 @@ async function persistFork(
       gitBranch,
       title: forkTitle(record.title),
       forkFromMessageId: ctx.forkFromMessageId,
+      ...(forkMeta ? { forkMeta } : {}),
     })
   } catch (err) {
     await rollback()
@@ -140,7 +158,10 @@ export async function forkSession(req: SessionForkRequest, assertControl: () => 
   assertControl()
   const record = getSessionRecord(req.sessionId)
   if (!record) return { ok: false, error: 'Source session not found' }
-  if (!record.providerSessionId) {
+  const loadedMessages = !record.providerSessionId || req.forkFromMessageId
+    ? loadSessionStateBySid(req.sessionId)?.messages ?? []
+    : []
+  if (!record.providerSessionId && loadedMessages.length === 0) {
     return { ok: false, error: 'This session has no conversation to fork yet' }
   }
   const harness = harnessRegistry.get(record.harnessId)
@@ -150,10 +171,7 @@ export async function forkSession(req: SessionForkRequest, assertControl: () => 
     ? record.worktreePath
     : record.projectPath
 
-  // A full copy needs no transcript — only the truncating path loads it.
-  const messages = req.forkFromMessageId
-    ? loadSessionStateBySid(req.sessionId)?.messages ?? []
-    : []
+  const messages = req.forkFromMessageId ? loadedMessages : []
   const ctx: ForkContext = { messages, forkFromMessageId: req.forkFromMessageId }
 
   return (req.mode ?? 'worktree') === 'local'

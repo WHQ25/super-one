@@ -1995,6 +1995,32 @@ describe('firstTurnPreamble', () => {
 
     expect(backend.sendCalls[0]?.content).toBe('hi')
   })
+
+  it('delivers pendingForkPreamble on a persisted fork with copied messages, consumes once, and restores on failure', async () => {
+    const consumed: string[] = []
+    const prior: ChatMessage = {
+      id: 'u0', role: 'user', status: 'complete', content: [{ type: 'text', text: 'earlier' }],
+      createdAt: '', providerId: 'acp-antigravity',
+    }
+    const { session, backend } = makeSession({
+      initialMessages: [prior],
+      pendingForkPreamble: 'FORK CONTEXT',
+      onForkPreambleConsumed: (sid) => consumed.push(sid),
+    })
+
+    backend.send = vi.fn().mockRejectedValueOnce(new Error('boot failed')).mockResolvedValueOnce(undefined)
+    await expect(session.send({ content: 'try one' })).rejects.toThrow('boot failed')
+    expect(consumed).toEqual([])
+    expect((backend.send as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]?.content).toBe('FORK CONTEXT\n\ntry one')
+
+    await session.send({ content: 'retry one' })
+    expect(consumed).toEqual(['sess-1'])
+    expect((backend.send as ReturnType<typeof vi.fn>).mock.calls[1]?.[0]?.content).toBe('FORK CONTEXT\n\nretry one')
+
+    await session.send({ content: 'turn two' })
+    expect((backend.send as ReturnType<typeof vi.fn>).mock.calls[2]?.[0]?.content).toBe('turn two')
+    expect(consumed).toEqual(['sess-1'])
+  })
 })
 
 describe('Session read receipt', () => {

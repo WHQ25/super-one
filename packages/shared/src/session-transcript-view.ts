@@ -171,6 +171,16 @@ export interface PageResult<T> {
   endIndex: number
 }
 
+export function sliceMessagesUpTo<T extends { id: string }>(
+  messages: readonly T[],
+  upToMessageId?: string | null,
+): T[] {
+  const cutoff = upToMessageId?.trim()
+  if (!cutoff) return [...messages]
+  const idx = messages.findIndex((m) => m.id === cutoff)
+  return idx >= 0 ? messages.slice(0, idx + 1) : []
+}
+
 /**
  * Paginate a list. Default: newest page (tail).
  * With messageId: page ending at that message (or around-window on the full list).

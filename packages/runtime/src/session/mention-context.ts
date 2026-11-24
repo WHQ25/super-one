@@ -1,8 +1,8 @@
 import type { ChatMessage } from '@superone/shared/agent-types'
 import { parseGitMentionValue } from '@superone/shared/git-mention-query'
 import { GIT_HOST_TAG_REGEX, gitTagValue } from '@superone/shared/git-mention-tags'
-import { SESSION_TAG_REGEX } from '@superone/shared/miniapp-prompt-tags'
-import { formatTextBlocks, pageTextBlocks } from '@superone/shared/session-transcript-view'
+import { SESSION_TAG_REGEX, wrapSessionMention } from '@superone/shared/miniapp-prompt-tags'
+import { formatTextBlocks, pageTextBlocks, sliceMessagesUpTo } from '@superone/shared/session-transcript-view'
 
 export const MENTION_CONTEXT_GH_TIMEOUT_MS = 8_000
 const MAX_GITHUB_MENTIONS = 5
@@ -192,17 +192,75 @@ export function extractGitHubMentionTargets(text: string): GitHubMentionTarget[]
   return targets
 }
 
-export function extractSessionMentionIds(text: string, skipSessionId?: string): string[] {
-  const ids: string[] = []
+export interface SessionMentionTarget {
+  sessionId: string
+  upToMessageId?: string
+}
+
+export interface ForkContextMeta {
+  sourceSessionId: string
+  forkFromMessageId?: string
+  pendingPreamble?: string
+}
+
+export function buildMentionForkPreamble(input: {
+  sourceSessionId: string
+  sourceTitle?: string | null
+  forkFromMessageId?: string
+  mode: 'worktree' | 'local' | 'side-chat'
+}): string {
+  const title = input.sourceTitle?.trim() || 'Session'
+  const mention = wrapSessionMention(input.sourceSessionId, title, input.forkFromMessageId)
+  const cutoff = input.forkFromMessageId?.trim()
+  const lines: string[] = []
+  if (input.mode === 'side-chat') {
+    lines.push(
+      `Parent session reference: ${mention}`,
+      `The parent conversation context is attached below via <superone-session-context>. Use session_read({ sessionId: "${input.sourceSessionId}", view: "meta" | "user" | "assistant" | "text" | "tools" | "tool_detail" }) if you need earlier messages or full tool details.`,
+    )
+  } else {
+    const location = input.mode === 'worktree'
+      ? 'a new isolated git worktree'
+      : 'the same working directory'
+    lines.push(
+      `# Forked Session`,
+      `This session was forked from ${mention} and is running in ${location}.`,
+      `The prior conversation context is attached below via <superone-session-context>. Continue seamlessly from that history as if it happened in this conversation, and use session_read({ sessionId: "${input.sourceSessionId}", view: "meta" | "user" | "assistant" | "text" | "tools" | "tool_detail" }) on demand if you need earlier messages or full tool details.`,
+    )
+  }
+  if (cutoff) {
+    lines.push(
+      `Branch cutoff: this fork branches at messageId "${cutoff}". Do NOT read, request, or reference any messages or events after messageId "${cutoff}" in session "${input.sourceSessionId}". When calling session_read on "${input.sourceSessionId}", stay at or before messageId "${cutoff}".`,
+    )
+  }
+  return lines.join('\n')
+}
+
+export function extractSessionMentionTargets(text: string, skipSessionId?: string): SessionMentionTarget[] {
+  const targets: SessionMentionTarget[] = []
   const seen = new Set<string>()
   const re = new RegExp(SESSION_TAG_REGEX)
   let match: RegExpExecArray | null
   while ((match = re.exec(text)) !== null) {
     const id = match[2].trim()
-    if (!id || id === skipSessionId || seen.has(id)) continue
-    seen.add(id)
-    ids.push(id)
-    if (ids.length >= MAX_SESSION_MENTIONS) break
+    const upToMessageId = match[3]?.trim() || undefined
+    if (!id || id === skipSessionId) continue
+    const key = `${id}:${upToMessageId ?? ''}`
+    if (seen.has(key)) continue
+    seen.add(key)
+    targets.push({ sessionId: id, ...(upToMessageId ? { upToMessageId } : {}) })
+    if (targets.length >= MAX_SESSION_MENTIONS) break
+  }
+  return targets
+}
+
+export function extractSessionMentionIds(text: string, skipSessionId?: string): string[] {
+  const ids: string[] = []
+  const seen = new Set<string>()
+  for (const target of extractSessionMentionTargets(text, skipSessionId)) {
+    if (seen.has(target.sessionId)) continue
+    seen.add(target.sessionId)
+    ids.push(target.sessionId)
   }
   return ids
 }
@@ -357,21 +415,23 @@ async function resolveGitHubItem(
   }
 }
 
-function formatMentionedSession(data: MentionedSessionData): string {
+function formatMentionedSession(data: MentionedSessionData, upToMessageId?: string): string {
   const title = data.title?.trim() || 'Untitled'
+  const messages = upToMessageId ? sliceMessagesUpTo(data.messages, upToMessageId) : [...data.messages]
   const lines: string[] = [`### Session "${title}" (sessionId: ${data.sessionId})`]
   const meta: string[] = []
   if (data.harness) meta.push(`harness: ${data.harness}`)
   if (data.model) meta.push(`model: ${data.model}`)
   if (data.branch) meta.push(`branch: ${data.branch}`)
-  const count = data.messageCount ?? data.messages.length
+  const count = upToMessageId ? messages.length : (data.messageCount ?? messages.length)
   meta.push(`messages: ${count}`)
+  if (upToMessageId) meta.push(`cutoff: upToMessageId=${upToMessageId}`)
   const lastActive = formatIso(data.lastActiveAt ?? data.createdAt)
   if (lastActive) meta.push(`lastActive: ${lastActive}`)
   if (data.tags && data.tags.length > 0) meta.push(`tags: ${data.tags.join(', ')}`)
   lines.push(meta.join(' · '))
 
-  const page = pageTextBlocks([...data.messages], { view: 'text', limit: MAX_SESSION_TEXT_BLOCKS })
+  const page = pageTextBlocks(messages, { view: 'text', limit: MAX_SESSION_TEXT_BLOCKS })
   const formatted = formatTextBlocks(page.items, { withToolCount: true })
   if (formatted) {
     const clipped = truncateTail(formatted, MAX_SESSION_TRANSCRIPT_CHARS)
@@ -384,7 +444,12 @@ function formatMentionedSession(data: MentionedSessionData): string {
       clipped,
     )
     if (truncated) {
-      lines.push('', `Use session_read({ sessionId: "${data.sessionId}", view: "text" | "user" | "assistant" | "tools" }) for earlier messages or tool details.`)
+      lines.push(
+        '',
+        upToMessageId
+          ? `Use session_read({ sessionId: "${data.sessionId}", messageId: "${upToMessageId}", view: "text" | "user" | "assistant" | "tools" }) for earlier messages or tool details before the cutoff (do not read past "${upToMessageId}").`
+          : `Use session_read({ sessionId: "${data.sessionId}", view: "text" | "user" | "assistant" | "tools" }) for earlier messages or tool details.`,
+      )
     }
   } else {
     lines.push('', '_(no text messages)_')
@@ -396,16 +461,16 @@ export async function enrichMentionContext(text: string, deps: MentionContextDep
   if (!hasMentionContextTargets(text)) return text
 
   const ghTargets = deps.gh ? extractGitHubMentionTargets(text) : []
-  const sessionIds = deps.readSession ? extractSessionMentionIds(text, deps.skipSessionId) : []
-  if (ghTargets.length === 0 && sessionIds.length === 0) return text
+  const sessionTargets = deps.readSession ? extractSessionMentionTargets(text, deps.skipSessionId) : []
+  if (ghTargets.length === 0 && sessionTargets.length === 0) return text
 
   const [ghResults, sessionResults] = await Promise.all([
     Promise.all(ghTargets.map((target) => resolveGitHubItem(target, deps.gh!))),
     Promise.all(
-      sessionIds.map(async (id) => {
+      sessionTargets.map(async (target) => {
         try {
-          const data = await deps.readSession!(id)
-          return data ? formatMentionedSession(data) : null
+          const data = await deps.readSession!(target.sessionId)
+          return data ? formatMentionedSession(data, target.upToMessageId) : null
         } catch {
           return null
         }

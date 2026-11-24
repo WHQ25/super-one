@@ -13,7 +13,10 @@ describe('HARNESS_CAPABILITIES', () => {
       expect(acp.supportsCompact).toBe(true)
       expect(acp.supportsQueuedSteer).toBe(true)
       expect(acp.supportsFork).toBe(true)
+      expect(acp.supportsNativeFork).toBe(id === 'acp-grok')
     }
+    expect(HARNESS_CAPABILITIES.cursor.supportsFork).toBe(true)
+    expect(HARNESS_CAPABILITIES.cursor.supportsNativeFork).toBe(false)
   })
 
   it('keeps Claude full-stack capabilities', () => {

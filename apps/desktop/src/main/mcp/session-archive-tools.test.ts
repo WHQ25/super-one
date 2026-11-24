@@ -1084,4 +1084,55 @@ describe('session archive tools', () => {
     })
     expect(settleSessionMock).toHaveBeenCalledWith('foreign-1', true)
   })
+
+  it('enforces the caller forkFromMessageId cutoff when session_read reads its fork source', () => {
+    const srcMessages: ChatMessage[] = [
+      { id: 'u1', role: 'user', status: 'complete', providerId: 'acp-antigravity', createdAt: '2026-01-01T00:00:00.000Z', content: [{ type: 'text', text: 'Part 1' }] },
+      { id: 'a1', role: 'assistant', status: 'complete', providerId: 'acp-antigravity', createdAt: '2026-01-01T00:00:01.000Z', content: [{ type: 'text', text: 'Cutoff answer' }] },
+      { id: 'u2', role: 'user', status: 'complete', providerId: 'acp-antigravity', createdAt: '2026-01-01T00:00:02.000Z', content: [{ type: 'text', text: 'After cutoff secret' }] },
+    ]
+    loadSessionStateMock.mockReturnValue({ messages: srcMessages })
+    getDbMock.mockReturnValue({
+      prepare: (sql: string) => {
+        if (sql.includes('SELECT fork_meta_json FROM sessions')) {
+          return { get: () => ({ fork_meta_json: JSON.stringify({ sourceSessionId: 'src-1', forkFromMessageId: 'a1' }) }) }
+        }
+        if (sql.includes('FROM sessions s') && sql.includes('WHERE s.id')) {
+          return {
+            get: () => ({
+              id: 'src-1',
+              title: 'Source',
+              created_at: '2026-01-01T00:00:00.000Z',
+              last_user_message_at: '2026-01-01T00:00:02.000Z',
+              is_worktree: 0,
+              is_pinned: 0,
+              is_hidden: 0,
+              git_branch: null,
+              worktree_path: null,
+              provider_id: 'acp-antigravity-base',
+              provider: 'acp-antigravity',
+              acp_agent_id: 'antigravity',
+              selected_model: null,
+              selected_effort: null,
+              total_cost_usd: 0,
+              context_tokens: 0,
+              api_provider_id: null,
+              project_id: 'proj-1',
+            }),
+          }
+        }
+        if (sql.includes('parent_session_id')) return { get: () => undefined }
+        if (sql.includes('COUNT(*)')) return { get: () => ({ n: 3 }) }
+        return { get: () => undefined, all: () => [] }
+      },
+    })
+
+    const meta = JSON.parse(textResult(sessionReadHandler({ sessionId: 'src-1', view: 'meta' }, makeDeps({ sessionId: 'fork-1' }))))
+    expect(meta.messageCount).toBe(2)
+
+    const text = textResult(sessionReadHandler({ sessionId: 'src-1', view: 'text' }, makeDeps({ sessionId: 'fork-1' })))
+    expect(text).toContain('Part 1')
+    expect(text).toContain('Cutoff answer')
+    expect(text).not.toContain('After cutoff secret')
+  })
 })

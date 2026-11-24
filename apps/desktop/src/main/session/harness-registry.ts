@@ -10,7 +10,6 @@ import { scriptedHarnessEnabled } from './scripted-harness-gate'
 import { forkAcpTranscript } from './backends/acp-fork'
 import { forkClaudeTranscript } from './backends/claude-fork'
 import { forkCodexThread } from './backends/codex-fork'
-import { forkCursorTranscript } from './backends/cursor-fork'
 import { forkDeepseekTranscript } from './backends/deepseek-fork'
 import { forkOpenCodeSession } from './backends/opencode-fork'
 import type { Harness, HarnessId } from './types'
@@ -106,7 +105,6 @@ const acpAntigravityHarness: Harness = {
   name: 'Antigravity',
   configSchema: acpConfigSchema,
   createBackend: () => new AcpBackend('acp-antigravity'),
-  forkTranscript: forkAcpTranscript,
 }
 
 const openCodeHarness: Harness = {
@@ -122,7 +120,6 @@ const cursorHarness: Harness = {
   name: 'Cursor',
   configSchema: cursorConfigSchema,
   createBackend: () => new CursorBackend(),
-  forkTranscript: forkCursorTranscript,
 }
 
 const deepseekConfigSchema = z.object({

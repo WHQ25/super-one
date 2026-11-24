@@ -1,8 +1,10 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
+  buildMentionForkPreamble,
   enrichMentionContext,
   extractGitHubMentionTargets,
   extractSessionMentionIds,
+  extractSessionMentionTargets,
   hasMentionContextTargets,
 } from './mention-context'
 
@@ -146,5 +148,35 @@ describe('mention-context', () => {
       readSession: async () => { throw new Error('db error') },
     })
     expect(enriched).toBe(text)
+  })
+
+  it('truncates pre-fetched session context at upToMessageId and includes cutoff guidance', async () => {
+    const readSession = vi.fn(async () => ({
+      sessionId: 's-src',
+      title: 'Feature work',
+      harness: 'acp-antigravity',
+      messageCount: 4,
+      messages: [
+        { id: 'u1', role: 'user' as const, status: 'complete' as const, providerId: 'acp-antigravity', content: [{ type: 'text' as const, text: 'Step 1' }], createdAt: '2026-11-23T11:50:00Z' },
+        { id: 'a1', role: 'assistant' as const, status: 'complete' as const, providerId: 'acp-antigravity', content: [{ type: 'text' as const, text: 'Done 1' }], createdAt: '2026-11-23T11:51:00Z' },
+        { id: 'u2', role: 'user' as const, status: 'complete' as const, providerId: 'acp-antigravity', content: [{ type: 'text' as const, text: 'Future secret step' }], createdAt: '2026-11-23T11:52:00Z' },
+        { id: 'a2', role: 'assistant' as const, status: 'complete' as const, providerId: 'acp-antigravity', content: [{ type: 'text' as const, text: 'Future secret reply' }], createdAt: '2026-11-23T11:53:00Z' },
+      ],
+    }))
+    const preamble = buildMentionForkPreamble({
+      sourceSessionId: 's-src',
+      sourceTitle: 'Feature work',
+      forkFromMessageId: 'a1',
+      mode: 'worktree',
+    })
+    expect(extractSessionMentionTargets(preamble)).toEqual([{ sessionId: 's-src', upToMessageId: 'a1' }])
+    expect(preamble).toContain('Do NOT read, request, or reference any messages or events after messageId "a1"')
+
+    const enriched = await enrichMentionContext(`${preamble}\n\nTry alternative`, { readSession })
+    expect(enriched).toContain('Step 1')
+    expect(enriched).toContain('Done 1')
+    expect(enriched).toContain('messages: 2 · cutoff: upToMessageId=a1')
+    expect(enriched).not.toContain('Future secret step')
+    expect(enriched).not.toContain('Future secret reply')
   })
 })

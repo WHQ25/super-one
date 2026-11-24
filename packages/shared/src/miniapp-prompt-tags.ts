@@ -8,7 +8,12 @@ export const MINIAPP_TAG_REGEX = /<superone-miniapp>\s*<appname>([\s\S]*?)<\/app
 export const MINIAPP_REMINDER_REGEX = /\n*<superone-miniapp-reminder>[\s\S]*?<\/superone-miniapp-reminder>\n*/g
 
 export const SESSION_TAG_REGEX =
-  /<superone-session>\s*<title>([\s\S]*?)<\/title>\s*<sessionId>([\s\S]*?)<\/sessionId>\s*<\/superone-session>/g
+  /<superone-session>\s*<title>([\s\S]*?)<\/title>\s*<sessionId>([\s\S]*?)<\/sessionId>(?:\s*<upToMessageId>([\s\S]*?)<\/upToMessageId>)?\s*<\/superone-session>/g
+
+export function wrapSessionMention(sessionId: string, title: string, upToMessageId?: string): string {
+  const cutoff = upToMessageId?.trim()
+  return `<superone-session><title>${title}</title><sessionId>${sessionId}</sessionId>${cutoff ? `<upToMessageId>${cutoff}</upToMessageId>` : ''}</superone-session>`
+}
 export const SESSION_REMINDER_REGEX =
   /\n*<superone-session-reminder>[\s\S]*?<\/superone-session-reminder>\n*/g
 export const SESSION_CONTEXT_REGEX =

@@ -30,6 +30,7 @@ export type { HarnessId, LiveSessionSnapshot, SessionSnapshot, SessionStatus }
 export interface ForkSource {
   sessionId?: string
   apiProviderId?: string | null
+  acpAgentId?: string | null
   providerSessionId: string
   projectPath: string
   /** Effective cwd of the source session, including a source worktree. */
@@ -49,7 +50,7 @@ export interface Harness {
   readonly name: string
   readonly configSchema: unknown
   createBackend(): SessionBackend
-  forkTranscript(source: ForkSource, targetCwd: string, ctx: ForkContext): Promise<string>
+  forkTranscript?(source: ForkSource, targetCwd: string, ctx: ForkContext): Promise<string>
 }
 
 export interface SessionProvider {
@@ -124,6 +125,7 @@ export interface SessionCreateOptions {
    * `userMessageContent` keeps the bubble showing only what the user typed.
    */
   firstTurnPreamble?: string
+  pendingForkPreamble?: string | null
 }
 
 /**

@@ -32,6 +32,7 @@ import {
   messageSearchText,
   pageItems,
   pageTextBlocks,
+  sliceMessagesUpTo,
   type SessionArchiveView,
 } from '../session/session-transcript-view'
 import type { BuiltInSuperoneToolDeps } from './superone-mcp-builtins'
@@ -607,6 +608,20 @@ function loadMessages(sessionId: string): ChatMessage[] {
   return state?.messages ?? []
 }
 
+function callerForkCutoff(callerSessionId: string, targetSessionId: string): string | null {
+  try {
+    const row = getDb().prepare('SELECT fork_meta_json FROM sessions WHERE id = ?').get(callerSessionId) as { fork_meta_json?: string | null } | undefined
+    if (!row?.fork_meta_json) return null
+    const meta = JSON.parse(row.fork_meta_json) as { sourceSessionId?: unknown; forkFromMessageId?: unknown }
+    if (meta.sourceSessionId === targetSessionId && typeof meta.forkFromMessageId === 'string' && meta.forkFromMessageId.trim()) {
+      return meta.forkFromMessageId.trim()
+    }
+    return null
+  } catch {
+    return null
+  }
+}
+
 export function sessionReadHandler(args: SessionReadArgs, deps: BuiltInSuperoneToolDeps) {
   const sessionId = typeof args.sessionId === 'string' ? args.sessionId.trim() : ''
   if (!sessionId) {
@@ -659,9 +674,13 @@ export function sessionReadHandler(args: SessionReadArgs, deps: BuiltInSuperoneT
     LIMIT 1
   `).get(sessionId) as { parent_session_id: string } | undefined
 
-  const messageCount = (db.prepare(`
+  const forkCutoff = callerForkCutoff(deps.sessionId, sessionId)
+  const rawMessageCount = (db.prepare(`
     SELECT COUNT(*) AS n FROM chat_messages WHERE session_id = ?
   `).get(sessionId) as { n: number }).n
+  const messageCount = forkCutoff
+    ? sliceMessagesUpTo(loadMessages(sessionId), forkCutoff).length
+    : rawMessageCount
 
   const header = {
     sessionId,
@@ -694,7 +713,7 @@ export function sessionReadHandler(args: SessionReadArgs, deps: BuiltInSuperoneT
     if (!toolUseId) {
       return toolResult({ status: 'error', message: 'tool_detail view requires toolUseId' }, true)
     }
-    const messages = loadMessages(sessionId)
+    const messages = forkCutoff ? sliceMessagesUpTo(loadMessages(sessionId), forkCutoff) : loadMessages(sessionId)
     const detail = findToolDetail(messages, toolUseId)
     if (!detail) {
       return toolResult({ status: 'error', message: `Tool use not found: ${toolUseId}` }, true)
@@ -714,7 +733,8 @@ export function sessionReadHandler(args: SessionReadArgs, deps: BuiltInSuperoneT
     : undefined
   const includeThinking = args.includeThinking === true
 
-  const allMessages = loadMessages(sessionId)
+  const rawMessages = loadMessages(sessionId)
+  const allMessages = forkCutoff ? sliceMessagesUpTo(rawMessages, forkCutoff) : rawMessages
 
   if (view === 'tools') {
     // When messageId is set: index tools on a global-timeline window, then extract.

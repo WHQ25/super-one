@@ -132,7 +132,7 @@ import { createNotificationSessionResolver } from './notifications/notification-
 import { DesktopNotificationChannel } from './notifications/desktop-notification-channel'
 import { PresenceCoordinator } from './remote/presence-coordinator'
 import { setSessionSeenReceipt } from './db-sessions'
-import { getSessionRecord, listWorktreePaths, loadSessionStateBySid, resolveProviderSessionIdForResume, saveSessionStateBySid, updateProviderSessionId } from './session/session-repo'
+import { clearSessionForkPreamble, getSessionRecord, listWorktreePaths, loadSessionStateBySid, resolveProviderSessionIdForResume, saveSessionStateBySid, updateProviderSessionId } from './session/session-repo'
 import { applyRealtimeTimelineEvent } from './session/realtime-timeline-repo'
 import { publishVoiceRemoteEvent } from './session/voice-remote-events'
 import { SessionEventHub } from './stream/session-event-hub'
@@ -556,6 +556,14 @@ const sessionManager = new SessionManagerImpl({
         ?? getRemoteControlledSession(sessionId)?.controller.systemPromptAppend
         ?? undefined,
       seenCompletedMessageId: loaded.record.seenCompletedMessageId,
+      pendingForkPreamble: loaded.record.forkMeta?.pendingPreamble ?? null,
+    }
+  },
+  onForkPreambleConsumed: (sessionId) => {
+    try {
+      clearSessionForkPreamble(sessionId)
+    } catch (err) {
+      log.warn('[sessionManager] clearSessionForkPreamble failed:', err)
     }
   },
   onSeenReceipt: (sessionId, receipt) => {

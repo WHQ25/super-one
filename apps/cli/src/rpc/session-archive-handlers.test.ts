@@ -98,4 +98,48 @@ describe('environment archive RPC', () => {
     expect(single).toContain('Progress 24.')
     expect(single).not.toContain('Progress 23.')
   })
+
+  it('enforces caller forkFromMessageId cutoff when reading fork source session', () => {
+    const ctx = context([
+      session('src', {
+        title: 'Source',
+        harnessId: 'acp-antigravity',
+        providerId: 'acp-antigravity-base',
+        transcript: [],
+      }),
+      session('fork', {
+        title: 'Source (fork)',
+        harnessId: 'acp-antigravity',
+        providerId: 'acp-antigravity-base',
+        createdAt: 2,
+        transcript: [],
+        forkMeta: { sourceSessionId: 'src', forkFromMessageId: 'a1' },
+      }),
+    ] as never)
+    vi.mocked(ctx.sessions.listMessages).mockReturnValue({
+      sessionId: 'src',
+      cursor: null,
+      hasMore: false,
+      messages: [
+        { id: 'u1', role: 'user', text: 'first', createdAt: 1, sortOrder: 0 },
+        { id: 'a1', role: 'assistant', text: 'cutoff', createdAt: 2, sortOrder: 1 },
+        { id: 'u2', role: 'user', text: 'after cutoff secret', createdAt: 3, sortOrder: 2 },
+      ],
+    })
+    const metaRes = dispatchSessionArchiveRpc('session.archive', {
+      tool: 'session_read',
+      sourceSessionId: 'fork',
+      args: { sessionId: 'src', view: 'meta' },
+    }, ctx)?.result as { content: Array<{ text: string }> }
+    expect(JSON.parse(metaRes.content[0].text).messageCount).toBe(2)
+
+    const textRes = dispatchSessionArchiveRpc('session.archive', {
+      tool: 'session_read',
+      sourceSessionId: 'fork',
+      args: { sessionId: 'src', view: 'text' },
+    }, ctx)?.result as { content: Array<{ text: string }> }
+    expect(textRes.content[0].text).toContain('first')
+    expect(textRes.content[0].text).toContain('cutoff')
+    expect(textRes.content[0].text).not.toContain('after cutoff secret')
+  })
 })

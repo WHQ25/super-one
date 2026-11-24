@@ -43,7 +43,7 @@ import log from './logger'
  * every launch); it decides when a pre-migration snapshot is taken and lets a
  * build recognise a database written by a newer build.
  */
-export const SCHEMA_VERSION = 21
+export const SCHEMA_VERSION = 22
 
 /**
  * The oldest schema revision that can still read this database.
@@ -314,6 +314,7 @@ function applyMigrations(db: Database.Database): void {
   migrateCredentialEndpoints(db)
   migrateCredentialBaseUrl(db)
   migrateEndpointBaseUrlToRoutes(db)
+  migrateSessionForkMeta(db)
 
   db.exec(`
     CREATE TABLE IF NOT EXISTS harness_resource_cache (
@@ -1365,6 +1366,13 @@ function migrateCredentialBaseUrl(db: Database.Database): void {
  * Custom platforms: promote plan.endpoints (+ per-key overrides) into credentials.endpoints_json
  * so each key owns its full endpoint list. Idempotent.
  */
+function migrateSessionForkMeta(db: Database.Database): void {
+  const cols = db.prepare('PRAGMA table_info(sessions)').all() as Array<{ name: string }>
+  if (!cols.some((c) => c.name === 'fork_meta_json')) {
+    db.exec('ALTER TABLE sessions ADD COLUMN fork_meta_json TEXT')
+  }
+}
+
 function migrateCredentialEndpoints(db: Database.Database): void {
   const credCols = db.prepare('PRAGMA table_info(credentials)').all() as Array<{ name: string }>
   if (!credCols.some((c) => c.name === 'endpoints_json')) {

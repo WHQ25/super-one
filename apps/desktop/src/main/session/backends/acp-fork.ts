@@ -20,6 +20,7 @@ import { resolveAcpLaunch } from '../../acp/agent-catalog'
 import { resolveDesktopGrokLaunch } from '../../harness/grok-launch'
 import { spawnAcpProcess } from '../../acp/acp-process'
 import log from '../../logger'
+import { isGrokAcpAgent } from '@superone/shared/acp-brand'
 import { ensureShellPath } from '../../shell-path'
 import type { ForkContext, ForkSource } from '../types'
 
@@ -132,6 +133,10 @@ export async function forkAcpTranscript(
   ctx: ForkContext,
 ): Promise<string> {
   const config = readAcpConfig(source.providerConfig)
+  const agentId = (config.agentId ?? source.acpAgentId)?.trim()
+  if (agentId && !isGrokAcpAgent(agentId)) {
+    throw new Error(`ACP transcript fork is only supported for Grok, not ${agentId}`)
+  }
   const sourceCwd = source.cwd?.trim() || source.projectPath
   const targetPromptIndex = ctx.forkFromMessageId
     ? grokForkTargetPromptIndex(ctx.messages, ctx.forkFromMessageId)

@@ -9,7 +9,7 @@ import {
 } from '@superone/runtime/session/mention-context'
 import { ghRun } from '../git-run'
 
-async function readDesktopMentionedSession(sessionId: string): Promise<MentionedSessionData | null> {
+export async function readDesktopMentionedSession(sessionId: string): Promise<MentionedSessionData | null> {
   try {
     const [{ getDb }, { loadSessionState }] = await Promise.all([
       import('../database'),

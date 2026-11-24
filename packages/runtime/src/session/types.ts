@@ -146,6 +146,7 @@ export interface NodeSessionRecord {
    * hosts that do not record one. A null must not be treated as "generic ACP".
    */
   acpAgentId?: string | null
+  forkMeta?: import('./mention-context').ForkContextMeta | null
 }
 
 /** Image/document attachment for a remote turn (base64 payload). */

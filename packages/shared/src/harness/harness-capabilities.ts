@@ -91,6 +91,7 @@ export interface HarnessCapabilities {
    * chat: offering them would look like it worked and silently lose everything.
    */
   supportsFork: boolean
+  supportsNativeFork: boolean
   /**
    * Answers `session.contextUsage` with a live context breakdown after a turn.
    * False: the context ring reads only what the session's events reported.
@@ -163,6 +164,7 @@ const ACP_PROTOCOL_CAPABILITIES = {
   supportsQueuedSteer: true,
   supportsAdditionalDirs: true,
   supportsFork: true,
+  supportsNativeFork: true,
   supportsContextUsage: true,
   softCancel: true,
   terminalCommandApproval: 'harness' as const,
@@ -189,6 +191,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsAdditionalDirs: true,
     // SDK `forkSession()` copies + remaps the transcript jsonl.
     supportsFork: true,
+    supportsNativeFork: true,
     supportsContextUsage: true,
     softCancel: false,
     // Built-in `/goal <condition>`: a Stop hook re-checks the condition after
@@ -222,6 +225,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsAdditionalDirs: true,
     // app-server thread fork, truncatable at a turn id.
     supportsFork: true,
+    supportsNativeFork: true,
     // Token usage arrives on the session snapshot only.
     supportsContextUsage: false,
     softCancel: false,
@@ -249,6 +253,8 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
   },
   'acp-antigravity': {
     ...ACP_PROTOCOL_CAPABILITIES,
+    supportsFork: true,
+    supportsNativeFork: false,
     goal: null,
     displayName: 'Antigravity',
   },
@@ -266,6 +272,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsAdditionalDirs: false,
     // Server-side `forkSession(id, anchor)` + `moveSession`.
     supportsFork: true,
+    supportsNativeFork: true,
     supportsContextUsage: true,
     softCancel: true,
     goal: null,
@@ -296,8 +303,8 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     // Local `local.dirs` on create/resume. Cloud agents have no extra roots.
     // Node one-shot turns report this false.
     supportsAdditionalDirs: true,
-    // SDK has no transcript-fork API; the adapter creates a blank agent.
-    supportsFork: false,
+    supportsFork: true,
+    supportsNativeFork: false,
     supportsContextUsage: true,
     softCancel: false,
     goal: null,
@@ -341,6 +348,7 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsAdditionalDirs: false,
     // `runtime.forkSession` copies the log prefix up to an event seq.
     supportsFork: true,
+    supportsNativeFork: true,
     supportsContextUsage: false,
     softCancel: false,
     goal: null,

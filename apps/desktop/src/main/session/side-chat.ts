@@ -13,10 +13,11 @@
 import { randomUUID } from 'node:crypto'
 import { existsSync } from 'node:fs'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
+import { buildMentionForkPreamble } from '@superone/runtime/session/mention-context'
 import type { HarnessId, SandboxMode, SideChatStartRequest, SideChatStartResult } from '@superone/shared/agent-types'
 import log from '../logger'
 import { harnessRegistry } from './harness-registry'
-import { getSessionRecord } from './session-repo'
+import { getSessionRecord, loadSessionStateBySid } from './session-repo'
 import { getSessionProvider } from './session-provider-repo'
 import type { ForkContext, Session, SessionManager } from './types'
 
@@ -94,6 +95,8 @@ function resolveSource(mgr: SideChatSessions, parentSessionId: string) {
     live,
     projectPath,
     cwd: live?.cwd ?? recordCwd ?? projectPath,
+    title: snapshot?.title ?? record?.title ?? null,
+    hasMessages: Boolean(snapshot?.messages?.length || record?.forkMeta || (record && (loadSessionStateBySid?.(parentSessionId)?.messages.length ?? 0) > 0)),
     providerId: snapshot?.providerId ?? record!.providerId,
     providerSessionId: snapshot?.providerSessionId ?? record?.providerSessionId ?? null,
     gitBranch: snapshot?.gitBranch ?? record?.gitBranch ?? null,
@@ -129,7 +132,7 @@ export async function startSideChat(
   assertControl()
   const source = resolveSource(mgr, input.parentSessionId)
   if (!source) return { ok: false, error: 'Parent session not found' }
-  if (!source.providerSessionId) {
+  if (!source.providerSessionId && !source.hasMessages) {
     return { ok: false, error: 'This session has no conversation to branch from yet' }
   }
 
@@ -144,22 +147,32 @@ export async function startSideChat(
   // Whole conversation, no truncation: a side chat asks about where the parent is
   // now, so an empty ForkContext (full copy) is the point, not a missing feature.
   const ctx: ForkContext = { messages: [] }
-  let forkedProviderSessionId: string
-  try {
-    forkedProviderSessionId = await harness.forkTranscript(
-      {
-        providerSessionId: source.providerSessionId,
-        ...(harness.id === 'opencode' ? { sessionId: input.parentSessionId } : {}),
-        projectPath: source.projectPath,
-        cwd: source.cwd,
-        providerConfig: provider.config,
-        apiProviderId: source.apiProviderId,
-      },
-      source.cwd,
-      ctx,
-    )
-  } catch (err) {
-    return { ok: false, error: `Side chat fork failed: ${err instanceof Error ? err.message : String(err)}` }
+  let forkedProviderSessionId: string | null = null
+  let firstTurnPreamble = SIDE_CHAT_INSTRUCTIONS
+  if (harness.forkTranscript && source.providerSessionId) {
+    try {
+      forkedProviderSessionId = await harness.forkTranscript(
+        {
+          providerSessionId: source.providerSessionId,
+          ...(harness.id === 'opencode' ? { sessionId: input.parentSessionId } : {}),
+          projectPath: source.projectPath,
+          cwd: source.cwd,
+          providerConfig: provider.config,
+          apiProviderId: source.apiProviderId,
+          acpAgentId: source.acpAgentId,
+        },
+        source.cwd,
+        ctx,
+      )
+    } catch (err) {
+      return { ok: false, error: `Side chat fork failed: ${err instanceof Error ? err.message : String(err)}` }
+    }
+  } else {
+    firstTurnPreamble = `${buildMentionForkPreamble({
+      sourceSessionId: input.parentSessionId,
+      sourceTitle: source.title,
+      mode: 'side-chat',
+    })}\n\n${SIDE_CHAT_INSTRUCTIONS}`
   }
 
   const sessionId = randomUUID()
@@ -173,7 +186,7 @@ export async function startSideChat(
       id: sessionId,
       ephemeral: true,
       providerSessionId: forkedProviderSessionId,
-      firstTurnPreamble: SIDE_CHAT_INSTRUCTIONS,
+      firstTurnPreamble,
       gitBranch: source.gitBranch,
       apiProviderId: source.apiProviderId,
       acpAgentId: source.acpAgentId,
@@ -184,7 +197,9 @@ export async function startSideChat(
     })
     session.lease.grantCreatedSession()
   } catch (err) {
-    await deleteForkedTranscript(provider.harnessId, forkedProviderSessionId, source.cwd, provider.config)
+    if (forkedProviderSessionId) {
+      await deleteForkedTranscript(provider.harnessId, forkedProviderSessionId, source.cwd, provider.config)
+    }
     return { ok: false, error: `Side chat session failed to start: ${err instanceof Error ? err.message : String(err)}` }
   }
   // Applied after construction rather than through `createSession`, which has no

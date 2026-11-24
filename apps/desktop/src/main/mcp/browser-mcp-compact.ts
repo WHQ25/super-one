@@ -134,7 +134,6 @@ export function registerCompactBrowserTools(
   const runPrimitive: PrimitiveRunner = async (name, args) => {
     const result = await primitiveRunner(name, args)
     const discover = name === 'browser_navigate' || name === 'browser_open'
-      || (name === 'browser_snapshot' && (!Array.isArray(args.include) || args.include.includes('meta')))
     return discover ? withMemoryDiscoveryHint(result, BROWSER_MEMORY_DISCOVERY_HINT) : result
   }
   if (webMcpEnabled) {

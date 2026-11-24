@@ -3,6 +3,7 @@ import { createEnvironmentArchiveTools } from './environment-archive-tools'
 import type { McpSdkServerConfigWithInstance } from '@anthropic-ai/claude-agent-sdk'
 import { bindLocalCallScope } from './local-call-scope'
 import { bindToolErrorLog } from './tool-error-log'
+import { enrichDesktopEntryToolReply } from './superone-mcp-tool-surface'
 import { McpServer, type RegisteredTool } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { randomUUID } from 'crypto'
 import { getCompatSession } from '../mcp-apps/compat-registry'
@@ -363,6 +364,26 @@ export function listComputerUseQualifiedNames(): string[] {
   return computerUseQualifiedNames()
 }
 
+const ENTRY_MEMORY_TOOLS = new Set(['browser_tabs', 'computer_apps', 'device_boot', 'device_request_control'])
+
+function bindEntryMemoryEnrichment(server: McpServer, sessionId: string, projectPath?: string): void {
+  const originalRegister = server.registerTool.bind(server) as (...args: unknown[]) => RegisteredTool
+  ;(server as unknown as { registerTool: (...args: unknown[]) => RegisteredTool }).registerTool = (...args: unknown[]) => {
+    const name = args[0]
+    const cbIndex = args.length - 1
+    const cb = args[cbIndex]
+    if (typeof name === 'string' && ENTRY_MEMORY_TOOLS.has(name) && typeof cb === 'function') {
+      const wrapped = async (toolArgs: unknown, extra: unknown) => {
+        const reply = await (cb as (a: unknown, e: unknown) => Promise<{ content: Array<{ type: string; text?: string }>; isError?: boolean }>)(toolArgs, extra)
+        const record = toolArgs && typeof toolArgs === 'object' && !Array.isArray(toolArgs) ? toolArgs as Record<string, unknown> : {}
+        return enrichDesktopEntryToolReply(sessionId, name, record, reply, currentHostActionConnection() ?? undefined, projectPath)
+      }
+      return originalRegister(...args.slice(0, cbIndex), wrapped)
+    }
+    return originalRegister(...args)
+  }
+}
+
 export function createSuperoneMcpServer(sessionId: string, projectPath?: string): McpSdkServerConfigWithInstance {
   const server = new McpServer({ name: 'superone', version: '1.0.0' })
   // Before a single tool is registered: every call through this instance — SDK,
@@ -370,6 +391,7 @@ export function createSuperoneMcpServer(sessionId: string, projectPath?: string)
   // Action has already opened a scope naming its node (§7).
   bindLocalCallScope(server, sessionId)
   bindToolErrorLog(server, sessionId)
+  bindEntryMemoryEnrichment(server, sessionId, projectPath)
   registerSuperoneTools(server, {
     ...createEnvironmentArchiveTools(sessionId),
     notifyDevAppReady,

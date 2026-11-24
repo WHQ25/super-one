@@ -5,17 +5,17 @@ Personal paths use `$SUPERONE_HOME`: `~/.superone` for stable, `~/.superone/alph
 
 Three pairs of tools persist reusable experience on the node running the agent:
 
-| Surface | Tools | Identity | Personal directory |
-| --- | --- | --- | --- |
-| Browser | `browser_memory_read` / `browser_memory_write` | `domain` | `$SUPERONE_HOME/browser/memory/<hostname>/` |
-| Computer Use | `computer_memory_read` / `computer_memory_write` | `platform`, `appId` | `$SUPERONE_HOME/computer/memory/<platform>/<appId>/` |
-| Simulators and devices | `device_memory_read` / `device_memory_write` | `platform`, `appId` | `$SUPERONE_HOME/device/memory/<platform>/<appId>/` |
+| Surface | Tools | Identity | Global directory | Project-scoped directory |
+| --- | --- | --- | --- | --- |
+| Browser | `browser_memory_read` / `browser_memory_write` | `domain` | `$SUPERONE_HOME/browser/memory/<hostname>/` | `$SUPERONE_HOME/projects/<projectKey>/browser/memory/<hostname>/` |
+| Computer Use | `computer_memory_read` / `computer_memory_write` | `platform`, `appId` | `$SUPERONE_HOME/computer/memory/<platform>/<appId>/` | `$SUPERONE_HOME/projects/<projectKey>/computer/memory/<platform>/<appId>/` |
+| Simulators and devices | `device_memory_read` / `device_memory_write` | `platform`, `appId` | `$SUPERONE_HOME/device/memory/<platform>/<appId>/` | `$SUPERONE_HOME/projects/<projectKey>/device/memory/<platform>/<appId>/` |
 
 Each family directory is an [Open Knowledge Format](https://github.com/GoogleCloudPlatform/knowledge-catalog/blob/main/okf/SPEC.md)
 (OKF v0.2) bundle: every topic is a `type: Playbook` concept — Markdown with YAML
 frontmatter — and every directory carries a generated `index.md`. Zip or `git init`
 a family directory to share it; other OKF consumers can read it without SuperOne.
-Storage is shared across sessions and projects for the same node user. A remote
+Notes are layered into `project` (isolated to the active project; default for writes when a project is active) and `global` (shared across projects for the same node user). Entry tools (`browser_tabs` open/navigate, `computer_apps` launch/focus, `device_boot`, `device_request_control`) automatically attach `memorySummary` on first visit in a session when matching notes exist. A remote
 agent uses its remote user's home, even if the desktop hosts its browser, desktop
 app or simulator. No cross-node sync or fallback occurs. Reading and writing
 experience never launches an app, boots a device, enables Computer Use or grants

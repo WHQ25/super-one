@@ -7,6 +7,10 @@
  */
 export const MEMORY_STATUSES = ['draft', 'stable', 'deprecated'] as const
 export type MemoryStatus = (typeof MEMORY_STATUSES)[number]
+export const MEMORY_SCOPES = ['project', 'global'] as const
+export type MemoryScope = (typeof MEMORY_SCOPES)[number]
+export const MEMORY_READ_SCOPES = ['all', 'project', 'global'] as const
+export type MemoryReadScope = (typeof MEMORY_READ_SCOPES)[number]
 
 export interface MemorySource {
   /** Stable key for per-claim footnotes in the body (`[^id]`). */
@@ -19,6 +23,7 @@ export interface MemorySource {
 export interface BrowserMemoryReadArgs {
   domain: string
   topic?: string
+  scope?: MemoryReadScope
   includeDeprecated?: boolean
   offset?: number
 }
@@ -26,6 +31,7 @@ export interface BrowserMemoryReadArgs {
 export interface BrowserMemoryWriteArgs {
   domain: string
   topic: string
+  scope?: MemoryScope
   title?: string
   description?: string
   content?: string
@@ -43,6 +49,7 @@ const topic = { type: 'string', pattern: '^[a-z][a-z0-9_-]{0,63}$', description:
 
 /** Write fields shared by every family; identity fields are added per family. */
 export const MEMORY_WRITE_FIELDS = {
+  scope: { type: 'string', enum: MEMORY_SCOPES, description: 'Memory scope: project (isolated to current project, default when a project is active) or global (shared across projects on this node). Use project for localhost, project-specific environments, or app-specific mobile/desktop workflows; use global for cross-project site/OS knowledge.' },
   title: { type: 'string', description: 'Short display name. Defaults to the topic name.' },
   description: { type: 'string', description: 'One line saying when to read this topic; it is the retrieval key shown in the index.' },
   content: { type: 'string', description: 'English Markdown with sections Applies to, Locate, Steps, Pitfalls. Link related topics with bundle-relative paths. Never persist credentials, coordinates, transient @refs or stateIds.' },
@@ -62,13 +69,14 @@ export const MEMORY_WRITE_FIELDS = {
 } as const
 
 export const MEMORY_READ_FIELDS = {
+  scope: { type: 'string', enum: MEMORY_READ_SCOPES, description: 'Which scope to read: all (default: merges project first, then global), project (current project only), or global (node-wide only).' },
   includeDeprecated: { type: 'boolean', description: 'Include deprecated topics in the index. Default false; explicit topic reads include deprecated notes.' },
   offset: { type: 'integer', minimum: 0, description: 'Index offset. Use nextOffset from the previous response.' },
 } as const
 
 /** One decision boundary for the host prompt, tool descriptions and discovery hints. */
-export const MEMORY_READ_POLICY = 'Read before the first task operation (sign-in, forms, multi-step flows) on a target in this session, or when access to its content is blocked. Skip routine reading, navigation, scrolling and expanding content. Reuse an index already read in this session.'
-export const MEMORY_WRITE_POLICY = 'Write only verified, reusable, non-obvious knowledge that would prevent a specific future failure or substantial repeated investigation. Skip task summaries, UI layouts, routine steps, and facts easily found in the UI, code, or documentation. When uncertain, do not write.'
+export const MEMORY_READ_POLICY = 'Read before the first task operation (sign-in, forms, multi-step flows) on a target in this session, or when access to its content is blocked. When an entry tool returns memorySummary, inspect its topics immediately and read any relevant topic before acting. Skip routine reading, navigation, scrolling and expanding content. Reuse an index already read in this session.'
+export const MEMORY_WRITE_POLICY = 'Write only verified, reusable, non-obvious knowledge that would prevent a specific future failure or substantial repeated investigation. Scope project-specific workflows (localhost, staging, mobile/desktop app flows) to project and cross-project knowledge to global. Skip task summaries, UI layouts, routine steps, and facts easily found in the UI, code, or documentation. When uncertain, do not write.'
 
 export const BROWSER_MEMORY_TOOL_DEFS = [
   {

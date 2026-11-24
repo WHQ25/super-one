@@ -43,4 +43,38 @@ describe('computer and device experience', () => {
     expect((await executeInteractionMemoryTool('device_memory_write', { ...note, platform: 'android', appId: 'system' }, store)).isError).toBeUndefined()
     expect((await executeInteractionMemoryTool('device_act', {}, store)).isError).toBe(true)
   })
+
+  it('isolates project-scoped memories while merging global fallback and summarizing for entry tools', async () => {
+    const { home, store } = await fixture()
+    const projA = store.withContext({ projectPath: join(home, 'repo-a') })
+    const projB = store.withContext({ projectPath: join(home, 'repo-b') })
+
+    await store.write('browser', { domain: 'github.com', topic: 'pr-flow', description: 'Global PR checklist', content: 'Global steps.' })
+    await projA.write('browser', { domain: 'github.com', topic: 'deploy-check', description: 'Repo A deploy gate', content: 'Repo A steps.' })
+    await projB.write('browser', { domain: 'github.com', topic: 'lint-check', description: 'Repo B lint gate', content: 'Repo B steps.' })
+
+    const idxA = await projA.read('browser', { domain: 'github.com' }) as { topics: Array<{ topic: string; scope: string }> }
+    expect(idxA.topics.map(t => [t.topic, t.scope])).toEqual([
+      ['deploy-check', 'project'],
+      ['pr-flow', 'global'],
+    ])
+    const idxB = await projB.read('browser', { domain: 'github.com' }) as { topics: Array<{ topic: string; scope: string }> }
+    expect(idxB.topics.map(t => [t.topic, t.scope])).toEqual([
+      ['lint-check', 'project'],
+      ['pr-flow', 'global'],
+    ])
+
+    await projA.write('device', { platform: 'ios', appId: 'com.acme.mobile', topic: 'login', description: 'Test account flow', content: 'Tap SSO.' })
+    await store.write('device', { platform: 'ios', appId: 'system', topic: 'keyboard', description: 'Dismiss simulator keyboard', content: 'Cmd+K.' })
+
+    const deviceSummary = await projA.summarizeForEntry('device', { platform: 'ios' })
+    expect(deviceSummary).toEqual([
+      { topic: 'login', description: 'Test account flow', scope: 'project', appId: 'com.acme.mobile' },
+      { topic: 'keyboard', description: 'Dismiss simulator keyboard', scope: 'global', appId: 'system' },
+    ])
+    const deviceSummaryB = await projB.summarizeForEntry('device', { platform: 'ios' })
+    expect(deviceSummaryB).toEqual([
+      { topic: 'keyboard', description: 'Dismiss simulator keyboard', scope: 'global', appId: 'system' },
+    ])
+  })
 })

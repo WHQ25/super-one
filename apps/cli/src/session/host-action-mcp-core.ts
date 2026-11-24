@@ -12,6 +12,7 @@
 
 import { INTERACTION_MEMORY_TOOL_DEFS } from '@superone/shared/interaction-memory'
 import { InteractionMemoryStore, executeInteractionMemoryTool } from '@superone/runtime/fs/interaction-memory'
+import { enrichEntryReplyWithMemory } from '@superone/runtime/fs/entry-memory-enrichment'
 
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import {
@@ -63,6 +64,8 @@ export interface CreateHostActionMcpServerOptions {
   memory?: InteractionMemoryStore
   /** OKF actor for notes this session writes; resolved per call so a model switch is reflected. */
   resolveActor?: (sessionId: string) => string | undefined
+  /** Project directory this session is scoped to; isolates project-scoped memories. */
+  resolveProjectPath?: (sessionId: string) => string | undefined
   collab?: NodeCollabToolHandlers
   /**
    * True for a collaboration child whose parent runs on another machine: its
@@ -75,6 +78,8 @@ export interface CreateHostActionMcpServerOptions {
 
 export interface RegisterHostActionToolsOptions {
   resolveHarnessId?: (sessionId: string) => string | undefined
+  memory?: InteractionMemoryStore
+  resolveProjectPath?: (sessionId: string) => string | undefined
 }
 
 function toolResultJson(value: unknown, isError = false) {
@@ -106,9 +111,17 @@ export function createHostActionMcpServer(
   opts?: CreateHostActionMcpServerOptions,
 ): McpServer {
   const server = new McpServer({ name: 'superone-host-action', version: '1.0.0' })
-  registerHostActionTools(server, superoneSessionId, requestHostAction, { resolveHarnessId: opts?.resolveHarnessId })
   const memory = opts?.memory ?? new InteractionMemoryStore()
-  const memoryFor = () => { const actor = opts?.resolveActor?.(superoneSessionId); return actor ? memory.withActor(actor) : memory }
+  registerHostActionTools(server, superoneSessionId, requestHostAction, {
+    resolveHarnessId: opts?.resolveHarnessId,
+    memory,
+    resolveProjectPath: opts?.resolveProjectPath,
+  })
+  const memoryFor = () => {
+    const actor = opts?.resolveActor?.(superoneSessionId)
+    const projectPath = opts?.resolveProjectPath?.(superoneSessionId)
+    return memory.withContext({ actor, projectPath })
+  }
   for (const def of INTERACTION_MEMORY_TOOL_DEFS) {
     server.registerTool(def.name, { description: def.description, inputSchema: jsonSchemaToZodShape(def.inputSchema) },
       (args, extra) => executeInteractionMemoryTool(def.name, args, memoryFor(), extra.signal))
@@ -171,9 +184,17 @@ export function registerHostActionTools(
           signal: extra?.signal,
         })
         const reply = terminalToMcpContent(terminal)
-        return tool.name === 'widget_show'
-          ? shortenWidgetShowReply(reply, args, opts?.resolveHarnessId?.(superoneSessionId))
-          : reply
+        if (tool.name === 'widget_show') {
+          return shortenWidgetShowReply(reply, args, opts?.resolveHarnessId?.(superoneSessionId))
+        }
+        const record = args && typeof args === 'object' && !Array.isArray(args) ? args as Record<string, unknown> : {}
+        return enrichEntryReplyWithMemory(reply, {
+          sessionId: superoneSessionId,
+          toolName: tool.name,
+          args: record,
+          store: opts?.memory ?? new InteractionMemoryStore(),
+          projectPath: opts?.resolveProjectPath?.(superoneSessionId),
+        })
       },
     )
   }

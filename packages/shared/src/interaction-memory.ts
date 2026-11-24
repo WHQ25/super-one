@@ -47,17 +47,47 @@ export function memoryActor(harnessId: string | null | undefined, model: string 
 export const COMPUTER_MEMORY_DISCOVERY_HINT = `${MEMORY_READ_POLICY} When needed, call computer_memory_read with platform (the target OS) and appId (its stable bundleId/application id) for this agent node’s saved experience. Use system for OS-wide topics. Read only relevant topics; always use fresh snapshot refs.`
 export const DEVICE_MEMORY_DISCOVERY_HINT = `${MEMORY_READ_POLICY} When needed, call device_memory_read with platform (the guest OS) and appId (bundle id/package name) for this agent node’s saved experience. Use system for OS-wide topics. Read only relevant topics; never use the simulator/device id as appId or reuse saved stateId/@refs.`
 
-/** Reference-only pointer: never looks up a UI host's memory for a remote agent. */
-export function withMemoryDiscoveryHint<T extends { content: Array<{ type: string; text?: string }>; isError?: boolean }>(reply: T, hint: string): T {
+export interface MemorySummaryTopic {
+  topic: string
+  description: string
+  scope: 'project' | 'global'
+  appId?: string
+}
+
+export interface MemorySummaryPayload {
+  family: MemoryFamily
+  target: string
+  topics: MemorySummaryTopic[]
+  hint: string
+}
+
+function withMemoryField<T extends { content: Array<{ type: string; text?: string }>; isError?: boolean }>(
+  reply: T,
+  key: string,
+  value: unknown,
+): T {
   if (reply.isError) return reply
   return { ...reply, content: reply.content.map((block, index) => {
     if (index !== 0 || block.type !== 'text' || typeof block.text !== 'string') return block
     try {
       const data = JSON.parse(block.text)
       if (data && typeof data === 'object' && !Array.isArray(data)) {
-        return { ...block, text: JSON.stringify({ ...data, memoryHint: hint }) }
+        return { ...block, text: JSON.stringify({ ...data, [key]: value }) }
       }
     } catch { /* TOON: append one scalar without changing existing fields. */ }
-    return { ...block, text: `${block.text}\nmemoryHint: ${JSON.stringify(hint)}` }
+    return { ...block, text: `${block.text}\n${key}: ${JSON.stringify(value)}` }
   }) }
+}
+
+/** Reference-only pointer: never looks up a UI host's memory for a remote agent. */
+export function withMemoryDiscoveryHint<T extends { content: Array<{ type: string; text?: string }>; isError?: boolean }>(reply: T, hint: string): T {
+  return withMemoryField(reply, 'memoryHint', hint)
+}
+
+/** Attach agent-node memory summary to an entry tool reply. */
+export function withMemorySummary<T extends { content: Array<{ type: string; text?: string }>; isError?: boolean }>(
+  reply: T,
+  summary: MemorySummaryPayload,
+): T {
+  return withMemoryField(reply, 'memorySummary', summary)
 }

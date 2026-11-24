@@ -198,6 +198,14 @@ function sessionMemoryActor(deps: BuiltInSuperoneToolDeps): string {
   return memoryActor(session?.harnessId, session?.getUiSettings?.().selectedModel)
 }
 
+function sessionMemoryStore(deps: BuiltInSuperoneToolDeps): InteractionMemoryStore {
+  const session = deps.sessionHost?.getSession(deps.sessionId)
+  return new InteractionMemoryStore(superoneHome()).withContext({
+    actor: sessionMemoryActor(deps),
+    projectPath: session?.projectPath,
+  })
+}
+
 export interface BuiltInSuperoneToolDeps {
   environmentGetInfo?: (args: import('./environment-archive-tools').EnvironmentGetInfoArgs) => Promise<import('@superone/shared/session-archive').ArchiveToolResult>
   archiveRead?: (tool: import('@superone/shared/session-archive').SessionArchiveTool, args: Record<string, unknown>, local: () => import('@superone/shared/session-archive').ArchiveToolResult) => Promise<import('@superone/shared/session-archive').ArchiveToolResult>
@@ -341,7 +349,7 @@ export async function executeBuiltInSuperoneTool(
     case 'computer_memory_write':
     case 'device_memory_read':
     case 'device_memory_write':
-      return executeInteractionMemoryTool(toolName, args, new InteractionMemoryStore(superoneHome(), sessionMemoryActor(deps)), deps.signal)
+      return executeInteractionMemoryTool(toolName, args, sessionMemoryStore(deps), deps.signal)
     case 'read_manual':
       return manualReadHandler(args as { domain?: string; topic?: string; modules?: string[] })
     case 'miniapp_dev_setup':
@@ -541,7 +549,7 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
 
   for (const def of INTERACTION_MEMORY_TOOL_DEFS) {
     server.registerTool(def.name, { description: def.description, inputSchema: jsonSchemaToZodShape(def.inputSchema) },
-      (args, extra) => executeInteractionMemoryTool(def.name, args, new InteractionMemoryStore(superoneHome()), extra.signal))
+      (args, extra) => executeInteractionMemoryTool(def.name, args, sessionMemoryStore(deps), extra.signal))
   }
   // These tools share the stdio-bridge JSON Schema so the two surfaces cannot drift.
   type SharedSchemaTool = (typeof TERMINAL_TOOL_NAMES)[number] | (typeof LAYOUT_TOOL_NAMES)[number] | 'session_suggest_task'

@@ -691,7 +691,7 @@ async function executeComputerUseToolInner(
           limit: typeof args.limit === 'number' ? args.limit : undefined,
           includeRoots: args.includeRoots === true,
         })
-        return withMemoryDiscoveryHint(toonReply(result), COMPUTER_MEMORY_DISCOVERY_HINT)
+        return toonReply(result)
       }
       case 'computer_run': {
         return textReply(await executeComputerRun(sessionId, args, service, async (target, signal) => {
@@ -728,7 +728,7 @@ async function executeComputerUseToolInner(
         }
         // Outline goes out as a TOON table, not nested JSON — see outline-toon.ts.
         // The envelope stays JSON so the chat UI keeps parsing stateId / bundleId.
-        return withMemoryDiscoveryHint(textReply({ ...agentResult, outline: outlineToToon(agentResult.outline) }), COMPUTER_MEMORY_DISCOVERY_HINT)
+        return textReply({ ...agentResult, outline: outlineToToon(agentResult.outline) })
       }
       case 'computer_zoom': {
         const region = args.region as [number, number, number, number]

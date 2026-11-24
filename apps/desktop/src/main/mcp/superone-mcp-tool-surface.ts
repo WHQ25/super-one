@@ -1,6 +1,9 @@
 import { getConfigResourceServices } from './config-resource-services'
 import { createEnvironmentArchiveTools } from './environment-archive-tools'
 import { logToolFailure } from './tool-error-log'
+import { enrichEntryReplyWithMemory } from '@superone/runtime/fs/entry-memory-enrichment'
+import { InteractionMemoryStore } from '@superone/runtime/fs/interaction-memory'
+import { superoneHome } from '../superone-home'
 import {
   BUILT_IN_SUPERONE_TOOL_DEFS,
   BUILT_IN_SUPERONE_TOOL_NAMES,
@@ -159,6 +162,33 @@ export function executeSuperoneMcpTool(
   return logToolFailure(sessionId, toolName, () => runSuperoneMcpTool(sessionId, toolName, args, signal, connectionId))
 }
 
+function localMemoryPlatform(): string | undefined {
+  if (process.platform === 'darwin') return 'macos'
+  if (process.platform === 'win32') return 'windows'
+  if (process.platform === 'linux') return 'linux'
+  return undefined
+}
+
+export async function enrichDesktopEntryToolReply<T extends { content: Array<{ type: string; text?: string }>; isError?: boolean }>(
+  sessionId: string,
+  toolName: string,
+  args: Record<string, unknown>,
+  reply: T,
+  connectionId?: string,
+  fallbackProjectPath?: string,
+): Promise<T> {
+  if (connectionId && connectionId !== 'local') return reply
+  const projectPath = getSessionHost()?.getSession(sessionId)?.projectPath ?? fallbackProjectPath
+  return enrichEntryReplyWithMemory(reply, {
+    sessionId,
+    toolName,
+    args,
+    store: new InteractionMemoryStore(superoneHome()),
+    projectPath,
+    fallbackPlatform: localMemoryPlatform(),
+  })
+}
+
 async function runSuperoneMcpTool(
   sessionId: string,
   toolName: string,
@@ -177,7 +207,7 @@ async function runSuperoneMcpTool(
   }
 
   if (isBrowserToolName(toolName)) {
-    return executeBrowserTool(sessionId, toolName, args)
+    return enrichDesktopEntryToolReply(sessionId, toolName, args, await executeBrowserTool(sessionId, toolName, args), connectionId)
   }
 
   if (isComputerUseToolName(toolName)) {
@@ -187,7 +217,7 @@ async function runSuperoneMcpTool(
         isError: true,
       }
     }
-    return executeComputerUseTool(sessionId, toolName, args, { signal })
+    return enrichDesktopEntryToolReply(sessionId, toolName, args, await executeComputerUseTool(sessionId, toolName, args, { signal }), connectionId)
   }
 
   if (isDeviceAgentToolName(toolName)) {
@@ -197,7 +227,7 @@ async function runSuperoneMcpTool(
         isError: true,
       }
     }
-    return executeDeviceAgentTool(sessionId, toolName, args, signal)
+    return enrichDesktopEntryToolReply(sessionId, toolName, args, await executeDeviceAgentTool(sessionId, toolName, args, signal), connectionId)
   }
 
   // The widget tools are listed among the built-ins but have no case there, so they are

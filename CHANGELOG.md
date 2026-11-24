@@ -15,15 +15,61 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
-- Browser: refine Browser settings and enable CDP and WebMCP by default.
+- Activity: Chrome-style tabbar with sticky active tabs, floating tear-off, and float/dock transitions.
+- Desktop: live LSP status pill with shortcut hints and restart control in File Preview and Review, with full `@/*` alias resolution.
+- Session: prefetch GitHub issue/PR details and mentioned session context at the outbound model boundary, and support mention-based session forking for harnesses without native fork.
+- Collab: reuse existing worktrees in `session_collab_request` `attach` mode with unified worktree path display.
+- MCP: add `newerThan` and `olderThan` date filters to `session_search`.
+- DeepSeek (`dsh`): isolated client UI plugin runtime with scoped UI slots and plugin dock panels.
+
+### Changed
+
+- Review: switch auto diff layout to split view at 80 columns per side.
 
 ### Fixed
 
-- Browser: isolate the Chrome bridge home directory and add Windows support.
-- Media: handle Windows drive paths in media server URLs so generated media previews load properly.
-- Sidebar: dismiss the focus-bar back menu after a pointer click.
+- Desktop: stabilize docked chat width and overlay bounds during sidebar toggles, align 36px panel headers and shell layout controls with macOS traffic lights, preserve local harness order on remote nodes, and collapse overflowing composer mode chips to icons.
+- Review: keep the diff line-number gutter opaque while scrolling.
+- Chat: hide redundant prefix headers on single-question cards and render collaboration request summaries as scrollable text.
+- ACP: send SuperOne `clientInfo` and forward `additionalDirectories` on Antigravity session resume.
+- Usage: refresh stale Claude subscription tiers from `/api/oauth/profile`. (#219)
 
-## [0.84.1-alpha] - 2026-11-23
+### Performance
+
+- Chat & Preview: parse large markdown documents off-thread with progressive hydration, linear block splitting, and virtualized rendering.
+
+## [0.85.0-alpha] - 2026-11-25
+
+### Added
+
+- Activity: polish the Chrome-style tabbar with sticky active tabs, floating tear-off, and smoother float/dock transitions.
+- Desktop: show a live LSP status pill with shortcut hints and restart control in File Preview and Review, and resolve desktop `@/*` aliases via per-target `tsconfig`s.
+- Session: prefetch bounded GitHub issue/PR details and mentioned session context at the outbound model boundary on desktop and remote nodes.
+- Session: support mention-based session forking with transcript cutoff for harnesses without native fork.
+- Collab: allow `session_collab_request` in `attach` mode to reuse an already checked-out worktree and display worktree paths consistently.
+- MCP: add `newerThan` and `olderThan` date filters to `session_search`.
+- DeepSeek (`dsh`): add isolated client UI plugin runtime (`@superone/ui-slots`, `@superone/plugin-sdk`, slot scoping, and plugin dock panels).
+
+### Changed
+
+- Review: switch auto diff layout to split view at 80 columns per side.
+
+### Fixed
+
+- Desktop: stabilize docked chat width during sidebar toggles and keep browser, mini-app, and device overlays aligned with panel bounds.
+- Desktop: unify the shell-level layout toggle overlay and align 36px panel headers with macOS traffic lights and light-mode sidebar contrast.
+- Desktop: preserve local harness order when switching harnesses on remote nodes.
+- Desktop: collapse composer mode chips to icons when the toolbar overflows.
+- Review: keep the diff line-number gutter opaque while scrolling horizontally.
+- Chat: hide redundant question-prefix headers on single-question cards and render collaboration request summaries as non-clickable scrollable text.
+- ACP: send SuperOne `clientInfo` and forward `additionalDirectories` on Antigravity session resume.
+- Usage: refresh stale Claude plan tiers from `/api/oauth/profile` on first read, manual refresh, and every 24 hours. (#219)
+
+### Performance
+
+- Chat & Preview: speed up large markdown files and chat previews with off-thread worker parsing, progressive chunk hydration, linear block splitting, and virtualized rendering.
+
+## [0.84.1] - 2026-11-23
 
 ### Added
 

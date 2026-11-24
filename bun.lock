@@ -234,6 +234,7 @@
         "@streamdown/math": "^1.0.2",
         "@superone/chat-view": "workspace:*",
         "@superone/claude": "workspace:*",
+        "@superone/client-kernel": "workspace:*",
         "@superone/codex": "workspace:*",
         "@superone/cursor": "workspace:*",
         "@superone/deepseek": "workspace:*",
@@ -604,6 +605,24 @@
         "@anthropic-ai/claude-agent-sdk-win32-x64": "0.3.330",
       },
     },
+    "packages/client-kernel": {
+      "name": "@superone/client-kernel",
+      "version": "0.0.0",
+      "dependencies": {
+        "@superone/ui-slots": "workspace:*",
+      },
+      "devDependencies": {
+        "@types/react": "^19.2.13",
+        "jsdom": "^30.0.1",
+        "react": "19.2.8",
+        "react-dom": "19.2.8",
+        "typescript": "^7.0.2",
+        "vitest": "^4.1.11",
+      },
+      "peerDependencies": {
+        "react": "^19.0.0",
+      },
+    },
     "packages/codex": {
       "name": "@superone/codex",
       "version": "0.0.0",
@@ -842,6 +861,7 @@
       "name": "@superone/plugin-sdk",
       "version": "0.0.0",
       "dependencies": {
+        "@superone/client-kernel": "workspace:*",
         "@superone/shared": "workspace:*",
         "@superone/ui-slots": "workspace:*",
       },
@@ -2970,6 +2990,8 @@
     "@superone/claude": ["@superone/claude@workspace:packages/claude"],
 
     "@superone/cli": ["@superone/cli@workspace:apps/cli"],
+
+    "@superone/client-kernel": ["@superone/client-kernel@workspace:packages/client-kernel"],
 
     "@superone/codex": ["@superone/codex@workspace:packages/codex"],
 

@@ -1,5 +1,6 @@
-import { Component, type ErrorInfo, type ReactNode } from 'react'
+import { type ReactNode } from 'react'
 import { createSlotRegistry, type SlotRegistry } from '@superone/ui-slots'
+export { PluginSlotErrorBoundary } from '@superone/ui-slots/react'
 
 export interface ChatToolBlockSlotProps {
   toolName: string
@@ -187,42 +188,4 @@ export function getAppSlotRegistry(): SlotRegistry {
 
 export function resetAppSlotRegistryForTest(): void {
   appSlotRegistry = null
-}
-
-interface ErrorBoundaryProps {
-  resetKey?: string
-  fallback: ReactNode | (() => ReactNode)
-  onError?: (error: Error, info: ErrorInfo) => void
-  children: ReactNode
-}
-
-interface ErrorBoundaryState {
-  hasError: boolean
-  capturedResetKey?: string
-}
-
-export class PluginSlotErrorBoundary extends Component<ErrorBoundaryProps, ErrorBoundaryState> {
-  state: ErrorBoundaryState = { hasError: false, capturedResetKey: this.props.resetKey }
-
-  static getDerivedStateFromError(): Partial<ErrorBoundaryState> {
-    return { hasError: true }
-  }
-
-  static getDerivedStateFromProps(props: ErrorBoundaryProps, state: ErrorBoundaryState): Partial<ErrorBoundaryState> | null {
-    if (props.resetKey !== state.capturedResetKey) {
-      return { hasError: false, capturedResetKey: props.resetKey }
-    }
-    return null
-  }
-
-  componentDidCatch(error: Error, info: ErrorInfo): void {
-    this.props.onError?.(error, info)
-  }
-
-  render(): ReactNode {
-    if (this.state.hasError) {
-      return typeof this.props.fallback === 'function' ? this.props.fallback() : this.props.fallback
-    }
-    return this.props.children
-  }
 }

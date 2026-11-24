@@ -1,8 +1,8 @@
 import type { ToolAppAttachment } from '@superone/shared/mcp-apps'
 import { SUGGEST_TASK_TOOL_NAME, type SuggestedTaskState } from '@superone/shared/suggested-task'
 import { memo, useCallback, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
-import { useSlotChain, useSlotRegistry, useSlotScope } from '@superone/ui-slots/react'
-import { PluginSlotErrorBoundary, type ChatToolBlockSlotProps } from '@/lib/ui-slots'
+import type { SlotMap, SlotPropsOf } from '@superone/ui-slots'
+import { PluginSlotErrorBoundary, useSlotChain, useSlotRegistry, useSlotScope } from '@superone/ui-slots/react'
 import { useTranslation } from 'react-i18next'
 import { Ban, ChevronRight, TriangleAlert } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
@@ -242,7 +242,7 @@ function ToolBlockChainSlot({
   slotProps,
   renderBuiltin,
 }: {
-  slotProps: ChatToolBlockSlotProps
+  slotProps: SlotPropsOf<SlotMap, 'chat.toolBlock'>
   renderBuiltin: () => ReactNode
 }) {
   return useSlotChain('chat.toolBlock', slotProps, renderBuiltin)
@@ -755,7 +755,7 @@ export const ToolBlockPresenter = memo(function ToolBlockPresenter({
 
   if (!hasToolBlockPlugins) return renderBuiltin()
 
-  const slotProps: ChatToolBlockSlotProps = {
+  const slotProps: SlotPropsOf<SlotMap, 'chat.toolBlock'> = {
     toolName,
     toolUseId,
     input,

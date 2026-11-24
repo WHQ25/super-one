@@ -15,7 +15,12 @@ import type { BackendStartOptions, SessionBackend, SessionStateChange } from './
 import { interfaceSettingKeys } from '../../test/fixtures/settings-contract-schema'
 
 vi.mock('../logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() } }))
-vi.mock('../shell-path', () => ({ ensureShellPath: async () => {}, isShellPathReady: () => true }))
+vi.mock('../shell-path', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../shell-path')>()),
+  ensureShellPath: async () => {},
+  isShellPathReady: () => true,
+  withShellPath: <A extends unknown[], R>(fn: (...args: A) => Promise<R>) => fn,
+}))
 vi.mock('../sandbox-platform', async (original) => ({
   ...(await original<typeof import('../sandbox-platform')>()),
   getSandboxCapability: () => ({ supportLevel: 'always', platform: 'darwin', defaultMode: 'on' }),

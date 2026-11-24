@@ -1,10 +1,12 @@
 import {
+  Component,
   createContext,
   useCallback,
   useContext,
   useMemo,
   useSyncExternalStore,
   type ComponentType,
+  type ErrorInfo,
   type ReactNode,
 } from 'react'
 import type {
@@ -285,4 +287,48 @@ export function SlotChain<K extends SlotsOfKind<SlotMap, 'chain'>>({
   fallback: (props: SlotPropsOf<SlotMap, K>) => ReactNode
 }) {
   return <>{useSlotChain(name, props, fallback)}</>
+}
+
+interface PluginSlotErrorBoundaryProps {
+  resetKey?: string
+  fallback: ReactNode | (() => ReactNode)
+  onError?: (error: Error, info: ErrorInfo) => void
+  children: ReactNode
+}
+
+interface PluginSlotErrorBoundaryState {
+  hasError: boolean
+  capturedResetKey?: string
+}
+
+export class PluginSlotErrorBoundary extends Component<
+  PluginSlotErrorBoundaryProps,
+  PluginSlotErrorBoundaryState
+> {
+  state: PluginSlotErrorBoundaryState = { hasError: false, capturedResetKey: this.props.resetKey }
+
+  static getDerivedStateFromError(): Partial<PluginSlotErrorBoundaryState> {
+    return { hasError: true }
+  }
+
+  static getDerivedStateFromProps(
+    props: PluginSlotErrorBoundaryProps,
+    state: PluginSlotErrorBoundaryState,
+  ): Partial<PluginSlotErrorBoundaryState> | null {
+    if (props.resetKey !== state.capturedResetKey) {
+      return { hasError: false, capturedResetKey: props.resetKey }
+    }
+    return null
+  }
+
+  componentDidCatch(error: Error, info: ErrorInfo): void {
+    this.props.onError?.(error, info)
+  }
+
+  render(): ReactNode {
+    if (this.state.hasError) {
+      return typeof this.props.fallback === 'function' ? this.props.fallback() : this.props.fallback
+    }
+    return this.props.children
+  }
 }

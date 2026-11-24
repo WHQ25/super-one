@@ -14,7 +14,12 @@ import { Session } from './session'
 import type { SessionBackend, SessionStateChange } from './types'
 
 vi.mock('../logger', () => ({ default: { info: vi.fn(), warn: vi.fn(), debug: vi.fn(), error: vi.fn() } }))
-vi.mock('../shell-path', () => ({ ensureShellPath: async () => {}, isShellPathReady: () => true }))
+vi.mock('../shell-path', async (importOriginal) => ({
+  ...(await importOriginal<typeof import('../shell-path')>()),
+  ensureShellPath: async () => {},
+  isShellPathReady: () => true,
+  withShellPath: <A extends unknown[], R>(fn: (...args: A) => Promise<R>) => fn,
+}))
 
 const projectPath = '/project'
 const model: ModelOption = {

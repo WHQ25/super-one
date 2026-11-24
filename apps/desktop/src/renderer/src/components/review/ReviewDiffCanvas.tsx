@@ -97,6 +97,13 @@ const DIFF_SURFACE_STYLE = {
   '--diffs-bg': 'transparent',
 } as React.CSSProperties
 
+const DIFF_GUTTER_UNSAFE_CSS = `
+[data-gutter] {
+  --diffs-bg: var(--review-sticky-bg, var(--card));
+  background-color: var(--diffs-bg);
+}
+`
+
 export function ReviewDiffCanvas({
   file,
   scope,
@@ -271,6 +278,7 @@ export function ReviewDiffCanvas({
     hunkSeparators: 'line-info' as const,
     overflow: wordWrap ? ('wrap' as const) : ('scroll' as const),
     enableLineSelection: true,
+    unsafeCSS: DIFF_GUTTER_UNSAFE_CSS,
     useTokenTransformer: lsp.lspReady,
     loadDiffFiles: scope === 'workspace' ? loadDiffFiles : undefined,
     onLineSelectionChange: (range: SelectedLineRange | null) => {

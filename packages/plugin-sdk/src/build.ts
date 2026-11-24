@@ -1,19 +1,5 @@
-export const SUPERONE_SHARED_MODULES: readonly string[] = [
-  'react',
-  'react-dom',
-  'react-dom/client',
-  'react/jsx-runtime',
-  'react/jsx-dev-runtime',
-  'zustand',
-  '@superone/ui-slots',
-  '@superone/ui-slots/react',
-  '@superone/client-kernel',
-  '@superone/client-kernel/react',
-  '@superone/plugin-sdk',
-  '@superone/ui/components/ui/button',
-  '@superone/ui/components/ui/badge',
-  '@superone/ui/lib/utils',
-]
+import { SUPERONE_SHARED_MODULES } from './shared-modules'
+export { SUPERONE_SHARED_MODULES }
 
 const IDENT_RE = /^[A-Za-z_$][A-Za-z0-9_$]*$/
 const RESERVED_WORDS = new Set(['default', 'delete', 'class', 'function', 'return', 'var', 'let', 'const', 'import', 'export'])

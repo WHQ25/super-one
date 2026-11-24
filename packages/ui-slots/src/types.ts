@@ -1,5 +1,11 @@
 export type SlotKind = 'single' | 'list' | 'keyed' | 'chain' | 'hoc'
 
+export interface SlotScopeMeta {
+  projectPath?: string
+  sessionId?: string
+  supportsUiPlugins?: boolean
+}
+
 export interface SlotMap {}
 
 export interface SlotDefinition<
@@ -41,6 +47,7 @@ export interface SlotDisposer {
 export interface SingleSlotEntry<P = Record<string, unknown>, C = SlotComponent<P>> {
   id?: string
   priority?: number
+  when?: (scope: SlotScopeMeta) => boolean
   component: C
   _brand?: (props: P) => void
 }
@@ -48,6 +55,7 @@ export interface SingleSlotEntry<P = Record<string, unknown>, C = SlotComponent<
 export interface ListSlotEntry<P = Record<string, unknown>, C = SlotComponent<P>> {
   id?: string
   order?: number
+  when?: (scope: SlotScopeMeta) => boolean
   component: C
   _brand?: (props: P) => void
 }
@@ -55,6 +63,7 @@ export interface ListSlotEntry<P = Record<string, unknown>, C = SlotComponent<P>
 export interface KeyedSlotEntry<P = Record<string, unknown>, C = SlotComponent<P>> {
   id?: string
   priority?: number
+  when?: (scope: SlotScopeMeta) => boolean
   component: C
   _brand?: (props: P) => void
 }
@@ -62,6 +71,7 @@ export interface KeyedSlotEntry<P = Record<string, unknown>, C = SlotComponent<P
 export interface ChainSlotEntry<P = Record<string, unknown>, R = any> {
   id?: string
   priority?: number
+  when?: (scope: SlotScopeMeta) => boolean
   match?: (props: P) => boolean
   render: (props: P, next: () => R) => R | null | undefined
 }
@@ -69,6 +79,7 @@ export interface ChainSlotEntry<P = Record<string, unknown>, R = any> {
 export interface HocSlotEntry<P = Record<string, unknown>, C = SlotComponent<P>> {
   id?: string
   priority?: number
+  when?: (scope: SlotScopeMeta) => boolean
   filterKey?: string | ((key?: string) => boolean)
   wrap: (Component: C) => C
   _brand?: (props: P) => void
@@ -77,12 +88,14 @@ export interface HocSlotEntry<P = Record<string, unknown>, C = SlotComponent<P>>
 export interface ResolvedListEntry<C = unknown> {
   id: string
   order: number
+  when?: (scope: SlotScopeMeta) => boolean
   component: C
 }
 
 export interface ResolvedChainEntry<P = Record<string, unknown>, R = unknown> {
   id: string
   priority: number
+  when?: (scope: SlotScopeMeta) => boolean
   match?: (props: P) => boolean
   render: (props: P, next: () => R) => R | null | undefined
 }
@@ -90,6 +103,7 @@ export interface ResolvedChainEntry<P = Record<string, unknown>, R = unknown> {
 export interface ResolvedHocEntry<C = unknown> {
   id: string
   priority: number
+  when?: (scope: SlotScopeMeta) => boolean
   filterKey?: string | ((key?: string) => boolean)
   wrap: (Component: C) => C
 }
@@ -144,9 +158,9 @@ export interface SlotRegistry<M = SlotMap> {
     slot: K,
     entry: HocSlotEntry<SlotPropsOf<M, K>>,
   ): SlotDisposer
-  getSingle<K extends SlotsOfKind<M, 'single'>>(slot: K): unknown | null
+  getSingle<K extends SlotsOfKind<M, 'single'>>(slot: K, scope?: SlotScopeMeta): unknown | null
   getList<K extends SlotsOfKind<M, 'list'>>(slot: K): readonly ResolvedListEntry[]
-  getKeyed<K extends SlotsOfKind<M, 'keyed'>>(slot: K, key: SlotKeyOf<M, K>): unknown | null
+  getKeyed<K extends SlotsOfKind<M, 'keyed'>>(slot: K, key: SlotKeyOf<M, K>, scope?: SlotScopeMeta): unknown | null
   hasKeyed<K extends SlotsOfKind<M, 'keyed'>>(slot: K, key: string): boolean
   getKeyedKeys<K extends SlotsOfKind<M, 'keyed'>>(slot: K): readonly string[]
   getChain<K extends SlotsOfKind<M, 'chain'>>(slot: K): readonly ResolvedChainEntry<SlotPropsOf<M, K>>[]

@@ -1,5 +1,5 @@
 import { lazy, Suspense } from 'react'
-import { SlotList } from '@superone/ui-slots/react'
+import { SlotList, useSlotList, useSlotVersion } from '@superone/ui-slots/react'
 import { PluginSlotErrorBoundary } from '@/lib/ui-slots'
 import { ArrowLeft, BarChart3, Bot, Brain, Code2, Cpu, Globe, HardDrive, LayoutGrid, Loader2, MousePointer2, Paintbrush, Settings, Smartphone, SquareTerminal } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
@@ -66,12 +66,15 @@ export function SettingsLayout() {
   const setSettingsTab = useAppStore((s) => s.setSettingsTab)
   const navigateTo = useAppStore((s) => s.navigateTo)
   const computerUseSupported = isComputerUseSupportedPlatform(window.app.platform)
-  // Map removed tabs (e.g. former Environments) onto their new homes.
+  const settingsPageEntries = useSlotList('shell.settings.pages')
+  const settingsSlotVersion = useSlotVersion('shell.settings.pages')
+  const builtInTabs = new Set<string>(tabGroups.flatMap((g) => g.tabs.map((tab) => tab.id)))
   const resolvedSettingsTab =
     (settingsTab as string) === 'environments' ? 'remote' : settingsTab
   const activeSettingsTab =
     (!computerUseSupported && resolvedSettingsTab === 'computer-use')
       || (!agentProfilesEnabled && resolvedSettingsTab === 'agent-profiles')
+      || (!builtInTabs.has(resolvedSettingsTab) && settingsPageEntries.length === 0)
       ? 'app-settings'
       : resolvedSettingsTab
 
@@ -104,13 +107,15 @@ export function SettingsLayout() {
                 ))}
             </SettingsNavGroup>
           ))}
-          <SlotList name="shell.settings.pages" props={{ area: 'nav', activeTab: activeSettingsTab, onSelectTab: (tabId) => setSettingsTab(tabId as SettingsTab) }} />
+          <PluginSlotErrorBoundary resetKey={String(settingsSlotVersion)} fallback={null}>
+            <SlotList name="shell.settings.pages" props={{ area: 'nav', activeTab: activeSettingsTab, onSelectTab: (tabId) => setSettingsTab(tabId as SettingsTab) }} />
+          </PluginSlotErrorBoundary>
         </nav>
       </div>
 
       {/* Content */}
       <div className="min-w-0 flex-1 overflow-y-auto [scrollbar-gutter:stable]">
-        <PluginSlotErrorBoundary resetKey={activeSettingsTab} fallback={null}>
+        <PluginSlotErrorBoundary resetKey={`${activeSettingsTab}:${settingsSlotVersion}`} fallback={null}>
           <SlotList name="shell.settings.pages" props={{ area: 'content', activeTab: activeSettingsTab, onSelectTab: (tabId) => setSettingsTab(tabId as SettingsTab) }} />
         </PluginSlotErrorBoundary>
         {activeSettingsTab === 'providers' && <ProvidersPage />}

@@ -1,5 +1,5 @@
 import { useRef, useCallback, useEffect, useState } from 'react'
-import { useSlot } from '@superone/ui-slots/react'
+import { useSlot, useSlotVersion } from '@superone/ui-slots/react'
 import { PluginSlotErrorBoundary } from '@/lib/ui-slots'
 import { Plus } from 'lucide-react'
 import { DockviewReact } from 'dockview-react'
@@ -289,6 +289,7 @@ export function ActivityPanel({ getMaxWidth, floatChatOnResizeOverflow, transiti
   }, [])
 
   const ActivityOverride = useSlot('shell.activity.content')
+  const activitySlotVersion = useSlotVersion('shell.activity.content')
   const dockContent = (
     <ActivityHeaderGroupProvider api={headerApi}>
       <DockviewReact
@@ -326,12 +327,15 @@ export function ActivityPanel({ getMaxWidth, floatChatOnResizeOverflow, transiti
         {/* tabIndex makes this a focus sink — see activity-focus.ts for why the
             panel must never be left without an owner for its own shortcuts. */}
         <div ref={innerRef} data-activity-inner="" tabIndex={-1} className="flex h-full flex-col overflow-hidden outline-none focus-visible:shadow-none" style={{ width: fillsWindow ? '100%' : panelWidth }}>
-          <div className="min-h-0 flex-1">
-            {ActivityOverride ? (
-              <PluginSlotErrorBoundary fallback={dockContent}>
+          <div className="relative min-h-0 flex-1">
+            <div className={cn('h-full w-full', ActivityOverride && 'hidden')}>
+              {dockContent}
+            </div>
+            {ActivityOverride && (
+              <PluginSlotErrorBoundary resetKey={String(activitySlotVersion)} fallback={dockContent}>
                 <ActivityOverride visible={visible} />
               </PluginSlotErrorBoundary>
-            ) : dockContent}
+            )}
           </div>
         </div>
       </div>

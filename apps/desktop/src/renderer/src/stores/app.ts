@@ -272,8 +272,6 @@ interface AppState extends HarnessThemeState {
   /** Remote execution environments (Other Devices + sidebar host switcher). */
   experimentalRemoteNodesEnabled: boolean
   setExperimentalRemoteNodesEnabled: (enabled: boolean) => Promise<void>
-  experimentalDshGlobalShell: boolean
-  setExperimentalDshGlobalShell: (enabled: boolean) => Promise<void>
 
   // Terminal display settings
   terminalLightPalette: string | null
@@ -1279,7 +1277,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   enabledExperimentalAgents: [],
   experimentalClaudeOpenAiChatEnabled: false,
   experimentalRemoteNodesEnabled: false,
-  experimentalDshGlobalShell: false,
   terminalLightPalette: null,
   terminalDarkPalette: null,
   terminalFontSize: 14,
@@ -1308,7 +1305,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         enabledExperimentalAgents: settings.enabledExperimentalAgents ?? [],
         experimentalClaudeOpenAiChatEnabled: settings.experimentalClaudeOpenAiChatEnabled ?? false,
         experimentalRemoteNodesEnabled: settings.experimentalRemoteNodesEnabled ?? false,
-        experimentalDshGlobalShell: settings.experimental?.dshGlobalShell === true,
         terminalLightPalette: settings.terminalLightPalette,
         terminalDarkPalette: settings.terminalDarkPalette,
         terminalFontSize: settings.terminalFontSize,
@@ -1389,12 +1385,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       console.error('[remote-nodes] persist enabled failed:', err)
       throw err
     }
-  },
-
-  setExperimentalDshGlobalShell: async (enabled) => {
-    set({ experimentalDshGlobalShell: enabled })
-    const result = await window.app.saveAppSettings({ experimental: { dshGlobalShell: enabled } })
-    set({ experimentalDshGlobalShell: result.experimental?.dshGlobalShell === true })
   },
 
   setTerminalFontFamily: async (family) => {
@@ -1557,7 +1547,6 @@ if (typeof window !== 'undefined') {
       experimentalClaudeOpenAiChatEnabled: settings.experimentalClaudeOpenAiChatEnabled ?? false,
       experimentalAgentProfilesEnabled: settings.experimentalAgentProfilesEnabled === true,
       experimentalRemoteNodesEnabled: settings.experimentalRemoteNodesEnabled ?? false,
-      experimentalDshGlobalShell: settings.experimental?.dshGlobalShell === true,
       terminalLightPalette: settings.terminalLightPalette,
       terminalDarkPalette: settings.terminalDarkPalette,
       terminalFontSize: settings.terminalFontSize,

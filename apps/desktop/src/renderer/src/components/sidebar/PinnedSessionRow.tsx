@@ -3,6 +3,9 @@ import { useTranslation } from 'react-i18next'
 import { Loader2, MessageSquare, Pin, Unplug } from 'lucide-react'
 import type { SessionIconProps } from '@superone/ui/components/harness/ClaudeSessionIcon'
 import type { PinnedSessionEntry } from '@superone/shared/agent-types'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
+import { SlotList, SlotScopeProvider } from '@superone/ui-slots/react'
+import { PluginSlotErrorBoundary } from '@/lib/ui-slots'
 import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
 import { cn } from '@superone/ui/lib/utils'
 import { useChatStore } from '@/stores/chat'
@@ -146,6 +149,26 @@ export const PinnedSessionRow = memo(function PinnedSessionRow({
         <Unplug className="size-3 shrink-0 text-sidebar-foreground/70" aria-label={t('sidebar.sessionOffline')} />
       )}
       <div className="ml-auto flex shrink-0 items-center">
+        <SlotScopeProvider
+          active={HARNESS_CAPABILITIES[session.provider ?? 'claude']?.supportsUiPlugins === true}
+          scope={{
+            sessionId: session.sessionId,
+            projectPath: session.folderPath,
+            supportsUiPlugins: HARNESS_CAPABILITIES[session.provider ?? 'claude']?.supportsUiPlugins === true,
+          }}
+        >
+          <PluginSlotErrorBoundary fallback={null}>
+            <SlotList
+              name="sidebar.session.row.trailing"
+              props={{
+                sessionId: session.sessionId,
+                folderPath: session.folderPath,
+                provider: session.provider ?? 'claude',
+                isActive,
+              }}
+            />
+          </PluginSlotErrorBoundary>
+        </SlotScopeProvider>
         <button
           onClick={(e) => {
             e.stopPropagation()

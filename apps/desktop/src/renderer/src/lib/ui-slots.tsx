@@ -125,6 +125,25 @@ export interface ShellOverlayItemSlotProps {
   view: string
 }
 
+export interface SidebarTabSlotProps {
+  area: 'tab' | 'content'
+  activeTab: string
+  onSelectTab: (tabId: string) => void
+}
+
+export interface SidebarDrawerSlotProps {
+  open?: boolean
+}
+
+export interface SidebarFooterActionSlotProps {}
+
+export interface SidebarSessionRowTrailingSlotProps {
+  sessionId: string
+  folderPath: string
+  provider: string
+  isActive: boolean
+}
+
 declare module '@superone/ui-slots' {
   interface SlotMap {
     'session.providers': { kind: 'hoc'; props: SessionProvidersSlotProps }
@@ -150,6 +169,10 @@ declare module '@superone/ui-slots' {
     'shell.activity.content': { kind: 'single'; props: ShellActivityContentSlotProps }
     'shell.settings.pages': { kind: 'list'; props: ShellSettingsPageSlotProps }
     'shell.overlay.items': { kind: 'list'; props: ShellOverlayItemSlotProps }
+    'sidebar.tabs': { kind: 'list'; props: SidebarTabSlotProps }
+    'sidebar.drawer': { kind: 'list'; props: SidebarDrawerSlotProps }
+    'sidebar.footer.actions': { kind: 'list'; props: SidebarFooterActionSlotProps }
+    'sidebar.session.row.trailing': { kind: 'list'; props: SidebarSessionRowTrailingSlotProps }
   }
 }
 

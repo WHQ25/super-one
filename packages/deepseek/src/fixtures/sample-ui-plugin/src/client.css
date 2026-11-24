@@ -1,5 +1,11 @@
 .sample-dsh-plugin-card {
   border-color: var(--border);
-  background: var(--card);
+  background: color-mix(in oklch, var(--card) 92%, var(--dsh-sample-accent, var(--primary)) 8%);
+  color: var(--foreground);
+}
+
+.sample-dsh-pill {
+  border: 1px solid color-mix(in oklch, var(--dsh-sample-accent, var(--primary)) 35%, var(--border));
+  background: color-mix(in oklch, var(--background) 85%, var(--dsh-sample-accent, var(--primary)) 15%);
   color: var(--foreground);
 }

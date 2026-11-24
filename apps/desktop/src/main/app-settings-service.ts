@@ -688,9 +688,6 @@ export function readAppSettings(): AppSettings {
         ? data.experimentalRemoteNodesEnabled
         : defaults.experimentalRemoteNodesEnabled,
       experimentalAgentProfilesEnabled: data.experimentalAgentProfilesEnabled === true,
-      ...(data.experimental && typeof data.experimental === 'object'
-        ? { experimental: { dshGlobalShell: (data.experimental as Record<string, unknown>).dshGlobalShell === true } }
-        : {}),
       remoteNodeAccessEnabled: typeof data.remoteNodeAccessEnabled === 'boolean'
         ? data.remoteNodeAccessEnabled
         : defaults.remoteNodeAccessEnabled,
@@ -952,13 +949,6 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
       ?? current.experimentalClaudeOpenAiChatEnabled,
     experimentalAgentProfilesEnabled: patch.experimentalAgentProfilesEnabled
       ?? current.experimentalAgentProfilesEnabled,
-    ...(patch.experimental !== undefined || current.experimental !== undefined
-      ? {
-          experimental: {
-            dshGlobalShell: patch.experimental?.dshGlobalShell ?? current.experimental?.dshGlobalShell ?? false,
-          },
-        }
-      : {}),
     experimentalRemoteNodesEnabled: patch.experimentalRemoteNodesEnabled
       ?? current.experimentalRemoteNodesEnabled,
     remoteNodeAccessEnabled: patch.remoteNodeAccessEnabled ?? current.remoteNodeAccessEnabled,

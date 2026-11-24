@@ -58,7 +58,11 @@ export function isAllowedPluginRequestOrigin(
     try {
       const refUrl = new URL(refererHeader)
       const refOrigin = `${refUrl.protocol}//${refUrl.host}`
-      return refOrigin === allowedOrigin ? allowedOrigin : null
+      if (refOrigin === allowedOrigin) return allowedOrigin
+      if (refUrl.protocol === `${PLUGIN_SCHEME}:` && refUrl.host === 'pkg') {
+        return allowedOrigin
+      }
+      return null
     } catch {
       return null
     }

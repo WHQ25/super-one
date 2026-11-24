@@ -15,13 +15,11 @@ import type {
   SlotMap,
   SlotPropsOf,
   SlotRegistry,
+  SlotScopeMeta,
   SlotsOfKind,
 } from './index'
 
-export interface SlotScopeMeta {
-  projectPath?: string
-  sessionId?: string
-}
+export type { SlotScopeMeta } from './index'
 
 interface SlotScopeContextValue {
   active: boolean
@@ -107,13 +105,24 @@ function useSlotSubscription<T>(
   return useSyncExternalStore(subscribe, getSnapshot, inactiveValue)
 }
 
+export function useSlotVersion(slot: string): number {
+  const registry = useContext(SlotRegistryContext)
+  const subscribe = useCallback(
+    (listener: () => void) => (registry ? registry.subscribeSlot(slot, listener) : subscribeNoop()),
+    [registry, slot],
+  )
+  const getSnapshot = useCallback(() => (registry ? registry.getSlotVersion(slot) : 0), [registry, slot])
+  return useSyncExternalStore(subscribe, getSnapshot, () => 0)
+}
+
 export function useSlot<K extends SlotsOfKind<SlotMap, 'single'>>(
   slot: K,
 ): ComponentType<SlotPropsOf<SlotMap, K>> | null {
+  const { scope } = useContext(SlotScopeContext)
   const read = useCallback(
     (registry: SlotRegistry<any>) =>
-      registry.getSingle(slot as never) as ComponentType<SlotPropsOf<SlotMap, K>> | null,
-    [slot],
+      registry.getSingle(slot as never, scope) as ComponentType<SlotPropsOf<SlotMap, K>> | null,
+    [slot, scope],
   )
   return useSlotSubscription(slot, read, getNull)
 }
@@ -121,22 +130,29 @@ export function useSlot<K extends SlotsOfKind<SlotMap, 'single'>>(
 export function useSlotList<K extends SlotsOfKind<SlotMap, 'list'>>(
   slot: K,
 ): readonly ResolvedListEntry<ComponentType<SlotPropsOf<SlotMap, K>>>[] {
+  const { scope } = useContext(SlotScopeContext)
   const read = useCallback(
     (registry: SlotRegistry<any>) =>
       registry.getList(slot as never) as readonly ResolvedListEntry<ComponentType<SlotPropsOf<SlotMap, K>>>[],
     [slot],
   )
-  return useSlotSubscription(slot, read, getEmptyList)
+  const entries = useSlotSubscription(slot, read, getEmptyList)
+  return useMemo(() => {
+    if (entries.length === 0 || !entries.some((entry) => entry.when)) return entries
+    const meta = scope ?? {}
+    return entries.filter((entry) => !entry.when || entry.when(meta))
+  }, [entries, scope])
 }
 
 export function useSlotKeyed<K extends SlotsOfKind<SlotMap, 'keyed'>>(
   slot: K,
   key: SlotKeyOf<SlotMap, K>,
 ): ComponentType<SlotPropsOf<SlotMap, K>> | null {
+  const { scope } = useContext(SlotScopeContext)
   const read = useCallback(
     (registry: SlotRegistry<any>) =>
-      registry.getKeyed(slot as never, key as never) as ComponentType<SlotPropsOf<SlotMap, K>> | null,
-    [slot, key],
+      registry.getKeyed(slot as never, key as never, scope) as ComponentType<SlotPropsOf<SlotMap, K>> | null,
+    [slot, key, scope],
   )
   return useSlotSubscription(slot, read, getNull)
 }
@@ -146,6 +162,7 @@ export function useSlotChain<K extends SlotsOfKind<SlotMap, 'chain'>>(
   props: SlotPropsOf<SlotMap, K>,
   fallback: (props: SlotPropsOf<SlotMap, K>) => ReactNode,
 ): ReactNode {
+  const { scope } = useContext(SlotScopeContext)
   const read = useCallback(
     (registry: SlotRegistry<any>) =>
       registry.getChain(slot as never) as readonly ResolvedChainEntry<SlotPropsOf<SlotMap, K>, ReactNode>[],
@@ -154,7 +171,10 @@ export function useSlotChain<K extends SlotsOfKind<SlotMap, 'chain'>>(
   const entries = useSlotSubscription(slot, read, getEmptyChain)
   if (entries.length === 0) return fallback(props)
 
-  const matching = entries.filter((entry) => !entry.match || entry.match(props))
+  const meta = scope ?? {}
+  const matching = entries.filter(
+    (entry) => (!entry.when || entry.when(meta)) && (!entry.match || entry.match(props)),
+  )
   if (matching.length === 0) return fallback(props)
 
   const dispatch = (index: number): ReactNode => {
@@ -182,6 +202,7 @@ export function useSlotHoc<K extends SlotsOfKind<SlotMap, 'hoc'>>(
   BaseComponent: ComponentType<SlotPropsOf<SlotMap, K>>,
   filterKey?: string,
 ): ComponentType<SlotPropsOf<SlotMap, K>> {
+  const { scope } = useContext(SlotScopeContext)
   const read = useCallback(
     (registry: SlotRegistry<any>) =>
       registry.getHoc(slot as never) as readonly ResolvedHocEntry<ComponentType<SlotPropsOf<SlotMap, K>>>[],
@@ -191,13 +212,16 @@ export function useSlotHoc<K extends SlotsOfKind<SlotMap, 'hoc'>>(
 
   return useMemo(() => {
     if (entries.length === 0) return BaseComponent
-    const matching = entries.filter((entry) => matchesHocFilter(entry.filterKey, filterKey))
+    const meta = scope ?? {}
+    const matching = entries.filter(
+      (entry) => (!entry.when || entry.when(meta)) && matchesHocFilter(entry.filterKey, filterKey),
+    )
     if (matching.length === 0) return BaseComponent
     return matching.reduceRight(
       (Acc, entry) => entry.wrap(Acc),
       BaseComponent,
     )
-  }, [entries, BaseComponent, filterKey])
+  }, [entries, BaseComponent, filterKey, scope])
 }
 
 export function SlotSingle<K extends SlotsOfKind<SlotMap, 'single'>>({

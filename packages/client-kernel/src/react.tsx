@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useSyncExternalStore, type ReactNode } from 'react'
+import { createContext, useCallback, useContext, useMemo, useSyncExternalStore, type ReactNode } from 'react'
 import { SlotRegistryProvider } from '@superone/ui-slots/react'
 import type {
   ClientKernel,
@@ -41,8 +41,12 @@ const EMPTY_MENU_ITEMS: readonly ResolvedMenuItem[] = []
 
 export function useMenuItems(menuId: MenuId, ctx: MenuContext): readonly ResolvedMenuItem[] {
   const kernel = useClientKernelOptional()
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => (kernel ? kernel.menus.subscribeMenu(menuId, onStoreChange) : () => {}),
+    [kernel, menuId],
+  )
   const version = useSyncExternalStore(
-    (onStoreChange) => (kernel ? kernel.menus.subscribeMenu(menuId, onStoreChange) : () => {}),
+    subscribe,
     () => (kernel ? kernel.menus.getVersion(menuId) : -1),
     () => -1,
   )
@@ -54,8 +58,12 @@ export function useMenuItems(menuId: MenuId, ctx: MenuContext): readonly Resolve
 
 export function useThemeOverrides(scope?: ThemeScope): ResolvedThemeOverrides | null {
   const kernel = useClientKernelOptional()
+  const subscribe = useCallback(
+    (onStoreChange: () => void) => (kernel ? kernel.theme.subscribe(onStoreChange) : () => {}),
+    [kernel],
+  )
   const version = useSyncExternalStore(
-    (onStoreChange) => (kernel ? kernel.theme.subscribe(onStoreChange) : () => {}),
+    subscribe,
     () => (kernel ? kernel.theme.getVersion(scope) : -1),
     () => -1,
   )

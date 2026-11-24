@@ -87,11 +87,27 @@ export function createClientKernel(options: CreateClientKernelOptions = {}): Cli
         if (disposed) return
         disposed = true
         scopes.delete(scope)
-        for (const child of [...children]) child.dispose()
+        for (const child of [...children]) {
+          try {
+            child.dispose()
+          } catch (error) {
+            console.error('[client-kernel] child scope dispose failed:', error)
+          }
+        }
         children.clear()
-        for (const d of [...disposers].reverse()) d()
+        for (const d of [...disposers].reverse()) {
+          try {
+            d()
+          } catch (error) {
+            console.error('[client-kernel] disposer failed:', error)
+          }
+        }
         disposers.length = 0
-        slotScope.dispose()
+        try {
+          slotScope.dispose()
+        } catch (error) {
+          console.error('[client-kernel] slotScope dispose failed:', error)
+        }
       },
       [Symbol.dispose]() {
         scope.dispose()

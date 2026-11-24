@@ -1,7 +1,6 @@
-import { useMemo, type ComponentType } from 'react'
+import { useCallback, useMemo, useSyncExternalStore, type ComponentType } from 'react'
 import { Globe, Puzzle, Smartphone, Terminal as TerminalIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { useSyncExternalStore } from 'react'
 import { useClientKernelOptional } from '@superone/client-kernel/react'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { getAppClientKernel } from '@/lib/client-kernel'
@@ -48,8 +47,12 @@ export function useActivityLaunchTypes(): ActivityLaunchType[] {
     }),
     [activeSessionId, currentFolder, activeSessionProvider, t],
   )
+  const subscribeLauncherMenu = useCallback(
+    (onStoreChange: () => void) => kernel.menus.subscribeMenu('activity.launcher', onStoreChange),
+    [kernel],
+  )
   const menuVersion = useSyncExternalStore(
-    (onStoreChange) => kernel.menus.subscribeMenu('activity.launcher', onStoreChange),
+    subscribeLauncherMenu,
     () => kernel.menus.getVersion('activity.launcher'),
     () => -1,
   )

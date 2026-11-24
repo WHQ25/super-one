@@ -32,6 +32,7 @@ export class MainPluginHost {
   private readonly kernel: RuntimePluginKernel
   private readonly mounted = new Map<string, MountedMainPlugin>()
   private readonly shutdownHooks: Array<() => void | Promise<void>> = []
+  private readonly ipcOwners = new Map<string, symbol>()
 
   constructor(kernel: RuntimePluginKernel = createRuntimePluginKernel()) {
     this.kernel = kernel
@@ -52,12 +53,15 @@ export class MainPluginHost {
   createPluginScope(pluginId: string): MainPluginScope {
     const host = this
     const base = this.kernel.scope.createChildScope()
-    const registeredChannels = new Set<string>()
+    const registeredChannels = new Map<string, symbol>()
     const localShutdownHooks = new Set<() => void | Promise<void>>()
 
     base.onDispose(() => {
-      for (const channel of registeredChannels) {
-        ipcMain.removeHandler(channel)
+      for (const [channel, owner] of registeredChannels) {
+        if (host.ipcOwners.get(channel) === owner) {
+          host.ipcOwners.delete(channel)
+          ipcMain.removeHandler(channel)
+        }
       }
       registeredChannels.clear()
       for (const hook of localShutdownHooks) {
@@ -82,11 +86,17 @@ export class MainPluginHost {
         if (base.disposed) {
           return { dispose: () => {}, [Symbol.dispose]: () => {} }
         }
+        const owner = Symbol(pluginId)
+        host.ipcOwners.set(channel, owner)
         ipcMain.removeHandler(channel)
         ipcMain.handle(channel, handler)
-        registeredChannels.add(channel)
+        registeredChannels.set(channel, owner)
         const remove = () => {
-          if (registeredChannels.delete(channel)) {
+          const trackedOwner = registeredChannels.get(channel)
+          if (!trackedOwner) return
+          registeredChannels.delete(channel)
+          if (host.ipcOwners.get(channel) === trackedOwner) {
+            host.ipcOwners.delete(channel)
             ipcMain.removeHandler(channel)
           }
         }
@@ -147,7 +157,8 @@ export class MainPluginHost {
     try {
       const result = plugin.setup(scope, this)
       if (result && typeof (result as Promise<void>).catch === 'function') {
-        void (result as Promise<void>).catch(() => {
+        void (result as Promise<void>).catch((error) => {
+          console.error(`[main-plugin-host] async setup failed for ${plugin.id}:`, error)
           mounted.dispose()
         })
       }
@@ -165,13 +176,25 @@ export class MainPluginHost {
   async shutdown(): Promise<void> {
     const hooks = [...this.shutdownHooks].reverse()
     for (const hook of hooks) {
-      await hook()
+      try {
+        await hook()
+      } catch (error) {
+        console.error('[main-plugin-host] shutdown hook failed:', error)
+      }
     }
     for (const mounted of [...this.mounted.values()]) {
-      mounted.dispose()
+      try {
+        mounted.dispose()
+      } catch (error) {
+        console.error(`[main-plugin-host] dispose failed for ${mounted.id}:`, error)
+      }
     }
     this.mounted.clear()
-    this.kernel.dispose()
+    try {
+      this.kernel.dispose()
+    } catch (error) {
+      console.error('[main-plugin-host] kernel dispose failed:', error)
+    }
   }
 }
 

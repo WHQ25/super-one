@@ -319,4 +319,65 @@ describe('dsh client UI plugin loader & Mosaic isolation', () => {
     expect(screen.getByTestId('sibling-pane').textContent).toContain('file-b.ts')
     errorSpy.mockRestore()
   })
+
+  it('aborts pending async reconcile cleanly when disposed mid-flight', async () => {
+    const registry = createSlotRegistry()
+    let resolveImport!: (mod: Record<string, unknown>) => void
+    const importPromise = new Promise<Record<string, unknown>>((resolveFn) => {
+      resolveImport = resolveFn
+    })
+    const detachSpy = vi.fn()
+    const api: DshPluginHostApi = {
+      listClientPlugins: vi.fn(async () => ({
+        entries: [
+          {
+            id: '@acme/dsh-sample-ui',
+            name: '@acme/dsh-sample-ui',
+            version: '1.0.0',
+            rev: '1',
+            entry: 'dist/client.js',
+            styles: ['dist/client.css'],
+            entryUrl: 'superone-plugin://pkg/sample/dist/client.js',
+            styleUrls: ['superone-plugin://pkg/sample/dist/client.css'],
+            apiVersion: 1 as const,
+          },
+        ],
+        problems: [],
+      })),
+      invoke: vi.fn(),
+      on: vi.fn(() => () => {}),
+      onPluginsChanged: vi.fn(() => () => {}),
+    }
+
+    const manager = new DshClientPluginManager({
+      api,
+      registry,
+      ensureShared: vi.fn(async () => ({})),
+      importModule: () => importPromise,
+      attachStylesheet: () => detachSpy,
+      closeGhostPanels: vi.fn(),
+    })
+
+    const reconcilePromise = manager.reconcile()
+    await waitFor(() => {
+      expect(detachSpy).not.toHaveBeenCalled()
+    })
+    manager.dispose()
+    resolveImport({
+      default: (ctx: any) => {
+        ctx.slots.registerList('session.header.actions', { id: 'leaked', component: () => null })
+      },
+    })
+    await reconcilePromise
+
+    expect(manager.getMountedIds()).toEqual([])
+    expect(registry.getList('session.header.actions')).toEqual([])
+    expect(detachSpy).toHaveBeenCalled()
+  })
+
+  it('keeps SUPERONE_SHARED_MODULES in exact parity with __SUPERONE_SHARED__', async () => {
+    const { SUPERONE_SHARED_MODULES } = await import('../../../../../../../packages/plugin-sdk/src/shared-modules')
+    const shared = await ensureSuperoneShared()
+    expect(Object.keys(shared).sort()).toEqual([...SUPERONE_SHARED_MODULES].sort())
+  })
 })

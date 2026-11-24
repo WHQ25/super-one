@@ -1,0 +1,16 @@
+export const SUPERONE_SHARED_MODULES: readonly string[] = [
+  'react',
+  'react-dom',
+  'react-dom/client',
+  'react/jsx-runtime',
+  'react/jsx-dev-runtime',
+  'zustand',
+  '@superone/ui-slots',
+  '@superone/ui-slots/react',
+  '@superone/client-kernel',
+  '@superone/client-kernel/react',
+  '@superone/plugin-sdk',
+  '@superone/ui/components/ui/button',
+  '@superone/ui/components/ui/badge',
+  '@superone/ui/lib/utils',
+]

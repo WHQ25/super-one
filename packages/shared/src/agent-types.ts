@@ -6019,7 +6019,6 @@ export interface AppSettings {
   experimentalClaudeOpenAiChatEnabled: boolean
   /** Opt-in Agent Profile management and preapproved collaboration launches. Default off. */
   experimentalAgentProfilesEnabled: boolean
-  experimental?: { dshGlobalShell?: boolean }
   /**
    * Opt-in remote execution environments (node / Other Devices + sidebar host
    * switcher). Default off — mobile remote-control of this host stays available.
@@ -6310,7 +6309,6 @@ export interface AppSettingsPatch {
   enabledExperimentalAgents?: string[]
   experimentalClaudeOpenAiChatEnabled?: boolean
   experimentalAgentProfilesEnabled?: boolean
-  experimental?: { dshGlobalShell?: boolean }
   experimentalRemoteNodesEnabled?: boolean
   remoteNodeAccessEnabled?: boolean
   remoteNodeAccessPort?: number | null

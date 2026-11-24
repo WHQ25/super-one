@@ -57,9 +57,21 @@ export function createDisposableScope(): DisposableScope {
     dispose(): void {
       if (disposed) return
       disposed = true
-      for (const child of [...children]) child.dispose()
+      for (const child of [...children]) {
+        try {
+          child.dispose()
+        } catch (error) {
+          console.error('[plugin-kernel] child scope dispose failed:', error)
+        }
+      }
       children.clear()
-      for (const fn of [...cleanups].reverse()) fn()
+      for (const fn of [...cleanups].reverse()) {
+        try {
+          fn()
+        } catch (error) {
+          console.error('[plugin-kernel] disposer failed:', error)
+        }
+      }
       cleanups.length = 0
     },
     [Symbol.dispose](): void {

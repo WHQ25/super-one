@@ -11,6 +11,7 @@ import type {
   SlotPropsOf,
   SlotRegistry,
   SlotScopeHandle,
+  SlotScopeMeta,
 } from './types'
 
 interface StoredEntry {
@@ -21,8 +22,14 @@ interface StoredEntry {
   id: string
   priority: number
   order: number
+  when?: (scope: SlotScopeMeta) => boolean
   payload: unknown
 }
+
+const NOOP_DISPOSER: SlotDisposer = Object.assign(() => {}, {
+  dispose: () => {},
+  [Symbol.dispose]: () => {},
+})
 
 function makeDisposer(onDispose: () => void): SlotDisposer {
   let disposed = false
@@ -97,7 +104,7 @@ export function createSlotRegistry<M = SlotMap>(): SlotRegistry<M> {
   function addEntry(
     kind: SlotKind,
     slot: string,
-    options: { key?: string; id?: string; priority?: number; order?: number; payload: unknown },
+    options: { key?: string; id?: string; priority?: number; order?: number; when?: (scope: SlotScopeMeta) => boolean; payload: unknown },
   ): SlotDisposer {
     const seq = nextSeq++
     const entry: StoredEntry = {
@@ -108,6 +115,7 @@ export function createSlotRegistry<M = SlotMap>(): SlotRegistry<M> {
       id: options.id ?? `slot-entry-${seq}`,
       priority: options.priority ?? 0,
       order: options.order ?? 0,
+      when: options.when,
       payload: options.payload,
     }
     let list = entriesBySlot.get(slot)
@@ -134,6 +142,7 @@ export function createSlotRegistry<M = SlotMap>(): SlotRegistry<M> {
       return addEntry('single', slot, {
         id: entry.id,
         priority: entry.priority,
+        when: entry.when,
         payload: entry.component,
       })
     },
@@ -141,6 +150,7 @@ export function createSlotRegistry<M = SlotMap>(): SlotRegistry<M> {
       return addEntry('list', slot, {
         id: entry.id,
         order: entry.order,
+        when: entry.when,
         payload: entry.component,
       })
     },
@@ -149,6 +159,7 @@ export function createSlotRegistry<M = SlotMap>(): SlotRegistry<M> {
         key,
         id: entry.id,
         priority: entry.priority,
+        when: entry.when,
         payload: entry.component,
       })
     },
@@ -156,6 +167,7 @@ export function createSlotRegistry<M = SlotMap>(): SlotRegistry<M> {
       return addEntry('chain', slot, {
         id: entry.id,
         priority: entry.priority,
+        when: entry.when,
         payload: entry,
       })
     },
@@ -163,21 +175,30 @@ export function createSlotRegistry<M = SlotMap>(): SlotRegistry<M> {
       return addEntry('hoc', slot, {
         id: entry.id,
         priority: entry.priority,
+        when: entry.when,
         payload: entry,
       })
     },
 
-    getSingle(slot) {
-      if (singleCache.has(slot)) return singleCache.get(slot) ?? null
-      const entries = (entriesBySlot.get(slot) ?? []).filter((e) => e.kind === 'single')
-      if (entries.length === 0) {
-        singleCache.set(slot, null)
-        return null
+    getSingle(slot, scope) {
+      const all = entriesBySlot.get(slot) ?? []
+      if (!scope && !all.some((e) => e.when)) {
+        if (singleCache.has(slot)) return singleCache.get(slot) ?? null
+        const entries = all.filter((e) => e.kind === 'single')
+        if (entries.length === 0) {
+          singleCache.set(slot, null)
+          return null
+        }
+        entries.sort((a, b) => (b.priority - a.priority) || (b.seq - a.seq))
+        const resolved = entries[0].payload
+        singleCache.set(slot, resolved)
+        return resolved
       }
+      const meta = scope ?? {}
+      const entries = all.filter((e) => e.kind === 'single' && (!e.when || e.when(meta)))
+      if (entries.length === 0) return null
       entries.sort((a, b) => (b.priority - a.priority) || (b.seq - a.seq))
-      const resolved = entries[0].payload
-      singleCache.set(slot, resolved)
-      return resolved
+      return entries[0].payload
     },
 
     getList(slot) {
@@ -192,28 +213,37 @@ export function createSlotRegistry<M = SlotMap>(): SlotRegistry<M> {
       const resolved: readonly ResolvedListEntry[] = entries.map((e) => ({
         id: e.id,
         order: e.order,
+        when: e.when,
         component: e.payload,
       }))
       listCache.set(slot, resolved)
       return resolved
     },
 
-    getKeyed(slot, key) {
-      let byKey = keyedCache.get(slot)
-      if (!byKey) {
-        byKey = new Map()
-        keyedCache.set(slot, byKey)
+    getKeyed(slot, key, scope) {
+      const all = entriesBySlot.get(slot) ?? []
+      if (!scope && !all.some((e) => e.when)) {
+        let byKey = keyedCache.get(slot)
+        if (!byKey) {
+          byKey = new Map()
+          keyedCache.set(slot, byKey)
+        }
+        if (byKey.has(key)) return byKey.get(key) ?? null
+        const entries = all.filter((e) => e.kind === 'keyed' && e.key === key)
+        if (entries.length === 0) {
+          byKey.set(key, null)
+          return null
+        }
+        entries.sort((a, b) => (b.priority - a.priority) || (b.seq - a.seq))
+        const resolved = entries[0].payload
+        byKey.set(key, resolved)
+        return resolved
       }
-      if (byKey.has(key)) return byKey.get(key) ?? null
-      const entries = (entriesBySlot.get(slot) ?? []).filter((e) => e.kind === 'keyed' && e.key === key)
-      if (entries.length === 0) {
-        byKey.set(key, null)
-        return null
-      }
+      const meta = scope ?? {}
+      const entries = all.filter((e) => e.kind === 'keyed' && e.key === key && (!e.when || e.when(meta)))
+      if (entries.length === 0) return null
       entries.sort((a, b) => (b.priority - a.priority) || (b.seq - a.seq))
-      const resolved = entries[0].payload
-      byKey.set(key, resolved)
-      return resolved
+      return entries[0].payload
     },
 
     hasKeyed(slot, key) {
@@ -246,6 +276,7 @@ export function createSlotRegistry<M = SlotMap>(): SlotRegistry<M> {
         return {
           id: e.id,
           priority: e.priority,
+          when: e.when,
           match: raw.match,
           render: raw.render,
         }
@@ -268,6 +299,7 @@ export function createSlotRegistry<M = SlotMap>(): SlotRegistry<M> {
         return {
           id: e.id,
           priority: e.priority,
+          when: e.when,
           filterKey: raw.filterKey,
           wrap: raw.wrap,
         }
@@ -323,7 +355,13 @@ export function createSlotRegistry<M = SlotMap>(): SlotRegistry<M> {
       disposed = true
       const toRun = cleanups.splice(0, cleanups.length).reverse()
       runBatched(() => {
-        for (const fn of toRun) fn()
+        for (const fn of toRun) {
+          try {
+            fn()
+          } catch (error) {
+            console.error('[ui-slots] disposer failed:', error)
+          }
+        }
       })
     }
 
@@ -331,18 +369,23 @@ export function createSlotRegistry<M = SlotMap>(): SlotRegistry<M> {
 
     return {
       registerSingle(slot, entry) {
+        if (disposed) return NOOP_DISPOSER
         return track(registry.registerSingle(slot as never, entry as never))
       },
       registerList(slot, entry) {
+        if (disposed) return NOOP_DISPOSER
         return track(registry.registerList(slot as never, entry as never))
       },
       registerKeyed(slot, key, entry) {
+        if (disposed) return NOOP_DISPOSER
         return track(registry.registerKeyed(slot as never, key as never, entry as never))
       },
       registerChain(slot, entry) {
+        if (disposed) return NOOP_DISPOSER
         return track(registry.registerChain(slot as never, entry as never))
       },
       registerHoc(slot, entry) {
+        if (disposed) return NOOP_DISPOSER
         return track(registry.registerHoc(slot as never, entry as never))
       },
       createScope() {

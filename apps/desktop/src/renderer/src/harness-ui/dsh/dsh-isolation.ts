@@ -6,24 +6,17 @@ import type {
   MenuItemDefinition,
   ThemeLayerDefinition,
 } from '@superone/client-kernel'
-import type { SlotDisposer, SlotScopeHandle } from '@superone/ui-slots'
+import type { SlotDisposer, SlotScopeHandle, SlotScopeMeta } from '@superone/ui-slots'
 
-const GLOBAL_SHELL_SLOTS = new Set([
-  'shell.sidebar.content',
-  'shell.titlebar.content',
-  'shell.activity.content',
-])
+const RESERVED_ACTIVITY_PANEL_KEYS = new Set(['review', 'trajectory'])
 
-const NOOP_DISPOSER: SlotDisposer = Object.assign(() => {}, {
+const NOOP_SLOT_DISPOSER: SlotDisposer = Object.assign(() => {}, {
   dispose: () => {},
   [Symbol.dispose]: () => {},
 })
 
-function isSlotAllowed(slot: string, isGlobalShellAllowed: () => boolean): boolean {
-  if (GLOBAL_SHELL_SLOTS.has(slot)) {
-    return isGlobalShellAllowed()
-  }
-  return true
+function wrapSlotWhen(originalWhen?: (scope: SlotScopeMeta) => boolean): (scope: SlotScopeMeta) => boolean {
+  return (scope) => scope.supportsUiPlugins !== false && (originalWhen ? originalWhen(scope) : true)
 }
 
 function wrapMenuItemForDsh(item: MenuItemDefinition): MenuItemDefinition {
@@ -35,39 +28,28 @@ function wrapMenuItemForDsh(item: MenuItemDefinition): MenuItemDefinition {
   }
 }
 
-export function createIsolatedDshSlotScope(
-  inner: SlotScopeHandle,
-  options: { isGlobalShellAllowed: () => boolean; pluginId?: string; onBlocked?: (slot: string) => void },
-): SlotScopeHandle {
-  const check = (slot: string): boolean => {
-    if (isSlotAllowed(slot, options.isGlobalShellAllowed)) return true
-    options.onBlocked?.(slot)
-    return false
-  }
-
+export function createIsolatedDshSlotScope(inner: SlotScopeHandle): SlotScopeHandle {
   return {
     registerSingle(slot, entry) {
-      if (!check(String(slot))) return NOOP_DISPOSER
-      return inner.registerSingle(slot, entry)
+      return inner.registerSingle(slot, { ...entry, when: wrapSlotWhen(entry.when) })
     },
     registerList(slot, entry) {
-      if (!check(String(slot))) return NOOP_DISPOSER
-      return inner.registerList(slot, entry)
+      return inner.registerList(slot, { ...entry, when: wrapSlotWhen(entry.when) })
     },
     registerKeyed(slot, key, entry) {
-      if (!check(String(slot))) return NOOP_DISPOSER
-      return inner.registerKeyed(slot, key, entry)
+      if (String(slot) === 'activity.panel' && RESERVED_ACTIVITY_PANEL_KEYS.has(String(key))) {
+        return NOOP_SLOT_DISPOSER
+      }
+      return inner.registerKeyed(slot, key, { ...entry, when: wrapSlotWhen(entry.when) })
     },
     registerChain(slot, entry) {
-      if (!check(String(slot))) return NOOP_DISPOSER
-      return inner.registerChain(slot, entry)
+      return inner.registerChain(slot, { ...entry, when: wrapSlotWhen(entry.when) })
     },
     registerHoc(slot, entry) {
-      if (!check(String(slot))) return NOOP_DISPOSER
-      return inner.registerHoc(slot, entry)
+      return inner.registerHoc(slot, { ...entry, when: wrapSlotWhen(entry.when) })
     },
     createScope() {
-      return createIsolatedDshSlotScope(inner.createScope(), options)
+      return createIsolatedDshSlotScope(inner.createScope())
     },
     onDispose(fn) {
       return inner.onDispose(fn)
@@ -83,9 +65,10 @@ export function createIsolatedDshSlotScope(
 
 export function createIsolatedDshKernelScope(
   inner: KernelScope,
-  options: { isGlobalShellAllowed: () => boolean; pluginId?: string; onBlocked?: (slot: string) => void },
+  options?: { isSessionActive?: () => boolean },
 ): KernelScope {
-  const isolatedSlots = createIsolatedDshSlotScope(inner.slots, options)
+  const isolatedSlots = createIsolatedDshSlotScope(inner.slots)
+  const isSessionActive = options?.isSessionActive ?? (() => true)
 
   return {
     get disposed() {
@@ -96,7 +79,11 @@ export function createIsolatedDshKernelScope(
       return inner.registerCommand(definition)
     },
     registerCommandMiddleware(commandId, middleware, priority) {
-      return inner.registerCommandMiddleware(commandId, middleware, priority)
+      return inner.registerCommandMiddleware(
+        commandId,
+        (ctx, next) => (isSessionActive() ? middleware(ctx, next) : next()),
+        priority,
+      )
     },
     registerKeybinding(definition: KeybindingDefinition): KernelDisposer {
       const originalWhen = definition.when

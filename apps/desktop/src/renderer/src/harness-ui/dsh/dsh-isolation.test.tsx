@@ -4,15 +4,13 @@ import { createClientKernel, type KeybindingContext, type MenuContext } from '@s
 import { createIsolatedDshKernelScope } from './dsh-isolation'
 
 describe('dsh L2 predicate and shell isolation', () => {
-  it('auto-predicates L2 keybindings and menus to supportsUiPlugins === true', () => {
+  it('auto-predicates L2 keybindings, menus, command middleware, and slots without toggle', async () => {
     const kernel = createClientKernel()
     const fired: string[] = []
-    const blocked: string[] = []
-    let globalShell = false
+    let sessionActive = false
 
     const scope = createIsolatedDshKernelScope(kernel.createScope(), {
-      isGlobalShellAllowed: () => globalShell,
-      onBlocked: (slot) => blocked.push(slot),
+      isSessionActive: () => sessionActive,
     })
 
     scope.registerCommand({
@@ -71,14 +69,20 @@ describe('dsh L2 predicate and shell isolation', () => {
 
     const SidebarReplacement = () => null
     scope.slots.registerSingle('shell.sidebar.content' as any, { component: SidebarReplacement } as any)
-    expect(kernel.slots.getSingle('shell.sidebar.content' as any)).toBeNull()
-    expect(blocked).toEqual(['shell.sidebar.content'])
+    expect(kernel.slots.getSingle('shell.sidebar.content' as any, { supportsUiPlugins: false })).toBeNull()
+    expect(kernel.slots.getSingle('shell.sidebar.content' as any, { supportsUiPlugins: true })).toBe(SidebarReplacement)
 
-    globalShell = true
-    scope.slots.registerSingle('shell.sidebar.content' as any, { component: SidebarReplacement } as any)
-    expect(kernel.slots.getSingle('shell.sidebar.content' as any)).toBe(SidebarReplacement)
+    const HijackReview = () => null
+    scope.slots.registerKeyed('activity.panel' as any, 'review' as any, { component: HijackReview } as any)
+    expect(kernel.slots.getKeyed('activity.panel' as any, 'review' as any, { supportsUiPlugins: true })).toBeNull()
+
+    kernel.commands.registerCommand({ id: 'host.cmd', handler: () => 'host-ok' })
+    scope.registerCommandMiddleware('host.cmd', async (_ctx, next) => `blocked:${String(await next())}`)
+    await expect(kernel.commands.executeCommand('host.cmd')).resolves.toBe('host-ok')
+    sessionActive = true
+    await expect(kernel.commands.executeCommand('host.cmd')).resolves.toBe('blocked:host-ok')
 
     scope.dispose()
-    expect(kernel.slots.getSingle('shell.sidebar.content' as any)).toBeNull()
+    expect(kernel.slots.getSingle('shell.sidebar.content' as any, { supportsUiPlugins: true })).toBeNull()
   })
 })

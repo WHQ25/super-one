@@ -26,10 +26,10 @@ Long-term docs affected: `docs/harness/dsh/deepseek-harness-integration.md`, `ap
 ### Step 2 — Extensible Content Boundaries & `dsh` Predicate Isolation
 1. Register built-in default content boundaries through `ClientKernel` while keeping `[data-activity-outer]`, `[data-main-area]`, `[data-sidebar-outer]`, resize clamp, FLIP anchors, and the 5 `<webview>` `*HostLayer`s as immutable Kernel Chrome:
    - **Session boundaries** (inside `<SlotScopeProvider active={supportsUiPlugins}>`): `workspace.view`, `chat.transcript`, `chat.composer`, `chat.statusBar` (`left`/`right`), `chat.emptyState`, `chat.message.row` (`hoc`), `chat.message.assistant.actions`, `chat.markdown.fence`, `chat.composer.dock.top`, `chat.composer.toolbar.left`/`right`, `activity.launcher`.
-   - **App content boundaries**: `shell.titlebar.content`, `shell.sidebar.content`, `shell.activity.content`, `shell.settings.pages`, `shell.overlay.items`.
-2. Enforce `dsh` L2 isolation policies in `DshClientPluginManager` / kernel facade:
+   - **App content boundaries**: `shell.titlebar.content`, `shell.sidebar.content`, `shell.activity.content`, `shell.settings.pages`, `shell.overlay.items`, plus incremental `DefaultAppSidebar` slots (`sidebar.tabs`, `sidebar.drawer`, `sidebar.footer.actions`, `sidebar.session.row.trailing`).
+2. Enforce `dsh` L2 isolation policies in `DshClientPluginManager` / kernel facade and UI boundaries:
    - Auto-predicate `dsh` L2 `keybindings` (`AND pane.supportsUiPlugins`), `menus` (`ctx.supportsUiPlugins === true`), and `theme` (pane-scoped).
-   - Allow L2 `shell.settings.pages`, `activity.panel`, `session.*`, `chat.*` by default; gate L2 `shell.sidebar.content` / `shell.titlebar.content` replacement behind explicit `experimental.dshGlobalShell` (default `false`).
+   - Wrap `shell.*` (`WindowsTitleBar`, `AppSidebar`, `ActivityPanel`, `shell.overlay.items`) in `<SlotScopeProvider active={activeSessionSupportsUiPlugins}>` and `sidebar.session.row.trailing` per row by each session's `supportsUiPlugins`, enabling both incremental and full sidebar/shell customization without any experimental setting.
 
 ### Step 3 — Minimal Symmetric Main Kernel + De-Privilege `Trajectory` & `Review`
 1. Create `packages/runtime/src/plugin-kernel/` (`DisposableScope`, `ServiceRegistry` with fail-fast `require()`, `HookBus` supporting `waterfall`/`pipeline`/`broadcast` + `AbortSignal`), strictly Electron-free.

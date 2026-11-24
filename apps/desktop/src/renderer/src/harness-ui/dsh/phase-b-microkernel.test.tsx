@@ -1,6 +1,6 @@
 /** @vitest-environment jsdom */
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { execFileSync } from 'node:child_process'
 import { cp, mkdtemp, realpath, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
@@ -8,7 +8,8 @@ import { join, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import { createClientKernel } from '@superone/client-kernel'
 import { ClientKernelProvider, useMenuItems } from '@superone/client-kernel/react'
-import { SlotChain, SlotHoc, SlotList, SlotScopeProvider } from '@superone/ui-slots/react'
+import { SlotChain, SlotHoc, SlotList, SlotScopeProvider, SlotSingle } from '@superone/ui-slots/react'
+import { PluginDockPanel } from '@/components/activity/PluginDockPanel'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import {
   DeepseekPlugins,
@@ -115,6 +116,7 @@ describe('Phase B microkernel end-to-end sample plugin & Mosaic isolation', () =
     const manager = new DshClientPluginManager({
       api,
       kernel,
+      isSessionActive: () => true,
       ensureShared: ensureSuperoneShared,
       importModule: async (url) => {
         const res = await protocolHandler(new Request(url, { headers: { origin: 'superone-renderer://app' } }))
@@ -172,8 +174,90 @@ describe('Phase B microkernel end-to-end sample plugin & Mosaic isolation', () =
               </SlotHoc>
             </SlotScopeProvider>
           </div>
+          <div data-testid="dsh-sidebar">
+            <SlotScopeProvider active={HARNESS_CAPABILITIES.dsh.supportsUiPlugins} scope={{ supportsUiPlugins: HARNESS_CAPABILITIES.dsh.supportsUiPlugins }}>
+              <SlotSingle
+                name="shell.sidebar.content"
+                props={{}}
+                fallback={() => (
+                  <div data-testid="dsh-stock-sidebar">
+                    <SlotList name="sidebar.tabs" props={{ area: 'tab', activeTab: 'sessions', onSelectTab: () => {} }} />
+                    <SlotList name="sidebar.drawer" props={{ open: true }} />
+                    <SlotList name="sidebar.footer.actions" props={{}} />
+                  </div>
+                )}
+              />
+            </SlotScopeProvider>
+          </div>
+          <div data-testid="claude-sidebar">
+            <SlotScopeProvider active={HARNESS_CAPABILITIES.claude.supportsUiPlugins} scope={{ supportsUiPlugins: HARNESS_CAPABILITIES.claude.supportsUiPlugins }}>
+              <SlotSingle
+                name="shell.sidebar.content"
+                props={{}}
+                fallback={() => (
+                  <div data-testid="claude-stock-sidebar">
+                    <SlotList name="sidebar.drawer" props={{ open: true }} />
+                    <div data-testid="dsh-row-in-claude">
+                      <SlotScopeProvider active={HARNESS_CAPABILITIES.dsh.supportsUiPlugins} scope={{ supportsUiPlugins: HARNESS_CAPABILITIES.dsh.supportsUiPlugins }}>
+                        <SlotList
+                          name="sidebar.session.row.trailing"
+                          props={{ sessionId: 's-dsh', folderPath: '/repo', provider: 'dsh', isActive: false }}
+                        />
+                      </SlotScopeProvider>
+                    </div>
+                    <div data-testid="claude-row-in-claude">
+                      <SlotScopeProvider active={HARNESS_CAPABILITIES.claude.supportsUiPlugins} scope={{ supportsUiPlugins: HARNESS_CAPABILITIES.claude.supportsUiPlugins }}>
+                        <SlotList
+                          name="sidebar.session.row.trailing"
+                          props={{ sessionId: 's-claude', folderPath: '/repo', provider: 'claude', isActive: true }}
+                        />
+                      </SlotScopeProvider>
+                    </div>
+                  </div>
+                )}
+              />
+            </SlotScopeProvider>
+          </div>
+          <div data-testid="claude-activity-builtin">
+            <SlotScopeProvider active scope={{ supportsUiPlugins: HARNESS_CAPABILITIES.claude.supportsUiPlugins }}>
+              <PluginDockPanel
+                params={{ panelKey: 'review' }}
+                api={{ title: 'Review' } as any}
+                containerApi={{} as any}
+              />
+            </SlotScopeProvider>
+          </div>
         </ClientKernelProvider>,
       )
+
+      act(() => {
+        kernel.slots.registerKeyed('activity.panel', 'review', {
+          id: 'builtin-review',
+          component: () => <div data-testid="builtin-review-ok">builtin-review</div>,
+        })
+      })
+      expect(screen.getByTestId('claude-activity-builtin').querySelector('[data-testid="builtin-review-ok"]')).not.toBeNull()
+
+      const dshSidebar = screen.getByTestId('dsh-sidebar')
+      const claudeSidebar = screen.getByTestId('claude-sidebar')
+      expect(dshSidebar.querySelector('[data-testid="sample-dsh-sidebar-tab-trigger"]')).not.toBeNull()
+      expect(dshSidebar.querySelector('[data-testid="sample-dsh-sidebar-drawer"]')).not.toBeNull()
+      expect(dshSidebar.querySelector('[data-testid="sample-dsh-sidebar-footer-action"]')).not.toBeNull()
+      expect(claudeSidebar.querySelector('[data-testid="sample-dsh-sidebar-drawer"]')).toBeNull()
+      expect(screen.getByTestId('dsh-row-in-claude').querySelector('[data-testid="sample-dsh-row-trailing"]')).not.toBeNull()
+      expect(screen.getByTestId('claude-row-in-claude').querySelector('[data-testid="sample-dsh-row-trailing"]')).toBeNull()
+
+      fireEvent.click(dshSidebar.querySelector('[data-testid="sample-dsh-sidebar-footer-action"]')!)
+      await waitFor(() => {
+        expect(dshSidebar.querySelector('[data-testid="sample-dsh-full-sidebar"]')).not.toBeNull()
+      })
+      expect(claudeSidebar.querySelector('[data-testid="claude-stock-sidebar"]')).not.toBeNull()
+      expect(claudeSidebar.querySelector('[data-testid="sample-dsh-full-sidebar"]')).toBeNull()
+
+      fireEvent.click(dshSidebar.querySelector('[data-testid="sample-dsh-full-sidebar"] button')!)
+      await waitFor(() => {
+        expect(dshSidebar.querySelector('[data-testid="dsh-stock-sidebar"]')).not.toBeNull()
+      })
 
       const dshPane = screen.getByTestId('dsh-pane')
       const claudePane = screen.getByTestId('claude-pane')

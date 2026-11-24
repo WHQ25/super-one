@@ -64,6 +64,18 @@ describe('superone-plugin:// protocol handler', () => {
     )
     expect(cssRes.status).toBe(200)
     expect(cssRes.headers.get('content-type')).toBe('text/css; charset=utf-8')
+
+    await seedPlugin('@acme/dsh-ui', '@acme/dsh-ui', {
+      'dist/client.css': '.x { background: url(./icon.svg); }\n',
+      'dist/icon.svg': '<svg xmlns="http://www.w3.org/2000/svg"></svg>',
+    })
+    const cssAssetRes = await handler(
+      new Request('superone-plugin://pkg/%40acme%2Fdsh-ui/dist/icon.svg', {
+        headers: { referer: 'superone-plugin://pkg/%40acme%2Fdsh-ui/dist/client.css' },
+      }),
+    )
+    expect(cssAssetRes.status).toBe(200)
+    expect(cssAssetRes.headers.get('content-type')).toBe('image/svg+xml')
   })
 
   it('allows dev ELECTRON_RENDERER_URL origin and rejects miniapp/mcp-app/opaque origins', async () => {

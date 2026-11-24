@@ -16,6 +16,9 @@ import { formatSendWhen } from '@/components/chat/scheduled-send-time'
 import { remoteControllerBadgeText } from '@/components/chat/RemoteControllerBanner'
 import { useStallLevel, getStallColor, useEllipsisRepaintKey, type StallLevel } from '@/lib/stall-utils'
 import type { AgentStatus, SessionHistoryEntry } from '@superone/shared/agent-types'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
+import { SlotList, SlotScopeProvider } from '@superone/ui-slots/react'
+import { PluginSlotErrorBoundary } from '@/lib/ui-slots'
 import { AdaptiveContextMenu } from '@/components/AdaptiveContextMenu'
 import { getPendingReason } from './session-state-utils'
 import { useSessionDragOut } from './useSessionDragOut'
@@ -189,6 +192,7 @@ function SessionRowTrailing({
   hasChildren,
   childrenCollapsed,
   remoteLabel,
+  trailingSlot,
   onToggleChildren,
   onPin,
   onUnsettle,
@@ -199,6 +203,7 @@ function SessionRowTrailing({
   hasChildren: boolean
   childrenCollapsed: boolean
   remoteLabel?: string
+  trailingSlot?: ReactNode
   onToggleChildren?: () => void
   onPin: () => void
   onUnsettle: () => void
@@ -220,6 +225,7 @@ function SessionRowTrailing({
           {remoteLabel && <span className="truncate">{remoteLabel}</span>}
         </span>
       )}
+      {trailingSlot}
       {hasChildren && onToggleChildren && (
         <button
           onClick={(e) => {
@@ -552,6 +558,28 @@ function SessionRowFrame({
               hasChildren={hasChildren}
               childrenCollapsed={childrenCollapsed}
               remoteLabel={session.remoteController ? (session.remoteController.label ?? '') : undefined}
+              trailingSlot={
+                <SlotScopeProvider
+                  active={HARNESS_CAPABILITIES[session.provider ?? 'claude']?.supportsUiPlugins === true}
+                  scope={{
+                    sessionId: session.sessionId,
+                    projectPath: folderPath,
+                    supportsUiPlugins: HARNESS_CAPABILITIES[session.provider ?? 'claude']?.supportsUiPlugins === true,
+                  }}
+                >
+                  <PluginSlotErrorBoundary fallback={null}>
+                    <SlotList
+                      name="sidebar.session.row.trailing"
+                      props={{
+                        sessionId: session.sessionId,
+                        folderPath,
+                        provider: session.provider ?? 'claude',
+                        isActive: view.isSessionActive,
+                      }}
+                    />
+                  </PluginSlotErrorBoundary>
+                </SlotScopeProvider>
+              }
               onToggleChildren={onToggleChildren}
               onPin={() => onPinSession(session.sessionId, !session.isPinned, folderPath)}
               onUnsettle={() => onSettleSession(session.sessionId, false, folderPath)}

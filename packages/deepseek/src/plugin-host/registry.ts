@@ -92,13 +92,22 @@ export function registryPath(root: string): string {
  * @param value - the parsed `plugins` member, of unknown shape.
  * @returns the rows that are usable.
  */
+function isValidPackageName(name: string): boolean {
+  if (!name || name.includes('\\') || name.includes('\0')) return false
+  if (name.startsWith('/') || name.endsWith('/')) return false
+  const parts = name.split('/')
+  if (parts.length > 2) return false
+  if (parts.length === 2 && !parts[0]!.startsWith('@')) return false
+  return parts.every((part) => part.length > 0 && part !== '.' && part !== '..')
+}
+
 function coercePlugins(value: unknown): DshPluginRow[] {
   if (!Array.isArray(value)) return []
   const rows: DshPluginRow[] = []
   for (const row of value) {
     if (!row || typeof row !== 'object') continue
     const { id, name, version, config, disabled } = row as Record<string, unknown>
-    if (typeof name !== 'string' || name.length === 0) continue
+    if (typeof name !== 'string' || !isValidPackageName(name)) continue
     if (typeof version !== 'string') continue
     rows.push({
       id: typeof id === 'string' && id.length > 0 ? id : name,
@@ -246,7 +255,10 @@ export function normalizePluginRelativePath(raw: unknown): string | null {
 }
 
 export function packageDirForName(root: string, name: string): string {
-  const parts = name.split('/').filter(Boolean)
+  if (!isValidPackageName(name)) {
+    return join(root, 'node_modules', '__invalid_package_name__')
+  }
+  const parts = name.split('/')
   return join(root, 'node_modules', ...parts)
 }
 

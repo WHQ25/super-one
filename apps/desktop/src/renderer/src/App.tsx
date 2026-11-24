@@ -63,7 +63,7 @@ import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { SlotList, SlotScopeProvider } from '@superone/ui-slots/react'
 import { ClientKernelProvider } from '@superone/client-kernel/react'
-import '@/lib/ui-slots'
+import { PluginSlotErrorBoundary } from '@/lib/ui-slots'
 import { bindDesktopLayoutAdapter, createKeybindingContextFromEvent, getAppClientKernel } from '@/lib/client-kernel'
 import { useSettingsStore } from '@/stores/settings'
 import { useShallow } from 'zustand/react/shallow'
@@ -612,7 +612,9 @@ function AppContent(): React.JSX.Element {
     return (
       <>
         <div className="flex h-screen flex-col bg-background text-foreground" style={enterAnimation}>
-          <WindowsTitleBar />
+          <SlotScopeProvider active={false}>
+            <WindowsTitleBar />
+          </SlotScopeProvider>
           {isMac && (
             <div className="flex h-11 shrink-0 items-center justify-between px-3" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
               <div className="w-20" />
@@ -653,7 +655,11 @@ function AppContent(): React.JSX.Element {
       )}
       style={modChromeTint ? { ...enterAnimation, '--mod-backdrop-tint': modChromeTint } as React.CSSProperties : enterAnimation}
     >
-      {!compactMiniShell && <WindowsTitleBar showLayoutControls />}
+      {!compactMiniShell && (
+        <SlotScopeProvider active={activeSessionSupportsUiPlugins} scope={{ supportsUiPlugins: activeSessionSupportsUiPlugins }}>
+          <WindowsTitleBar showLayoutControls />
+        </SlotScopeProvider>
+      )}
       <div className="group/coding flex min-h-0 flex-1 overflow-hidden">
       <GitAutoRefresh />
       <>
@@ -665,7 +671,9 @@ function AppContent(): React.JSX.Element {
         outerRef={sidebarRef}
         innerRef={sidebarInnerRef}
       >
-        <AppSidebar />
+        <SlotScopeProvider active={activeSessionSupportsUiPlugins} scope={{ supportsUiPlugins: activeSessionSupportsUiPlugins }}>
+          <AppSidebar />
+        </SlotScopeProvider>
       </SidebarFrame>
         {showSidebar && !panelsFolded && (
           <div
@@ -700,11 +708,13 @@ function AppContent(): React.JSX.Element {
                 : 'shadow-[0_2px_12px_rgba(0,0,0,0.06)] group-has-[[data-resize-handle]:hover]/coding:shadow-[0_10px_30px_rgba(0,0,0,0.16)]'),
             ),
       )}>
-        <ActivityPanel
-          getMaxWidth={getActivityMaxWidth}
-          floatChatOnResizeOverflow={!inMiniWindow}
-          transitionMs={inMiniWindow ? FOLD_PANEL_MS : undefined}
-        />
+        <SlotScopeProvider active scope={{ supportsUiPlugins: activeSessionSupportsUiPlugins }}>
+          <ActivityPanel
+            getMaxWidth={getActivityMaxWidth}
+            floatChatOnResizeOverflow={!inMiniWindow}
+            transitionMs={inMiniWindow ? FOLD_PANEL_MS : undefined}
+          />
+        </SlotScopeProvider>
 
         <SideChatConfirmDialog />
         <IdentityMigrationDialog />
@@ -731,8 +741,10 @@ function AppContent(): React.JSX.Element {
 
           {/* Mini-app controls */}
           <div className="mr-3 flex items-center gap-1.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-            <SlotScopeProvider active={activeSessionSupportsUiPlugins} scope={{ projectPath: currentFolder ?? undefined, sessionId: sessionId || undefined }}>
-              <SlotList name="session.header.actions" props={{ sessionId, projectPath: currentFolder ?? null }} />
+            <SlotScopeProvider active={activeSessionSupportsUiPlugins} scope={{ projectPath: currentFolder ?? undefined, sessionId: sessionId || undefined, supportsUiPlugins: activeSessionSupportsUiPlugins }}>
+              <PluginSlotErrorBoundary fallback={null}>
+                <SlotList name="session.header.actions" props={{ sessionId, projectPath: currentFolder ?? null }} />
+              </PluginSlotErrorBoundary>
             </SlotScopeProvider>
             <MiniAppMediaIndicator />
             <CodexConversationViewToggle sessionId={sessionId} enabled={isCodexSession || hasVoiceTimeline} />
@@ -815,7 +827,11 @@ function AppContent(): React.JSX.Element {
       <ExternalLinkConfirm />
       <MiniAppClipboardGuard />
       {import.meta.env.DEV && <DebugPanel />}
-      <SlotList name="shell.overlay.items" props={{ view }} />
+      <SlotScopeProvider active={activeSessionSupportsUiPlugins} scope={{ supportsUiPlugins: activeSessionSupportsUiPlugins }}>
+        <PluginSlotErrorBoundary fallback={null}>
+          <SlotList name="shell.overlay.items" props={{ view }} />
+        </PluginSlotErrorBoundary>
+      </SlotScopeProvider>
       </div>
     </div>
     <McpAppHostLayer />

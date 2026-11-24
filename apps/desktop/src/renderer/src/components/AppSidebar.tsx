@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useCallback, useRef, memo } from 'react'
-import { SlotSingle } from '@superone/ui-slots/react'
+import { SlotList, SlotSingle, useSlotList, useSlotVersion } from '@superone/ui-slots/react'
 import { PluginSlotErrorBoundary } from '@/lib/ui-slots'
 import { Plus, Settings, FolderClosed, ArrowDownUp, SquarePen, MessageSquare, Copy, Check, Smartphone, Wifi, Cloud, Monitor, RotateCw } from 'lucide-react'
 import { toast } from 'sonner'
@@ -107,13 +107,34 @@ const DefaultAppSidebar = memo(function DefaultAppSidebar() {
     (s) => (s.byConnection[selectedHostConnectionId]?.length ?? 0) > 0,
   )
   const experimentalRemoteNodesEnabled = useAppStore((s) => s.experimentalRemoteNodesEnabled)
-  const isFullscreen = useFullscreen()
   const isMac = window.app.platform === 'darwin'
   const localHostLabel = isMac ? t('sidebar.thisMac') : t('sidebar.thisPc')
   const switchSession = useChatStore((s) => s.switchSession)
 
   const [filesMounted, setExplorerMounted] = useState(sidebarTab === 'files')
   if (sidebarTab === 'files' && !filesMounted) setExplorerMounted(true)
+
+  const registeredSidebarTabs = useSlotList('sidebar.tabs')
+  const [customSidebarTab, setCustomSidebarTab] = useState<string | null>(null)
+  useEffect(() => {
+    if (registeredSidebarTabs.length === 0 && customSidebarTab !== null) {
+      setCustomSidebarTab(null)
+    }
+  }, [registeredSidebarTabs.length, customSidebarTab])
+  const activeSidebarTab =
+    customSidebarTab && registeredSidebarTabs.length > 0 ? customSidebarTab : sidebarTab
+  const isCustomSidebarTab = activeSidebarTab !== 'sessions' && activeSidebarTab !== 'files'
+  const handleSelectSidebarTab = useCallback(
+    (tabId: string) => {
+      if (tabId === 'sessions' || tabId === 'files') {
+        setCustomSidebarTab(null)
+        setSidebarTab(tabId)
+        return
+      }
+      setCustomSidebarTab(tabId)
+    },
+    [setSidebarTab],
+  )
 
   const fetchApps = useMiniAppStore((s) => s.fetchApps)
   useEffect(() => { fetchApps(currentFolder ?? undefined) }, [fetchApps, currentFolder])
@@ -132,13 +153,13 @@ const DefaultAppSidebar = memo(function DefaultAppSidebar() {
       if (digit < 0) return
       if (mod && digit >= 1 && digit <= sidebarTabs.length) {
         e.preventDefault()
-        setSidebarTab(sidebarTabs[digit - 1])
+        handleSelectSidebarTab(sidebarTabs[digit - 1])
         return
       }
     }
     window.addEventListener('keydown', handler)
     return () => window.removeEventListener('keydown', handler)
-  }, [isMac, setSidebarTab])
+  }, [isMac, handleSelectSidebarTab])
 
   const [sortMode, setSortMode] = useState<SidebarSort>(() => useMultiHostSidebarStore.getState().settings.sort)
   const [frozenRecentOrder, setFrozenRecentOrder] = useState<string[] | null>(null)
@@ -764,17 +785,7 @@ const DefaultAppSidebar = memo(function DefaultAppSidebar() {
   ) : null
 
   return (
-    <div className="flex h-full w-full shrink-0 select-none flex-col bg-sidebar text-sidebar-foreground">
-      {isMac && (
-        <div
-          className={cn('flex h-11 shrink-0 items-center pt-[2px]', isFullscreen ? 'pl-2' : 'pl-[18px]')}
-          style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
-        >
-          {!isFullscreen && <div className="w-[66px] shrink-0" />}
-          <LayoutToggle />
-        </div>
-      )}
-
+    <>
       {/* New session button */}
       <div className={cn('mx-2 mb-1 shrink-0', !isMac && 'pt-2')}>
         <Button
@@ -787,7 +798,7 @@ const DefaultAppSidebar = memo(function DefaultAppSidebar() {
           {t('sidebar.newSession')}
         </Button>
       </div>
-      <Tabs value={sidebarTab} onValueChange={(v) => setSidebarTab(v as SidebarTab)} className="mx-1.5 mb-1 shrink-0">
+      <Tabs value={activeSidebarTab} onValueChange={handleSelectSidebarTab} className="mx-1.5 mb-1 shrink-0">
         <TabsList className="sidebar-session-tabs">
           <TabsTrigger value="sessions" className="py-2">
             <MessageSquare className="size-3.5" />
@@ -797,20 +808,40 @@ const DefaultAppSidebar = memo(function DefaultAppSidebar() {
             <FolderClosed className="size-3.5" />
             {t('sidebar.tabs.files')}
           </TabsTrigger>
+          <PluginSlotErrorBoundary fallback={null}>
+            <SlotList
+              name="sidebar.tabs"
+              props={{ area: 'tab', activeTab: activeSidebarTab, onSelectTab: handleSelectSidebarTab }}
+            />
+          </PluginSlotErrorBoundary>
         </TabsList>
       </Tabs>
 
       <AppDrawer />
+      <PluginSlotErrorBoundary fallback={null}>
+        <SlotList name="sidebar.drawer" props={{ open: true }} />
+      </PluginSlotErrorBoundary>
 
-      {!showSessionFocus && pinnedAndDrafts}
+      {!showSessionFocus && !isCustomSidebarTab && pinnedAndDrafts}
 
       {filesMounted && (
-        <div className={cn('min-h-0 flex-1', sidebarTab !== 'files' && 'hidden')}>
+        <div className={cn('min-h-0 flex-1', activeSidebarTab !== 'files' && 'hidden')}>
           <FileTree />
         </div>
       )}
 
-      {showSessionFocus ? (
+      {isCustomSidebarTab && (
+        <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+          <PluginSlotErrorBoundary fallback={null}>
+            <SlotList
+              name="sidebar.tabs"
+              props={{ area: 'content', activeTab: activeSidebarTab, onSelectTab: handleSelectSidebarTab }}
+            />
+          </PluginSlotErrorBoundary>
+        </div>
+      )}
+
+      {isCustomSidebarTab ? null : showSessionFocus ? (
         <SidebarFocusView
           belowBar={focusContext ? pinnedAndDrafts : null}
           environments={environments}
@@ -853,7 +884,7 @@ const DefaultAppSidebar = memo(function DefaultAppSidebar() {
           onLoadFolderSessions={(folderPath) => { void loadFolderSessions(folderPath, 'expand') }}
         />
       ) : (
-      <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col', sidebarTab !== 'sessions' && 'hidden')}>
+      <div className={cn('flex min-h-0 min-w-0 flex-1 flex-col', activeSidebarTab !== 'sessions' && 'hidden')}>
       {!multiHostChrome && (
       <div className="flex items-center justify-between px-1.5 pt-1.5 pb-0.5">
         <span className="truncate px-1.5 py-0.5 text-sm font-medium text-sidebar-foreground/70">
@@ -1052,6 +1083,9 @@ const DefaultAppSidebar = memo(function DefaultAppSidebar() {
         <RemoteStatusIcon />
         <UsageStatusIcon />
         <UpdateStatusIcon />
+        <PluginSlotErrorBoundary fallback={null}>
+          <SlotList name="sidebar.footer.actions" props={{}} />
+        </PluginSlotErrorBoundary>
       </div>
 
       <AddProjectDialog
@@ -1185,7 +1219,7 @@ const DefaultAppSidebar = memo(function DefaultAppSidebar() {
           void useChatStore.getState().refreshProjectExtraDirs(saved.path)
         }}
       />
-    </div>
+    </>
   )
 })
 
@@ -1270,9 +1304,24 @@ function RemoteStatusIcon() {
 }
 
 export const AppSidebar = memo(function AppSidebar() {
+  const isFullscreen = useFullscreen()
+  const sidebarSlotVersion = useSlotVersion('shell.sidebar.content')
   return (
-    <PluginSlotErrorBoundary fallback={() => <DefaultAppSidebar />}>
-      <SlotSingle name="shell.sidebar.content" props={{}} fallback={DefaultAppSidebar} />
-    </PluginSlotErrorBoundary>
+    <div className="flex h-full w-full shrink-0 select-none flex-col bg-sidebar text-sidebar-foreground">
+      {isMac && (
+        <div
+          className={cn('flex h-11 shrink-0 items-center pt-[2px]', isFullscreen ? 'pl-2' : 'pl-[18px]')}
+          style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
+        >
+          {!isFullscreen && <div className="w-[66px] shrink-0" />}
+          <LayoutToggle />
+        </div>
+      )}
+      <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+        <PluginSlotErrorBoundary resetKey={String(sidebarSlotVersion)} fallback={() => <DefaultAppSidebar />}>
+          <SlotSingle name="shell.sidebar.content" props={{}} fallback={DefaultAppSidebar} />
+        </PluginSlotErrorBoundary>
+      </div>
+    </div>
   )
 })

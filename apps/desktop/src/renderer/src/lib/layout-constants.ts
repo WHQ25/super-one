@@ -13,6 +13,7 @@ export const LAYOUT = {
    */
   MIN_AP: 400,
   CARD_GUTTER: 12,
+  CARD_INSET: 5,
 } as const
 
 export const CARD_HEADER_CHROME = {

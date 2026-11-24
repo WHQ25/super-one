@@ -3,7 +3,7 @@
 import { act, render } from '@testing-library/react'
 import { useRef } from 'react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { useSlotBounds } from './useSlotBounds'
+import { registerBeforeSlotMeasure, scheduleAllSlotBounds, useSlotBounds } from './useSlotBounds'
 
 let bounds = { left: 10, top: 20, width: 300, height: 200 }
 let nextFrameId = 1
@@ -207,5 +207,32 @@ describe('useSlotBounds', () => {
     )
     act(flushFrames)
     expect(frames.size).toBe(0)
+  })
+
+  it('runs pre-measure hooks before reading slot bounds and supports immediate scheduling', () => {
+    const onBounds = vi.fn()
+    render(
+      <Fixture
+        trackingKey="slot-1"
+        onBounds={onBounds}
+        onUnregister={vi.fn()}
+      />,
+    )
+    act(flushFrames)
+    expect(onBounds).toHaveBeenCalledTimes(1)
+    expect(frames.size).toBe(0)
+
+    const unregister = registerBeforeSlotMeasure(() => {
+      bounds = { ...bounds, left: 120, width: 640 }
+    })
+    try {
+      act(() => scheduleAllSlotBounds())
+      expect(frames.size).toBe(1)
+      act(flushFrames)
+      expect(onBounds).toHaveBeenCalledTimes(2)
+      expect(onBounds.mock.calls[1][0]).toMatchObject({ left: 120, width: 640 })
+    } finally {
+      unregister()
+    }
   })
 })

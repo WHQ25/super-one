@@ -38,6 +38,7 @@ interface ActivityPanelState {
    * its tab — must yield then: the opener has already chosen what to show.
    */
   revealedForTab: boolean
+  lockedChatWidth: number | null
 
   setShowPanel: (show: boolean, opts?: { forTab?: boolean }) => void
   setSide: (side: ActivityPanelSide) => void
@@ -50,6 +51,7 @@ interface ActivityPanelState {
   setChatFloating: (floating: boolean) => void
   setFloatDropPreview: (preview: { active: boolean } | null) => void
   setBounds: (bounds: ActivityPanelBounds | null) => void
+  setLockedChatWidth: (width: number | null) => void
 }
 
 export const useActivityPanelStore = create<ActivityPanelState>()(
@@ -66,15 +68,16 @@ export const useActivityPanelStore = create<ActivityPanelState>()(
       floatDropPreview: null,
       bounds: null,
       revealedForTab: false,
+      lockedChatWidth: null,
 
       setShowPanel: (show, opts) => set((state) => ({
         showPanel: show,
         revealedForTab: show && opts?.forTab === true,
         maximized: show ? state.maximized : false,
         maximizedGroupId: show ? state.maximizedGroupId : null,
-        // Hiding the panel leaves nothing to float over; the chat docks again.
         chatFloating: show ? state.chatFloating : false,
         floatDropPreview: show ? state.floatDropPreview : null,
+        lockedChatWidth: show ? state.lockedChatWidth : null,
       })),
       setSide: (side) => set({ side }),
       setPanelWidth: (w) => set({ panelWidth: w }),
@@ -89,10 +92,12 @@ export const useActivityPanelStore = create<ActivityPanelState>()(
       setMaximizedGroup: (groupId) => set((state) => ({
         maximized: groupId !== null && state.showPanel,
         maximizedGroupId: state.showPanel ? groupId : null,
+        lockedChatWidth: groupId !== null && state.showPanel ? null : state.lockedChatWidth,
       })),
       setChatFloating: (floating) => set((state) => ({
         chatFloating: floating && state.showPanel,
         floatDropPreview: null,
+        lockedChatWidth: floating && state.showPanel ? null : state.lockedChatWidth,
       })),
       setFloatDropPreview: (preview) => set((state) => {
         const prev = state.floatDropPreview
@@ -100,8 +105,6 @@ export const useActivityPanelStore = create<ActivityPanelState>()(
         if (prev && preview && prev.active === preview.active) return state
         return { floatDropPreview: preview }
       }),
-      // Measured every frame the layout moves, so it is compared before it is
-      // stored — consumers re-render on identity and the rect is usually equal.
       setBounds: (bounds) => set((state) => {
         const prev = state.bounds
         if (prev === bounds) return state
@@ -109,6 +112,9 @@ export const useActivityPanelStore = create<ActivityPanelState>()(
           && prev.width === bounds.width && prev.height === bounds.height) return state
         return { bounds }
       }),
+      setLockedChatWidth: (width) => set((state) => (
+        state.lockedChatWidth === width ? state : { lockedChatWidth: width }
+      )),
     }),
     {
       name: 'activity-panel',

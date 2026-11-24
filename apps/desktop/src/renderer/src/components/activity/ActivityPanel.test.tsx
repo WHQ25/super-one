@@ -102,6 +102,29 @@ describe('activity panel resize', () => {
       useChatStore.setState({ isOpen: wasOpen })
     }
   })
+
+  it('flex-fills without width transition while chat width is locked during sidebar toggle', () => {
+    useActivityPanelStore.setState({ side: 'left', panelWidth: 500, lockedChatWidth: 420 })
+    const { container } = render(<ActivityPanel getMaxWidth={() => 900} />)
+    const outer = container.querySelector<HTMLElement>('[data-activity-outer]')!
+    const inner = container.querySelector<HTMLElement>('[data-activity-inner]')!
+
+    expect(outer).toHaveClass('flex-1')
+    expect(outer).not.toHaveClass('transition-[width]')
+    expect(outer.style.width).toBe('')
+    expect(outer.style.minWidth).toBe('400px')
+    expect(inner.style.width).toBe('100%')
+    expect(container.querySelector('[data-activity-resize-handle]')).toBeNull()
+
+    act(() => {
+      useActivityPanelStore.setState({ lockedChatWidth: null })
+    })
+
+    expect(outer).toHaveClass('shrink-0', 'transition-[width]')
+    expect(outer.style.width).toBe('500px')
+    expect(inner.style.width).toBe('500px')
+    expect(container.querySelector('[data-activity-resize-handle]')).not.toBeNull()
+  })
 })
 
 async function renderSplit(direction: 'right' | 'below' = 'right') {

@@ -24,6 +24,7 @@
  */
 
 import { create } from 'zustand'
+import { roundedBounds } from '@/hooks/useSlotBounds'
 import type { DeviceProvider, DevicePlatform } from '@superone/shared/device'
 import { withoutKey } from '@/lib/record'
 
@@ -136,8 +137,7 @@ export const useDevicePipStore = create<DevicePipState>()((set) => ({
     set((state) => {
       const target = slotsFor(state, mode)
       const prev = target[instanceId]
-      const left = Math.round(rect.left), top = Math.round(rect.top)
-      const width = Math.round(rect.width), height = Math.round(rect.height)
+      const { left, top, width, height } = roundedBounds(rect)
       // A rect is re-read on every animation frame while anything is moving, and an
       // unchanged one must not re-render the host — it would fight a drag.
       if (prev && prev.mode === mode && prev.left === left && prev.top === top

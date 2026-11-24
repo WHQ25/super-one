@@ -25,12 +25,28 @@ const GEOMETRY_TRANSITION_PROPERTIES = new Set([
   'margin-bottom',
 ])
 
-function roundedBounds(rect: DOMRectReadOnly): RoundedBounds {
+const beforeMeasureHooks = new Set<() => void>()
+const activeSchedulers = new Set<() => void>()
+
+export function registerBeforeSlotMeasure(hook: () => void): () => void {
+  beforeMeasureHooks.add(hook)
+  return () => {
+    beforeMeasureHooks.delete(hook)
+  }
+}
+
+export function scheduleAllSlotBounds(): void {
+  for (const schedule of activeSchedulers) schedule()
+}
+
+export function roundedBounds(rect: DOMRectReadOnly): RoundedBounds {
+  const left = Math.round(rect.left)
+  const top = Math.round(rect.top)
   return {
-    left: Math.round(rect.left),
-    top: Math.round(rect.top),
-    width: Math.round(rect.width),
-    height: Math.round(rect.height),
+    left,
+    top,
+    width: Math.round(rect.left + rect.width) - left,
+    height: Math.round(rect.top + rect.height) - top,
   }
 }
 
@@ -74,6 +90,8 @@ export function useSlotBounds(
       rafId = 0
       if (document.hidden) return
 
+      for (const hook of beforeMeasureHooks) hook()
+
       const rect = el.getBoundingClientRect()
       const nextBounds = roundedBounds(rect)
       if (sameBounds(lastBounds, nextBounds)) {
@@ -98,6 +116,7 @@ export function useSlotBounds(
       if (!rafId && !document.hidden) rafId = requestAnimationFrame(frame)
     }
     scheduleRef.current = schedule
+    activeSchedulers.add(schedule)
 
     const onTransitionStart = (event: TransitionEvent) => {
       if (!GEOMETRY_TRANSITION_PROPERTIES.has(event.propertyName)) return
@@ -124,6 +143,7 @@ export function useSlotBounds(
     document.addEventListener('visibilitychange', onVisibilityChange)
 
     return () => {
+      activeSchedulers.delete(schedule)
       scheduleRef.current = () => {}
       if (rafId) cancelAnimationFrame(rafId)
       observer.disconnect()

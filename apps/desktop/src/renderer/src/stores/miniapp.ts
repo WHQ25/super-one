@@ -4,6 +4,7 @@ import { useActivityPanelStore } from './activity-panel'
 import { useChatStore } from './chat'
 import { closeMiniAppTab, openMiniAppTab } from '@/components/activity/activity-panel-api'
 import { LAYOUT, maxPanelWidth } from '@/lib/layout-constants'
+import { roundedBounds } from '@/hooks/useSlotBounds'
 import { NO_PROJECT_KEY } from '@superone/shared/miniapp-url'
 import type { MiniAppEntry, MiniAppInstallResult, MiniAppPreviewResult, MiniAppHostInfo } from '@superone/shared/miniapp-types'
 import { withoutKey } from '@/lib/record'
@@ -257,10 +258,7 @@ export const useMiniAppStore = create<MiniAppStoreState>((set, get) => {
 
     updateSlot: (instanceKey: string, mode: 'panel', rect: DOMRectReadOnly) => {
       const prev = get().slots[instanceKey]
-      const left = Math.round(rect.left)
-      const top = Math.round(rect.top)
-      const width = Math.round(rect.width)
-      const height = Math.round(rect.height)
+      const { left, top, width, height } = roundedBounds(rect)
       if (prev && prev.mode === mode && prev.left === left && prev.top === top && prev.width === width && prev.height === height) return
       set((s) => ({
         slots: { ...s.slots, [instanceKey]: { mode, left, top, width, height } },

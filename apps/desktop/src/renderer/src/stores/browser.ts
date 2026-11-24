@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { withoutKey } from '@/lib/record'
+import { roundedBounds } from '@/hooks/useSlotBounds'
 import { BROWSER_LIGHT_CANVAS } from '@/components/browser/browser-canvas'
 
 export interface BrowserTabState {
@@ -274,8 +275,7 @@ export const useBrowserStore = create<BrowserStore>((set) => ({
     set((s) => {
       const target = mode === 'pip' ? s.pipSlots : mode === 'overlay' ? s.overlaySlots : s.slots
       const prev = target[id]
-      const left = Math.round(rect.left), top = Math.round(rect.top)
-      const width = Math.round(rect.width), height = Math.round(rect.height)
+      const { left, top, width, height } = roundedBounds(rect)
       if (prev && prev.mode === mode && prev.left === left && prev.top === top && prev.width === width && prev.height === height) return s
       const next = { ...target, [id]: { mode, left, top, width, height } }
       return mode === 'pip' ? { pipSlots: next } : mode === 'overlay' ? { overlaySlots: next } : { slots: next }

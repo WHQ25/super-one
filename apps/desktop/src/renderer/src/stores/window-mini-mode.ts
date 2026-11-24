@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { MINI_WINDOW_SIZE, type WindowFoldStep, type WindowMiniMode } from '@superone/shared/agent-types'
+import { cancelSidebarChatLock } from '@/lib/layout-actions'
 
 /**
  * `app` → `folding` → `mini` → `unfolding` → `app`.
@@ -235,6 +236,7 @@ function runTransition(invoke: () => Promise<void>, steps: WindowFoldStep[], fin
  */
 export function enterMiniWindow(mode: WindowMiniMode): Promise<void> {
   if (get().phase !== 'app') return transition?.promise ?? Promise.resolve()
+  cancelSidebarChatLock()
   const layout = measureShellLayout()
   const steps = buildFoldSteps(layout)
   expandedLayout = layout

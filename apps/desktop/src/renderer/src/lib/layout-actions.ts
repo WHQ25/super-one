@@ -5,41 +5,104 @@ import { useChatStore } from '@/stores/chat'
 import { restoreActivityPanel } from '@/components/activity/activity-panel-api'
 import { useBrowserStore } from '@/stores/browser'
 import { useMiniAppStore } from '@/stores/miniapp'
-import { LAYOUT, maxPanelWidth } from './layout-constants'
+import { scheduleAllSlotBounds } from '@/hooks/useSlotBounds'
+import { ACTIVITY_PANEL_TRANSITION, LAYOUT, maxPanelWidth } from './layout-constants'
 
 const SWAP_DURATION = 300
 const SWAP_EASING = 'cubic-bezier(0.4, 0, 0.2, 1)'
 const SWAP_SELECTORS = ['[data-activity-outer]', '[data-main-area]'] as const
 const HOST_SELECTORS = ['[data-miniapp-host]', '[data-browser-host]'] as const
+const SIDEBAR_LOCK_FALLBACK_MS = ACTIVITY_PANEL_TRANSITION.durationMs + 80
 
-/**
- * Toggle the sidebar and hand the freed (or reclaimed) width to the activity
- * panel in the **same commit**, so the two `transition-[width]` animations run
- * in lockstep and the flex-1 main area keeps a constant width — no reflow, no
- * jitter in chat. Compensating a frame later (via rAF) leaves one frame where
- * main is `sidebarWidth` too wide, which is a visible jump at the sidebar's full width.
- */
+let cleanupSidebarLockListeners: (() => void) | null = null
+
+function getCardLeftInset(): number {
+  return document.querySelector('[data-main-content][data-card-inset="true"]') ? LAYOUT.CARD_INSET : 0
+}
+
+export function cancelSidebarChatLock(): void {
+  cleanupSidebarLockListeners?.()
+  cleanupSidebarLockListeners = null
+  useActivityPanelStore.getState().setLockedChatWidth(null)
+}
+
+function lockChatWidthDuringSidebarToggle(sidebarOuter: HTMLElement, mainArea: HTMLElement): void {
+  const existing = useActivityPanelStore.getState().lockedChatWidth
+  const chatWidth = existing ?? mainArea.getBoundingClientRect().width
+  if (chatWidth <= 0) return
+
+  cleanupSidebarLockListeners?.()
+  cleanupSidebarLockListeners = null
+  useActivityPanelStore.getState().setLockedChatWidth(chatWidth)
+  scheduleAllSlotBounds()
+
+  let settled = false
+  const finish = (syncWidth: boolean) => {
+    if (settled) return
+    settled = true
+    sidebarOuter.removeEventListener('transitionend', onTransitionEnd)
+    clearTimeout(timer)
+    cleanupSidebarLockListeners = null
+
+    const ap = useActivityPanelStore.getState()
+    if (syncWidth && ap.showPanel && !selectPanelFillsWindow(ap)) {
+      const activityOuter = document.querySelector<HTMLElement>('[data-activity-outer]')
+      if (activityOuter) {
+        const measured = Math.round(activityOuter.getBoundingClientRect().width)
+        if (measured >= LAYOUT.MIN_AP) {
+          const { showSidebar, sidebarWidth } = useAppStore.getState()
+          const cardInset = getCardLeftInset()
+          const maxAp = maxPanelWidth(window.innerWidth, showSidebar ? sidebarWidth : 0) + (showSidebar ? cardInset : 0)
+          const clamped = Math.max(LAYOUT.MIN_AP, Math.min(measured, maxAp))
+          if (clamped !== ap.panelWidth) ap.setPanelWidth(clamped)
+        }
+      }
+    }
+    useActivityPanelStore.getState().setLockedChatWidth(null)
+  }
+
+  const onTransitionEnd = (event: TransitionEvent) => {
+    if (event.target === sidebarOuter && event.propertyName === 'width') finish(true)
+  }
+
+  sidebarOuter.addEventListener('transitionend', onTransitionEnd)
+  const timer = window.setTimeout(() => finish(true), SIDEBAR_LOCK_FALLBACK_MS)
+  cleanupSidebarLockListeners = () => {
+    if (settled) return
+    settled = true
+    sidebarOuter.removeEventListener('transitionend', onTransitionEnd)
+    clearTimeout(timer)
+  }
+}
+
 export function toggleSidebar(): void {
   const { showSidebar, sidebarWidth, setShowSidebar } = useAppStore.getState()
   const ap = useActivityPanelStore.getState()
   const next = !showSidebar
 
   if (ap.showPanel && !selectPanelFillsWindow(ap)) {
-    const maxAp = maxPanelWidth(window.innerWidth, next ? sidebarWidth : 0)
-    const target = next ? ap.panelWidth - sidebarWidth : ap.panelWidth + sidebarWidth
+    const cardInset = getCardLeftInset()
+    const sidebarDelta = sidebarWidth - cardInset
+    const maxAp = maxPanelWidth(window.innerWidth, next ? sidebarWidth : 0) + (next ? cardInset : 0)
+    const target = next ? ap.panelWidth - sidebarDelta : ap.panelWidth + sidebarDelta
     ap.setPanelWidth(Math.max(LAYOUT.MIN_AP, Math.min(target, maxAp)))
+
+    const sidebarOuter = document.querySelector<HTMLElement>('[data-sidebar-outer]')
+    const mainArea = document.querySelector<HTMLElement>('[data-main-area]')
+    if (sidebarOuter && mainArea) {
+      lockChatWidthDuringSidebarToggle(sidebarOuter, mainArea)
+    }
+  } else {
+    cancelSidebarChatLock()
   }
 
   setShowSidebar(next)
 }
 
-/**
- * Show or hide the activity panel. A first open by a user who never dragged the
- * sash takes all the width the chat can spare, the same as ⌘B.
- */
 export function setActivityPanelShown(show: boolean): void {
   const ap = useActivityPanelStore.getState()
   if (show === ap.showPanel) return
+  if (!show) cancelSidebarChatLock()
   if (show && !ap.userResized) {
     const { showSidebar, sidebarWidth } = useAppStore.getState()
     const maxAp = maxPanelWidth(window.innerWidth, showSidebar ? sidebarWidth : 0)
@@ -48,17 +111,10 @@ export function setActivityPanelShown(show: boolean): void {
   ap.setShowPanel(show)
 }
 
-/**
- * Float the chat over the whole activity panel — every group stays as laid out, no
- * tab is maximized — or dock it back as the column beside the panel. Docking also
- * leaves a maximized tab, since that is the other thing that floats the chat.
- *
- * `expanded` defaults to the open floating window. The Float Chat menu passes
- * false so the chat lands as the collapsed bubble.
- */
 export function setChatFloating(floating: boolean, options?: { expanded?: boolean }): void {
   const ap = useActivityPanelStore.getState()
   if (floating) {
+    cancelSidebarChatLock()
     setActivityPanelShown(true)
     ap.setChatFloating(true)
     useChatStore.setState({ isOpen: options?.expanded !== false })
@@ -133,6 +189,7 @@ function flipAnimate(el: HTMLElement, fromLeft: number): Animation | null {
  * panel instead of staying glued to the pre-swap coordinates.
  */
 export function toggleActivitySide(): void {
+  cancelSidebarChatLock()
   const els = collectSwapElements()
   const before = els.map((el) => el.getBoundingClientRect().left)
   const activity = els.find((el) => el.hasAttribute('data-activity-outer'))

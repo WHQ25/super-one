@@ -11,7 +11,7 @@ import { useActivityDropStore } from '@/stores/activity-drop'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { useActivityPanelOnScreen } from '@/hooks/useActivityPanelOnScreen'
 import { useResizeHandle } from '@/hooks/useResizeHandle'
-import { useSlotBounds } from '@/hooks/useSlotBounds'
+import { registerBeforeSlotMeasure, roundedBounds, useSlotBounds } from '@/hooks/useSlotBounds'
 import { setChatFloating } from '@/lib/layout-actions'
 import { ACTIVITY_PANEL_TRANSITION, LAYOUT } from '@/lib/layout-constants'
 import { ActivityHeaderGroupProvider, ActivityHeaderPrefix } from './ActivityHeaderPrefix'
@@ -90,9 +90,10 @@ function ActivityNewTabAction({ group }: IDockviewHeaderActionsProps) {
 }
 
 export function ActivityPanel({ getMaxWidth, floatChatOnResizeOverflow, transitionMs, className }: ActivityPanelProps) {
-  const { side, panelWidth, setPanelWidthByUser, maximized, setFloatDropPreview } = useActivityPanelStore()
+  const { side, panelWidth, setPanelWidthByUser, maximized, setFloatDropPreview, lockedChatWidth } = useActivityPanelStore()
   const fillsWindow = useActivityPanelStore(selectPanelFillsWindow)
   const visible = useActivityPanelOnScreen()
+  const flexFill = visible && !fillsWindow && lockedChatWidth !== null
   const outerRef = useRef<HTMLDivElement>(null)
   const innerRef = useRef<HTMLDivElement>(null)
   const apiRef = useRef<DockviewApi | null>(null)
@@ -106,6 +107,17 @@ export function ActivityPanel({ getMaxWidth, floatChatOnResizeOverflow, transiti
       setChatFloating(true, { expanded: false })
     }
   }, [])
+  const syncDockviewSize = useCallback(() => {
+    const inner = innerRef.current
+    const api = apiRef.current
+    if (!inner || !api) return
+    const rect = inner.getBoundingClientRect()
+    const width = rect.width > 0 ? rect.width : inner.clientWidth
+    const height = rect.height > 0 ? rect.height : inner.clientHeight
+    if (width > 0 && height > 0 && (api.width !== width || api.height !== height)) {
+      api.layout(width, height)
+    }
+  }, [])
   const layoutDockview = useCallback((width?: number, height?: number) => {
     const inner = innerRef.current
     if (inner) apiRef.current?.layout(width ?? inner.clientWidth, height ?? inner.clientHeight)
@@ -116,11 +128,16 @@ export function ActivityPanel({ getMaxWidth, floatChatOnResizeOverflow, transiti
     resizeObserverRef.current?.disconnect()
     api.layout(inner.clientWidth, inner.clientHeight)
     const observer = new ResizeObserver(([entry]) => {
-      api.layout(entry.contentRect.width, entry.contentRect.height)
+      const { width, height } = entry.contentRect
+      if (width > 0 && height > 0 && (api.width !== width || api.height !== height)) {
+        api.layout(width, height)
+      }
     })
     observer.observe(inner)
     resizeObserverRef.current = observer
   }, [])
+
+  useEffect(() => registerBeforeSlotMeasure(syncDockviewSize), [syncDockviewSize])
 
   // The webview host layers are composited outside this element, so they cannot
   // inherit its rounded corners — they read these bounds to work out which of them
@@ -129,12 +146,7 @@ export function ActivityPanel({ getMaxWidth, floatChatOnResizeOverflow, transiti
   useSlotBounds(
     innerRef,
     'activity-panel-bounds',
-    (rect) => useActivityPanelStore.getState().setBounds({
-      left: Math.round(rect.left),
-      top: Math.round(rect.top),
-      width: Math.round(rect.width),
-      height: Math.round(rect.height),
-    }),
+    (rect) => useActivityPanelStore.getState().setBounds(roundedBounds(rect)),
     () => useActivityPanelStore.getState().setBounds(null),
   )
 
@@ -351,17 +363,20 @@ export function ActivityPanel({ getMaxWidth, floatChatOnResizeOverflow, transiti
       <div
         ref={outerRef}
         data-activity-outer=""
-        className={cn('relative shrink-0 overflow-hidden transition-[width]', className)}
+        className={cn(
+          'relative overflow-hidden',
+          flexFill ? 'min-w-0 flex-1' : 'shrink-0 transition-[width]',
+          className,
+        )}
         style={{
-          width: visible ? (fillsWindow ? '100%' : panelWidth) : 0,
+          width: flexFill ? undefined : (visible ? (fillsWindow ? '100%' : panelWidth) : 0),
+          minWidth: flexFill ? LAYOUT.MIN_AP : undefined,
           order: side === 'left' ? 0 : 2,
-          transitionDuration: `${transitionMs ?? ACTIVITY_PANEL_TRANSITION.durationMs}ms`,
-          transitionTimingFunction: ACTIVITY_PANEL_TRANSITION.easing,
+          transitionDuration: flexFill ? undefined : `${transitionMs ?? ACTIVITY_PANEL_TRANSITION.durationMs}ms`,
+          transitionTimingFunction: flexFill ? undefined : ACTIVITY_PANEL_TRANSITION.easing,
         }}
       >
-        {/* tabIndex makes this a focus sink — see activity-focus.ts for why the
-            panel must never be left without an owner for its own shortcuts. */}
-        <div ref={innerRef} data-activity-inner="" tabIndex={-1} className="flex h-full flex-col overflow-hidden outline-none focus-visible:shadow-none" style={{ width: fillsWindow ? '100%' : panelWidth }}>
+        <div ref={innerRef} data-activity-inner="" tabIndex={-1} className="flex h-full flex-col overflow-hidden outline-none focus-visible:shadow-none" style={{ width: fillsWindow || flexFill ? '100%' : panelWidth }}>
           <div className="relative min-h-0 flex-1">
             <div className={cn('h-full w-full', ActivityOverride && 'hidden')}>
               {dockContent}
@@ -375,7 +390,7 @@ export function ActivityPanel({ getMaxWidth, floatChatOnResizeOverflow, transiti
         </div>
       </div>
 
-      {visible && !fillsWindow && (
+      {visible && !fillsWindow && !flexFill && (
         <div
           data-activity-resize-handle=""
           onMouseDown={(event) => { if (event.button === 0) onResizeStart(event) }}

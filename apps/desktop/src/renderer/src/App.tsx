@@ -74,8 +74,8 @@ import { CommandShortcut } from '@superone/ui/components/ui/command'
 import { startAnalytics } from '@/lib/analytics'
 import { applyCrispText } from '@/lib/font-smoothing'
 import { preloadFileHighlighter } from '@/lib/diff-utils'
-import { CARD_HEADER_CHROME, LAYOUT, maxPanelWidth, maxSidebarWidth } from '@/lib/layout-constants'
-import { setActivityPanelShown, toggleSidebar } from '@/lib/layout-actions'
+import { ACTIVITY_PANEL_TRANSITION, CARD_HEADER_CHROME, LAYOUT, maxPanelWidth, maxSidebarWidth } from '@/lib/layout-constants'
+import { cancelSidebarChatLock, setActivityPanelShown, toggleSidebar } from '@/lib/layout-actions'
 import { projectSessionKey } from '@superone/shared/remote-resource-key'
 
 export { LAYOUT }
@@ -107,6 +107,7 @@ function AppContent(): React.JSX.Element {
   const hasActivityPanels = useActivityPanelStore((s) => s.hasPanels)
   const activityMaximized = useActivityPanelStore((s) => s.maximized)
   const activityFillsWindow = useActivityPanelStore(selectPanelFillsWindow)
+  const lockedChatWidth = useActivityPanelStore((s) => s.lockedChatWidth)
   // Whether the panel is really on screen — `showPanel` alone misses the mosaic and
   // mini-window-fold hides. See the hook for why the two must never drift apart.
   const activityOnScreen = useActivityPanelOnScreen()
@@ -432,12 +433,12 @@ function AppContent(): React.JSX.Element {
 
   const onSidebarDragEnd = useCallback(() => {
     setSidebarResizing(false)
-    if (selectPanelFillsWindow(useActivityPanelStore.getState())) return
     const outer = document.querySelector<HTMLElement>('[data-activity-outer]')
     if (!outer) return
+    outer.style.transition = ''
+    if (selectPanelFillsWindow(useActivityPanelStore.getState())) return
     const w = parseFloat(outer.style.width)
     if (w && w !== useActivityPanelStore.getState().panelWidth) {
-      outer.style.transition = ''
       useActivityPanelStore.getState().setPanelWidth(w)
     }
   }, [])
@@ -476,20 +477,25 @@ function AppContent(): React.JSX.Element {
 
       const mainMin = mainMinWRef.current
       const fills = selectPanelFillsWindow(ap)
+      const cardInset = mainWrapperRef.current?.hasAttribute('data-card-inset') ? LAYOUT.CARD_INSET : 0
+      const effectiveGutter = sb ? CARD_GUTTER - cardInset : CARD_GUTTER
       if (delta !== 0 && ap.showPanel && !fills) {
-        const maxAp = maxPanelWidth(curWidth, sb ? sw : 0, mainMin)
+        const maxAp = maxPanelWidth(curWidth, sb ? sw : 0, mainMin) + (sb ? cardInset : 0)
         ap.setPanelWidth(Math.max(MIN_AP, Math.min(ap.panelWidth + delta, maxAp)))
       }
 
       if (sb) {
-        const maxSw = maxSidebarWidth(curWidth, fills ? MIN_AP : mainMin, ap.showPanel && !fills ? ap.panelWidth : 0)
+        const maxSw = Math.min(
+          MAX_SIDEBAR,
+          maxSidebarWidth(curWidth, fills ? MIN_AP : mainMin, ap.showPanel && !fills ? ap.panelWidth : 0) + cardInset,
+        )
         if (sw > maxSw) setSW(Math.max(MIN_SIDEBAR, maxSw))
       }
 
       const activityWidth = ap.showPanel && !fills ? ap.panelWidth : 0
       const contentMin = fills ? MIN_AP : mainMin
       const totalPanels = (sb ? Math.min(sw, MAX_SIDEBAR) : 0) + activityWidth
-      let overflow = totalPanels + contentMin + CARD_GUTTER - curWidth
+      let overflow = totalPanels + contentMin + effectiveGutter - curWidth
       if (overflow <= 0) return
       if (ap.showPanel && !fills) {
         const shrink = Math.min(overflow, ap.panelWidth - MIN_AP)
@@ -505,9 +511,8 @@ function AppContent(): React.JSX.Element {
       raf = requestAnimationFrame(clampBody)
     }
     const onWindowResize = () => {
-      // The fold resizes the window on purpose, and killing the panels' width
-      // transition here is exactly what would make them snap instead of slide.
       if (selectMiniDriven(useWindowMiniModeStore.getState())) return
+      cancelSidebarChatLock()
       const outers = document.querySelectorAll<HTMLElement>('[data-activity-outer],[data-sidebar-outer]')
       outers.forEach((el) => { el.style.transition = 'none' })
       clearTimeout(restoreTimer)
@@ -691,9 +696,17 @@ function AppContent(): React.JSX.Element {
         )}
       </div>
 
-      {/* Main area wrapper — windowed: floating glass card; fullscreen: edge-flush
-          (keep left radius only while the sidebar is open to soften that seam). */}
-      <div ref={mainWrapperRef} data-main-content className={cn(
+      <div
+        ref={mainWrapperRef}
+        data-main-content
+        data-card-inset={!compactMiniShell && !isFullscreen ? 'true' : undefined}
+        style={!compactMiniShell && !isFullscreen ? {
+          transition: [
+            `margin-left ${inMiniWindow ? FOLD_PANEL_MS : ACTIVITY_PANEL_TRANSITION.durationMs}ms ${ACTIVITY_PANEL_TRANSITION.easing}`,
+            ...(mosaicMode !== 'mosaic' ? ['box-shadow 200ms cubic-bezier(0.4, 0, 0.2, 1)'] : []),
+          ].join(', '),
+        } : undefined}
+        className={cn(
         'relative z-20 flex min-w-0 flex-1 overflow-hidden bg-card',
         compactMiniShell
           ? 'rounded-none border-0 shadow-none'
@@ -707,7 +720,6 @@ function AppContent(): React.JSX.Element {
               cardTopMargin,
               'mb-[5px] mr-[5px]',
               !showSidebar && 'ml-[5px]',
-              mosaicMode !== 'mosaic' && 'transition-shadow duration-200',
               mosaicMode !== 'mosaic' && (sidebarResizing
                 ? 'shadow-[0_10px_30px_rgba(0,0,0,0.16)]'
                 : 'shadow-[0_2px_12px_rgba(0,0,0,0.06)] group-has-[[data-resize-handle]:hover]/coding:shadow-[0_10px_30px_rgba(0,0,0,0.16)]'),
@@ -724,12 +736,17 @@ function AppContent(): React.JSX.Element {
         <SideChatConfirmDialog />
         <IdentityMigrationDialog />
 
-        {/* Main area */}
         <div data-main-area="" className={cn(
           'relative z-10 flex-1 flex-col overflow-hidden',
           activityFillsWindow && !inMiniWindow ? 'hidden' : 'flex',
           activityOnScreen && (activitySide === 'left' ? 'border-l border-border' : 'border-r border-border'),
-        )} style={{ order: 1, minWidth: inMiniWindow ? 0 : MIN_MAIN }}>
+        )} style={{
+          order: 1,
+          minWidth: inMiniWindow ? 0 : MIN_MAIN,
+          ...(lockedChatWidth !== null && activityOnScreen && !activityFillsWindow && !inMiniWindow
+            ? { flex: `0 1 ${lockedChatWidth}px` }
+            : {}),
+        }}>
         <ChatFloatDropOverlay />
         {/* Main header — drag region (hidden in mosaic; each tile carries its own) */}
         {compactMiniShell

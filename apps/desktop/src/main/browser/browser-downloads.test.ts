@@ -7,8 +7,13 @@ type WillDownloadHandler = (event: unknown, item: FakeItem, webContents: { id: n
 
 const sessionOn = vi.fn<(event: string, handler: WillDownloadHandler) => void>()
 
+const sendMock = vi.fn()
+
 vi.mock('electron', () => ({
   app: { getPath: () => '/tmp/superone-test-userData' },
+  BrowserWindow: {
+    getAllWindows: () => [{ isDestroyed: () => false, webContents: { send: sendMock } }],
+  },
   session: { fromPartition: () => ({ on: sessionOn, fetch: vi.fn() }) },
 }))
 
@@ -45,13 +50,21 @@ import { browserAutomationCall } from './browser-automation-bridge'
 let listDownloads: typeof import('./browser-downloads').listDownloads
 let waitForDownloads: typeof import('./browser-downloads').waitForDownloads
 let downloadUrl: typeof import('./browser-downloads').downloadUrl
+let listBrowserDownloads: typeof import('./browser-downloads').listBrowserDownloads
+let cancelBrowserDownload: typeof import('./browser-downloads').cancelBrowserDownload
+let clearBrowserDownloads: typeof import('./browser-downloads').clearBrowserDownloads
+let hasBrowserDownloadPath: typeof import('./browser-downloads').hasBrowserDownloadPath
 // Re-imported with the module under test: `resetModules` gives each test a
 // fresh driver map, and the one the capture reads must be the one we fill.
 let rememberTabDriver: typeof import('./browser-tab-drivers').rememberTabDriver
 
 class FakeItem {
   private doneHandler?: (event: unknown, state: string) => void
+  private updateHandler?: (event: unknown, state: string) => void
   savePath = ''
+  receivedBytes = 0
+  totalBytes = 100
+  paused = false
   constructor(
     private readonly filename: string,
     private readonly url: string,
@@ -66,7 +79,13 @@ class FakeItem {
     return 'text/plain'
   }
   getReceivedBytes(): number {
-    return 32
+    return this.receivedBytes || 32
+  }
+  getTotalBytes(): number {
+    return this.totalBytes
+  }
+  isPaused(): boolean {
+    return this.paused
   }
   cancelled = false
   setSavePath(p: string): void {
@@ -75,8 +94,16 @@ class FakeItem {
   cancel(): void {
     this.cancelled = true
   }
+  on(event: string, handler: (event: unknown, state: string) => void): void {
+    if (event === 'updated') this.updateHandler = handler
+  }
   once(_event: string, handler: (event: unknown, state: string) => void): void {
     this.doneHandler = handler
+  }
+  progress(received: number, total = 100): void {
+    this.receivedBytes = received
+    this.totalBytes = total
+    this.updateHandler?.(null, 'progressing')
   }
   finish(state = 'completed'): void {
     this.doneHandler?.(null, state)
@@ -102,6 +129,10 @@ describe('page-triggered download capture', () => {
     listDownloads = mod.listDownloads
     waitForDownloads = mod.waitForDownloads
     downloadUrl = mod.downloadUrl
+    listBrowserDownloads = mod.listBrowserDownloads
+    cancelBrowserDownload = mod.cancelBrowserDownload
+    clearBrowserDownloads = mod.clearBrowserDownloads
+    hasBrowserDownloadPath = mod.hasBrowserDownloadPath
     rememberTabDriver = (await import('./browser-tab-drivers')).rememberTabDriver
     mod.registerBrowserDownloadCapture()
   })
@@ -273,5 +304,28 @@ describe('page-triggered download capture', () => {
 
     const all = await listDownloads('sess-1')
     expect(all.map((d) => d.filename)).toEqual(['b.txt', 'a.txt'])
+  })
+
+  it('exposes UI download snapshots, supports cancel and clear, and checks paths', () => {
+    const first = emitDownload('archive.zip', 10)
+    first.progress(50, 200)
+    const second = emitDownload('done.pdf', 10)
+    second.finish('completed')
+
+    const list = listBrowserDownloads()
+    expect(list).toHaveLength(2)
+    expect(list[0]).toMatchObject({ filename: 'done.pdf', state: 'completed' })
+    expect(list[1]).toMatchObject({ filename: 'archive.zip', state: 'progressing', receivedBytes: 50, totalBytes: 200 })
+    expect(hasBrowserDownloadPath('/tmp/dl/done.pdf')).toBe(true)
+    expect(hasBrowserDownloadPath('/tmp/dl/unknown.pdf')).toBe(false)
+
+    expect(cancelBrowserDownload(list[1].id)).toBe(true)
+    expect(first.cancelled).toBe(true)
+    expect(cancelBrowserDownload('missing-id')).toBe(false)
+
+    const remaining = clearBrowserDownloads()
+    expect(remaining).toHaveLength(1)
+    expect(remaining[0].filename).toBe('archive.zip')
+    expect(sendMock).toHaveBeenCalled()
   })
 })

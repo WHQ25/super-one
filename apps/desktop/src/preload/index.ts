@@ -7,7 +7,7 @@ import { collaborationMailbox } from './collaboration-mailbox'
 import { mediaComposerAPI } from './media-composer-api'
 import { contextBridge, ipcRenderer, webUtils } from 'electron'
 import { electronAPI } from '@electron-toolkit/preload'
-import { AgentIpcChannels, type AgentEvent, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexExternalAgentItem, type CodexMcpOauthLoginOptions, type ProviderEndpointTestResponse, type DiscoverModelsResult, type RemoteDeviceConfig, type SendMessageRequest, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type BranchImportResult, type CheckoutFromSourceRequest, type CheckoutProgress, type CheckoutSource, type CheckoutSourceBranchesResult, type CheckoutSourcesInfo, type LocalBranchSource, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserAudioState, type BrowserCertError, type BrowserOpenTabRequest, type UpsertMediaProviderRequest, type SpeechSpeakRequest, type SpeechSpeakClip, type SpeechSpeakResult, type SpeechSavedResult, type SpeechVoiceCatalogResult, type SpeechVoicePreviewResult, type ThemeMode, type ComputerUseDisplayInfo, type ComputerUseViewfinderClaim, type ComputerUseViewfinderFrame, type RealtimeVoiceStartRequest, type RealtimeTimelineResult, type CodexRealtimeVoiceCatalog } from '@superone/shared/agent-types'
+import { AgentIpcChannels, type AgentEvent, type NativeContextMenuItemSpec, type AgentPrewarmHint, type BashOutputEvent, type CodexExternalAgentItem, type CodexMcpOauthLoginOptions, type ProviderEndpointTestResponse, type DiscoverModelsResult, type RemoteDeviceConfig, type SendMessageRequest, type WorktreeActivateRequest, type WorktreeHandoffResult, type WorktreeAssignResult, type BranchImportResult, type CheckoutFromSourceRequest, type CheckoutProgress, type CheckoutSource, type CheckoutSourceBranchesResult, type CheckoutSourcesInfo, type LocalBranchSource, type GitDirtyStatus, type SessionForkRequest, type SessionForkResult, type HookSavePayload, type TerminalEvent, type TerminalListItem, type TerminalSnapshot, type HarnessId, type BrowserAudioState, type BrowserCertError, type BrowserDownloadItem, type BrowserOpenTabRequest, type UpsertMediaProviderRequest, type SpeechSpeakRequest, type SpeechSpeakClip, type SpeechSpeakResult, type SpeechSavedResult, type SpeechVoiceCatalogResult, type SpeechVoicePreviewResult, type ThemeMode, type ComputerUseDisplayInfo, type ComputerUseViewfinderClaim, type ComputerUseViewfinderFrame, type RealtimeVoiceStartRequest, type RealtimeTimelineResult, type CodexRealtimeVoiceCatalog } from '@superone/shared/agent-types'
 import type { McpbInstallRequest } from '@superone/shared/mcpb-types'
 import type { MobileAppDownloads } from '@superone/shared/mobile-updates'
 import type { TerminalCommandRule } from '@superone/shared/terminal-command-rules'
@@ -2111,6 +2111,16 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.BROWSER_HISTORY_DELETE, url),
   browserCertProceed: (url: string) =>
     ipcRenderer.invoke(AgentIpcChannels.BROWSER_CERT_PROCEED, url),
+  browserDownloadList: () =>
+    ipcRenderer.invoke(AgentIpcChannels.BROWSER_DOWNLOAD_LIST) as Promise<BrowserDownloadItem[]>,
+  browserDownloadCancel: (id: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.BROWSER_DOWNLOAD_CANCEL, id) as Promise<boolean>,
+  browserDownloadOpen: (path: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.BROWSER_DOWNLOAD_OPEN, path) as Promise<string>,
+  browserDownloadShowInFolder: (path: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.BROWSER_DOWNLOAD_SHOW_IN_FOLDER, path) as Promise<void>,
+  browserDownloadClear: (id?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.BROWSER_DOWNLOAD_CLEAR, id) as Promise<BrowserDownloadItem[]>,
   pickAppIconFile: () =>
     ipcRenderer.invoke(AgentIpcChannels.APP_ICON_PICK_FILE),
   setAppIcon: (pngDataUri: string) =>
@@ -2282,6 +2292,16 @@ const appAPI = {
     ipcRenderer.on(AgentIpcChannels.BROWSER_AUDIO_STATE, handler)
     return () => {
       ipcRenderer.removeListener(AgentIpcChannels.BROWSER_AUDIO_STATE, handler)
+    }
+  },
+
+  onBrowserDownloadState: (callback: (payload: BrowserDownloadItem) => void) => {
+    const handler = (_ipcEvent: Electron.IpcRendererEvent, payload: BrowserDownloadItem): void => {
+      callback(payload)
+    }
+    ipcRenderer.on(AgentIpcChannels.BROWSER_DOWNLOAD_STATE, handler)
+    return () => {
+      ipcRenderer.removeListener(AgentIpcChannels.BROWSER_DOWNLOAD_STATE, handler)
     }
   },
 

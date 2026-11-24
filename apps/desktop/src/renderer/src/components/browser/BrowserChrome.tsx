@@ -11,6 +11,7 @@ import { browserCapture } from './browser-host-api'
 import { flattenBrowserCapture } from './browser-canvas'
 import { isBlankUrl } from './browser-url'
 import { BrowserOmnibox } from './BrowserOmnibox'
+import { BrowserDownloadsButton } from './BrowserDownloadsButton'
 import { BrowserMoreMenu } from './BrowserMoreMenu'
 
 const annotateShortcut = window.app.platform === 'darwin' ? '⌘.' : 'Ctrl+.'
@@ -60,14 +61,14 @@ export function BrowserChrome({ browserId, onNavigate, onBack, onForward, onRelo
           </motion.div>
         )}
       </AnimatePresence>
-      <IconButton size="xs" variant="ghost" tooltip="Back" disabled={!state?.canGoBack} onClick={onBack}>
-        <ArrowLeft className="size-3.5" />
+      <IconButton size="sm" variant="ghost" tooltip="Back" disabled={!state?.canGoBack} onClick={onBack}>
+        <ArrowLeft className="size-4" />
       </IconButton>
-      <IconButton size="xs" variant="ghost" tooltip="Forward" disabled={!state?.canGoForward} onClick={onForward}>
-        <ArrowRight className="size-3.5" />
+      <IconButton size="sm" variant="ghost" tooltip="Forward" disabled={!state?.canGoForward} onClick={onForward}>
+        <ArrowRight className="size-4" />
       </IconButton>
-      <IconButton size="xs" variant="ghost" tooltip="Reload" onClick={onReload}>
-        <RotateCw className="size-3" />
+      <IconButton size="sm" variant="ghost" tooltip="Reload" onClick={onReload}>
+        <RotateCw className="size-3.5" />
       </IconButton>
       <BrowserOmnibox browserId={browserId} url={url} isHome={isHome} onNavigate={onNavigate} />
       {annotating ? (
@@ -82,7 +83,7 @@ export function BrowserChrome({ browserId, onNavigate, onBack, onForward, onRelo
                   transition={{ type: 'spring', stiffness: 500, damping: 30 }}
                   className="inline-flex shrink-0 cursor-pointer items-center gap-1 rounded-full bg-primary/10 px-2 py-1 text-xs font-medium text-primary outline-none transition-colors hover:bg-primary/15 focus-visible:ring-[3px] focus-visible:ring-ring/50"
                 >
-                  <SquareDashedMousePointer className="size-3.5 shrink-0" />
+                  <SquareDashedMousePointer className="size-4 shrink-0" />
                   <motion.span
                     initial={{ width: 0, opacity: 0 }}
                     animate={{ width: 'auto', opacity: 1 }}
@@ -100,20 +101,21 @@ export function BrowserChrome({ browserId, onNavigate, onBack, onForward, onRelo
           </TooltipProvider>
         ) : (
           <>
-            <IconButton size="xs" variant="ghost" tooltip="Screenshot" disabled={isHome} onClick={screenshot}>
-              <Camera className="size-3.5" />
+            <IconButton size="sm" variant="ghost" tooltip="Screenshot" disabled={isHome} onClick={screenshot}>
+              <Camera className="size-4" />
             </IconButton>
             <IconButton
-              size="xs"
+              size="sm"
               variant="ghost"
               tooltip={<span className="inline-flex items-center gap-1.5">{t('chat.browser.annotateEnter')}<CommandShortcut>{annotateShortcut}</CommandShortcut></span>}
               disabled={isHome}
               onClick={() => startAnnotate(browserId)}
             >
-              <SquareDashedMousePointer className="size-3.5" />
+              <SquareDashedMousePointer className="size-4" />
             </IconButton>
           </>
         )}
+      <BrowserDownloadsButton />
       <BrowserMoreMenu browserId={browserId} isHome={isHome} />
     </div>
   )

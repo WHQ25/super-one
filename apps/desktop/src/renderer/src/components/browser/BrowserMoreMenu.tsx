@@ -60,8 +60,8 @@ export function BrowserMoreMenu({ browserId, isHome }: { browserId: string; isHo
     <>
       <DropdownMenu onOpenChange={(open) => { if (open) setZoom(browserGetZoom(browserId)) }}>
         <DropdownMenuTrigger asChild>
-          <IconButton size="xs" variant="ghost" tooltip="More">
-            <MoreHorizontal className="size-3.5" />
+          <IconButton size="sm" variant="ghost" tooltip="More">
+            <MoreHorizontal className="size-4" />
           </IconButton>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end" className="w-64">

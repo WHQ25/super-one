@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useShallow } from 'zustand/react/shallow'
 import { useBrowserStore } from '@/stores/browser'
+import { useBrowserDownloadsStore } from '@/stores/browser-downloads'
 import { useActivityDropStore } from '@/stores/activity-drop'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { panelCornersForSlot } from '@/components/activity/activity-panel-corners'
@@ -65,6 +66,13 @@ export function BrowserHostLayer() {
       const id = browserIdByWebContentsId(webContentsId)
       if (!id) return
       useBrowserStore.getState().patch(id, { audible })
+    })
+  }, [])
+
+  useEffect(() => {
+    void useBrowserDownloadsStore.getState().load()
+    return window.app.onBrowserDownloadState((item) => {
+      useBrowserDownloadsStore.getState().upsert(item)
     })
   }, [])
 

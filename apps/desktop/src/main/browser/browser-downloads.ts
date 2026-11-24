@@ -1,4 +1,6 @@
-import { session } from 'electron'
+import { randomUUID } from 'crypto'
+import { BrowserWindow, session } from 'electron'
+import { AgentIpcChannels, type BrowserDownloadItem } from '@superone/shared/agent-types'
 import { copyFileSync, createWriteStream, unlinkSync } from 'fs'
 import { stat, writeFile } from 'fs/promises'
 import { Readable } from 'stream'
@@ -15,14 +17,19 @@ import { downloadThroughUserChrome } from './chrome-url-download'
 const BROWSER_PARTITION = 'persist:browser'
 const MAX_CAPTURED = 20
 const POLL_MS = 250
+const PROGRESS_BROADCAST_MS = 150
 
 interface CapturedDownload {
+  id: string
   url: string
   filename: string
   path: string
   bytes: number
+  totalBytes: number
+  paused: boolean
   state: 'progressing' | 'completed' | 'cancelled' | 'interrupted'
   startedAt: number
+  completedAt?: number
   webContentsId: number
   /** The session that drove the tab when the download started, if known. */
   driver: TabDriver | null
@@ -31,7 +38,7 @@ interface CapturedDownload {
 // The capture buffer spans every browser view in the app, so a download is only
 // ever reported to the session that owns the tab it came from — otherwise one
 // session's agent could read another's downloaded files.
-export type DownloadRecord = Omit<CapturedDownload, 'webContentsId' | 'driver'>
+export type DownloadRecord = Pick<CapturedDownload, 'url' | 'filename' | 'path' | 'bytes' | 'state' | 'startedAt'>
 
 export interface DownloadResult {
   path: string
@@ -41,7 +48,32 @@ export interface DownloadResult {
 }
 
 const captured: CapturedDownload[] = []
+const activeItems = new Map<string, Electron.DownloadItem>()
 let waiters: Array<() => void> = []
+
+function toUiRecord(record: CapturedDownload): BrowserDownloadItem {
+  return {
+    id: record.id,
+    url: record.url,
+    filename: record.filename,
+    path: record.path,
+    receivedBytes: record.bytes,
+    totalBytes: record.totalBytes,
+    state: record.state,
+    paused: record.paused,
+    startedAt: record.startedAt,
+    completedAt: record.completedAt,
+  }
+}
+
+function broadcastDownload(record: CapturedDownload): void {
+  const payload = toUiRecord(record)
+  for (const win of BrowserWindow?.getAllWindows?.() ?? []) {
+    if (!win.isDestroyed()) {
+      win.webContents.send(AgentIpcChannels.BROWSER_DOWNLOAD_STATE, payload)
+    }
+  }
+}
 
 function notifyWaiters(): void {
   const pending = waiters
@@ -223,27 +255,36 @@ export function registerBrowserDownloadCapture(): void {
       log.warn('[browser-download] refused to reserve a save path; cancelling', err)
       try { item.cancel() } catch (cancelErr) { log.debug('[browser-download] could not cancel a refused download', cancelErr) }
       const failed: CapturedDownload = {
+        id: randomUUID(),
         url: item.getURL(),
         filename,
         path: '',
         bytes: 0,
+        totalBytes: 0,
+        paused: false,
         state: 'interrupted',
         startedAt: Date.now(),
+        completedAt: Date.now(),
         webContentsId: webContents?.id ?? -1,
         driver,
       }
       captured.unshift(failed)
       captured.length = Math.min(captured.length, MAX_CAPTURED)
+      broadcastDownload(failed)
       notifyWaiters()
       return
     }
     item.setSavePath(path)
 
+    const id = randomUUID()
     const record: CapturedDownload = {
+      id,
       url: item.getURL(),
       filename,
       path,
-      bytes: 0,
+      bytes: item.getReceivedBytes?.() ?? 0,
+      totalBytes: item.getTotalBytes?.() ?? 0,
+      paused: item.isPaused?.() ?? false,
       state: 'progressing',
       startedAt: Date.now(),
       webContentsId: webContents?.id ?? -1,
@@ -251,10 +292,52 @@ export function registerBrowserDownloadCapture(): void {
     }
     captured.unshift(record)
     captured.length = Math.min(captured.length, MAX_CAPTURED)
+    activeItems.set(id, item)
+    broadcastDownload(record)
+
+    let progressTimer: ReturnType<typeof setTimeout> | null = null
+    const flushProgress = (): void => {
+      if (progressTimer) {
+        clearTimeout(progressTimer)
+        progressTimer = null
+      }
+      broadcastDownload(record)
+    }
+
+    item.on?.('updated', (_updateEvent, updateState) => {
+      record.bytes = item.getReceivedBytes?.() ?? record.bytes
+      record.totalBytes = item.getTotalBytes?.() ?? record.totalBytes
+      const paused = item.isPaused?.() ?? false
+      const pausedChanged = record.paused !== paused
+      record.paused = paused
+      if (updateState === 'interrupted') {
+        record.state = 'interrupted'
+        flushProgress()
+        return
+      }
+      if (pausedChanged) {
+        flushProgress()
+        return
+      }
+      if (!progressTimer) {
+        progressTimer = setTimeout(() => {
+          progressTimer = null
+          broadcastDownload(record)
+        }, PROGRESS_BROADCAST_MS)
+      }
+    })
 
     item.once('done', (_doneEvent, state) => {
+      if (progressTimer) {
+        clearTimeout(progressTimer)
+        progressTimer = null
+      }
+      activeItems.delete(id)
       record.state = state
       record.bytes = item.getReceivedBytes()
+      record.totalBytes = item.getTotalBytes?.() ?? record.totalBytes
+      record.paused = false
+      record.completedAt = Date.now()
       if (state === 'completed') {
         try { mediaFileGrants().add(path) } catch (error) { log.warn('[browser-download] could not persist media grant', error) }
         // The delivery record is sealed HERE, by the item's own completion —
@@ -280,14 +363,43 @@ export function registerBrowserDownloadCapture(): void {
         // the row would pin a stub the mirror may never prune.
         if (driver) abandonZoneFile(driver.sessionId, path)
       }
+      broadcastDownload(record)
       notifyWaiters()
     })
     notifyWaiters()
   })
 }
 
-function toRecord({ webContentsId: _wc, driver: _driver, ...record }: CapturedDownload): DownloadRecord {
-  return record
+export function listBrowserDownloads(): BrowserDownloadItem[] {
+  return captured.map(toUiRecord)
+}
+
+export function cancelBrowserDownload(id: string): boolean {
+  const item = activeItems.get(id)
+  if (!item) return false
+  try {
+    item.cancel()
+    return true
+  } catch {
+    return false
+  }
+}
+
+export function clearBrowserDownloads(id?: string): BrowserDownloadItem[] {
+  for (let i = captured.length - 1; i >= 0; i--) {
+    const entry = captured[i]
+    if (entry.state === 'progressing') continue
+    if (!id || entry.id === id) captured.splice(i, 1)
+  }
+  return captured.map(toUiRecord)
+}
+
+export function hasBrowserDownloadPath(filePath: string): boolean {
+  return Boolean(filePath) && captured.some((entry) => entry.path === filePath)
+}
+
+function toRecord({ url, filename, path, bytes, state, startedAt }: CapturedDownload): DownloadRecord {
+  return { url, filename, path, bytes, state, startedAt }
 }
 
 async function ownedWebContentsIds(sessionId: string): Promise<Set<number>> {

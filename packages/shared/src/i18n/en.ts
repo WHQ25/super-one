@@ -4377,6 +4377,16 @@ export type Messages = {
       insecureReasonName: string
       insecureReasonAuthority: string
       insecureReasonGeneric: string
+      downloads: string
+      downloadsEmpty: string
+      downloadsClear: string
+      downloadsClearItem: string
+      downloadCancel: string
+      downloadOpen: string
+      downloadShowInFolder: string
+      downloadCancelled: string
+      downloadFailed: string
+      downloadCompleted: string
     }
     reasoning: {
       thinking: string
@@ -9959,6 +9969,16 @@ export const en: Messages = {
       insecureReasonName: 'This site’s security certificate does not match its address, so its identity cannot be verified.',
       insecureReasonAuthority: 'This site’s security certificate is not trusted (self-signed or from an unknown authority).',
       insecureReasonGeneric: 'This site’s security certificate could not be verified.',
+      downloads: 'Downloads',
+      downloadsEmpty: 'No downloads yet',
+      downloadsClear: 'Clear',
+      downloadsClearItem: 'Remove from list',
+      downloadCancel: 'Cancel',
+      downloadOpen: 'Open',
+      downloadShowInFolder: 'Show in Folder',
+      downloadCancelled: 'Cancelled',
+      downloadFailed: 'Failed',
+      downloadCompleted: 'Completed',
     },
     reasoning: {
       thinking: 'Thinking...',

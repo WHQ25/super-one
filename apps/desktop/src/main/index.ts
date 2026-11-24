@@ -65,7 +65,14 @@ import { startChromeBridge } from './browser/chrome-bridge-server'
 import { registerChromeBridgeIpc } from './browser/chrome-bridge-status'
 import { detachAllCdp } from './browser/browser-cdp'
 import { registerBrowserPopupRedirect } from './browser-popup-redirect'
-import { fetchBrowserBytes, registerBrowserDownloadCapture } from './browser/browser-downloads'
+import {
+  cancelBrowserDownload,
+  clearBrowserDownloads,
+  fetchBrowserBytes,
+  hasBrowserDownloadPath,
+  listBrowserDownloads,
+  registerBrowserDownloadCapture,
+} from './browser/browser-downloads'
 import { registerBrowserWebAuthn } from './browser/browser-webauthn'
 import { setBrowserDownloadTaskHost } from './browser/browser-download-tasks'
 import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, unregisterAppAcrossSessions, loadPreapprovedTools, updatePreapprovedTools, refreshAppDefinitions, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearSessionPendingCalls as clearSessionPendingMiniAppCalls, disposeSuperoneMcpServer, setSessionHostProvider, setAppSettingsApplier, setTerminalToolDeps, isAppStillAuthorizedInProject, addToolsChangedListener, setAppToolExecutor, sessionsAuthorizingApp, setMiniAppCatalog } from './mcp/superone-mcp-server'
@@ -4922,6 +4929,16 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.BROWSER_HISTORY_RECORD, (_e, url: string, title: string, titleOnly?: boolean) => recordBrowserHistory(url, title, titleOnly))
   ipcMain.handle(AgentIpcChannels.BROWSER_HISTORY_SUGGEST, (_e, query: string, limit?: number) => suggestBrowserHistory(query, limit))
   ipcMain.handle(AgentIpcChannels.BROWSER_HISTORY_DELETE, (_e, url: string | null) => deleteBrowserHistory(url))
+  ipcMain.handle(AgentIpcChannels.BROWSER_DOWNLOAD_LIST, () => listBrowserDownloads())
+  ipcMain.handle(AgentIpcChannels.BROWSER_DOWNLOAD_CANCEL, (_e, id: string) => cancelBrowserDownload(id))
+  ipcMain.handle(AgentIpcChannels.BROWSER_DOWNLOAD_OPEN, (_e, filePath: string) => {
+    if (!hasBrowserDownloadPath(filePath)) return ''
+    return shell.openPath(filePath)
+  })
+  ipcMain.handle(AgentIpcChannels.BROWSER_DOWNLOAD_SHOW_IN_FOLDER, (_e, filePath: string) => {
+    if (hasBrowserDownloadPath(filePath)) shell.showItemInFolder(filePath)
+  })
+  ipcMain.handle(AgentIpcChannels.BROWSER_DOWNLOAD_CLEAR, (_e, id?: string) => clearBrowserDownloads(id))
 
   registerAppIconIpc(getMainWindow)
 

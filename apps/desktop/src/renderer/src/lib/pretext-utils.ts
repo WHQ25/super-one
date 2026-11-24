@@ -9,11 +9,21 @@ export function getMonoFont(): string {
   return MONO_FONT
 }
 
+export function measureCharWidth(font: string, fallback = 6.6): number {
+  if (typeof document === 'undefined') return fallback
+  try {
+    const prepared = prepareWithSegments('0', font)
+    let w = 0
+    walkLineRanges(prepared, 99999, (line) => { w = line.width })
+    return Number.isFinite(w) && w > 0 ? w : fallback
+  } catch {
+    return fallback
+  }
+}
+
 export function getMonoCharWidth(): number {
   if (cachedMonoCharWidth !== null) return cachedMonoCharWidth
-  const prepared = prepareWithSegments('0', MONO_FONT)
-  let w = 6.6
-  walkLineRanges(prepared, 99999, (line) => { w = line.width })
+  const w = measureCharWidth(MONO_FONT, 6.6)
   cachedMonoCharWidth = w
   return w
 }

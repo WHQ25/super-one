@@ -17,10 +17,14 @@ import { useChatStore, type ReplyComment } from '@/stores/chat'
 import { ReviewDiffCanvas } from './ReviewDiffCanvas'
 import { ReviewFileSidebar } from './ReviewFileSidebar'
 import { ReviewToolbar, type DiffStylePreference } from './ReviewToolbar'
-import { countCommentsByFile } from './review-diff-utils'
+import {
+  countCommentsByFile,
+  maxLineNumberDigitsForFiles,
+  measureDiffCharWidthPx,
+  resolveAutoDiffStyle,
+} from './review-diff-utils'
 
 const TWO_COLUMN_BREAKPOINT_PX = 760
-const SPLIT_DIFF_BREAKPOINT_PX = 700
 const EMPTY_COMMENTS: ReplyComment[] = []
 const VIRTUALIZER_STYLE = { height: '100%', overflow: 'auto' } as const
 const WORKER_POOL_OPTIONS = {
@@ -90,9 +94,15 @@ export function ReviewPanel({
   const [error, setError] = useState<string | null>(initialError ?? null)
 
   const containerRef = useRef<HTMLDivElement>(null)
-  const diffPaneRef = useRef<HTMLDivElement>(null)
+  const diffPaneRef = useRef<HTMLDivElement | null>(null)
+  const [diffPaneEl, setDiffPaneEl] = useState<HTMLDivElement | null>(null)
+  const handleDiffPaneRef = useCallback((el: HTMLDivElement | null) => {
+    diffPaneRef.current = el
+    setDiffPaneEl(el)
+  }, [])
   const [containerWidth, setContainerWidth] = useState(960)
   const [diffPaneWidth, setDiffPaneWidth] = useState(720)
+  const [diffCharWidthPx, setDiffCharWidthPx] = useState(() => measureDiffCharWidthPx())
   const prevStatusRef = useRef(sessionStatus)
 
   useEffect(() => {
@@ -108,28 +118,37 @@ export function ReviewPanel({
   }, [])
 
   useEffect(() => {
-    const el = diffPaneRef.current
+    const el = diffPaneEl
     if (!el || typeof ResizeObserver === 'undefined') return
     let timer: ReturnType<typeof setTimeout> | null = null
-    setDiffPaneWidth(el.clientWidth || 720)
-    const observer = new ResizeObserver(([entry]) => {
-      const next = Math.round(entry.contentRect.width)
+    const readViewportWidth = () => {
+      const scroller = el.firstElementChild
+      if (scroller instanceof HTMLElement && scroller.clientWidth > 0) {
+        return scroller.clientWidth
+      }
+      return el.clientWidth || 720
+    }
+    setDiffPaneWidth(readViewportWidth())
+    setDiffCharWidthPx(measureDiffCharWidthPx(el))
+    const observer = new ResizeObserver(() => {
+      const next = Math.round(readViewportWidth())
       if (timer) clearTimeout(timer)
       timer = setTimeout(() => {
         setDiffPaneWidth(next)
+        setDiffCharWidthPx(measureDiffCharWidthPx(el))
       }, 120)
     })
     observer.observe(el)
+    if (el.firstElementChild instanceof HTMLElement) {
+      observer.observe(el.firstElementChild)
+    }
     return () => {
       if (timer) clearTimeout(timer)
       observer.disconnect()
     }
-  }, [])
+  }, [diffPaneEl])
 
   const isTwoColumn = containerWidth >= TWO_COLUMN_BREAKPOINT_PX
-  const effectiveDiffStyle: 'split' | 'unified' = diffPref === 'auto'
-    ? (diffPaneWidth >= SPLIT_DIFF_BREAKPOINT_PX ? 'split' : 'unified')
-    : diffPref
 
   const isMocked = initialSessionData !== undefined || initialWorkspaceData !== undefined
 
@@ -210,6 +229,14 @@ export function ReviewPanel({
     if (scope === 'session') return sessionData?.sessionFiles ?? []
     return activeTurn?.files ?? []
   }, [scope, workspaceData, sessionData, activeTurn])
+
+  const lineNumberDigits = useMemo(
+    () => maxLineNumberDigitsForFiles(activeFiles),
+    [activeFiles],
+  )
+  const effectiveDiffStyle: 'split' | 'unified' = diffPref === 'auto'
+    ? resolveAutoDiffStyle(diffPaneWidth, diffCharWidthPx, lineNumberDigits)
+    : diffPref
 
   const activeTotals = useMemo(() => {
     if (scope === 'workspace') {
@@ -432,7 +459,7 @@ export function ReviewPanel({
             )}
           </AnimatePresence>
 
-          <div ref={diffPaneRef} className="min-w-0 flex-1 overflow-hidden">
+          <div ref={handleDiffPaneRef} className="min-w-0 flex-1 overflow-hidden">
             {(() => {
               const list = (
                 <Virtualizer style={VIRTUALIZER_STYLE}>

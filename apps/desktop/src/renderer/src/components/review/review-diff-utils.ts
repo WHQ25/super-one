@@ -2,6 +2,7 @@ import type { DiffLineAnnotation, SelectedLineRange } from '@pierre/diffs/react'
 import { formatFilePrefix, lineKindToMarker } from '@superone/shared/file-quote-prefix'
 import type { ReviewFileDiff } from '@superone/shared/review-types'
 import { codeCommentAnchor, quoteMatchesFile } from '@/components/coding/code-comment-anchor'
+import { measureCharWidth } from '@/lib/pretext-utils'
 import type { ReplyComment } from '@/stores/chat'
 
 export interface ReviewHunkDescriptor {
@@ -199,6 +200,66 @@ export function countCommentsByFile(
     if (total > 0) counts.set(file.path, total)
   }
   return counts
+}
+
+export const SPLIT_DIFF_MIN_COLUMNS = 80
+const SPLIT_DIFF_SIDE_PADDING_CHARS = 5
+const SPLIT_DIFF_BORDER_PX = 5
+const DEFAULT_DIFF_FONT_SIZE = '13px'
+const DEFAULT_DIFF_FONT_FAMILY = '"SF Mono", Monaco, Consolas, "Ubuntu Mono", "Liberation Mono", "Courier New", monospace'
+const DEFAULT_DIFF_CHAR_WIDTH_PX = 7.8
+
+export function measureDiffCharWidthPx(element?: HTMLElement | null): number {
+  if (typeof document === 'undefined') return DEFAULT_DIFF_CHAR_WIDTH_PX
+  const computed = element ? getComputedStyle(element) : null
+  const fontSize = computed?.getPropertyValue('--diffs-font-size').trim() || DEFAULT_DIFF_FONT_SIZE
+  const fontFamily = computed?.getPropertyValue('--diffs-font-family').trim() || DEFAULT_DIFF_FONT_FAMILY
+  return measureCharWidth(`${fontSize} ${fontFamily}`, DEFAULT_DIFF_CHAR_WIDTH_PX)
+}
+
+export function maxLineNumberInPatch(patch: string): number {
+  if (!patch) return 0
+  let maxLine = 0
+  const hunkRe = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/gm
+  let match: RegExpExecArray | null
+  while ((match = hunkRe.exec(patch)) !== null) {
+    const oldStart = Number(match[1])
+    const oldCount = match[2] !== undefined ? Number(match[2]) : 1
+    const newStart = Number(match[3])
+    const newCount = match[4] !== undefined ? Number(match[4]) : 1
+    const oldEnd = oldStart + Math.max(0, oldCount - 1)
+    const newEnd = newStart + Math.max(0, newCount - 1)
+    if (oldEnd > maxLine) maxLine = oldEnd
+    if (newEnd > maxLine) maxLine = newEnd
+  }
+  return maxLine
+}
+
+export function maxLineNumberDigitsForFiles(files: readonly Pick<ReviewFileDiff, 'patch'>[]): number {
+  let maxLine = 0
+  for (const file of files) {
+    const fileMax = maxLineNumberInPatch(file.patch)
+    if (fileMax > maxLine) maxLine = fileMax
+  }
+  return maxLine > 0 ? String(maxLine).length : 3
+}
+
+export function computeSplitDiffMinWidthPx(
+  charWidthPx = DEFAULT_DIFF_CHAR_WIDTH_PX,
+  lineNumberDigits = 3,
+): number {
+  const safeCharWidth = Number.isFinite(charWidthPx) && charWidthPx > 0 ? charWidthPx : DEFAULT_DIFF_CHAR_WIDTH_PX
+  const safeDigits = Math.max(1, Math.floor(lineNumberDigits))
+  const perSideChars = SPLIT_DIFF_MIN_COLUMNS + safeDigits + SPLIT_DIFF_SIDE_PADDING_CHARS
+  return Math.ceil(perSideChars * 2 * safeCharWidth + SPLIT_DIFF_BORDER_PX)
+}
+
+export function resolveAutoDiffStyle(
+  paneWidthPx: number,
+  charWidthPx = DEFAULT_DIFF_CHAR_WIDTH_PX,
+  lineNumberDigits = 3,
+): 'split' | 'unified' {
+  return paneWidthPx >= computeSplitDiffMinWidthPx(charWidthPx, lineNumberDigits) ? 'split' : 'unified'
 }
 
 export function splitDirAndBase(filePath: string): { dir: string; base: string } {

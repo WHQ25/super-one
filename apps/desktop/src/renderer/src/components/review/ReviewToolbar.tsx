@@ -36,6 +36,7 @@ import {
 } from '@superone/ui/components/ui/dropdown-menu'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
+import { LspStatusPill } from '@/components/coding/LspStatusPill'
 
 export type DiffStylePreference = 'auto' | 'split' | 'unified'
 
@@ -72,6 +73,9 @@ interface ReviewToolbarProps {
   onToggleRichPreview: () => void
   loading: boolean
   onRefresh: () => void
+  lspWorkspaceRoot?: string | null
+  lspFilePaths?: readonly string[]
+  lspAllowed?: boolean
 }
 
 const DIFF_PREF_ORDER: readonly DiffStylePreference[] = ['auto', 'split', 'unified']
@@ -109,6 +113,9 @@ export function ReviewToolbar({
   onToggleRichPreview,
   loading,
   onRefresh,
+  lspWorkspaceRoot,
+  lspFilePaths,
+  lspAllowed = false,
 }: ReviewToolbarProps) {
   const { t } = useTranslation()
   const activeTurn = turns.find((turn) => turn.turnIndex === selectedTurnIndex)
@@ -353,6 +360,13 @@ export function ReviewToolbar({
       </div>
 
       <div className="flex items-center gap-1.5">
+        <LspStatusPill
+          workspaceRoot={lspWorkspaceRoot}
+          filePaths={lspFilePaths}
+          variant="review"
+          enabled={lspAllowed && Boolean(lspFilePaths?.length)}
+          className="h-7 px-2 text-xs"
+        />
         <IconButton
           size="sm"
           variant="ghost"

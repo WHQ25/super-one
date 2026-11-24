@@ -991,6 +991,34 @@ export type Messages = {
         customBadge: string
         serverReplaced: string
         configureTooltip: string
+        indicatorLabel: string
+        statusUnconfigured: string
+        statusIdle: string
+        statusStarting: string
+        statusIndexing: string
+        statusReady: string
+        statusError: string
+        statusNoServer: string
+        statusIdleDetail: string
+        statusStartingDetail: string
+        statusIndexingDetail: string
+        statusReadyDetail: string
+        statusErrorDetail: string
+        multipleServersDetail: string
+        shortcutHover: string
+        shortcutHoverKeysMac: string
+        shortcutHoverKeysOther: string
+        shortcutDefinition: string
+        shortcutDefinitionKeysMac: string
+        shortcutDefinitionKeysOther: string
+        shortcutAutocomplete: string
+        shortcutAutocompleteKeys: string
+        shortcutRename: string
+        shortcutRenameKeys: string
+        shortcutFormat: string
+        shortcutFormatKeys: string
+        restartAction: string
+        openSettingsAction: string
       }
     }
     dshPlugins: {
@@ -6498,6 +6526,34 @@ export const en: Messages = {
         customBadge: 'Custom',
         serverReplaced: '{{name}} enabled (disabled conflicting: {{disabled}})',
         configureTooltip: 'Configure Language Server in Editor Settings',
+        indicatorLabel: 'LSP',
+        statusUnconfigured: 'Not Configured',
+        statusIdle: 'Standby',
+        statusStarting: 'Starting…',
+        statusIndexing: 'Indexing…',
+        statusReady: 'Ready',
+        statusError: 'Error',
+        statusNoServer: 'No installed and enabled language server matches this file.',
+        statusIdleDetail: '{{name}} starts automatically when a matching file is expanded.',
+        statusStartingDetail: 'Starting {{name}}…',
+        statusIndexingDetail: '{{name}} is indexing project types; jump to definition may land on imports briefly.',
+        statusReadyDetail: '{{name}} is active for this workspace.',
+        statusErrorDetail: '{{name}} failed to initialize.',
+        multipleServersDetail: '{{count}} language servers configured for this review.',
+        shortcutHover: 'Hover docs',
+        shortcutHoverKeysMac: 'Option + Hover',
+        shortcutHoverKeysOther: 'Alt + Hover',
+        shortcutDefinition: 'Go to definition',
+        shortcutDefinitionKeysMac: 'Cmd + Click',
+        shortcutDefinitionKeysOther: 'Ctrl + Click',
+        shortcutAutocomplete: 'Autocomplete',
+        shortcutAutocompleteKeys: 'Tab',
+        shortcutRename: 'Rename symbol',
+        shortcutRenameKeys: 'F2',
+        shortcutFormat: 'Format document',
+        shortcutFormatKeys: 'Shift + Alt + F',
+        restartAction: 'Restart',
+        openSettingsAction: 'LSP Settings',
       },
     },
     dshPlugins: {

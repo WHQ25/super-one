@@ -14,9 +14,29 @@ import {
   type Transport,
   type WorkspaceFile,
 } from '@codemirror/lsp-client'
-import { resolveLspTarget } from '@superone/shared/lsp-languages'
-import { inferLanguage } from '@/lib/shiki-highlighter'
+import {
+  lspClientKey,
+  normalizeLspWorkspaceRoot,
+  registerLspClientDisposer,
+  resolveEnabledLspServer,
+  setLspClientStatus,
+  type LspClientEntryStatus,
+  type LspClientPhase,
+  type ResolvedLspServer,
+} from './lsp-status-store'
 import { openNewFileTab } from '@/components/activity/activity-panel-api'
+
+export {
+  getLspClientStatus,
+  getLspRestartVersion,
+  resolveEnabledLspServer,
+  restartLspWorkspace,
+  subscribeLspClientStatus,
+  subscribeLspRestart,
+  type LspClientEntryStatus,
+  type LspClientPhase,
+  type ResolvedLspServer,
+} from './lsp-status-store'
 
 export function pathToFileUri(filePath: string): string {
   const normalized = filePath.replace(/\\/g, '/')
@@ -196,17 +216,35 @@ interface ClientEntry {
 const clientCache = new Map<string, ClientEntry>()
 
 function clientKey(serverId: string, workspaceRoot: string): string {
-  return `${serverId}::${workspaceRoot}`
+  return lspClientKey(serverId, workspaceRoot)
 }
 
 function createIpcTransport(serverId: string, workspaceRoot: string): Transport {
+  const normalizedRoot = normalizeLspWorkspaceRoot(workspaceRoot)
   const handlers = new Set<(value: string) => void>()
   let unsubscribeIpc: (() => void) | null = null
 
   const ensureSubscribed = () => {
     if (unsubscribeIpc) return
     unsubscribeIpc = window.app.onLspMessage((payload) => {
-      if (payload.serverId !== serverId || payload.workspaceRoot !== workspaceRoot) return
+      if (
+        payload.serverId !== serverId ||
+        normalizeLspWorkspaceRoot(payload.workspaceRoot) !== normalizedRoot
+      ) {
+        return
+      }
+      try {
+        const parsed = JSON.parse(payload.message) as { id?: unknown; method?: string }
+        if (parsed.id !== undefined && parsed.method === 'window/workDoneProgress/create') {
+          void window.app.sendLspMessage(
+            serverId,
+            normalizedRoot,
+            JSON.stringify({ jsonrpc: '2.0', id: parsed.id, result: null }),
+          )
+          return
+        }
+      } catch {
+      }
       for (const handler of handlers) {
         handler(payload.message)
       }
@@ -215,7 +253,7 @@ function createIpcTransport(serverId: string, workspaceRoot: string): Transport 
 
   return {
     send(message: string) {
-      void window.app.sendLspMessage(serverId, workspaceRoot, message)
+      void window.app.sendLspMessage(serverId, normalizedRoot, message)
     },
     subscribe(handler: (value: string) => void) {
       handlers.add(handler)
@@ -232,18 +270,50 @@ function createIpcTransport(serverId: string, workspaceRoot: string): Transport 
 }
 
 export function getOrCreateLspClientEntry(serverId: string, workspaceRoot: string): ClientEntry {
-  const key = clientKey(serverId, workspaceRoot)
+  const normalizedRoot = normalizeLspWorkspaceRoot(workspaceRoot)
+  const key = clientKey(serverId, normalizedRoot)
   const existing = clientCache.get(key)
   if (existing) return existing
 
+  let initialized = false
+  const activeProgressTokens = new Set<string | number>()
+  const syncStatus = () => {
+    if (clientCache.get(key)?.client !== client) return
+    if (!initialized) {
+      setLspClientStatus(serverId, normalizedRoot, { phase: 'starting', error: null })
+      return
+    }
+    setLspClientStatus(serverId, normalizedRoot, {
+      phase: activeProgressTokens.size > 0 ? 'indexing' : 'ready',
+      error: null,
+    })
+  }
+
   let createdWorkspace!: SharedLspWorkspace
   const client = new LSPClient({
-    rootUri: pathToFileUri(workspaceRoot),
+    rootUri: pathToFileUri(normalizedRoot),
     workspace: (c) => {
-      createdWorkspace = new SharedLspWorkspace(c, workspaceRoot)
+      createdWorkspace = new SharedLspWorkspace(c, normalizedRoot)
       return createdWorkspace
     },
     extensions: [
+      {
+        clientCapabilities: { window: { workDoneProgress: true } },
+        notificationHandlers: {
+          '$/progress': (_c, params: { token?: string | number; value?: { kind?: string } }) => {
+            if (params?.token !== undefined && params.value?.kind) {
+              if (params.value.kind === 'begin') {
+                activeProgressTokens.add(params.token)
+                syncStatus()
+              } else if (params.value.kind === 'end') {
+                activeProgressTokens.delete(params.token)
+                syncStatus()
+              }
+            }
+            return true
+          },
+        },
+      },
       serverCompletion(),
       keymap.of([
         ...formatKeymap,
@@ -256,51 +326,37 @@ export function getOrCreateLspClientEntry(serverId: string, workspaceRoot: strin
     ],
     timeout: 8000,
   })
-  client.connect(createIpcTransport(serverId, workspaceRoot))
+  client.connect(createIpcTransport(serverId, normalizedRoot))
   const entry: ClientEntry = { client, workspace: createdWorkspace }
   clientCache.set(key, entry)
+  syncStatus()
+  void client.initializing.then(
+    () => {
+      initialized = true
+      syncStatus()
+    },
+    (err) => {
+      if (clientCache.get(key)?.client !== client) return
+      setLspClientStatus(serverId, normalizedRoot, {
+        phase: 'error',
+        error: err instanceof Error ? err.message : String(err),
+      })
+    },
+  )
   return entry
 }
 
 export function disposeLspClient(serverId: string, workspaceRoot: string): void {
-  const key = clientKey(serverId, workspaceRoot)
+  const normalizedRoot = normalizeLspWorkspaceRoot(workspaceRoot)
+  const key = clientKey(serverId, normalizedRoot)
   const entry = clientCache.get(key)
   if (!entry) return
   entry.client.disconnect()
   clientCache.delete(key)
+  setLspClientStatus(serverId, normalizedRoot, null)
 }
 
-export interface ResolvedLspServer {
-  serverId: string
-  languageId: string
-}
-
-export async function resolveEnabledLspServer(
-  filePath: string,
-  language?: string | null,
-): Promise<ResolvedLspServer | null> {
-  if (typeof window.app?.listLspServers !== 'function') return null
-  const ext = filePath.split('.').pop()?.toLowerCase() ?? ''
-  const inferred = language ?? inferLanguage(filePath)
-  const langLower = inferred.toLowerCase()
-  const candidates = [langLower, ext].filter((v) => v && v !== 'text')
-  if (candidates.length === 0) return null
-
-  const servers = await window.app.listLspServers().catch(() => [])
-  const enabledMatch = servers.find(
-    (s) =>
-      s.installStatus === 'installed' &&
-      s.enabled &&
-      candidates.some((c) => s.languages.includes(c)),
-  )
-  if (!enabledMatch) return null
-
-  const staticTarget = resolveLspTarget(inferred !== 'text' ? inferred : ext)
-  return {
-    serverId: enabledMatch.id,
-    languageId: staticTarget?.languageId ?? candidates[0] ?? 'plaintext',
-  }
-}
+registerLspClientDisposer(disposeLspClient)
 
 export interface LspDefinitionTarget {
   uri: string
@@ -322,6 +378,35 @@ interface RawLspLocation {
   targetRange?: RawLspRange
 }
 
+export function pickBestDefinitionLocation(
+  result: unknown,
+  currentUri?: string,
+): { uri: string; range: { start: { line: number; character: number } } } | null {
+  const rawItems = (Array.isArray(result) ? result : result ? [result] : []) as RawLspLocation[]
+  const normalized = rawItems
+    .map((item) => {
+      const uri = item.targetUri ?? item.uri
+      const range = item.targetSelectionRange ?? item.targetRange ?? item.range
+      if (!uri) return null
+      return {
+        uri,
+        range: {
+          start: {
+            line: Math.max(0, range?.start?.line ?? 0),
+            character: Math.max(0, range?.start?.character ?? 0),
+          },
+        },
+      }
+    })
+    .filter((item): item is NonNullable<typeof item> => item !== null)
+  if (normalized.length === 0) return null
+  if (normalized.length > 1 && currentUri) {
+    const external = normalized.find((item) => item.uri !== currentUri)
+    if (external) return external
+  }
+  return normalized[0]
+}
+
 export async function queryLspDefinition(
   client: LSPClient,
   workspaceRoot: string,
@@ -336,19 +421,15 @@ export async function queryLspDefinition(
       textDocument: { uri },
       position: { line: Math.max(0, line0), character: Math.max(0, character0) },
     })
-    const items = Array.isArray(result) ? result : result ? [result] : []
-    const first = items[0] as RawLspLocation | undefined
-    if (!first) return null
-    const targetUri = first.targetUri ?? first.uri
-    const range = first.targetSelectionRange ?? first.targetRange ?? first.range
-    if (!targetUri) return null
-    const fsPath = fileUriToPath(targetUri)
+    const best = pickBestDefinitionLocation(result, uri)
+    if (!best) return null
+    const fsPath = fileUriToPath(best.uri)
     return {
-      uri: targetUri,
+      uri: best.uri,
       fsPath,
       relativePath: toWorkspaceRelativePath(workspaceRoot, fsPath),
-      line: (range?.start?.line ?? 0) + 1,
-      character: range?.start?.character ?? 0,
+      line: best.range.start.line + 1,
+      character: best.range.start.character,
     }
   } catch {
     return null

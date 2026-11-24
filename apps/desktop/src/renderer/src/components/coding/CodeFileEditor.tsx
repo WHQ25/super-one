@@ -18,6 +18,7 @@ import { isAbsoluteLocalPath } from '@/lib/file-link'
 import { resolveLspTarget } from '@superone/shared/lsp-languages'
 import { inferLanguage, splitContentLines, useHighlightedTokens } from '@/lib/diff-utils'
 import { getHighlightCache } from '@/lib/highlight-cache'
+import { getLspRestartVersion, subscribeLspRestart } from '@/lib/lsp-status-store'
 import { useAppStore, useEffectiveProjectRoot } from '@/stores/app'
 import { useSourceControlStore } from '@/stores/source-control'
 import { CodeMinimap } from './CodeMinimap'
@@ -110,6 +111,7 @@ export function CodeFileEditor({
   const [minimapHighlightReady, setMinimapHighlightReady] = useState(false)
   const [editorDom, setEditorDom] = useState<HTMLElement | null>(null)
   const [hoveredTarget, setHoveredTarget] = useState<GutterHoverPayload | null>(null)
+  const [lspRestartNonce, setLspRestartNonce] = useState(() => getLspRestartVersion())
   const hoveredTargetRef = useRef<GutterHoverPayload | null>(null)
   hoveredTargetRef.current = hoveredTarget
 
@@ -409,6 +411,10 @@ export function CodeFileEditor({
   }, [editorVimMode, filePath])
 
   useEffect(() => {
+    return subscribeLspRestart(() => setLspRestartNonce(getLspRestartVersion()))
+  }, [])
+
+  useEffect(() => {
     const view = viewRef.current
     if (!view) return
     if (!lspEnabled || !fileRoot) {
@@ -434,7 +440,7 @@ export function CodeFileEditor({
       cancelled = true
       clearTimeout(timer)
     }
-  }, [lspEnabled, fileRoot, fullFilePath, language, isDark])
+  }, [lspEnabled, fileRoot, fullFilePath, language, isDark, lspRestartNonce])
 
   useEffect(() => {
     const view = viewRef.current

@@ -283,6 +283,11 @@ export function ReviewPanel({
     ? (workspaceData?.root || sessionCwd)
     : (sessionData?.cwd || sessionCwd)
 
+  const activeFilePaths = useMemo(
+    () => activeFiles.map((file) => file.path),
+    [activeFiles],
+  )
+
   const commentCounts = useMemo(
     () => countCommentsByFile(replyComments, activeFiles, effectiveRoot),
     [replyComments, activeFiles, effectiveRoot],
@@ -359,6 +364,9 @@ export function ReviewPanel({
         onToggleRichPreview={() => setRichPreview((v) => !v)}
         loading={loading}
         onRefresh={() => { void loadData() }}
+        lspWorkspaceRoot={effectiveRoot}
+        lspFilePaths={activeFilePaths}
+        lspAllowed={lspAllowed}
       />
 
       {error ? (

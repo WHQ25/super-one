@@ -10,6 +10,7 @@ import {
   queryLspHover,
   resolveEnabledLspServer,
 } from '@/lib/lsp-client-service'
+import { getLspRestartVersion, subscribeLspRestart } from '@/lib/lsp-status-store'
 import { inferLanguage } from '@/lib/shiki-highlighter'
 import { useSourceControlStore } from '@/stores/source-control'
 import { buildFullFilePath } from './review-diff-utils'
@@ -47,6 +48,11 @@ export function useReviewLsp({
 }: UseReviewLspOptions) {
   const [lspReady, setLspReady] = useState(false)
   const [hoverCard, setHoverCard] = useState<ReviewLspHoverState | null>(null)
+  const [restartNonce, setRestartNonce] = useState(() => getLspRestartVersion())
+
+  useEffect(() => {
+    return subscribeLspRestart(() => setRestartNonce(getLspRestartVersion()))
+  }, [])
 
   const clientRef = useRef<LSPClient | null>(null)
   const uriRef = useRef<string | null>(null)
@@ -119,7 +125,7 @@ export function useReviewLsp({
       clearUnderline()
       clearHover()
     }
-  }, [workspaceRoot, filePath, diskContent, matchesDisk, clearUnderline, clearHover])
+  }, [workspaceRoot, filePath, diskContent, matchesDisk, restartNonce, clearUnderline, clearHover])
 
   const checkDefinitionUnderline = useCallback(async (token: DiffTokenEventBaseProps) => {
     const client = clientRef.current

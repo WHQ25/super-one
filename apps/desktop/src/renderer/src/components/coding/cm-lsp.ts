@@ -1,6 +1,5 @@
 import { Prec, StateEffect, StateField, type Extension } from '@codemirror/state'
 import {
-  Decoration,
   EditorView,
   ViewPlugin,
   activateHover,
@@ -8,14 +7,17 @@ import {
   closeHoverTooltips,
   hasHoverTooltips,
   hoverTooltip,
+  keymap,
+  Decoration,
   type DecorationSet,
 } from '@codemirror/view'
-import { LSPPlugin, jumpToDefinition } from '@codemirror/lsp-client'
+import { LSPPlugin } from '@codemirror/lsp-client'
 import type { BundledLanguage } from 'shiki'
 import {
   disposeLspClient,
   getOrCreateLspClientEntry,
   pathToFileUri,
+  pickBestDefinitionLocation,
   resolveEnabledLspServer,
 } from '@/lib/lsp-client-service'
 import { getFileHighlighter, getFileHighlighterSync, getShikiTarget } from '@/lib/shiki-highlighter'
@@ -446,20 +448,63 @@ function createCmdHoverUnderlineExtension(): Extension {
   return [jumpLinkField, plugin]
 }
 
+function jumpToBestDefinition(view: EditorView): boolean {
+  const plugin = LSPPlugin.get(view)
+  if (!plugin || plugin.client.serverCapabilities?.definitionProvider === false) {
+    return false
+  }
+  plugin.client.sync()
+  const pos = view.state.selection.main.head
+  void plugin.client
+    .withMapping((mapping) =>
+      plugin.client
+        .request('textDocument/definition', {
+          textDocument: { uri: plugin.uri },
+          position: plugin.toPosition(pos),
+        })
+        .then((response) => {
+          const loc = pickBestDefinitionLocation(response, plugin.uri)
+          if (!loc) return
+          return (
+            loc.uri === plugin.uri
+              ? Promise.resolve(view)
+              : plugin.client.workspace.displayFile(loc.uri)
+          ).then((target) => {
+            if (!target) return
+            const targetPos = mapping.getMapping(loc.uri)
+              ? mapping.mapPosition(loc.uri, loc.range.start)
+              : plugin.fromPosition(loc.range.start, target.state.doc)
+            target.dispatch({
+              selection: { anchor: targetPos },
+              scrollIntoView: true,
+              userEvent: 'select.definition',
+            })
+          })
+        }),
+    )
+    .catch(() => {})
+  return true
+}
+
 function createCmdClickJumpExtension(): Extension {
-  return Prec.highest(
-    EditorView.domEventHandlers({
-      mousedown(event, view) {
-        if (!isJumpModifierActive(event) || event.button !== 0) return false
-        const pos = view.posAtCoords({ x: event.clientX, y: event.clientY })
-        if (pos == null) return false
-        event.preventDefault()
-        view.dispatch({ selection: { anchor: pos } })
-        jumpToDefinition(view)
-        return true
-      },
-    }),
-  )
+  return [
+    Prec.highest(
+      keymap.of([{ key: 'F12', run: jumpToBestDefinition, preventDefault: true }]),
+    ),
+    Prec.highest(
+      EditorView.domEventHandlers({
+        mousedown(event, view) {
+          if (!isJumpModifierActive(event) || event.button !== 0) return false
+          const pos = view.posAtCoords({ x: event.clientX, y: event.clientY })
+          if (pos == null) return false
+          event.preventDefault()
+          view.dispatch({ selection: { anchor: pos } })
+          jumpToBestDefinition(view)
+          return true
+        },
+      }),
+    ),
+  ]
 }
 
 export interface LoadLspExtensionOptions {

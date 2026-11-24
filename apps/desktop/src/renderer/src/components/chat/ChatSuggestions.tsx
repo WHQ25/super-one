@@ -28,6 +28,7 @@ import { useSessionPaneForeground } from '@/stores/chat-store/session-scope'
 import { isSelectedSessionScope } from '@/stores/chat-store/selectors'
 import type { AcpAgentDescriptor, SuggestionHarnessPreference } from '@superone/shared/agent-types'
 import { acpAgentDisplayName, isAcpProtocolHarness, isAntigravityAcpAgent, isGrokAcpAgent, resolveLegacyHarnessId } from '@superone/shared/acp-brand'
+import { parseRemoteProjectKey } from '@superone/shared/remote-resource-key'
 import { acpHarnessForAgent } from '@/stores/chat-store/harness/acp-slots'
 import {
   catalogIdForSessionProvider,
@@ -90,6 +91,10 @@ export function ProviderSelector({
   const enabledExperimentalAgents = useAppStore((s) => s.enabledExperimentalAgents)
   const localHarnessCatalog = useBootstrapHarnesses(initializeHarness)
   const sessionScope = useSessionScope()
+  const activeProjectPath = useChatStore((s) => sessionScope?.projectPath ?? s.activeProject)
+  const targetHost = (sessionScope ? undefined : hostConnectionId)
+    ?? (activeProjectPath ? parseRemoteProjectKey(activeProjectPath)?.connectionId : null)
+  const isRemoteHost = Boolean(targetHost && targetHost !== 'local')
   // Scoped panes stay on their session's machine. An unscoped landing follows
   // the host selector before that host has a project to bind to.
   const harnessCatalog = useProjectHarnessCatalog(localHarnessCatalog, sessionScope ? undefined : hostConnectionId)
@@ -143,7 +148,7 @@ export function ProviderSelector({
     source: 'fixed' | 'menu' = 'fixed',
   ) => {
     if (!manual && !canAutoSelect) return
-    if (manual) {
+    if (manual && !isRemoteHost) {
       const pref: SuggestionHarnessPreference = {
         provider: option.provider,
         acpAgentId: isAcpProtocolHarness(option.provider) ? option.acpAgentId : null,
@@ -166,6 +171,7 @@ export function ProviderSelector({
     }
     await selectProvider(option.provider, manual)
   }, [
+    isRemoteHost,
     persistDefaultHarness,
     persistSecondaryHarness,
     preferredProvider,

@@ -352,4 +352,55 @@ describe('Chat Suggestions host selection', () => {
     expect(await screen.findByRole('tab', { name: 'Grok Build' })).toBeInTheDocument()
     expect(screen.queryByText('Antigravity')).not.toBeInTheDocument()
   })
+
+  it('respects local harnessOrder on remote nodes and switches without mutating local order', async () => {
+    resetProviderSelectorMemoryForTests()
+    listItems.mockResolvedValue([{
+      connectionId: 'node-1',
+      environmentId: 'env-1',
+      label: 'Remote node',
+      kind: 'remote',
+      state: 'connected',
+      endpointProfiles: [],
+      capabilities: { methods: [], harnessIds: ['claude', 'codex'], coldSessionResume: true, turnReattach: false, hostActionV1: false },
+    }])
+    window.app.getAppSettings = vi.fn(async () => ({
+      harnessOrder: ['acp-antigravity', 'codex', 'claude'],
+      suggestionHarness: { provider: 'acp-antigravity', acpAgentId: 'antigravity' },
+      secondaryHarness: { provider: 'codex', acpAgentId: null },
+    }) as never)
+    const saveAppSettings = vi.fn(async () => ({}) as never)
+    window.app.saveAppSettings = saveAppSettings
+
+    const projectPath = 'remote:node-1:/repo'
+    const session = { ...createDefaultPerSessionState(), preferredProvider: 'codex' as const, harnessUserChosen: false, _historyHydrated: true }
+    useChatStore.setState({
+      activeProject: projectPath,
+      projectSessions: { [projectPath]: { ...createDefaultProjectState(), _activeSessionId: 's1', _sessions: { s1: session } } },
+      switchToSession: vi.fn(async () => {}),
+    })
+    useAppStore.setState({ currentFolder: projectPath, selectedHostConnectionId: 'node-1' })
+
+    render(<SessionScopeProvider value={{ projectPath, sessionId: 's1' }}><ProviderSelector /></SessionScopeProvider>)
+
+    const tabs = await screen.findAllByRole('tab')
+    expect(tabs.map((tab) => tab.textContent?.trim())).toEqual(['Codex', 'Claude Code'])
+
+    await act(async () => {
+      tabs[1].dispatchEvent(new MouseEvent('mousedown', { bubbles: true, button: 0 }))
+      tabs[1].click()
+    })
+
+    await waitFor(() => {
+      const updated = useChatStore.getState().projectSessions[projectPath]._sessions.s1
+      expect(updated.preferredProvider).toBe('claude')
+      expect(updated.harnessUserChosen).toBe(true)
+    })
+
+    expect(saveAppSettings).not.toHaveBeenCalled()
+    const afterTabs = screen.getAllByRole('tab')
+    expect(afterTabs.map((tab) => tab.textContent?.trim())).toEqual(['Codex', 'Claude Code'])
+    expect(afterTabs[1]).toHaveAttribute('data-state', 'active')
+    resetProviderSelectorMemoryForTests()
+  })
 })

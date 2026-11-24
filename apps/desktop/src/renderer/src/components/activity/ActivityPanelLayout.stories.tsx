@@ -2,6 +2,7 @@ import type { Meta, StoryObj } from '@storybook/react-vite'
 import { useLayoutEffect, useState } from 'react'
 import { expect, waitFor, within } from 'storybook/test'
 import { WindowsTitleBar } from '@/components/WindowsTitleBar'
+import { WindowLayoutControls } from '@/components/coding/LayoutToggle'
 import { useAppStore } from '@/stores/app'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { ActivityPanel } from './ActivityPanel'
@@ -52,6 +53,7 @@ function Preview({ platform = 'darwin', fullscreen = false, sidebarOpen = false,
       <div className="relative flex min-h-0 flex-1">
         {showSidebar && <aside className="w-[180px] shrink-0 bg-sidebar p-3 text-sidebar-foreground">Sidebar</aside>}
         <ActivityPanel getMaxWidth={() => width} transitionMs={0} />
+        <WindowLayoutControls scope="window" isFullscreen={fullscreen} onSidebar={showSidebar} />
       </div>
     </div>
   )
@@ -68,18 +70,19 @@ const meta = {
     splitActivityTab('file:CLAUDE.md', args.direction ?? 'right')
     if (args.maximized) maximizeActivityTab('file:CLAUDE.md')
     const canvas = within(canvasElement)
-    const expected = args.sidebarOpen && args.platform !== 'win32' ? 0 : 1
-    await waitFor(() => expect(canvas.queryAllByRole('button', { name: /toggle sidebar|切换侧边栏/i })).toHaveLength(expected))
+    const expectedSpacers = args.sidebarOpen || args.platform === 'win32' ? 0 : 1
+    await waitFor(() => expect(canvas.queryAllByRole('button', { name: /toggle sidebar|切换侧边栏/i })).toHaveLength(1))
     if (args.platform === 'win32') {
       expect(within(canvasElement.querySelector<HTMLElement>('[data-activity-outer]')!).queryByRole('button', { name: /toggle sidebar|切换侧边栏/i })).toBeNull()
       expect(canvasElement.querySelector('[data-traffic-light-padding]')).toBeNull()
+      expect(canvasElement.querySelector('[data-activity-controls-spacer]')).toBeNull()
     } else {
       const api = getDockApi()!
       const owner = api.getPanel(args.maximized ? 'file:CLAUDE.md' : 'file:README.md')!.group
       for (const group of api.groups) {
-        expect(within(group.element).queryAllByRole('button', { name: /toggle sidebar|切换侧边栏/i })).toHaveLength(group === owner ? expected : 0)
+        expect(group.element.querySelectorAll('[data-activity-controls-spacer]')).toHaveLength(group === owner ? expectedSpacers : 0)
       }
-      expect(canvasElement.querySelectorAll('[data-traffic-light-padding]')).toHaveLength(args.fullscreen ? 0 : expected)
+      expect(canvasElement.querySelectorAll('[data-traffic-light-padding]')).toHaveLength(args.fullscreen ? 0 : expectedSpacers)
     }
     canvasElement.querySelector<HTMLElement>('[data-split-header-preview]')!.dataset.verified = 'true'
   },

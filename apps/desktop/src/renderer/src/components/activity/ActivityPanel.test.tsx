@@ -117,12 +117,19 @@ async function renderSplit(direction: 'right' | 'below' = 'right') {
 
 function expectMacControls(view: ReturnType<typeof render>, owner: string, maximized = false) {
   const api = getDockApi()!
-  expect(view.getAllByRole('button', { name: /toggle sidebar/i })).toHaveLength(1)
-  expect(view.container.querySelectorAll('.lucide-panel-right-open')).toHaveLength(maximized ? 0 : 1)
-  expect(view.container.querySelectorAll('[data-traffic-light-padding]')).toHaveLength(1)
+  expect(view.queryByRole('button', { name: /toggle sidebar/i })).not.toBeInTheDocument()
+  const wrappers = view.container.querySelectorAll('[data-activity-controls-spacer]')
+  expect(wrappers).toHaveLength(1)
+  expect(wrappers[0]).toHaveClass('pl-[18px]')
+  const trafficSpacers = view.container.querySelectorAll('[data-traffic-light-padding]')
+  expect(trafficSpacers).toHaveLength(1)
+  expect(trafficSpacers[0]).toHaveClass('w-[61px]')
+  const controlSpacers = view.container.querySelectorAll('[data-layout-controls-spacer]')
+  expect(controlSpacers).toHaveLength(1)
+  expect(controlSpacers[0]).toHaveStyle({ width: maximized ? '32px' : '58px' })
   for (const group of api.groups) {
-    const buttons = within(group.element).queryAllByRole('button', { name: /toggle sidebar/i })
-    expect(buttons).toHaveLength(group === api.getPanel(owner)!.group ? 1 : 0)
+    const owned = group.element.querySelectorAll('[data-activity-controls-spacer]')
+    expect(owned).toHaveLength(group === api.getPanel(owner)!.group ? 1 : 0)
   }
 }
 
@@ -224,9 +231,9 @@ describe('activity split header controls', () => {
     expectMacControls(view, 'file:CLAUDE.md')
   })
 
-  it('keeps the empty-panel entry and hides activity controls while the macOS sidebar is open', async () => {
+  it('omits activity avoidance when empty or while the macOS sidebar is open', async () => {
     const view = render(<ActivityPanel getMaxWidth={() => 1000} transitionMs={0} />)
-    expect(view.getAllByRole('button', { name: /toggle sidebar/i })).toHaveLength(1)
+    expect(view.container.querySelector('[data-activity-controls-spacer]')).not.toBeInTheDocument()
     await act(async () => {
       getDockApi()!.layout(1000, 600)
       openNewFileTab('README.md')
@@ -234,31 +241,30 @@ describe('activity split header controls', () => {
       splitActivityTab('file:CLAUDE.md', 'right')
       useAppStore.setState({ showSidebar: true })
     })
-    expect(view.queryByRole('button', { name: /toggle sidebar/i })).not.toBeInTheDocument()
+    expect(view.container.querySelector('[data-activity-controls-spacer]')).not.toBeInTheDocument()
     expect(view.container.querySelector('[data-traffic-light-padding]')).not.toBeInTheDocument()
     await act(async () => { useAppStore.setState({ showSidebar: false }) })
     expectMacControls(view, 'file:README.md')
   })
 
-  it('omits traffic-light spacing in macOS fullscreen without duplicating the controls', async () => {
+  it('omits traffic-light spacing in macOS fullscreen while keeping control avoidance', async () => {
     Object.assign(window.app, { getFullscreen: async () => true })
     const view = await renderSplit()
-    expect(view.getAllByRole('button', { name: /toggle sidebar/i })).toHaveLength(1)
-    expect(view.container.querySelectorAll('.lucide-panel-right-open')).toHaveLength(1)
+    expect(view.container.querySelectorAll('[data-activity-controls-spacer]')).toHaveLength(1)
+    expect(view.container.querySelector('[data-activity-controls-spacer]')).toHaveClass('pl-2')
+    expect(view.container.querySelector('[data-layout-controls-spacer]')).toHaveStyle({ width: '58px' })
     expect(view.container.querySelector('[data-traffic-light-padding]')).not.toBeInTheDocument()
   })
 
-  it('keeps one control entry when an empty group occupies the top-left corner', async () => {
+  it('transfers avoidance cleanly when a top-left empty group gains a tab', async () => {
     const view = await renderSplit()
     const api = getDockApi()!
     await act(async () => {
       api.addGroup({ referenceGroup: api.getPanel('file:README.md')!.group, direction: 'left' })
     })
     expect(api.groups).toHaveLength(3)
-    expect(view.getAllByRole('button', { name: /toggle sidebar/i })).toHaveLength(1)
-    expect(view.container.querySelectorAll('[data-traffic-light-padding]')).toHaveLength(1)
+    expect(view.container.querySelector('[data-activity-controls-spacer]')).not.toBeInTheDocument()
     const empty = api.groups.find((group) => group.panels.length === 0)!
-    expect(within(empty.element).getByRole('button', { name: /toggle sidebar/i })).toBeInTheDocument()
     await act(async () => {
       api.addPanel({ id: 'file:EMPTY.md', component: 'file-preview', params: { filePath: 'EMPTY.md' }, position: { referenceGroup: empty } })
     })

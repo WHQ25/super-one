@@ -18,7 +18,6 @@ vi.mock('../coding/CodingLayout', () => ({ CodingLayout: ({ scope }: { scope: { 
 }))
 vi.mock('../chat/HeaderSessionMenu', () => ({ HeaderSessionMenu: () => null }))
 vi.mock('../sidebar/AnimatedSessionTitle', () => ({ SessionTitleAnimated: () => null }))
-vi.mock('../coding/LayoutToggle', () => ({ LayoutToggle: () => null }))
 vi.mock('@/hooks/useFullscreen', () => ({ useFullscreen: () => false }))
 
 const previousChat = useChatStore.getState()

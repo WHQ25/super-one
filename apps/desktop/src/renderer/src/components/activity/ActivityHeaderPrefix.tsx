@@ -3,14 +3,15 @@ import type { DockviewApi, IDockviewGroupPanel } from 'dockview-core'
 import { useAppStore } from '@/stores/app'
 import { selectPanelFillsWindow, useActivityPanelStore } from '@/stores/activity-panel'
 import { useFullscreen } from '@/hooks/useFullscreen'
-import { LayoutToggle } from '@/components/coding/LayoutToggle'
+import { useLayoutControlsWidth } from '@/components/coding/LayoutToggle'
+import { CARD_HEADER_CHROME } from '@/lib/layout-constants'
 import { cn } from '@superone/ui/lib/utils'
 
 const HeaderGroupContext = createContext<string | null>(null)
 
 /** macOS window controls belong to the visible top-left group, not every tab strip. */
 export function ActivityHeaderGroupProvider({ api: dockApi, children }: { api: DockviewApi | null; children: ReactNode }) {
-  const api = window.app.platform === 'darwin' ? dockApi : null
+  const api = window.app.platform !== 'win32' ? dockApi : null
   const subscribe = useCallback((onChange: () => void) => {
     if (!api) return () => {}
     const subscriptions = [api.onDidLayoutChange(onChange), api.onDidMaximizedGroupChange(onChange)]
@@ -42,19 +43,26 @@ export function useActivityHeaderLayout() {
   const fillsWindow = useActivityPanelStore(selectPanelFillsWindow)
   const isFullscreen = useFullscreen()
   const isMac = window.app.platform === 'darwin'
+  const isWin = window.app.platform === 'win32'
   return {
     isMac,
-    hostsLayoutToggle: (fillsWindow || side === 'left') && !(isMac && showSidebar),
+    hostsLayoutToggle: !isWin && (fillsWindow || side === 'left') && !(isMac && showSidebar),
     needsTrafficLightPadding: isMac && !isFullscreen && !showSidebar && (fillsWindow || side === 'left'),
   }
 }
 
 export function ActivityHeaderPrefix({ group }: { group?: IDockviewGroupPanel }) {
   const headerGroupId = useContext(HeaderGroupContext)
-  const { isMac, hostsLayoutToggle, needsTrafficLightPadding } = useActivityHeaderLayout()
-  if (!hostsLayoutToggle || (isMac && group && group.id !== headerGroupId)) return null
-  return <div className={cn('flex h-full items-center', needsTrafficLightPadding && 'pl-2')}>
-    {needsTrafficLightPadding && <div data-traffic-light-padding className="h-full w-[66px] shrink-0" />}
-    <LayoutToggle />
-  </div>
+  const { hostsLayoutToggle, needsTrafficLightPadding } = useActivityHeaderLayout()
+  const controlsWidth = useLayoutControlsWidth()
+  if (!hostsLayoutToggle || (group && group.id !== headerGroupId)) return null
+  return (
+    <div
+      data-activity-controls-spacer=""
+      className={cn('flex h-full shrink-0 items-center', needsTrafficLightPadding ? CARD_HEADER_CHROME.MAC_PADDING_LEFT : 'pl-2')}
+    >
+      {needsTrafficLightPadding && <div data-traffic-light-padding className={cn('h-full shrink-0', CARD_HEADER_CHROME.TRAFFIC_LIGHT_SPACER)} />}
+      <div data-layout-controls-spacer="" className="h-full shrink-0" style={{ width: controlsWidth }} />
+    </div>
+  )
 }

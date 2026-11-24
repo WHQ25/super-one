@@ -4,11 +4,12 @@ import { Maximize, X } from 'lucide-react'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { cn } from '@superone/ui/lib/utils'
 import { SessionPane } from '@/components/chat/SessionPane'
-import { LayoutToggle } from '@/components/coding/LayoutToggle'
+import { useLayoutControlsWidth } from '@/components/coding/LayoutToggle'
 import { SessionTitleAnimated } from '@/components/sidebar/AnimatedSessionTitle'
 import { HeaderSessionMenu } from '@/components/chat/HeaderSessionMenu'
 import { useFullscreen } from '@/hooks/useFullscreen'
 import { useAppStore } from '@/stores/app'
+import { CARD_HEADER_CHROME } from '@/lib/layout-constants'
 import { useMosaicStore } from './mosaic-store'
 import { MosaicDivider } from './MosaicDivider'
 import { MosaicDropZone } from './MosaicDropZone'
@@ -17,10 +18,12 @@ import { VisibleSessionSplitContext } from './visible-session-split'
 import { registerMosaicDom } from './mosaic-dom'
 
 const isMac = window.app.platform === 'darwin'
+const isWindows = window.app.platform === 'win32'
 
 interface RenderCtx {
   topLeftId: string
   reserveTrafficLights: boolean
+  isFullscreen: boolean
   showSidebar: boolean
   containerRef: RefObject<HTMLDivElement | null>
   foreground: boolean
@@ -34,16 +37,20 @@ function MosaicTile({ tile, ctx }: { tile: MosaicLeaf; ctx: RenderCtx }) {
   const { t } = useTranslation()
   const focused = useMosaicStore((s) => s.focusedTileId === tile.id)
   const dragging = useMosaicStore((s) => s.draggingSession)
+  const controlsWidth = useLayoutControlsWidth()
   const isTopLeft = tile.id === ctx.topLeftId
+  const avoidControls = isTopLeft && !isWindows && (!isMac || !ctx.showSidebar)
+  const avoidTrafficLights = isTopLeft && ctx.reserveTrafficLights
+  const headerSpacerWidth = (avoidTrafficLights ? CARD_HEADER_CHROME.TRAFFIC_LIGHT_SPACER_PX : 0) + (avoidControls ? controlsWidth : 0)
+  const headerPaddingLeft = !isMac || (isTopLeft && ctx.isFullscreen && !ctx.showSidebar) ? 'pl-2' : CARD_HEADER_CHROME.MAC_PADDING_LEFT
   return (
     <div
       data-tile-id={tile.id}
       onMouseDownCapture={() => { if (!focused) useMosaicStore.getState().setFocus(tile.id) }}
       className="relative flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden"
     >
-      <div className="relative z-10 flex h-[34px] shrink-0 items-center pl-[18px] pr-2" style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
-        {ctx.reserveTrafficLights && isTopLeft && <div className="w-[60px] shrink-0" />}
-        {isTopLeft && !ctx.showSidebar && <LayoutToggle />}
+      <div className={cn('relative z-10 flex shrink-0 items-center pr-2', CARD_HEADER_CHROME.HEIGHT, headerPaddingLeft)} style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}>
+        {headerSpacerWidth > 0 && <div data-layout-controls-spacer="" className="shrink-0" style={{ width: headerSpacerWidth }} />}
         <div className="group/htitle flex min-w-0 items-center gap-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
           <SessionTitleAnimated projectPath={tile.projectPath} sessionId={tile.sessionId} className="min-w-0 text-xs text-muted-foreground" />
           <HeaderSessionMenu sessionId={tile.sessionId} folderPath={tile.projectPath} />
@@ -108,6 +115,7 @@ export function SessionMosaic({ foreground = true }: SessionMosaicProps) {
   const ctx: RenderCtx = {
     topLeftId: topLeftLeafId(root),
     reserveTrafficLights: isMac && !showSidebar && !isFullscreen,
+    isFullscreen,
     showSidebar,
     containerRef,
     foreground,

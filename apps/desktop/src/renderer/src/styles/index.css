@@ -448,7 +448,8 @@ html[data-platform="win32"].liquid-glass.dark {
    portal out to <body> and keep the light palette, which is correct — they
    paint on --popover, not on the sidebar. */
 html:not(.dark) [data-sidebar-inner],
-html:not(.dark) [data-windows-titlebar] {
+html:not(.dark) [data-windows-titlebar],
+html:not(.dark) [data-window-layout-controls][data-on-sidebar="true"] {
   --foreground: var(--sidebar-foreground);
   /* 74% is the floor that still clears 4.5:1 on the raised --card surface,
      which is the worst ground a muted label lands on in here. */

@@ -2,7 +2,7 @@ import { useEffect, useLayoutEffect, useCallback, useRef, useState, useSyncExter
 import { flushSync } from 'react-dom'
 import { SquareTerminal, LayoutGrid, PanelLeft, PanelRight, PanelLeftDashed, PanelRightDashed } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
-import { LayoutToggle } from '@/components/coding/LayoutToggle'
+import { WindowLayoutControls, useLayoutControlsWidth } from '@/components/coding/LayoutToggle'
 import { ChatPanel } from '@/components/chat/ChatPanel'
 import { getModChromeScheme, getModChromeTint, subscribeModChromeTint } from '@/components/chat/mod/mod-chrome-tint'
 import { requestHarnessScheme } from '@/components/chat/mod/mod-harness-scheme'
@@ -74,7 +74,7 @@ import { CommandShortcut } from '@superone/ui/components/ui/command'
 import { startAnalytics } from '@/lib/analytics'
 import { applyCrispText } from '@/lib/font-smoothing'
 import { preloadFileHighlighter } from '@/lib/diff-utils'
-import { LAYOUT, maxPanelWidth, maxSidebarWidth } from '@/lib/layout-constants'
+import { CARD_HEADER_CHROME, LAYOUT, maxPanelWidth, maxSidebarWidth } from '@/lib/layout-constants'
 import { setActivityPanelShown, toggleSidebar } from '@/lib/layout-actions'
 import { projectSessionKey } from '@superone/shared/remote-resource-key'
 
@@ -548,6 +548,10 @@ function AppContent(): React.JSX.Element {
 
 
   const hasLeftPanel = showSidebar || (showActivityPanel && activitySide === 'left')
+  const layoutControlsWidth = useLayoutControlsWidth()
+  const chatHeaderAvoidControls = !isWindows && !(showActivityPanel && activitySide === 'left') && (!isMac || !showSidebar)
+  const chatHeaderAvoidTrafficLights = isMac && !isFullscreen && !hasLeftPanel
+  const chatHeaderSpacerWidth = (chatHeaderAvoidTrafficLights ? CARD_HEADER_CHROME.TRAFFIC_LIGHT_SPACER_PX : 0) + (chatHeaderAvoidControls ? layoutControlsWidth : 0)
 
   const getActivityMaxWidth = useCallback(() => {
     const sb = useAppStore.getState()
@@ -661,7 +665,7 @@ function AppContent(): React.JSX.Element {
           <WindowsTitleBar showLayoutControls />
         </SlotScopeProvider>
       )}
-      <div className="group/coding flex min-h-0 flex-1 overflow-hidden">
+      <div className="group/coding relative flex min-h-0 flex-1 overflow-hidden">
       <GitAutoRefresh />
       <>
       <div className="relative flex shrink-0">
@@ -732,11 +736,14 @@ function AppContent(): React.JSX.Element {
           ? <div className="relative z-10"><MiniWindowHeader canRestore transparentBackground={liquidGlass} /></div>
           : mosaicMode !== 'mosaic' && (
         <div
-          className={cn('relative z-10 flex h-[34px] shrink-0 items-center transition-[padding-left] duration-300 ease-in-out', !isMac || (isFullscreen && !hasLeftPanel) ? 'pl-2' : 'pl-[18px]')}
+          className={cn('relative z-10 flex shrink-0 items-center transition-[padding-left] duration-300 ease-in-out', CARD_HEADER_CHROME.HEIGHT, !isMac || (isFullscreen && !hasLeftPanel) ? 'pl-2' : CARD_HEADER_CHROME.MAC_PADDING_LEFT)}
           style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         >
-          {isMac && <div className={cn('shrink-0 transition-[width] duration-300 ease-in-out', isFullscreen || hasLeftPanel ? 'w-0' : 'w-[60px]')} />}
-          {(!isMac || !showSidebar) && !(showActivityPanel && activitySide === 'left') && <LayoutToggle />}
+          <div
+            data-layout-controls-spacer=""
+            className="shrink-0 transition-[width] duration-300 ease-in-out"
+            style={{ width: chatHeaderSpacerWidth }}
+          />
           <HeaderTitle sessionId={sessionId} folderPath={currentFolder} />
 
           <div className="flex-1" />
@@ -822,8 +829,12 @@ function AppContent(): React.JSX.Element {
         </div>
         {draggingSession && mosaicMode === 'mosaic' && <MosaicDropPreview />}
       </div>
+      {!compactMiniShell && <WindowLayoutControls scope="card" isFullscreen={isFullscreen} />}
       </div>
       </>
+      {!compactMiniShell && (
+        <WindowLayoutControls scope="window" isFullscreen={isFullscreen} onSidebar={showSidebar && !panelsFolded} />
+      )}
       {activityFillsWindow && !inMiniWindow && <ChatPanel anchorBoundaryRef={mainWrapperRef} />}
       <CodeCommentNoteHost />
       <ExternalLinkConfirm />

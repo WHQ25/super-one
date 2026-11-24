@@ -50,17 +50,13 @@ interface ActivityPanelProps {
 }
 
 function ActivityPrefixActions({ group, panels }: IDockviewHeaderActionsProps) {
-  // Empty macOS groups host these controls in their watermark instead.
-  if (window.app.platform === 'darwin' && panels.length === 0) return null
+  if (panels.length === 0) return null
   return <ActivityHeaderPrefix group={group} />
 }
 
 function ActivityWatermark({ group }: IWatermarkPanelProps) {
   return (
     <div className="relative h-full">
-      <div className="absolute inset-x-0 top-0 z-10 h-[34px]">
-        <ActivityHeaderPrefix group={group} />
-      </div>
       <ActivityLauncher group={group} />
     </div>
   )

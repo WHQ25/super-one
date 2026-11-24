@@ -65,7 +65,7 @@ import { traceSidebar, useSidebarRenderTrace } from '@/components/sidebar/sideba
 import type { RecentFolder, SessionHistoryEntry } from '@superone/shared/agent-types'
 import type { EnvironmentListItem } from '@superone/shared/environment'
 import { getDeleteSessionRecovery, shouldSkipDeleteConfirm, setSkipDeleteConfirm } from './session-delete-helpers'
-import { LayoutToggle } from '@/components/coding/LayoutToggle'
+import { CARD_HEADER_CHROME } from '@/lib/layout-constants'
 import { useMiniAppStore } from '@/stores/miniapp'
 import { AppDrawer } from '@/components/sidebar/AppDrawer'
 import { SidebarFocusView } from '@/components/sidebar/SidebarFocusView'
@@ -1310,12 +1310,9 @@ export const AppSidebar = memo(function AppSidebar() {
     <div className="flex h-full w-full shrink-0 select-none flex-col bg-sidebar text-sidebar-foreground">
       {isMac && (
         <div
-          className={cn('flex h-11 shrink-0 items-center pt-[2px]', isFullscreen ? 'pl-2' : 'pl-[18px]')}
+          className={cn('shrink-0', isFullscreen ? CARD_HEADER_CHROME.HEIGHT : 'h-11')}
           style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
-        >
-          {!isFullscreen && <div className="w-[66px] shrink-0" />}
-          <LayoutToggle />
-        </div>
+        />
       )}
       <div className="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
         <PluginSlotErrorBoundary resetKey={String(sidebarSlotVersion)} fallback={() => <DefaultAppSidebar />}>

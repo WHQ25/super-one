@@ -15,6 +15,18 @@ export const LAYOUT = {
   CARD_GUTTER: 12,
 } as const
 
+export const CARD_HEADER_CHROME = {
+  HEIGHT: 'h-9',
+  MAC_PADDING_LEFT: 'pl-[18px]',
+  TRAFFIC_LIGHT_SPACER: 'w-[61px]',
+  TRAFFIC_LIGHT_SPACER_PX: 61,
+} as const
+
+export const LAYOUT_CONTROLS_WIDTH = {
+  SINGLE: 32,
+  DOUBLE: 58,
+} as const
+
 export const ACTIVITY_PANEL_TRANSITION = {
   durationMs: 300,
   easing: 'cubic-bezier(0.4, 0, 0.2, 1)',

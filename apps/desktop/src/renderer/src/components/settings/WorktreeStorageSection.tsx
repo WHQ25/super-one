@@ -58,11 +58,16 @@ export function WorktreeStorageSection() {
     setNotice(null)
     try {
       const result = await window.app.removeStorageWorktrees(targets.map((worktree) => worktree.path))
-      const freed = sumBytes(targets.filter((worktree) => result.removed.includes(worktree.path)))
+      const removedPaths = new Set(result.removed)
+      const freed = sumBytes(targets.filter((worktree) => removedPaths.has(worktree.path)))
       setNotice(result.failed.length > 0
         ? t('storageSettings.worktrees.removeFailed', { count: result.failed.length, bytes: formatBytes(freed) })
         : t('storageSettings.worktrees.removed', { count: result.removed.length, bytes: formatBytes(freed) }))
-      await load()
+      if (removedPaths.size > 0) {
+        setState((prev) => prev.status === 'ready'
+          ? { status: 'ready', worktrees: prev.worktrees.filter((worktree) => !removedPaths.has(worktree.path)) }
+          : prev)
+      }
     } catch {
       setState({ status: 'error' })
     } finally {

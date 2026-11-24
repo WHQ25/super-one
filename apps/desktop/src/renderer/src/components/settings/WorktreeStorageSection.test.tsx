@@ -46,7 +46,7 @@ describe('worktree storage section', () => {
   })
 
   it('removes the clean unused worktrees in one pass and leaves the one with uncommitted changes', async () => {
-    const { removeStorageWorktrees } = stub({ lists: [[used, idle, detached, dirty], [used, dirty]] })
+    const { getStorageWorktrees, removeStorageWorktrees } = stub()
     render(<WorktreeStorageSection />)
 
     await userEvent.click(await screen.findByTestId('storage-worktrees-remove-unused'))
@@ -57,6 +57,7 @@ describe('worktree storage section', () => {
     expect(removeStorageWorktrees).toHaveBeenCalledWith([idle.path, detached.path])
     expect(await screen.findByTestId('storage-worktrees-notice')).toHaveTextContent('Removed 2 worktrees and freed 150.0 MB.')
     await waitFor(() => expect(screen.getAllByTestId('storage-worktree')).toHaveLength(1))
+    expect(getStorageWorktrees).toHaveBeenCalledTimes(1)
   })
 
   it('warns about lost changes before removing a single worktree with uncommitted changes', async () => {
@@ -75,8 +76,8 @@ describe('worktree storage section', () => {
   })
 
   it('reports worktrees that could not be removed and counts only what was freed', async () => {
-    stub({
-      lists: [[idle, detached], [detached]],
+    const { getStorageWorktrees } = stub({
+      lists: [[idle, detached]],
       removal: () => ({ removed: [idle.path], failed: [{ path: detached.path, error: 'Worktree is in use' }] }),
     })
     render(<WorktreeStorageSection />)
@@ -85,6 +86,9 @@ describe('worktree storage section', () => {
     await userEvent.click(screen.getByTestId('storage-worktrees-confirm'))
 
     expect(await screen.findByTestId('storage-worktrees-notice')).toHaveTextContent('1 worktree could not be removed. Freed 100.0 MB.')
+    expect(screen.getAllByTestId('storage-worktree')).toHaveLength(1)
+    expect(rowFor('app/detached')).toBeInTheDocument()
+    expect(getStorageWorktrees).toHaveBeenCalledTimes(1)
   })
 
   it('has nothing to remove when every worktree is in use or none exist', async () => {

@@ -27,6 +27,25 @@ describe('environment archive RPC', () => {
     expect(value.hits[0]).not.toHaveProperty('environmentId')
     expect(value.hits[0]).not.toHaveProperty('sessionUrl')
   })
+  it('filters session_search hits by olderThan and newerThan message timestamps', () => {
+    const ctx = context([
+      session('one', {
+        transcript: [
+          { id: 'm-old', role: 'assistant', text: 'token old', createdAt: Date.parse('2026-01-01T00:00:00.000Z') },
+          { id: 'm-mid', role: 'assistant', text: 'token mid', createdAt: Date.parse('2026-01-15T00:00:00.000Z') },
+          { id: 'm-new', role: 'assistant', text: 'token new', createdAt: Date.parse('2026-02-01T00:00:00.000Z') },
+        ],
+      }),
+    ])
+    const value = decode(
+      archive(ctx, {
+        query: 'token',
+        newerThan: '2026-01-05T00:00:00.000Z',
+        olderThan: '2026-01-20T00:00:00.000Z',
+      }).content[0].text,
+    ) as { hits: Array<{ messageId: string }> }
+    expect(value.hits.map(h => h.messageId)).toEqual(['m-mid'])
+  })
   it('rejects mismatched environments and requires scope for a caller from another host', () => {
     expect(archive(context(), { query: 'token', environmentId: 'node-B', allProjects: true }).isError).toBe(true)
     expect(archive(context(), { query: 'token' }, 'session_search', 'foreign-session').isError).toBe(true)

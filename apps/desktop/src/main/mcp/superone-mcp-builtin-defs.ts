@@ -641,6 +641,8 @@ export const BUILT_IN_SUPERONE_TOOL_DEFS: SuperoneMcpToolDescriptor[] = [
           description: 'Optional: restrict search to these session ids.',
         },
         role: { type: 'string', enum: ['user', 'assistant', 'any'], description: 'Message role filter. Default any.' },
+        olderThan: { type: 'string', description: 'ISO timestamp — only messages created before this.' },
+        newerThan: { type: 'string', description: 'ISO timestamp — only messages created after this.' },
         tags: {
           type: 'array',
           items: { type: 'string' },

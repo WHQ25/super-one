@@ -783,6 +783,8 @@ export function registerSuperoneTools(server: McpServer, deps: BuiltInSuperoneTo
         harness: z.enum(['claude', 'codex', 'acp', 'acp-grok', 'acp-antigravity', 'opencode']).optional(),
         sessionIds: z.array(z.string()).max(32).optional().describe('Optional: restrict search to these session ids.'),
         role: z.enum(['user', 'assistant', 'any']).optional().describe('Message role filter. Default any.'),
+        olderThan: z.string().optional().describe('ISO timestamp — only messages created before this.'),
+        newerThan: z.string().optional().describe('ISO timestamp — only messages created after this.'),
         tags: z.array(z.string()).max(8).optional().describe(SESSION_TAGS_FILTER_DESCRIPTION),
         tagMatch: z.enum(['any', 'all']).optional().describe(SESSION_TAG_MATCH_DESCRIPTION),
         projectId: z

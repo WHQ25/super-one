@@ -100,7 +100,7 @@ export const SESSION_LIST_DESCRIPTION =
 
 export const SESSION_SEARCH_DESCRIPTION =
   'Search SuperOne chat transcripts by text (title + message body). Default: current project; projectId or allProjects for cross-project. ' +
-  'Optional tags + tagMatch (any/all, default any) narrows sessions in SQL before scanning messages. Discover tags with session_tag_list. ' +
+  'Optional olderThan/newerThan (ISO timestamps) and tags + tagMatch (any/all, default any) narrow the SQL scan. Discover tags with session_tag_list. ' +
   'Returns matching message hits with short snippets and projectId. Then call session_read with sessionId/messageId. Snippets are pointers only — not full bodies. environmentId defaults to the calling session host and is returned once for the result; reuse it for session_read and session:// links. Discover unknown remote IDs with environment_get_info.'
 
 export const SESSION_READ_DESCRIPTION =

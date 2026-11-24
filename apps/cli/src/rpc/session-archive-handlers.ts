@@ -127,6 +127,8 @@ function readArchive(request: SessionArchiveRequest, ctx: RpcContext): ArchiveTo
   const query = String(args.query ?? '').trim()
   if (!query) return result({ status: 'error', message: 'query is required' }, true)
   const terms = query.toLowerCase().split(/\s+/)
+  const olderThan = typeof args.olderThan === 'string' && args.olderThan.trim() ? args.olderThan.trim() : undefined
+  const newerThan = typeof args.newerThan === 'string' && args.newerThan.trim() ? args.newerThan.trim() : undefined
   const scanLimit = projectId ? 500 : 2000
   const prefilter: Array<{ session: Readonly<NodeSessionRecord>; message: ChatMessage }> = []
   // Keep only the newest candidate window, rather than materializing every transcript.
@@ -134,7 +136,9 @@ function readArchive(request: SessionArchiveRequest, ctx: RpcContext): ArchiveTo
     if (Array.isArray(args.sessionIds) && !args.sessionIds.includes(session.sessionId)) continue
     for (const block of session.transcript) {
       if (block.role === 'system' || !`${session.title ?? ''}\n${block.text}`.toLowerCase().includes(terms[0])) continue
-      const message: ChatMessage = { id: block.id, role: block.role, status: 'complete', content: block.userMessageContent ?? [{ type: 'text', text: block.text }], createdAt: date(block.createdAt), providerId: session.providerId }
+      const createdAt = date(block.createdAt)
+      if ((olderThan && createdAt >= olderThan) || (newerThan && createdAt <= newerThan)) continue
+      const message: ChatMessage = { id: block.id, role: block.role, status: 'complete', content: block.userMessageContent ?? [{ type: 'text', text: block.text }], createdAt, providerId: session.providerId }
       let low = 0, high = prefilter.length
       while (low < high) { const mid = (low + high) >>> 1; if (prefilter[mid].message.createdAt > message.createdAt) low = mid + 1; else high = mid }
       if (low < scanLimit) { prefilter.splice(low, 0, { session, message }); if (prefilter.length > scanLimit) prefilter.pop() }

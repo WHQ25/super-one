@@ -544,6 +544,31 @@ describe('session archive tools', () => {
     expect(all.mock.calls[0]![0]).toBe('proj-1')
   })
 
+  it('session_search applies olderThan and newerThan in SQL before the text prefilter', () => {
+    const all = vi.fn(() => [])
+    const prepare = vi.fn(() => ({ all }))
+    getDbMock.mockReturnValue({ prepare })
+
+    sessionSearchHandler(
+      {
+        query: 'refresh',
+        olderThan: '2026-02-01T00:00:00.000Z',
+        newerThan: '2026-01-01T00:00:00.000Z',
+      },
+      makeDeps(),
+    )
+    const sql = prepare.mock.calls[0]![0] as string
+    expect(sql).toMatch(/m\.created_at < \?/)
+    expect(sql).toMatch(/m\.created_at > \?/)
+    expect(all.mock.calls[0]).toEqual([
+      'proj-1',
+      '2026-02-01T00:00:00.000Z',
+      '2026-01-01T00:00:00.000Z',
+      '%refresh%',
+      '%refresh%',
+    ])
+  })
+
   it('session_search allProjects omits project_id filter and widens the prefilter window', () => {
     const prepare = vi.fn(() => ({ all: () => [] }))
     getDbMock.mockReturnValue({ prepare })

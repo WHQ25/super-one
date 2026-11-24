@@ -433,6 +433,8 @@ export interface SessionSearchArgs extends ArchiveProjectScopeArgs {
   harness?: string
   sessionIds?: string[]
   role?: 'user' | 'assistant' | 'any'
+  olderThan?: string
+  newerThan?: string
   tags?: string[]
   tagMatch?: SessionTagMatch
   limit?: number
@@ -466,6 +468,9 @@ export function sessionSearchHandler(args: SessionSearchArgs, deps: BuiltInSuper
     filterTags = parsed.tags
   }
 
+  const olderThan = typeof args.olderThan === 'string' && args.olderThan.trim() ? args.olderThan.trim() : undefined
+  const newerThan = typeof args.newerThan === 'string' && args.newerThan.trim() ? args.newerThan.trim() : undefined
+
   const db = getDb()
   // Broad SQL prefilter with first term, then refine in JS for multi-word AND.
   // The prefilter is ordered by recency, so an all-projects scan would otherwise be
@@ -478,8 +483,19 @@ export function sessionSearchHandler(args: SessionSearchArgs, deps: BuiltInSuper
   const projectClause = scope.mode === 'project' ? 's.project_id = ? AND' : ''
   const tagClause = sessionTagsMatchClause('s.tags_json', filterTags, tagMatch)
   const tagSql = tagClause.sql ? `AND ${tagClause.sql}` : ''
+  const dateClauses: string[] = []
+  const dateParams: string[] = []
+  if (olderThan) {
+    dateClauses.push('AND m.created_at < ?')
+    dateParams.push(olderThan)
+  }
+  if (newerThan) {
+    dateClauses.push('AND m.created_at > ?')
+    dateParams.push(newerThan)
+  }
+  const dateSql = dateClauses.join('\n      ')
   const sqlParams: unknown[] = scope.mode === 'project' ? [scope.projectId] : []
-  sqlParams.push(...tagClause.params, like, like)
+  sqlParams.push(...tagClause.params, ...dateParams, like, like)
   const rows = db.prepare(`
     SELECT m.id AS message_id, m.session_id, m.role, m.created_at, m.content_json,
            s.title, s.provider_id, s.provider, s.acp_agent_id, s.project_id, s.tags_json
@@ -488,6 +504,7 @@ export function sessionSearchHandler(args: SessionSearchArgs, deps: BuiltInSuper
     WHERE ${projectClause}
           COALESCE(s.is_hidden, 0) = 0
       ${tagSql}
+      ${dateSql}
       AND (LOWER(COALESCE(s.title, '')) LIKE ? OR LOWER(m.content_json) LIKE ?)
     ORDER BY m.created_at DESC
     LIMIT ${prefilterLimit}

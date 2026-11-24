@@ -305,6 +305,14 @@ export const HOST_ACTION_ARCHIVE_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
           ],
           "description": "Message role filter. Default any."
         },
+        "olderThan": {
+          "type": "string",
+          "description": "ISO timestamp — only messages created before this."
+        },
+        "newerThan": {
+          "type": "string",
+          "description": "ISO timestamp — only messages created after this."
+        },
         "tags": {
           "type": "array",
           "items": { "type": "string" },

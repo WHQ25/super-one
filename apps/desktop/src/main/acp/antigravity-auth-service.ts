@@ -12,7 +12,6 @@ import { probeDesktopHarness } from '../harness/service'
 import { ensureShellPath } from '../shell-path'
 import { resolveAcpClientVersion } from './acp-client-info'
 import { spawnAcpProcess } from './acp-process'
-import { ANTIGRAVITY_CLIENT_INFO } from './antigravity-protocol'
 import {
   clearAntigravityOAuthToken,
   extractAntigravityAuthUrlFromStdoutLine,
@@ -76,7 +75,7 @@ export async function openAntigravityAuthConnection(
     initialize: () =>
       connection.agent.request(methods.agent.initialize, {
         protocolVersion: PROTOCOL_VERSION,
-        clientInfo: ANTIGRAVITY_CLIENT_INFO,
+        clientInfo: { name: 'superone', version: resolveAcpClientVersion() },
         clientCapabilities: {
           fs: { readTextFile: false, writeTextFile: false },
           terminal: false,

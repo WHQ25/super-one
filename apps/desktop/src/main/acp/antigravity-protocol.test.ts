@@ -14,7 +14,7 @@ import { createXaiCorrelationState } from './acp-xai-session-notify'
 import { ensureAntigravityAutoBootstrap } from './antigravity-auto-bootstrap'
 import { closeAntigravityThinkingStep, finalizeAntigravityTurnThinking, openAntigravityThinkingStep, stampAntigravityThoughtDeltas, type AntigravityTurnThinkingScope } from './antigravity-runtime-bridge'
 import { ANTIGRAVITY_SYSTEM_PROMPT_APPEND, antigravitySystemPromptAppend } from '../agent/superone-system-prompt'
-import { ANTIGRAVITY_CLIENT_INFO, antigravityPermissionDisposition, antigravityPermissionMode, antigravitySessionMeta, extractAntigravitySecurityWarning, extractAntigravityToolNameFromTitle, extractAntigravityUserInputQuestion, isAntigravityUserInputRequest, makeAntigravityUserInputResponse, normalizeAntigravitySessionUpdate, sanitizeAntigravityToolPayload, selectAntigravityAutoApprovedOptionId } from './antigravity-protocol'
+import { antigravityPermissionDisposition, antigravityPermissionMode, antigravitySessionMeta, extractAntigravitySecurityWarning, extractAntigravityToolNameFromTitle, extractAntigravityUserInputQuestion, isAntigravityUserInputRequest, makeAntigravityUserInputResponse, normalizeAntigravitySessionUpdate, sanitizeAntigravityToolPayload, selectAntigravityAutoApprovedOptionId } from './antigravity-protocol'
 import {
   ANTIGRAVITY_DAILY_ENDPOINT,
   ANTIGRAVITY_PROD_ENDPOINT,
@@ -29,7 +29,6 @@ import {
 
 describe('antigravity-protocol', () => {
   it('maps SuperOne permission modes and client policy to Antigravity', () => {
-    expect(ANTIGRAVITY_CLIENT_INFO).toEqual({ name: 'zed', version: '0.0.0' })
     expect(antigravityPermissionMode('bypassPermissions')).toBe('default')
     expect(antigravityPermissionMode('auto')).toBe('accept-edits')
     expect(antigravityPermissionMode('acceptEdits')).toBe('accept-edits')

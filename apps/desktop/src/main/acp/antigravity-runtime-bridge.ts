@@ -30,7 +30,6 @@ import {
   writeAntigravityAuthConfig,
 } from './antigravity-profile'
 import {
-  ANTIGRAVITY_CLIENT_INFO,
   antigravityPermissionDisposition,
   antigravityPermissionMode,
   antigravitySessionMeta,
@@ -64,7 +63,6 @@ import {
 
 export {
   advanceAntigravityThinkingStepAfterTools,
-  ANTIGRAVITY_CLIENT_INFO,
   antigravitySessionMeta,
   closeAntigravityThinkingStep,
   extractAntigravityApiRetryEvent,

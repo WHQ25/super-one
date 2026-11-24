@@ -136,7 +136,6 @@ import {
 } from '@superone/shared/grok-suggest-prompt'
 import { describeAcpRequestFailure } from './acp-request-error'
 import {
-  ANTIGRAVITY_CLIENT_INFO,
   advanceAntigravityThinkingStepAfterTools,
   antigravityPermissionLaunchProfile,
   antigravitySessionMeta,
@@ -848,9 +847,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     const useHostTerminal = launch.agentId !== 'grok-build' && !isAntigravity
     const initResult = await connection.agent.request(methods.agent.initialize, {
       protocolVersion: PROTOCOL_VERSION,
-      clientInfo: isAntigravity
-        ? ANTIGRAVITY_CLIENT_INFO
-        : { name: 'superone', version: clientVersion },
+      clientInfo: { name: 'superone', version: clientVersion },
       clientCapabilities: {
         fs: { readTextFile: useHostDelegation, writeTextFile: useHostDelegation },
         terminal: useHostTerminal,

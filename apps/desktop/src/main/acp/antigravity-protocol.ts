@@ -39,7 +39,6 @@ const SUBAGENT_TITLES = new Set([
   'start_subagent', 'invoke_subagent',
 ])
 
-export const ANTIGRAVITY_CLIENT_INFO = { name: 'zed', version: '0.0.0' } as const
 
 export function antigravitySessionMeta(mode?: PermissionMode | null, systemPromptAppend?: string | null): Record<string, unknown> {
   const prompt = systemPromptAppend?.trim()

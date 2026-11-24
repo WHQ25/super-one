@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useShallow } from 'zustand/react/shallow'
 import { useBrowserStore } from '@/stores/browser'
+import { useActivityDropStore } from '@/stores/activity-drop'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { panelCornersForSlot } from '@/components/activity/activity-panel-corners'
 import { useActivityPanelOnScreen } from '@/hooks/useActivityPanelOnScreen'
@@ -67,18 +68,22 @@ export function BrowserHostLayer() {
     })
   }, [])
 
+  const baseZIndex = overlayOpen ? Z.HOST_BROWSER_EXPANDED : Z.HOST_BROWSER
+
   return (
-    // Expanded still ranks below the modal tier — see `Z` for why that is not optional.
-    <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: overlayOpen ? Z.HOST_BROWSER_EXPANDED : Z.HOST_BROWSER }}>
+    <>
       {ids.map((id) => (
-        <PersistentBrowser key={id} browserId={id} resizing={resizing} />
+        <PersistentBrowser key={id} browserId={id} resizing={resizing} baseZIndex={baseZIndex} />
       ))}
-      <BrowserPictureInPicture />
-    </div>
+      <div style={{ position: 'fixed', inset: 0, pointerEvents: 'none', zIndex: baseZIndex }}>
+        <BrowserPictureInPicture />
+      </div>
+    </>
   )
 }
 
-function PersistentBrowser({ browserId, resizing }: { browserId: string; resizing: boolean }) {
+function PersistentBrowser({ browserId, resizing, baseZIndex }: { browserId: string; resizing: boolean; baseZIndex: number }) {
+  const isFloatingDrag = useActivityDropStore((s) => s.floatingPanelId === browserId)
   const panelSlot = useBrowserStore((s) => s.slots[browserId])
   const pipSlot = useBrowserStore((s) => s.pipSlots[browserId])
   const overlaySlot = useBrowserStore((s) => s.overlaySlots[browserId])
@@ -360,29 +365,25 @@ function PersistentBrowser({ browserId, resizing }: { browserId: string; resizin
       data-browser-id={browserId}
       data-browser-presentation={slot?.mode ?? restingSlot?.mode}
       style={{
-        position: 'absolute',
+        position: 'fixed',
+        zIndex: isFloatingDrag ? Z.DRAG_GHOST + 1 : baseZIndex,
         left: inViewport ? (capturingPip ? 0 : (slot?.left ?? 0)) : -99999,
         top: inViewport ? (capturingPip ? 0 : (slot?.top ?? 0)) : 0,
         width: hostWidth,
         height: hostHeight,
         display: mounted || capturing ? 'block' : 'none',
-        opacity: visible && !capturingPip ? 1 : 0,
+        opacity: visible && !capturingPip ? (isFloatingDrag ? 0.96 : 1) : 0,
         clipPath,
-        transition: capturing
+        transition: capturing || isFloatingDrag
           ? 'none'
           : `clip-path ${ACTIVITY_PANEL_TRANSITION.durationMs}ms ${ACTIVITY_PANEL_TRANSITION.easing}`,
         pointerEvents: visible && slot?.mode !== 'pip' && !resizing ? 'auto' : 'none',
         overflow: 'hidden',
-        // The glass window's background is transparent and Electron composites the
-        // guest straight through it, so a page that paints no background of its own
-        // would show the app's vibrancy. Paint the canvas Chromium would have painted
-        // instead — without mutating the page. The new-tab page, drawn above this in
-        // the React layer, is the one surface meant to read as glass.
         backgroundColor: home ? undefined : canvas,
         borderTopLeftRadius: slot?.mode === 'pip' ? 'var(--radius-xl)' : undefined,
         borderTopRightRadius: slot?.mode === 'pip' ? 'var(--radius-xl)' : undefined,
-        borderBottomLeftRadius: slot?.mode === 'pip' || (slot?.mode === 'panel' && roundLeft && activitySide === 'left' && panelCorners.bottomLeft) ? 'var(--radius-xl)' : undefined,
-        borderBottomRightRadius: slot?.mode === 'pip' || (slot?.mode === 'panel' && roundRight && activitySide === 'right' && panelCorners.bottomRight) ? 'var(--radius-xl)' : undefined,
+        borderBottomLeftRadius: isFloatingDrag || slot?.mode === 'pip' || (slot?.mode === 'panel' && roundLeft && activitySide === 'left' && panelCorners.bottomLeft) ? 'var(--radius-xl)' : undefined,
+        borderBottomRightRadius: isFloatingDrag || slot?.mode === 'pip' || (slot?.mode === 'panel' && roundRight && activitySide === 'right' && panelCorners.bottomRight) ? 'var(--radius-xl)' : undefined,
       }}
     >
       <webview

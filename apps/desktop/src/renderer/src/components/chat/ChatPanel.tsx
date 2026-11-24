@@ -2,7 +2,8 @@ import { useRef, useCallback, useEffect, useState, useLayoutEffect, memo } from 
 import { motion, useMotionValue, animate } from 'motion/react'
 import { useTranslation } from 'react-i18next'
 import { useChatStore, useActiveSession } from '@/stores/chat'
-import { ChevronDown, Plus } from 'lucide-react'
+import { ChevronDown, PanelLeft, PanelRight } from 'lucide-react'
+import { useActivityPanelStore } from '@/stores/activity-panel'
 import { ChatContent } from './ChatContent'
 import { CollapsedChatPanelView, COLLAPSED_SIZE, COLLAPSED_PENDING_MAX_W } from './CollapsedChatPanelView'
 import { useChatScroll } from '@/hooks/useChatScroll'
@@ -15,7 +16,7 @@ import { clearUnseenCompleted } from '@/stores/chat-store/helpers/unseen-complet
 import { useHasMcpAppConsent } from '@/components/mcp-apps/consent-store'
 import { McpAppConsentComposer } from '@/components/mcp-apps/McpAppConsent'
 import { HeaderSessionMenu } from './HeaderSessionMenu'
-import { startNewSessionFromFocus } from '@/lib/new-session-from-focus'
+import { setChatFloating } from '@/lib/layout-actions'
 
 const OFFSET = 8
 const DEFAULT_PANEL_W = 360
@@ -87,6 +88,8 @@ type ResizeEdge = 'top' | 'bottom' | 'left' | 'right'
 export const ChatPanel = memo(function ChatPanel({ anchorBoundaryRef }: { anchorBoundaryRef: React.RefObject<HTMLElement | null> }) {
   const { t } = useTranslation()
   const isOpen = useChatStore((s) => s.isOpen)
+  const activitySide = useActivityPanelStore((s) => s.side)
+  const DockIcon = activitySide === 'right' ? PanelLeft : PanelRight
   const corner = useChatStore((s) => s.corner) as Anchor
   const setCorner = useChatStore((s) => s.setCorner)
   const toggleOpen = useChatStore((s) => s.toggleOpen)
@@ -283,6 +286,11 @@ export const ChatPanel = memo(function ChatPanel({ anchorBoundaryRef }: { anchor
     [anchorBounds, setCorner, mvX, mvY]
   )
 
+  const clickTimerRef = useRef<number | null>(null)
+  useEffect(() => () => {
+    if (clickTimerRef.current !== null) window.clearTimeout(clickTimerRef.current)
+  }, [])
+
   const handleToggle = useCallback(
     (e: React.MouseEvent) => {
       if (!dragRef.current.dragging) {
@@ -291,6 +299,36 @@ export const ChatPanel = memo(function ChatPanel({ anchorBoundaryRef }: { anchor
       }
     },
     [toggleOpen]
+  )
+
+  const handleCollapsedClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (dragRef.current.dragging) return
+      e.stopPropagation()
+      if (clickTimerRef.current !== null) {
+        window.clearTimeout(clickTimerRef.current)
+        clickTimerRef.current = null
+        return
+      }
+      clickTimerRef.current = window.setTimeout(() => {
+        clickTimerRef.current = null
+        toggleOpen()
+      }, 220)
+    },
+    [toggleOpen]
+  )
+
+  const handleCollapsedDoubleClick = useCallback(
+    (e: React.MouseEvent) => {
+      if (dragRef.current.dragging) return
+      e.stopPropagation()
+      if (clickTimerRef.current !== null) {
+        window.clearTimeout(clickTimerRef.current)
+        clickTimerRef.current = null
+      }
+      setChatFloating(false)
+    },
+    []
   )
 
   // --- Resize handler (one per edge) ---
@@ -458,10 +496,14 @@ export const ChatPanel = memo(function ChatPanel({ anchorBoundaryRef }: { anchor
               ) : null}
             </div>
             <button
-              onClick={() => void startNewSessionFromFocus()}
+              type="button"
+              onMouseDown={(e) => e.stopPropagation()}
+              onClick={() => setChatFloating(false)}
+              title={t('sidebar.contextMenu.dockChat')}
+              aria-label={t('sidebar.contextMenu.dockChat')}
               className="shrink-0 rounded-md p-1.5 text-muted-foreground/60 transition-colors hover:bg-muted hover:text-foreground"
             >
-              <Plus className="size-3.5" />
+              <DockIcon className="size-3.5" />
             </button>
           </div>
         ) : appConsent ? (
@@ -475,7 +517,8 @@ export const ChatPanel = memo(function ChatPanel({ anchorBoundaryRef }: { anchor
             isRunning={isRunning}
             isUnseen={isUnseen}
             isDragging={isDragging}
-            onClick={handleToggle}
+            onClick={handleCollapsedClick}
+            onDoubleClick={handleCollapsedDoubleClick}
             onMouseDown={handleMouseDown}
           />
         )}

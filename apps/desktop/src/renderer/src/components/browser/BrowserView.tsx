@@ -91,6 +91,7 @@ export function BrowserView({
       )}
       <div
         ref={contentRef}
+        data-browser-slot={browserId}
         className={cn('min-h-0 flex-1', interactive && (isHome || certError) ? 'pointer-events-auto' : 'pointer-events-none')}
       >
         {isHome && <BrowserNewTab onOpen={navigate} />}

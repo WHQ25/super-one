@@ -17,13 +17,14 @@ import { ACTIVITY_PANEL_TRANSITION, LAYOUT } from '@/lib/layout-constants'
 import { ActivityHeaderGroupProvider, ActivityHeaderPrefix } from './ActivityHeaderPrefix'
 import { ResizeHandleLine } from '@/components/ResizeHandleLine'
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuShortcut, DropdownMenuTrigger } from '@superone/ui/components/ui/dropdown-menu'
-import { isLayoutSwapping, isModPanePanel, isPersonClosingModPane, launchInGroup, restorePanelWidthAfterSideChat, setDockApi, SIDE_CHAT_PANEL_ID, toggleMaximizedActivityGroup, type ModPaneTabParams } from './activity-panel-api'
+import { exitMaximizedDock, isLayoutSwapping, isModPanePanel, isPersonClosingModPane, launchInGroup, restorePanelWidthAfterSideChat, setDockApi, SIDE_CHAT_PANEL_ID, toggleMaximizedActivityGroup, type ModPaneTabParams } from './activity-panel-api'
 import { bumpActivityDockRevision } from './activity-dock-revision'
 import { connectMcpAppTabs } from './mcp-app-tabs'
+import { attachChromeTabDrag } from './chrome-tab-drag'
+import { watchStickyActiveTabs } from './sticky-active-tab'
 import { useActivityLaunchTypes } from './activity-launch-types'
 import { activityPanelComponents } from './panels'
 import { activityTabComponents } from './ActivityTab'
-import { watchScrollEdgeFades } from '@superone/ui/lib/scroll-edge-fade'
 import { ActivityLauncher } from './ActivityLauncher'
 import { cn } from '@superone/ui/lib/utils'
 
@@ -68,14 +69,14 @@ function ActivityWatermark({ group }: IWatermarkPanelProps) {
 function ActivityNewTabAction({ group }: IDockviewHeaderActionsProps) {
   const types = useActivityLaunchTypes()
   return (
-    <div className="flex h-full items-center px-1" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+    <div className="flex h-full items-center px-1.5" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
           <button
-            className="flex size-6 items-center justify-center rounded-md text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+            className="flex size-7 items-center justify-center rounded-full text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
             title="New tab"
           >
-            <Plus className="size-4" />
+            <Plus className="size-[18px]" />
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start">
@@ -93,7 +94,7 @@ function ActivityNewTabAction({ group }: IDockviewHeaderActionsProps) {
 }
 
 export function ActivityPanel({ getMaxWidth, floatChatOnResizeOverflow, transitionMs, className }: ActivityPanelProps) {
-  const { side, panelWidth, setPanelWidthByUser, maximized } = useActivityPanelStore()
+  const { side, panelWidth, setPanelWidthByUser, maximized, setFloatDropPreview } = useActivityPanelStore()
   const fillsWindow = useActivityPanelStore(selectPanelFillsWindow)
   const visible = useActivityPanelOnScreen()
   const outerRef = useRef<HTMLDivElement>(null)
@@ -101,7 +102,6 @@ export function ActivityPanel({ getMaxWidth, floatChatOnResizeOverflow, transiti
   const apiRef = useRef<DockviewApi | null>(null)
   const [headerApi, setHeaderApi] = useState<DockviewApi | null>(null)
   const resizeObserverRef = useRef<ResizeObserver | null>(null)
-  const stopTabStripEdgeFadeRef = useRef<(() => void) | null>(null)
 
   const getWidth = useCallback(() => useActivityPanelStore.getState().panelWidth, [])
   const collapseChat = useCallback(() => {
@@ -142,6 +142,12 @@ export function ActivityPanel({ getMaxWidth, floatChatOnResizeOverflow, transiti
     () => useActivityPanelStore.getState().setBounds(null),
   )
 
+  const getOverflowThreshold = useCallback(() => {
+    const mainArea = document.querySelector<HTMLElement>('[data-main-area]')
+    const chatWidth = mainArea && mainArea.clientWidth > 0 ? mainArea.clientWidth : LAYOUT.MIN_MAIN
+    return chatWidth / 3
+  }, [])
+
   const onResizeStart = useResizeHandle({
     getWidth,
     setWidth: setPanelWidthByUser,
@@ -151,6 +157,8 @@ export function ActivityPanel({ getMaxWidth, floatChatOnResizeOverflow, transiti
     outerRef,
     innerRef,
     onResize: layoutDockview,
+    getOverflowThreshold: floatChatOnResizeOverflow ? getOverflowThreshold : undefined,
+    onOverflowChange: floatChatOnResizeOverflow ? setFloatDropPreview : undefined,
     onMaxWidthExceeded: floatChatOnResizeOverflow ? collapseChat : undefined,
   })
 
@@ -164,19 +172,12 @@ export function ActivityPanel({ getMaxWidth, floatChatOnResizeOverflow, transiti
     const syncHasPanels = () => useActivityPanelStore.getState().setHasPanels(event.api.panels.length > 0)
     syncHasPanels()
 
-    stopTabStripEdgeFadeRef.current?.()
-    const root = innerRef.current
-    const edgeFades = root ? watchScrollEdgeFades(root, '.dv-tabs-container') : null
-    stopTabStripEdgeFadeRef.current = () => edgeFades?.stop()
-
     const dAdd = event.api.onDidAddPanel(() => {
       syncHasPanels()
-      edgeFades?.scan()
       bumpActivityDockRevision()
     })
     const d1 = event.api.onDidRemovePanel((panel) => {
       syncHasPanels()
-      edgeFades?.scan()
       bumpActivityDockRevision()
       // A side chat lives exactly as long as its tab. Ignored mid-swap: parking a
       // session's layout removes every panel, and that is a stash, not a close.
@@ -221,6 +222,23 @@ export function ActivityPanel({ getMaxWidth, floatChatOnResizeOverflow, transiti
         return
       }
 
+      if (e.kind === 'content' && (e.position === 'top' || e.position === 'bottom') && e.group) {
+        const contentEl = e.group.element.querySelector('.dv-content-container') ?? e.group.element
+        const r = contentEl.getBoundingClientRect()
+        const clientY = 'clientY' in e.nativeEvent ? e.nativeEvent.clientY : 0
+        const TABBAR_EDGE_GUARD_PX = 24
+        if (
+          clientY > 0
+          && r.height > 0
+          && ((e.position === 'top' && clientY - r.top < TABBAR_EDGE_GUARD_PX)
+            || (e.position === 'bottom' && r.bottom - clientY < TABBAR_EDGE_GUARD_PX))
+        ) {
+          setIndicator(null)
+          e.preventDefault()
+          return
+        }
+      }
+
       const activeId = e.group?.activePanel?.id
       const instanceKey = activeId?.startsWith('miniapp-') ? activeId.slice('miniapp-'.length) : null
       const slot = instanceKey ? useMiniAppStore.getState().slots[instanceKey] : null
@@ -251,10 +269,10 @@ export function ActivityPanel({ getMaxWidth, floatChatOnResizeOverflow, transiti
       setIndicator({ ...box, position: half })
     })
 
-    const container = innerRef.current?.querySelector<HTMLElement>('.dockview-theme-superone')
+    const rootEl = innerRef.current
+    const container = rootEl?.querySelector<HTMLElement>('.dockview-theme-superone')
     const updateSingleGroupClass = () => {
       container?.classList.toggle('single-group', event.api.groups.length <= 1)
-      edgeFades?.scan()
     }
     updateSingleGroupClass()
     const d3 = event.api.onDidAddGroup(updateSingleGroupClass)
@@ -263,12 +281,35 @@ export function ActivityPanel({ getMaxWidth, floatChatOnResizeOverflow, transiti
       useActivityPanelStore.getState().setMaximizedGroup(isMaximized ? group.id : null)
     })
 
-    return () => { dAdd.dispose(); d1.dispose(); dActive.dispose(); d2.dispose(); d3.dispose(); d4.dispose(); d5.dispose() }
+    return () => {
+      dAdd.dispose(); d1.dispose(); dActive.dispose(); d2.dispose(); d3.dispose(); d4.dispose(); d5.dispose()
+    }
   }, [observeDockview])
 
   useEffect(() => {
+    const root = innerRef.current
+    if (!headerApi || !root) return
+    const stickyTabs = watchStickyActiveTabs(root)
+    const detachChromeDrag = attachChromeTabDrag(root, headerApi)
+    stickyTabs.scan()
+    const scan = () => stickyTabs.scan()
+    const disposables = [
+      headerApi.onDidAddPanel(scan),
+      headerApi.onDidRemovePanel(scan),
+      headerApi.onDidAddGroup(scan),
+      headerApi.onDidRemoveGroup(scan),
+      headerApi.onDidActivePanelChange(scan),
+    ]
+    return () => {
+      for (const d of disposables) d.dispose()
+      detachChromeDrag()
+      stickyTabs.stop()
+    }
+  }, [headerApi])
+
+  useEffect(() => {
     const api = apiRef.current
-    if (!visible && api?.hasMaximizedGroup()) api.exitMaximizedGroup()
+    if (!visible && api?.hasMaximizedGroup()) exitMaximizedDock()
   }, [visible])
 
   useEffect(() => {
@@ -278,8 +319,6 @@ export function ActivityPanel({ getMaxWidth, floatChatOnResizeOverflow, transiti
     return () => {
       resizeObserverRef.current?.disconnect()
       resizeObserverRef.current = null
-      stopTabStripEdgeFadeRef.current?.()
-      stopTabStripEdgeFadeRef.current = null
       const cur = useActivityViewStateStore.getState()._currentSessionId
       if (cur) useActivityViewStateStore.getState().park(cur)
       connectMcpAppTabs(null)
@@ -295,7 +334,7 @@ export function ActivityPanel({ getMaxWidth, floatChatOnResizeOverflow, transiti
       <DockviewReact
         theme={SUPERONE_DOCKVIEW_THEME}
         disableAutoResizing
-        disableDnd={maximized}
+        disableDnd
         // Shift-dragging a tab out into a floating group is off: not every tab kind
         // (webview hosts, terminals, devices) follows a group outside the grid.
         disableFloatingGroups

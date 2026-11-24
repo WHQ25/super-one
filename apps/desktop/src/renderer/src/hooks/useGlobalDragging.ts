@@ -1,7 +1,9 @@
 import { useEffect, useRef, useState } from 'react'
+import { useActivityDropStore } from '@/stores/activity-drop'
 
 export function useGlobalDragging(): boolean {
   const [dragging, setDragging] = useState(false)
+  const tabDragging = useActivityDropStore((s) => s.tabDragging)
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
@@ -27,5 +29,5 @@ export function useGlobalDragging(): boolean {
     }
   }, [])
 
-  return dragging
+  return dragging || tabDragging
 }

@@ -6,6 +6,7 @@ import { Blocks, Bot, Bug, FileDiff, Globe, Maximize, MessageCirclePlus, RotateC
 import { cn } from '@superone/ui/lib/utils'
 import { tabChipClass, TabTitle, TabActionButton } from './ActivityTabChrome'
 export { tabChipClass, TabTitle, TabActionButton } from './ActivityTabChrome'
+import { getTabFlowLeft } from './sticky-active-tab'
 import { isDevAppEntry } from '@superone/shared/miniapp-types'
 import { FileIcon } from '@superone/ui/components/ui/FileIcon'
 import { MiniAppIcon } from '@/components/miniapp/MiniAppIcon'
@@ -43,9 +44,10 @@ function useRevealActiveTab(api: IDockviewPanelHeaderProps['api'], active: boole
     const strip = tab?.parentElement
     if (!tab || !strip) return
     const reveal = () => {
-      const start = tab.offsetLeft - TAB_STRIP_EDGE_FADE_PX
-      const end = tab.offsetLeft + tab.offsetWidth + TAB_STRIP_EDGE_FADE_PX
-      if (start < strip.scrollLeft) strip.scrollLeft = start
+      const flowLeft = getTabFlowLeft(strip, tab)
+      const start = flowLeft - TAB_STRIP_EDGE_FADE_PX
+      const end = flowLeft + tab.offsetWidth + TAB_STRIP_EDGE_FADE_PX
+      if (start < strip.scrollLeft) strip.scrollLeft = Math.max(0, start)
       else if (end > strip.scrollLeft + strip.clientWidth) strip.scrollLeft = end - strip.clientWidth
     }
     const observer = new ResizeObserver(reveal)

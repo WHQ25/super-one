@@ -735,6 +735,8 @@ export const zh: Messages = {
       openInMiniWindow: '在迷你窗口中打开',
       floatChat: '浮窗显示聊天',
       dockChat: '停靠聊天',
+      dragToFloatChat: '拖到此处浮窗显示聊天',
+      releaseToFloatChat: '松开浮窗显示聊天',
       convertToMiniWindow: '转为迷你窗口',
       dragToMiniWindow: '松开打开为小窗',
       forkToWorktree: 'Fork 到新工作树',

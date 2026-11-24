@@ -12,10 +12,18 @@ export interface DropIndicator {
 
 interface ActivityDropState {
   indicator: DropIndicator | null
+  tabDragging: boolean
+  floatingPanelId: string | null
   setIndicator: (r: DropIndicator | null) => void
+  setTabDragging: (dragging: boolean) => void
+  setFloatingPanelId: (id: string | null) => void
 }
 
 export const useActivityDropStore = create<ActivityDropState>((set) => ({
   indicator: null,
+  tabDragging: false,
+  floatingPanelId: null,
   setIndicator: (indicator) => set({ indicator }),
+  setTabDragging: (tabDragging) => set({ tabDragging }),
+  setFloatingPanelId: (floatingPanelId) => set({ floatingPanelId }),
 }))

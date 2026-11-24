@@ -727,6 +727,8 @@ export type Messages = {
       /** Header menu: floats the chat over the activity panel, or docks it back. */
       floatChat: string
       dockChat: string
+      dragToFloatChat: string
+      releaseToFloatChat: string
       /** Header menu: turns the current window into a mini window in place. */
       convertToMiniWindow: string
       dragToMiniWindow: string
@@ -6217,6 +6219,8 @@ export const en: Messages = {
       openInMiniWindow: 'Open in Mini Window',
       floatChat: 'Float Chat',
       dockChat: 'Dock Chat',
+      dragToFloatChat: 'Drag here to float chat',
+      releaseToFloatChat: 'Release to float chat',
       convertToMiniWindow: 'Convert to Mini Window',
       dragToMiniWindow: 'Release to open as mini window',
       forkToWorktree: 'Fork to New Worktree',

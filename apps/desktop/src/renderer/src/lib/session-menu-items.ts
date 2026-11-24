@@ -1,4 +1,4 @@
-import { AppWindow, CircleCheck, Columns2, Copy, FolderOpen, GitFork, Mail, MailOpen, MessageCirclePlus, MessageSquarePlus, Pencil, PictureInPicture2, Pin, Tag, Trash2, Undo2 } from 'lucide-react'
+import { AppWindow, CircleCheck, Copy, FolderOpen, GitFork, Mail, MailOpen, MessageCirclePlus, MessageSquarePlus, PanelLeft, PanelRight, Pencil, PictureInPicture2, Pin, Tag, Trash2, Undo2 } from 'lucide-react'
 import { toast } from 'sonner'
 import type { TFunction } from 'i18next'
 import type { AgentStatus, SessionForkMode, SessionHistoryEntry } from '@superone/shared/agent-types'
@@ -24,7 +24,7 @@ export interface SessionMenuHandlers {
   /** Chat-header affordance — opens an ephemeral side chat forked off this session. */
   onNewSideChat?: () => void
   /** Chat-header affordance — float the chat over the activity panel, or dock it back. */
-  chatView?: { floating: boolean; onToggle: () => void }
+  chatView?: { floating: boolean; side?: 'left' | 'right'; onToggle: () => void }
 }
 
 /**
@@ -173,7 +173,7 @@ export function buildChatFormItems(
           kind: 'item' as const,
           id: 'chatView',
           label: t(chatView.floating ? 'sidebar.contextMenu.dockChat' : 'sidebar.contextMenu.floatChat'),
-          icon: chatView.floating ? Columns2 : AppWindow,
+          icon: chatView.floating ? (chatView.side === 'right' ? PanelLeft : PanelRight) : AppWindow,
           onSelect: chatView.onToggle,
         }]
       : []),

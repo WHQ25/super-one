@@ -1,13 +1,14 @@
 /** @vitest-environment jsdom */
 
 import { act, cleanup, fireEvent, render, within } from '@testing-library/react'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAppStore } from '@/stores/app'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useChatStore } from '@/stores/chat'
 import { WindowsTitleBar } from '@/components/WindowsTitleBar'
 import { ActivityPanel } from './ActivityPanel'
-import { getDockApi, openNewFileTab, splitActivityTab } from './activity-panel-api'
+import { ChatFloatDropOverlay } from './ChatFloatDropOverlay'
+import { getDockApi, openNewFileTab, splitActivityTab, toggleMaximizedActivityGroup } from './activity-panel-api'
 
 beforeEach(() => {
   Object.assign(window.app, { platform: 'darwin', getFullscreen: async () => false })
@@ -18,13 +19,20 @@ beforeEach(() => {
 afterEach(cleanup)
 
 describe('activity panel resize', () => {
-  it.each(['left', 'right'] as const)('collapses chat after dragging past its minimum with the panel on the %s', (side) => {
-    useActivityPanelStore.setState({ side, panelWidth: 440, userResized: false })
+  it.each(['left', 'right'] as const)('shows 2/3 drop overlay and collapses chat on release with the panel on the %s', (side) => {
+    useActivityPanelStore.setState({ side, panelWidth: 440, userResized: false, floatDropPreview: null })
     const wasOpen = useChatStore.getState().isOpen
     useChatStore.setState({ isOpen: true })
 
     try {
-      const { container } = render(<ActivityPanel getMaxWidth={() => 500} floatChatOnResizeOverflow transitionMs={0} />)
+      const { container } = render(
+        <>
+          <ActivityPanel getMaxWidth={() => 500} floatChatOnResizeOverflow transitionMs={0} />
+          <div data-main-area="">
+            <ChatFloatDropOverlay />
+          </div>
+        </>,
+      )
       const handle = container.querySelector('[data-activity-resize-handle]')!
       const direction = side === 'left' ? 1 : -1
       const startX = 500
@@ -33,21 +41,62 @@ describe('activity panel resize', () => {
       fireEvent.mouseDown(handle, { clientX: startX })
       drag(60)
       expect(container.querySelector('[data-activity-outer]')).toHaveStyle({ width: '500px' })
+      expect(container.querySelector('[data-chat-float-drop-overlay]')).toBeNull()
+
       drag(68)
+      expect(container.querySelector('[data-chat-float-drop-overlay]')).toHaveAttribute('data-active', 'false')
       expect(useActivityPanelStore.getState().chatFloating).toBe(false)
       expect(useChatStore.getState().isOpen).toBe(true)
 
-      drag(84)
-      expect(useActivityPanelStore.getState()).toMatchObject({ chatFloating: true, maximized: false, panelWidth: 500, userResized: true })
+      drag(180)
+      expect(container.querySelector('[data-chat-float-drop-overlay]')).toHaveAttribute('data-active', 'true')
+      expect(useActivityPanelStore.getState().chatFloating).toBe(false)
+
+      drag(68)
+      expect(container.querySelector('[data-chat-float-drop-overlay]')).toHaveAttribute('data-active', 'false')
+
+      drag(180)
+      expect(container.querySelector('[data-chat-float-drop-overlay]')).toHaveAttribute('data-active', 'true')
+      fireEvent.mouseUp(document, { clientX: startX + 180 * direction })
+      expect(useActivityPanelStore.getState()).toMatchObject({ chatFloating: true, maximized: false, panelWidth: 500, userResized: true, floatDropPreview: null })
       expect(useChatStore.getState().isOpen).toBe(false)
       expect(handle).not.toBeInTheDocument()
+      expect(container.querySelector('[data-chat-float-drop-overlay]')).toBeNull()
       expect(document.body.style.cursor).toBe('')
+    } finally {
+      fireEvent.blur(window)
+      useChatStore.setState({ isOpen: wasOpen })
+    }
+  })
 
-      // Once floated, the remainder of the gesture cannot overwrite the docked width.
-      drag(0)
-      fireEvent.mouseUp(document, { clientX: startX })
-      expect(container.querySelector('[data-activity-outer]')).toHaveStyle({ width: '100%' })
-      expect(useActivityPanelStore.getState().panelWidth).toBe(500)
+  it('cancels float when released outside the active drop zone', () => {
+    useActivityPanelStore.setState({ side: 'left', panelWidth: 440, userResized: false, floatDropPreview: null })
+    const wasOpen = useChatStore.getState().isOpen
+    useChatStore.setState({ isOpen: true })
+
+    try {
+      const { container } = render(
+        <>
+          <ActivityPanel getMaxWidth={() => 500} floatChatOnResizeOverflow transitionMs={0} />
+          <div data-main-area="">
+            <ChatFloatDropOverlay />
+          </div>
+        </>,
+      )
+      const handle = container.querySelector('[data-activity-resize-handle]')!
+      const startX = 500
+
+      fireEvent.mouseDown(handle, { clientX: startX })
+      fireEvent.mouseMove(document, { clientX: startX + 180 })
+      expect(container.querySelector('[data-chat-float-drop-overlay]')).toHaveAttribute('data-active', 'true')
+
+      fireEvent.mouseMove(document, { clientX: startX + 68 })
+      expect(container.querySelector('[data-chat-float-drop-overlay]')).toHaveAttribute('data-active', 'false')
+
+      fireEvent.mouseUp(document, { clientX: startX + 68 })
+      expect(useActivityPanelStore.getState()).toMatchObject({ chatFloating: false, floatDropPreview: null })
+      expect(useChatStore.getState().isOpen).toBe(true)
+      expect(container.querySelector('[data-chat-float-drop-overlay]')).toBeNull()
     } finally {
       fireEvent.blur(window)
       useChatStore.setState({ isOpen: wasOpen })
@@ -114,6 +163,49 @@ describe('activity split header controls', () => {
 
     await act(async () => { api.getPanel('file:CLAUDE.md')!.api.exitMaximized() })
     expectMacControls(view, 'file:README.md')
+  })
+
+  it('hides the bottom split view when maximizing the top group in a vertical split', async () => {
+    const view = await renderSplit('below')
+    const api = getDockApi()!
+    const topGroup = api.getPanel('file:README.md')!.group
+    const bottomGroup = api.getPanel('file:CLAUDE.md')!.group
+
+    await act(async () => { api.getPanel('file:README.md')!.api.maximize() })
+    expect(topGroup.element.closest('.dv-view')).toHaveClass('visible')
+    expect(bottomGroup.element.closest('.dv-view')).not.toHaveClass('visible')
+
+    await act(async () => { api.getPanel('file:README.md')!.api.exitMaximized() })
+    expect(bottomGroup.element.closest('.dv-view')).toHaveClass('visible')
+  })
+
+  it.each(['file:README.md', 'file:CLAUDE.md'] as const)('preserves horizontal split ratio after maximizing %s and exiting', async (panelId) => {
+    useActivityPanelStore.setState({ panelWidth: 500 })
+    render(<ActivityPanel getMaxWidth={() => 1000} transitionMs={0} />)
+    await act(async () => {
+      getDockApi()!.layout(500, 600)
+      openNewFileTab('README.md')
+      openNewFileTab('CLAUDE.md')
+      splitActivityTab('file:CLAUDE.md', 'right')
+      getDockApi()!.getPanel('file:README.md')!.group.api.setSize({ width: 150 })
+    })
+    const leftGroup = getDockApi()!.getPanel('file:README.md')!.group
+    const rightGroup = getDockApi()!.getPanel('file:CLAUDE.md')!.group
+    expect(leftGroup.api.width).toBe(150)
+    expect(rightGroup.api.width).toBe(350)
+
+    await act(async () => {
+      toggleMaximizedActivityGroup(panelId)
+      getDockApi()!.layout(1400, 600)
+    })
+
+    await act(async () => {
+      toggleMaximizedActivityGroup(panelId)
+      getDockApi()!.layout(500, 600)
+    })
+
+    expect(leftGroup.api.width).toBe(150)
+    expect(rightGroup.api.width).toBe(350)
   })
 
   it('restores the control owner when a saved split layout is reloaded', async () => {
@@ -198,5 +290,44 @@ describe('activity split header controls', () => {
     expectTitlebarOnly()
     await act(async () => { getDockApi()!.getPanel('file:CLAUDE.md')!.api.exitMaximized() })
     expectTitlebarOnly()
+  })
+
+  it('drags tabs horizontally without collapsing and swaps past midpoint threshold', async () => {
+    render(<ActivityPanel getMaxWidth={() => 1000} transitionMs={0} />)
+    await act(async () => {
+      getDockApi()!.layout(1000, 600)
+      openNewFileTab('README.md')
+      openNewFileTab('CLAUDE.md')
+    })
+
+    const api = getDockApi()!
+    const group = api.getPanel('file:README.md')!.group
+    const strip = group.element.querySelector<HTMLElement>('.dv-tabs-container')!
+    const tabEls = Array.from(strip.querySelectorAll<HTMLElement>('.dv-tab'))
+    expect(tabEls).toHaveLength(2)
+    expect(tabEls[0].draggable).toBe(false)
+
+    vi.spyOn(strip, 'getBoundingClientRect').mockReturnValue({ left: 0, right: 200, top: 0, bottom: 36, width: 200, height: 36, x: 0, y: 0, toJSON: () => ({}) })
+    vi.spyOn(tabEls[0], 'getBoundingClientRect').mockReturnValue({ left: 0, right: 100, top: 0, bottom: 36, width: 100, height: 36, x: 0, y: 0, toJSON: () => ({}) })
+    vi.spyOn(tabEls[1], 'getBoundingClientRect').mockReturnValue({ left: 100, right: 200, top: 0, bottom: 36, width: 100, height: 36, x: 100, y: 0, toJSON: () => ({}) })
+
+    await act(async () => {
+      fireEvent.pointerDown(tabEls[0], { button: 0, clientX: 50, clientY: 18, pointerId: 1 })
+      fireEvent.pointerMove(window, { clientX: 80, clientY: 18, pointerId: 1 })
+    })
+    expect(tabEls[0]).toHaveAttribute('data-chrome-dragging', 'true')
+    expect(tabEls[0]).not.toHaveClass('dv-tab--dragging')
+    expect(tabEls[0].style.transform).toBe('translateX(30px)')
+    expect(tabEls[1].style.transform).toBe('')
+
+    await act(async () => {
+      fireEvent.pointerMove(window, { clientX: 110, clientY: 18, pointerId: 1 })
+    })
+    expect(tabEls[1].style.transform).toBe('translateX(-100px)')
+
+    await act(async () => {
+      fireEvent.pointerUp(window, { clientX: 110, clientY: 18, pointerId: 1 })
+    })
+    expect(group.panels.map((p) => p.id)).toEqual(['file:CLAUDE.md', 'file:README.md'])
   })
 })

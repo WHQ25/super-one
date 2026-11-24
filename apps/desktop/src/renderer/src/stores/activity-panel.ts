@@ -25,6 +25,7 @@ interface ActivityPanelState {
    * fills the window with all its groups, the chat floats as it does when maximized.
    */
   chatFloating: boolean
+  floatDropPreview: { active: boolean } | null
   /**
    * Where the panel is on screen. Published because the browser and mini-app
    * webviews live in host layers OUTSIDE the panel's clipping box, so each one
@@ -47,6 +48,7 @@ interface ActivityPanelState {
   setHasPanels: (has: boolean) => void
   setMaximizedGroup: (groupId: string | null) => void
   setChatFloating: (floating: boolean) => void
+  setFloatDropPreview: (preview: { active: boolean } | null) => void
   setBounds: (bounds: ActivityPanelBounds | null) => void
 }
 
@@ -61,6 +63,7 @@ export const useActivityPanelStore = create<ActivityPanelState>()(
       maximized: false,
       maximizedGroupId: null,
       chatFloating: false,
+      floatDropPreview: null,
       bounds: null,
       revealedForTab: false,
 
@@ -71,6 +74,7 @@ export const useActivityPanelStore = create<ActivityPanelState>()(
         maximizedGroupId: show ? state.maximizedGroupId : null,
         // Hiding the panel leaves nothing to float over; the chat docks again.
         chatFloating: show ? state.chatFloating : false,
+        floatDropPreview: show ? state.floatDropPreview : null,
       })),
       setSide: (side) => set({ side }),
       setPanelWidth: (w) => set({ panelWidth: w }),
@@ -86,7 +90,16 @@ export const useActivityPanelStore = create<ActivityPanelState>()(
         maximized: groupId !== null && state.showPanel,
         maximizedGroupId: state.showPanel ? groupId : null,
       })),
-      setChatFloating: (floating) => set((state) => ({ chatFloating: floating && state.showPanel })),
+      setChatFloating: (floating) => set((state) => ({
+        chatFloating: floating && state.showPanel,
+        floatDropPreview: null,
+      })),
+      setFloatDropPreview: (preview) => set((state) => {
+        const prev = state.floatDropPreview
+        if (prev === preview) return state
+        if (prev && preview && prev.active === preview.active) return state
+        return { floatDropPreview: preview }
+      }),
       // Measured every frame the layout moves, so it is compared before it is
       // stored — consumers re-render on identity and the rect is usually equal.
       setBounds: (bounds) => set((state) => {

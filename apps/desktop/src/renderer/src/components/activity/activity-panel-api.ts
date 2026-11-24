@@ -871,12 +871,28 @@ export function maximizeActivityPanel() {
   useActivityPanelStore.getState().setMaximizedGroup(panel.group.id)
 }
 
+export function exitMaximizedDock(panel?: IDockviewPanel): void {
+  const api = dockApi
+  if (!api) return
+  const dockedWidth = useActivityPanelStore.getState().panelWidth
+  const height = api.height
+  if (dockedWidth > 0 && height > 0 && api.width !== dockedWidth) {
+    api.layout(dockedWidth, height)
+  }
+  if (panel) panel.api.exitMaximized()
+  else api.exitMaximizedGroup()
+  const inner = document.querySelector<HTMLElement>('[data-activity-inner]')
+  if (inner && inner.clientWidth > 0 && inner.clientHeight > 0) {
+    api.layout(inner.clientWidth, inner.clientHeight)
+  }
+}
+
 export function toggleMaximizedActivityGroup(panelId: string) {
   ensureVisible()
   const panel = dockApi?.panels.find((candidate) => candidate.id === panelId)
   if (!panel) return
   if (panel.api.isMaximized()) {
-    panel.api.exitMaximized()
+    exitMaximizedDock(panel)
     useActivityPanelStore.getState().setMaximizedGroup(null)
   } else {
     panel.api.maximize()
@@ -943,7 +959,7 @@ export function moveActivityTab(
   ensureVisible()
   // A maximized group hides every other group, so the moved tab could land unseen.
   if (api.hasMaximizedGroup()) {
-    api.exitMaximizedGroup()
+    exitMaximizedDock()
     useActivityPanelStore.getState().setMaximizedGroup(null)
   }
   panel.api.moveTo({ group: target, position: DOCK_POSITIONS[move.direction], ...(move.index !== undefined ? { index: move.index } : {}) })
@@ -969,7 +985,7 @@ export function maximizeActivityTab(panelId?: string): boolean {
 /** Leave the maximized group, if any. */
 export function restoreActivityPanel(): void {
   const panel = dockApi?.panels.find((candidate) => candidate.api.isMaximized())
-  panel?.api.exitMaximized()
+  if (panel) exitMaximizedDock(panel)
   useActivityPanelStore.getState().setMaximizedGroup(null)
 }
 

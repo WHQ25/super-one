@@ -6,6 +6,7 @@ import type { ModPaneTabParams } from './activity-panel-api'
 import { FilePreview } from '@/components/coding/FilePreview'
 import { MiniAppSlot } from '@/components/miniapp/MiniAppSlot'
 import { toolUiPreviewSlotKey } from '@/stores/miniapp-tool-preview'
+import { useActivityDropStore } from '@/stores/activity-drop'
 import { BrowserView } from '@/components/browser/BrowserView'
 import { DeviceDockPanel } from '@/components/device/DeviceDockPanel'
 import { SideChatPanel } from '@/components/chat/SideChatPanel'
@@ -18,15 +19,18 @@ function FilePreviewPanel(props: IDockviewPanelProps<{ filePath: string; fileRoo
 }
 
 function MiniAppPanel(props: IDockviewPanelProps<{ instanceKey: string; appId: string }>) {
-  return <MiniAppSlot slotKey={props.params.instanceKey} mode="panel" className="h-full w-full" />
+  const tabDragging = useActivityDropStore((s) => s.tabDragging)
+  return <MiniAppSlot slotKey={props.params.instanceKey} mode="panel" className="h-full w-full" trackBoundsContinuously={tabDragging} />
 }
 
 function ToolUiPreviewPanel(props: IDockviewPanelProps<{ previewKey: string }>) {
-  return <MiniAppSlot slotKey={toolUiPreviewSlotKey(props.params.previewKey)} mode="panel" className="h-full w-full" />
+  const tabDragging = useActivityDropStore((s) => s.tabDragging)
+  return <MiniAppSlot slotKey={toolUiPreviewSlotKey(props.params.previewKey)} mode="panel" className="h-full w-full" trackBoundsContinuously={tabDragging} />
 }
 
 function BrowserPanel(props: IDockviewPanelProps<{ browserId: string; url: string }>) {
-  return <BrowserView browserId={props.params.browserId} mode="panel" />
+  const tabDragging = useActivityDropStore((s) => s.tabDragging)
+  return <BrowserView browserId={props.params.browserId} mode="panel" trackBoundsContinuously={tabDragging} />
 }
 
 function TerminalHostPanel(props: IDockviewPanelProps<{ terminalId: string }>) {

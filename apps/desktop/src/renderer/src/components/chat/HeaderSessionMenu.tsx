@@ -126,6 +126,7 @@ export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string
   const childTurnOpen = useSpawnChildTurnOpen(folderPath, sessionId)
   const sideChatAvailable = useCanOpenSideChat(sessionId)
   const chatFloating = useActivityPanelStore(selectPanelFillsWindow)
+  const activitySide = useActivityPanelStore((s) => s.side)
   // Listed rows omit a settled session. The host read fills that in, and a
   // click in this menu wins over a read that was already in flight.
   const localChoice = useRef<boolean | null>(null)
@@ -181,6 +182,7 @@ export function HeaderSessionMenu({ sessionId, folderPath }: { sessionId: string
 
   const chatView = {
     floating: chatFloating,
+    side: activitySide,
     onToggle: () => setChatFloating(!chatFloating, chatFloating ? undefined : { expanded: false }),
   }
   const isSettled = fetchedSettled ?? entry?.isSettled === true

@@ -4,12 +4,12 @@ import { cn } from '@superone/ui/lib/utils'
 
 export function tabChipClass(active: boolean): string {
   return cn(
-    'flex items-center gap-1.5 rounded-lg px-1.5 py-1 transition-[max-width,color,background-color] duration-200',
+    'flex items-center gap-1.5 px-2.5 transition-[max-width,color,background-color] duration-200',
     // The active tab is the one you are reading, so it keeps the room. Clamping the
     // rest harder is what keeps a full strip legible instead of two tabs wide.
     active
-      ? 'max-w-[200px] bg-muted text-foreground'
-      : 'max-w-[128px] text-muted-foreground hover:text-foreground',
+      ? 'h-full max-w-[200px] rounded-t-xl rounded-b-none bg-[var(--dv-active-tab-bg)] text-foreground'
+      : 'my-1.5 mx-1.5 max-w-[128px] self-stretch rounded-lg text-muted-foreground hover:bg-foreground/[0.08] hover:text-foreground',
   )
 }
 

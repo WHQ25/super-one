@@ -1,6 +1,7 @@
 import type { DockviewApi, IDockviewPanel } from 'dockview-core'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { parkMcpAppFullscreenFrames, resumeMcpAppFullscreenFrames, useMcpAppLayout, type McpAppSurface } from '@/components/mcp-apps/layout-store'
+import { exitMaximizedDock } from './activity-panel-api'
 
 const panelId = (key: string) => `mcp-app:${key}`
 type Previous = { showPanel: boolean; maximizedGroupId: string | null; activePanelId?: string }
@@ -45,7 +46,7 @@ export function syncMcpAppTab(key: string, mode: McpAppSurface, maximized = true
     previousPanel?.api.setActive()
     const previousGroup = dock?.groups.find(group => group.id === tab.previous.maximizedGroupId)
     if (previousGroup?.panels[0]) previousGroup.panels[0].api.maximize()
-    else if (dock?.hasMaximizedGroup()) dock.exitMaximizedGroup()
+    else if (dock?.hasMaximizedGroup()) exitMaximizedDock()
     const store = useActivityPanelStore.getState()
     store.setShowPanel(tab.previous.showPanel)
     store.setMaximizedGroup(previousGroup?.id ?? null)

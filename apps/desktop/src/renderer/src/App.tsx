@@ -8,6 +8,7 @@ import { getModChromeScheme, getModChromeTint, subscribeModChromeTint } from '@/
 import { requestHarnessScheme } from '@/components/chat/mod/mod-harness-scheme'
 import { CodingWorkspace } from '@/components/coding/CodingWorkspace'
 import { ActivityPanel } from '@/components/activity/ActivityPanel'
+import { ChatFloatDropOverlay } from '@/components/activity/ChatFloatDropOverlay'
 import { useActivityPanelOnScreen } from '@/hooks/useActivityPanelOnScreen'
 import { SideChatConfirmDialog } from '@/components/chat/SideChatConfirmDialog'
 import { IdentityMigrationDialog } from '@/components/IdentityMigrationDialog'
@@ -725,6 +726,7 @@ function AppContent(): React.JSX.Element {
           activityFillsWindow && !inMiniWindow ? 'hidden' : 'flex',
           activityOnScreen && (activitySide === 'left' ? 'border-l border-border' : 'border-r border-border'),
         )} style={{ order: 1, minWidth: inMiniWindow ? 0 : MIN_MAIN }}>
+        <ChatFloatDropOverlay />
         {/* Main header — drag region (hidden in mosaic; each tile carries its own) */}
         {compactMiniShell
           ? <div className="relative z-10"><MiniWindowHeader canRestore transparentBackground={liquidGlass} /></div>

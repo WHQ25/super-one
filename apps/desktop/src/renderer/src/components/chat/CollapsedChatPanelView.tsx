@@ -10,6 +10,7 @@ interface CollapsedChatPanelViewProps {
   isUnseen: boolean
   isDragging?: boolean
   onClick?: (e: React.MouseEvent) => void
+  onDoubleClick?: (e: React.MouseEvent) => void
   onMouseDown?: (e: React.MouseEvent) => void
 }
 
@@ -19,6 +20,7 @@ export function CollapsedChatPanelView({
   isUnseen,
   isDragging = false,
   onClick,
+  onDoubleClick,
   onMouseDown,
 }: CollapsedChatPanelViewProps) {
   return (
@@ -29,6 +31,7 @@ export function CollapsedChatPanelView({
         isDragging && 'cursor-grabbing'
       )}
       onClick={onClick}
+      onDoubleClick={onDoubleClick}
       onMouseDown={onMouseDown}
     >
       {isUnseen ? (

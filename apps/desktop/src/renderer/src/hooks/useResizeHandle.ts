@@ -20,6 +20,8 @@ interface UseResizeHandleOptions {
   getLinkedPanel?: (newWidth: number, prevWidth: number) => LinkedPanel | null
   onResize?: (width: number) => void
   onDragEnd?: () => void
+  getOverflowThreshold?: () => number
+  onOverflowChange?: (state: { active: boolean } | null) => void
   onMaxWidthExceeded?: () => void
 }
 
@@ -34,6 +36,8 @@ export function useResizeHandle({
   getLinkedPanel,
   onResize,
   onDragEnd,
+  getOverflowThreshold,
+  onOverflowChange,
   onMaxWidthExceeded,
 }: UseResizeHandleOptions) {
   return useCallback((e: React.MouseEvent) => {
@@ -54,6 +58,14 @@ export function useResizeHandle({
 
     const sign = direction === 'ltr' ? 1 : -1
     let prevW = startW
+    let prevOverflow: { active: boolean } | null = null
+
+    const setOverflowState = (next: { active: boolean } | null) => {
+      if (prevOverflow === next) return
+      if (prevOverflow && next && prevOverflow.active === next.active) return
+      prevOverflow = next
+      onOverflowChange?.(next)
+    }
 
     const applyWidth = (w: number) => {
       outer.style.width = `${w}px`
@@ -69,6 +81,7 @@ export function useResizeHandle({
     }
 
     const cleanup = () => {
+      setOverflowState(null)
       outer.style.transition = ''
       document.body.style.cursor = ''
       document.body.style.userSelect = ''
@@ -90,11 +103,23 @@ export function useResizeHandle({
       const requestedWidth = startW + delta
       applyWidth(Math.min(maxW, Math.max(minWidth, requestedWidth)))
 
-      if (onMaxWidthExceeded && delta > 0 && requestedWidth >= maxW + MAX_WIDTH_OVERSHOOT_PX) {
+      const overshoot = onMaxWidthExceeded && delta > 0 ? requestedWidth - maxW : 0
+      if (overshoot > 0) {
+        const threshold = getOverflowThreshold?.() ?? MAX_WIDTH_OVERSHOOT_PX
+        const active = overshoot >= threshold
+        if (ending) {
+          finish()
+          if (active) onMaxWidthExceeded?.()
+          return
+        }
+        setOverflowState({ active })
+        return
+      }
+
+      if (ending) {
         finish()
-        onMaxWidthExceeded()
-      } else if (ending) {
-        finish()
+      } else {
+        setOverflowState(null)
       }
     }
 
@@ -109,5 +134,5 @@ export function useResizeHandle({
     document.addEventListener('mousemove', onMove)
     document.addEventListener('mouseup', onUp)
     window.addEventListener('blur', onBlur)
-  }, [getWidth, setWidth, minWidth, getMaxWidth, direction, outerRef, innerRef, getLinkedPanel, onResize, onDragEnd, onMaxWidthExceeded])
+  }, [getWidth, setWidth, minWidth, getMaxWidth, direction, outerRef, innerRef, getLinkedPanel, onResize, onDragEnd, getOverflowThreshold, onOverflowChange, onMaxWidthExceeded])
 }

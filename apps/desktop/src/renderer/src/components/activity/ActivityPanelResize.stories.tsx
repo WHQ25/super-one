@@ -7,6 +7,7 @@ import { LAYOUT } from '@/lib/layout-constants'
 import { selectPanelFillsWindow, useActivityPanelStore } from '@/stores/activity-panel'
 import { useChatStore } from '@/stores/chat'
 import { ActivityPanel } from './ActivityPanel'
+import { ChatFloatDropOverlay } from './ChatFloatDropOverlay'
 
 const START_WIDTH = LAYOUT.MIN_AP + 24
 
@@ -32,7 +33,8 @@ function ResizePreview({ side }: { side: 'left' | 'right' }) {
       {ready && (
         <>
           <ActivityPanel getMaxWidth={() => workspaceRef.current!.clientWidth - LAYOUT.MIN_MAIN} floatChatOnResizeOverflow transitionMs={0} />
-          <div className="order-1 min-h-0 flex-1 flex-col overflow-hidden" style={{ display: fillsWindow ? 'none' : 'flex', minWidth: LAYOUT.MIN_MAIN }}>
+          <div data-main-area="" className="relative order-1 min-h-0 flex-1 flex-col overflow-hidden" style={{ display: fillsWindow ? 'none' : 'flex', minWidth: LAYOUT.MIN_MAIN }}>
+            <ChatFloatDropOverlay />
             <ChatContent scrollViewportRef={chatScrollRef} foreground={false} />
           </div>
           {fillsWindow && <ChatPanel anchorBoundaryRef={workspaceRef} />}
@@ -65,8 +67,9 @@ const meta = {
     expect(activity).toHaveStyle({ width: `${limit}px` })
     expect(canvasElement.querySelector('[data-chat-panel]')).toBeNull()
 
-    const pastLimitX = limitX + direction * 24
+    const pastLimitX = limitX + direction * (LAYOUT.MIN_MAIN / 3 + 12)
     doc.dispatchEvent(new MouseEvent('mousemove', { clientX: pastLimitX }))
+    await waitFor(() => expect(canvasElement.querySelector('[data-chat-float-drop-overlay]')).toHaveAttribute('data-active', 'true'))
     doc.dispatchEvent(new MouseEvent('mouseup', { clientX: pastLimitX }))
     await waitFor(() => expect(canvasElement.querySelector('[data-chat-panel] .lucide-bot')).toBeVisible())
     expect(handle).not.toBeInTheDocument()

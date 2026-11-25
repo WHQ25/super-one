@@ -581,6 +581,7 @@ export function buildUserMessage(
     attachments: request.images?.length ? request.images : undefined,
     contexts: request.contexts && request.contexts.length > 0 ? request.contexts : undefined,
     userSelections: request.userSelections && request.userSelections.length > 0 ? request.userSelections : undefined,
+    replyComments: request.replyComments && request.replyComments.length > 0 ? request.replyComments : undefined,
     createdAt: new Date().toISOString(),
     providerId,
     ...(metadata ? { metadata } : {}),

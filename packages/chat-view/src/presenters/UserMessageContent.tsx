@@ -11,6 +11,7 @@ import { ModSite } from '../mod-ui/react'
 import { stringProp, userMessageProps } from '../mod-ui/site-props'
 import { AttachmentChipPresenter } from './AttachmentChip'
 import { McpMentionSentProvider } from './McpMentionCard'
+import { UserReplyCommentChip } from './UserReplyCommentChip'
 import { UserSelectionChip } from './UserSelectionChip'
 import { UserTextPresenter } from './UserText'
 
@@ -60,9 +61,14 @@ export function UserMessageContentPresenter({ message, text, promptKeywords, Blo
   return (
     <McpMentionSentProvider content={message.content}>
       <TooltipProvider delayDuration={200}>
-        {message.userSelections && message.userSelections.length > 0 && (
+        {((message.userSelections && message.userSelections.length > 0) || (message.replyComments && message.replyComments.length > 0)) && (
           <div className="mb-1.5 flex flex-wrap gap-1">
-            <UserSelectionChip selections={message.userSelections} readOnly />
+            {message.userSelections && message.userSelections.length > 0 && (
+              <UserSelectionChip selections={message.userSelections} readOnly />
+            )}
+            {message.replyComments && message.replyComments.length > 0 && (
+              <UserReplyCommentChip comments={message.replyComments} />
+            )}
           </div>
         )}
         {message.content.map((block, index) => {

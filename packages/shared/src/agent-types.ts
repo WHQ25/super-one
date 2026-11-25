@@ -989,6 +989,11 @@ export interface ChatMessageContext {
   thumbnail?: string
 }
 
+export interface ChatMessageReplyComment {
+  quote: string
+  text: string
+}
+
 export interface ChatMessage {
   id: string
   role: 'user' | 'assistant'
@@ -997,6 +1002,7 @@ export interface ChatMessage {
   attachments?: ImageAttachment[]
   contexts?: ChatMessageContext[]
   userSelections?: string[]
+  replyComments?: ChatMessageReplyComment[]
   createdAt: string
   providerId: string
   metadata?: MessageMetadata
@@ -2771,6 +2777,7 @@ export interface SendMessageRequest {
   contexts?: ChatMessageContext[]
   /** User-selected quote chips attached to this user message, displayed in the bubble and persisted. */
   userSelections?: string[]
+  replyComments?: ChatMessageReplyComment[]
   /** null/undefined = follow global default. */
   apiProviderId?: string | null
   /** Harness used when creating a new session for this send. */

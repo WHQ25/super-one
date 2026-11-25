@@ -8,7 +8,7 @@ import { activityHarnessKind, recordSessionStarted, recordMessageCounts } from '
 import { explicitClaudeModelId } from '@superone/claude'
 import { acpAgentIdForHarness, isConcreteHarnessId, resolveLegacyHarnessId } from '@superone/shared/acp-brand'
 import { sealCodexMetadata, sealStreamingTools } from '@superone/shared/content-delta'
-import type { ChatMessage, ContentBlock, EffortLevel, ImageAttachment, ChatMessageContext } from '@superone/shared/agent-types'
+import type { ChatMessage, ChatMessageReplyComment, ContentBlock, EffortLevel, ImageAttachment, ChatMessageContext } from '@superone/shared/agent-types'
 import { BASE_SESSION_PROVIDER_DEFINITIONS } from '@superone/shared/session-provider-definitions'
 import type { ForkContextMeta } from '@superone/runtime/session/mention-context'
 import type { HarnessId, MessagePersistMode } from './types'
@@ -19,6 +19,7 @@ export function serializeMessageContent(msg: ChatMessage): string {
     ...(msg.attachments ? { attachments: msg.attachments } : {}),
     ...(msg.contexts ? { contexts: msg.contexts } : {}),
     ...(msg.userSelections ? { userSelections: msg.userSelections } : {}),
+    ...(msg.replyComments ? { replyComments: msg.replyComments } : {}),
   })
 }
 
@@ -59,6 +60,7 @@ export function rowToChatMessage(row: PersistedMessageRow): ChatMessage {
     ...(parsed.attachments ? { attachments: parsed.attachments } : {}),
     ...(parsed.contexts ? { contexts: parsed.contexts } : {}),
     ...(parsed.userSelections ? { userSelections: parsed.userSelections } : {}),
+    ...(parsed.replyComments ? { replyComments: parsed.replyComments } : {}),
     createdAt: row.created_at,
     providerId: row.provider_id,
     ...(metadata ? { metadata } : {}),
@@ -72,6 +74,7 @@ export function parseMessageContent(json: string): {
   attachments?: ImageAttachment[]
   contexts?: ChatMessageContext[]
   userSelections?: string[]
+  replyComments?: ChatMessageReplyComment[]
 } {
   const parsed = JSON.parse(json)
   if (Array.isArray(parsed)) return { content: parsed }
@@ -80,6 +83,7 @@ export function parseMessageContent(json: string): {
     attachments: parsed.attachments,
     contexts: parsed.contexts,
     userSelections: parsed.userSelections,
+    replyComments: parsed.replyComments,
   }
 }
 

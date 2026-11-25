@@ -67,3 +67,18 @@ export const LegacyPaste: Story = { args: { message: userBubbleLegacyPasteMessag
 export const PlainText: Story = {
   args: { message: userBubbleMessage({ content: [{ type: 'text', text: 'Why does the login loop after a token refresh?' }], attachments: [], userSelections: [], contexts: [] }) },
 }
+
+export const WithComments: Story = {
+  args: {
+    message: userBubbleMessage({
+      content: [{ type: 'text', text: 'Please address these comments' }],
+      attachments: [],
+      userSelections: ['Quoted snippet'],
+      contexts: [],
+      replyComments: [
+        { quote: 'use a Range', text: 'why not marks?' },
+        { quote: '/src/app.ts:L10-L12\nconst a = 1\nconst b = 2', text: 'extract helper' },
+      ],
+    }),
+  },
+}

@@ -2,7 +2,10 @@ import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
 import { describe, expect, it } from 'vitest'
 import type { ChatMessage } from '@superone/shared/agent-types'
+import { initializeChatViewI18n } from '../i18n'
 import { UserMessageContentPresenter } from './UserMessageContent'
+
+void initializeChatViewI18n('en')
 
 const Block = () => null
 
@@ -42,5 +45,20 @@ describe('prompt keywords across a user message', () => {
       { type: 'text', text: 'then ultracode again' },
     ])
     expect(painted(html)).toBe(2)
+  })
+
+  it('renders replyComments as a comment chip instead of a quote chip', () => {
+    const message: ChatMessage = {
+      id: 'u-comment',
+      role: 'user',
+      status: 'complete',
+      createdAt: '',
+      providerId: 'claude',
+      content: [{ type: 'text', text: 'Please check' }],
+      replyComments: [{ quote: 'use a Range', text: 'why not marks?' }],
+    }
+    const html = renderToStaticMarkup(createElement(UserMessageContentPresenter, { message, promptKeywords: [], Block }))
+    expect(html).toContain('1 comment')
+    expect(html).not.toContain('1 quote')
   })
 })

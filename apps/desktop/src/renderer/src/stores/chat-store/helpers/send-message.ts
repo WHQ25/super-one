@@ -9,7 +9,7 @@ import { pendingSlashCommandFrom } from '@superone/chat-core'
 import { deliverUserSend } from './send-replay'
 import { newMessageId } from '@superone/shared/message-id'
 import { buildBrowserAnnotationText } from './browser-annotation'
-import { buildReplyCommentsText, replyCommentSelection } from './reply-comments'
+import { buildReplyCommentsText } from './reply-comments'
 import { createDefaultPerSessionState, createSessionId } from '../defaults'
 import { createLocalTextUserMessage, formatCodexLoginStart, parseCodexCommand, type CodexCommand } from './codex-helpers'
 import { resetLock, type ChatStoreSet } from './lifecycle'
@@ -183,8 +183,7 @@ export async function sendMessageImpl(
   }
   const replyComments = session.replyComments
   const replyCommentSuffix = replyComments.length > 0 ? '\n\n' + buildReplyCommentsText(replyComments) : ''
-  // The bubble shows sent comments among its quoted selections.
-  const displaySelections = [...userSelections, ...replyComments.map(replyCommentSelection)]
+  const messageReplyComments = replyComments.map(({ quote, text }) => ({ quote, text }))
   const effectiveProvider: ChatProvider = resolveProvider(session)
   // @codex / @grok — the agent id is already decided, so the reminder pins it
   // and tells the model to skip session_collab_list_agents entirely.
@@ -531,7 +530,8 @@ export async function sendMessageImpl(
     content: userContent,
     attachments: attachments.length > 0 ? attachments : undefined,
     contexts: messageContexts,
-    userSelections: displaySelections.length > 0 ? displaySelections : undefined,
+    userSelections: userSelections.length > 0 ? userSelections : undefined,
+    replyComments: messageReplyComments.length > 0 ? messageReplyComments : undefined,
   }
   const isCompactSlash = isCompactSlashSend(effectiveProvider, finalContent)
   const isRecapSlash = !isQueuedSend && isRecapSlashSend(effectiveProvider, finalContent)
@@ -728,7 +728,8 @@ export async function sendMessageImpl(
           images: attachments,
           userMessageContent: userContent,
           contexts: messageContexts,
-          userSelections: displaySelections.length > 0 ? displaySelections : undefined,
+          userSelections: userSelections.length > 0 ? userSelections : undefined,
+          replyComments: messageReplyComments.length > 0 ? messageReplyComments : undefined,
           queued: isQueuedSend,
           steer: options?.steer,
           firstTurn: session.messages.length === 0,

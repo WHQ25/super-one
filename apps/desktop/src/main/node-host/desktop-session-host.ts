@@ -126,6 +126,7 @@ export function durableEventOf(event: AgentEvent): { eventType: string; payload:
         userMessageContent: message.content,
         ...(message.contexts ? { contexts: message.contexts } : {}),
         ...(message.userSelections?.length ? { userSelections: message.userSelections } : {}),
+        ...(message.replyComments?.length ? { replyComments: message.replyComments } : {}),
         ...(message.metadata?.collaboration?.kind === 'initial_task'
           ? { collaboration: { kind: 'initial_task', ...(message.metadata.collaboration.fromSessionTitle ? { fromSessionTitle: message.metadata.collaboration.fromSessionTitle } : {}) } }
           : {}),

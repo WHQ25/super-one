@@ -295,6 +295,7 @@ export interface SessionTurnOptions {
   userMessageContent?: ChatMessage['content']
   contexts?: ChatMessage['contexts']
   userSelections?: string[]
+  replyComments?: ChatMessage['replyComments']
   /** Run after the turn in progress (`priority: 'next'`). */
   queued?: boolean
   steer?: boolean
@@ -345,6 +346,7 @@ export function sessionTurnRequest(state: ChatStore, projectPath: string, sessio
     ...(turn.userMessageContent ? { userMessageContent: turn.userMessageContent } : {}),
     ...(turn.contexts ? { contexts: turn.contexts } : {}),
     ...(turn.userSelections?.length ? { userSelections: turn.userSelections } : {}),
+    ...(turn.replyComments?.length ? { replyComments: turn.replyComments } : {}),
     ...(turn.queued ? { priority: 'next' as const, ...(turn.steer ? { steer: 'now' as const } : {}) } : {}),
     ...(desktop ? {
       ...(turn.inputRequest ? { inputRequest: turn.inputRequest } : {}),

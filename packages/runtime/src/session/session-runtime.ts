@@ -1216,6 +1216,7 @@ export class SessionRuntime {
     images?: TurnImageAttachment[]
     userMessageContent?: MessageDisplayFields['userMessageContent']
     userSelections?: MessageDisplayFields['userSelections']
+    replyComments?: MessageDisplayFields['replyComments']
     contexts?: MessageDisplayFields['contexts']
     /** A launch task from the controller's agent; named after the controller here, whatever it claims. */
     collaboration?: MessageDisplayFields['collaboration']

@@ -1,4 +1,4 @@
-import type { ChatMessageContext, CollaborationMessageMeta, ContentBlock } from './agent-types'
+import type { ChatMessageContext, ChatMessageReplyComment, CollaborationMessageMeta, ContentBlock } from './agent-types'
 import { safeImageUri } from './image-uri'
 
 /** User-facing override, independent of the actual model input. */
@@ -7,6 +7,7 @@ export interface MessageDisplayFields {
   contexts?: ChatMessageContext[]
   /** Text the user quoted into the message, shown as quote chips on its bubble. */
   userSelections?: string[]
+  replyComments?: ChatMessageReplyComment[]
   /**
    * The message is a collaboration delivery (a parent's launch task). The host
    * that runs the session names where it came from. A parent on the same host
@@ -41,6 +42,18 @@ export function parseMessageDisplay(value: unknown): MessageDisplayFields {
   if (input.userSelections !== undefined) {
     if (!Array.isArray(input.userSelections) || input.userSelections.some(value => typeof value !== 'string')) throw new Error('Invalid quoted selections')
     if (input.userSelections.length) result.userSelections = input.userSelections as string[]
+  }
+  if (input.replyComments !== undefined) {
+    if (!Array.isArray(input.replyComments) || input.replyComments.some(value => {
+      const item = value as Record<string, unknown> | null
+      return !item || typeof item.quote !== 'string' || typeof item.text !== 'string'
+    })) throw new Error('Invalid reply comments')
+    if (input.replyComments.length) {
+      result.replyComments = input.replyComments.map(value => {
+        const item = value as { quote: string; text: string }
+        return { quote: item.quote, text: item.text }
+      })
+    }
   }
   if (input.collaboration !== undefined) {
     const collaboration = input.collaboration as Record<string, unknown> | null

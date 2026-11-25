@@ -829,6 +829,7 @@ describe('session-repo', () => {
           attachments: [{ name: 'pic.png', base64: 'data', mimeType: 'image/png' }],
           contexts: [{ appId: 'hello', appName: 'Hello', summary: '3 files', content: 'src/a.ts' }],
           userSelections: ['quote A', 'quote B'],
+          replyComments: [{ quote: 'use a Range', text: 'why not marks?' }],
           createdAt: '2026-04-18T00:00:00Z',
           providerId: 'claude',
         },
@@ -840,6 +841,7 @@ describe('session-repo', () => {
       expect(msg.attachments).toEqual([{ name: 'pic.png', base64: 'data', mimeType: 'image/png' }])
       expect(msg.contexts).toEqual([{ appId: 'hello', appName: 'Hello', summary: '3 files', content: 'src/a.ts' }])
       expect(msg.userSelections).toEqual(['quote A', 'quote B'])
+      expect(msg.replyComments).toEqual([{ quote: 'use a Range', text: 'why not marks?' }])
     })
 
     it('parses legacy content_json (raw array) without aux fields', () => {

@@ -47,6 +47,7 @@ export interface SessionMessageBlock {
   contexts?: ChatMessageContext[]
   /** Quoted passages shown as chips. The model prompt stays in `text`. */
   userSelections?: string[]
+  replyComments?: ChatMessage['replyComments']
   attachments?: ImageAttachment[]
   tools?: SessionMessageToolSummary[]
   metadata?: Record<string, unknown>

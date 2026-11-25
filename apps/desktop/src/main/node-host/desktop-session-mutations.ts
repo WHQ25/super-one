@@ -74,6 +74,7 @@ export function desktopSendRequest(input: Parameters<SessionHostPort['send']>[0]
     ...(input.userMessageContent ? { userMessageContent: input.userMessageContent } : {}),
     ...(input.contexts ? { contexts: input.contexts } : {}),
     ...(input.userSelections ? { userSelections: input.userSelections } : {}),
+    ...(input.replyComments ? { replyComments: input.replyComments } : {}),
     ...(input.claudeFastMode !== undefined ? { claudeFastMode: input.claudeFastMode ?? false } : {}),
     ...(input.ultracode !== undefined ? { ultracode: input.ultracode } : {}),
     ...(input.priority ? { priority: input.priority } : {}),

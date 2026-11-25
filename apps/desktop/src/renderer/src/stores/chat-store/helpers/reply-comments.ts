@@ -35,8 +35,3 @@ export function buildReplyCommentsText(comments: readonly ReplyComment[]): strin
     '</reply_comments>',
   ].join('\n')
 }
-
-/** How a sent comment shows among the message's quoted selections: comment first, so a lone chip previews it. */
-export function replyCommentSelection(comment: ReplyComment): string {
-  return `${comment.text}\n\n${quoteLines(comment.quote)}`
-}

@@ -71,7 +71,9 @@ export function VirtualMarkdownViewport({ enabled, className, children }: Virtua
           </VirtualTranscriptContext.Provider>
         </TranscriptStateProvider>
       ) : (
-        children
+        <VirtualTranscriptContext.Provider value={null}>
+          {children}
+        </VirtualTranscriptContext.Provider>
       )}
     </div>
   )

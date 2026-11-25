@@ -7,6 +7,7 @@ import {
   DialogTitle,
   DialogDescription,
 } from '@superone/ui/components/ui/dialog'
+import { VirtualTranscriptContext } from './virtual-transcript-context'
 
 export function FullscreenGlassDialog({ open, onOpenChange, title, children }: {
   open: boolean
@@ -25,7 +26,9 @@ export function FullscreenGlassDialog({ open, onOpenChange, title, children }: {
           >
             <span className="sr-only"><DialogTitle>{title}</DialogTitle></span>
             <span className="sr-only"><DialogDescription>{title}</DialogDescription></span>
-            {children}
+            <VirtualTranscriptContext.Provider value={null}>
+              {children}
+            </VirtualTranscriptContext.Provider>
           </DialogPrimitive.Content>
         </div>
       </DialogPortal>

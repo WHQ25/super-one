@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { Pressable, ScrollView, StyleSheet, View, useWindowDimensions, type ScrollViewInstance } from 'react-native'
-import { Bot, CheckCircle2, ChevronRight, Circle, CircleDashed, ListTodo, Lock } from 'lucide-react-native'
+import { Bot, CheckCircle2, ChevronRight, Circle, CircleDashed, CircleSlash, ListTodo, Lock, XCircle } from 'lucide-react-native'
 import type { TodoItem } from '@superone/shared/agent-types'
 import { COMPLETED_TODO_CLEAR_MS, todosAllCompleted } from '@superone/chat-core'
 import { buildTodoPanelRows, todoPanelSummary, type TodoPanelRow } from '../todo-panel-state'
@@ -161,12 +161,14 @@ function TodoRow(props: {
   const { tokens: { colors } } = useMobileTheme()
   const { row } = props
   const done = row.status === 'completed'
+  const skipped = row.status === 'skipped'
+  const failed = row.status === 'failed'
   const running = row.status === 'in_progress'
   const text = {
     fontSize: 12,
     lineHeight: 16,
-    color: done ? colors.mutedForeground : colors.foreground,
-    textDecorationLine: done ? ('line-through' as const) : ('none' as const),
+    color: failed ? colors.destructive : (done || skipped) ? colors.mutedForeground : colors.foreground,
+    textDecorationLine: (done || skipped) ? ('line-through' as const) : ('none' as const),
   }
   return (
     <View onLayout={(event) => props.onLayout(event.nativeEvent.layout.y)}>
@@ -179,15 +181,17 @@ function TodoRow(props: {
       >
         <View style={{ marginTop: 2 }}>
           {done ? <CheckCircle2 size={14} color={colors.success} />
-            : running ? <SpinningIcon icon={CircleDashed} size={14} color={colors.primary} durationMs={RUNNING_SPIN_MS} />
-              : <Circle size={14} color={colors.mutedForeground} />}
+            : failed ? <XCircle size={14} color={colors.destructive} />
+              : skipped ? <CircleSlash size={14} color={colors.mutedForeground} />
+                : running ? <SpinningIcon icon={CircleDashed} size={14} color={colors.primary} durationMs={RUNNING_SPIN_MS} />
+                  : <Circle size={14} color={colors.mutedForeground} />}
         </View>
         {/* Owner and blockers are siblings rather than nested in the sentence:
             RN can host a View inside a Text, but an SVG there measures wrong on
             Android. Wrapping puts them beside short rows and under long ones. */}
         <View style={{ flex: 1, flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: 6 }}>
           <Text style={[text, { flexShrink: 1 }]}>
-            <Text style={[text, { color: colors.mutedForeground, textDecorationLine: 'none' }]}>#{row.id} </Text>
+            <Text style={[text, { color: failed ? colors.destructive : colors.mutedForeground, textDecorationLine: 'none' }]}>#{row.id} </Text>
             {row.text}
           </Text>
           {row.owner ? (

@@ -145,7 +145,7 @@ function nameFromVariant(raw: Record<string, unknown>): string | null {
     const t = (action as { type?: string }).type
     if (t === 'search') return 'WebSearch'
   }
-  if (raw.TodosUpdated != null || raw.todos != null) return 'TodoWrite'
+  if (raw.TodosUpdated != null || raw.todos != null || Array.isArray(raw.steps)) return 'TodoWrite'
   return null
 }
 

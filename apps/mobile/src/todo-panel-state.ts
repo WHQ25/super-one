@@ -1,4 +1,5 @@
 import type { TodoItem } from '@superone/shared/agent-types'
+import { isTodoFinished } from '@superone/chat-core'
 
 export interface TodoPanelRow {
   id: string
@@ -50,7 +51,7 @@ export function buildTodoPanelRows(todos: Record<string, TodoItem>): TodoPanelRo
       description,
       owner: todo.owner || undefined,
       blockers: Array.from(new Set([...(todo.blockedBy ?? []), ...(inverseBlockers[todo.id] ?? [])]))
-        .filter((blockerId) => todos[blockerId] && todos[blockerId].status !== 'completed'),
+        .filter((blockerId) => todos[blockerId] && !isTodoFinished(todos[blockerId].status)),
       autoDescription,
       expandable: Boolean(description) && !autoDescription,
     }
@@ -59,7 +60,7 @@ export function buildTodoPanelRows(todos: Record<string, TodoItem>): TodoPanelRo
 
 export function todoPanelSummary(rows: TodoPanelRow[]): TodoPanelSummary {
   return {
-    completed: rows.filter((row) => row.status === 'completed').length,
+    completed: rows.filter((row) => isTodoFinished(row.status)).length,
     total: rows.length,
     hasInProgress: rows.some((row) => row.status === 'in_progress'),
   }

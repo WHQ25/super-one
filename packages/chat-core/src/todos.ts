@@ -6,12 +6,16 @@ type TodosUpdatedEvent = Extract<AgentEvent, { type: 'todos_updated' }>
 /** How long a fully completed list stays readable before a client clears it. */
 export const COMPLETED_TODO_CLEAR_MS = 3_000
 
+export function isTodoFinished(status: string): boolean {
+  return status === 'completed' || status === 'skipped' || status === 'failed'
+}
+
 /** True when the list has rows and every one is done. An empty list is not finished. */
 export function todosAllCompleted(todos: Iterable<{ status: string }>): boolean {
   let count = 0
   for (const todo of todos) {
     count += 1
-    if (todo.status !== 'completed') return false
+    if (!isTodoFinished(todo.status)) return false
   }
   return count > 0
 }
@@ -75,7 +79,7 @@ export function todoRestoreDecision(message: ChatMessage): { found: true; todos:
     if (block.toolName !== 'TodoWrite') return { found: true, todos: null }
     let todos: Record<string, TodoItem> | null = null
     try { todos = todoWriteTodos(JSON.parse(block.input)) } catch { return { found: true, todos: null } }
-    return { found: true, todos: todos && Object.values(todos).some(todo => todo.status !== 'completed') ? todos : null }
+    return { found: true, todos: todos && Object.values(todos).some(todo => !isTodoFinished(todo.status)) ? todos : null }
   }
   return { found: false }
 }

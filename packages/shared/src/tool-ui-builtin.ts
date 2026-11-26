@@ -110,6 +110,32 @@ export function normalizeCustomBuiltinInput(
   raw: Record<string, unknown>,
 ): Record<string, unknown> | null {
   switch (toolName) {
+    case 'TodoWrite': {
+      if (Array.isArray(raw.todos) || !Array.isArray(raw.steps)) return null
+      const todos = raw.steps
+        .filter((step): step is Record<string, unknown> => Boolean(step && typeof step === 'object' && !Array.isArray(step)))
+        .map((step) => {
+          const content = pickStr(step, ['title', 'content', 'subject']) ?? ''
+          const rawStatus = pickStr(step, ['status'])?.toLowerCase() ?? ''
+          const status =
+            rawStatus === 'in_progress' || rawStatus === 'in-progress'
+              ? 'in_progress'
+              : rawStatus === 'skipped'
+                ? 'skipped'
+                : rawStatus === 'failed'
+                  ? 'failed'
+                  : rawStatus === 'completed' || rawStatus === 'cancelled' || rawStatus === 'canceled' || rawStatus === 'done'
+                    ? 'completed'
+                    : 'pending'
+          return {
+            content,
+            status,
+            ...(status === 'in_progress' && content ? { activeForm: content } : {}),
+          }
+        })
+        .filter((item) => item.content.length > 0)
+      return { todos }
+    }
     case 'ManageTask': {
       const out: Record<string, unknown> = {}
       const terminate = pickBool(raw, ['Terminate', 'terminate'])

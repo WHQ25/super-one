@@ -1,5 +1,5 @@
 import { useEffect, useCallback } from 'react'
-import { COMPLETED_TODO_CLEAR_MS, todosAllCompleted } from '@superone/chat-core'
+import { COMPLETED_TODO_CLEAR_MS, isTodoFinished, todosAllCompleted } from '@superone/chat-core'
 import { useChatStore, useActiveSession } from '@/stores/chat'
 import { useShallow } from 'zustand/react/shallow'
 import { Kbd } from '@superone/ui/components/ui/kbd'
@@ -78,7 +78,7 @@ export function TodoPopup() {
     description: todo.description || undefined,
     owner: todo.owner,
     blockedBy: Array.from(new Set([...(todo.blockedBy ?? []), ...(inverseBlockers[todo.id] ?? [])]))
-      .filter((blockerId) => todos[blockerId] && todos[blockerId].status !== 'completed')
+      .filter((blockerId) => todos[blockerId] && !isTodoFinished(todos[blockerId].status))
       .map((blockerId) => todos[blockerId].id),
   }))
 

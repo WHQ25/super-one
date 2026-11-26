@@ -71,4 +71,18 @@ describe('acp todo snapshots', () => {
       todos: [],
     })).toEqual({ type: 'todos_updated', todos: [] })
   })
+
+  it('maps update_steps title and done/skipped/failed statuses', () => {
+    expect(acpTodoItems([
+      { title: 'Step 1', status: 'done' },
+      { title: 'Step 2', status: 'skipped' },
+      { title: 'Step 3', status: 'failed' },
+      { title: 'Step 4', status: 'in_progress' },
+    ])).toEqual([
+      { id: '1', subject: 'Step 1', description: '', status: 'completed' },
+      { id: '2', subject: 'Step 2', description: '', status: 'skipped' },
+      { id: '3', subject: 'Step 3', description: '', status: 'failed' },
+      { id: '4', subject: 'Step 4', description: '', status: 'in_progress', activeForm: 'Step 4' },
+    ])
+  })
 })

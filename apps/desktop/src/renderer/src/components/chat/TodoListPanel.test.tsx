@@ -65,3 +65,24 @@ describe('TodoListPanel auto-scroll to active task', () => {
     expect(scrollSpy).toHaveBeenCalledTimes(2)
   })
 })
+
+describe('TodoListPanel failed and skipped states', () => {
+  it('counts failed and skipped items as finished and renders distinct styles', () => {
+    const { container, getByText } = render(
+      <TodoListPanel
+        items={[
+          { id: '1', text: 'done step', status: 'completed' },
+          { id: '2', text: 'failed step', status: 'failed' },
+          { id: '3', text: 'skipped step', status: 'skipped' },
+          { id: '4', text: 'pending step', status: 'pending' },
+        ]}
+        expanded
+      />,
+    )
+
+    expect(getByText('Todos (3/4)')).toBeTruthy()
+    expect(container.querySelector('.text-destructive')).toBeTruthy()
+    expect(getByText('failed step').className).toContain('text-destructive')
+    expect(getByText('skipped step').className).toContain('line-through')
+  })
+})

@@ -12,14 +12,16 @@ function record(value: unknown): Record<string, unknown> | null {
 function todoStatus(value: unknown): TodoItem['status'] {
   const status = typeof value === 'string' ? value : ''
   if (status === 'in_progress' || status === 'in-progress') return 'in_progress'
-  if (status === 'completed' || status === 'cancelled' || status === 'canceled') return 'completed'
+  if (status === 'skipped') return 'skipped'
+  if (status === 'failed') return 'failed'
+  if (status === 'completed' || status === 'cancelled' || status === 'canceled' || status === 'done') return 'completed'
   return 'pending'
 }
 
 function todoItemFromRow(row: unknown, index: number, idHint?: string): TodoItem | null {
   const fields = record(row)
   if (!fields) return null
-  const subject = String(fields.content ?? fields.subject ?? '').trim()
+  const subject = String(fields.content ?? fields.subject ?? fields.title ?? '').trim()
   if (!subject) return null
   const status = todoStatus(fields.status)
   const id = String(fields.id ?? idHint ?? index + 1)

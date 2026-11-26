@@ -86,6 +86,8 @@ export const TOOL_ID_TO_UI_NAME: Record<string, string> = {
   todo_write: 'TodoWrite',
   todowrite: 'TodoWrite',
   todo: 'TodoWrite',
+  update_steps: 'TodoWrite',
+  updatesteps: 'TodoWrite',
   search_tool: 'SearchTools',
   searchtool: 'SearchTools',
   tool_search: 'SearchTools',

@@ -1,12 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
-import { ListTodo, Circle, CircleDashed, CheckCircle2, ChevronRight, Bot, Lock } from 'lucide-react'
+import { ListTodo, Circle, CircleDashed, CheckCircle2, CircleSlash, XCircle, ChevronRight, Bot, Lock } from 'lucide-react'
+import { isTodoFinished } from '@superone/chat-core'
 import { cn } from '@superone/ui/lib/utils'
 
 export interface TodoListPanelItem {
   id: string
   text: string
-  status: 'pending' | 'in_progress' | 'completed'
+  status: 'pending' | 'in_progress' | 'completed' | 'skipped' | 'failed'
   description?: string
   owner?: string
   blockedBy?: string[]
@@ -42,7 +43,7 @@ export function TodoListPanel({
 
   if (items.length === 0) return null
 
-  const completed = items.filter((item) => item.status === 'completed').length
+  const completed = items.filter((item) => isTodoFinished(item.status)).length
 
   const toggleRow = (id: string) =>
     setOpenRows((prev) => {
@@ -86,6 +87,10 @@ export function TodoListPanel({
                 >
                   {item.status === 'completed' ? (
                     <CheckCircle2 className="mt-0.5 size-3.5 shrink-0 text-success" />
+                  ) : item.status === 'failed' ? (
+                    <XCircle className="mt-0.5 size-3.5 shrink-0 text-destructive" />
+                  ) : item.status === 'skipped' ? (
+                    <CircleSlash className="mt-0.5 size-3.5 shrink-0 text-muted-foreground" />
                   ) : item.status === 'in_progress' ? (
                     <CircleDashed className="mt-0.5 size-3.5 shrink-0 animate-spin text-primary [animation-duration:3s]" />
                   ) : (
@@ -95,9 +100,11 @@ export function TodoListPanel({
                     className={cn(
                       'min-w-0 flex-1 leading-snug',
                       item.status === 'completed' && 'text-muted-foreground line-through',
+                      item.status === 'skipped' && 'text-muted-foreground line-through',
+                      item.status === 'failed' && 'text-destructive',
                     )}
                   >
-                    <span className="mr-1 text-muted-foreground">#{item.id}</span>
+                    <span className={cn('mr-1', item.status === 'failed' ? 'text-destructive' : 'text-muted-foreground')}>#{item.id}</span>
                     {item.text}
                     {item.owner && (
                       <span className="ml-2 inline-flex items-center gap-1 align-middle text-xs text-muted-foreground">

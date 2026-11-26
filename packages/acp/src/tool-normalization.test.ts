@@ -20,3 +20,35 @@ describe('normalizeAcpTool background bash', () => {
     })?.input).toMatchObject({ run_in_background: true })
   })
 })
+
+describe('normalizeAcpTool update_steps', () => {
+  it('normalizes update_steps to TodoWrite with todos', () => {
+    expect(normalizeAcpTool({
+      toolCallId: 's1',
+      title: 'update steps',
+      rawInput: {
+        steps: [
+          { title: 'Inspect code', status: 'done' },
+          { title: 'Skip optional', status: 'skipped' },
+          { title: 'Failed step', status: 'failed' },
+          { title: 'Update mapping', status: 'in_progress' },
+          { title: 'Verify tests', status: 'pending' },
+        ],
+      },
+    })).toEqual({
+      toolName: 'TodoWrite',
+      input: {
+        todos: [
+          { content: 'Inspect code', status: 'completed' },
+          { content: 'Skip optional', status: 'skipped' },
+          { content: 'Failed step', status: 'failed' },
+          { content: 'Update mapping', status: 'in_progress', activeForm: 'Update mapping' },
+          { content: 'Verify tests', status: 'pending' },
+        ],
+      },
+      toolFilePath: undefined,
+      toolSummary: 'update steps',
+      terminalId: undefined,
+    })
+  })
+})

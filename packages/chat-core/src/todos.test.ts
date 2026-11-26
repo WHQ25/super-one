@@ -14,6 +14,7 @@ describe('todosAllCompleted', () => {
     expect(todosAllCompleted([])).toBe(false)
     expect(todosAllCompleted([{ status: 'completed' }, { status: 'in_progress' }])).toBe(false)
     expect(todosAllCompleted([{ status: 'completed' }, { status: 'completed' }])).toBe(true)
+    expect(todosAllCompleted([{ status: 'completed' }, { status: 'skipped' }, { status: 'failed' }])).toBe(true)
   })
 })
 

@@ -53,6 +53,38 @@ describe('uiToolNameFromId', () => {
     expect(uiToolNameFromId('deploy_app')).toBe('DeployApp')
     expect(uiToolNameFromId('lsp')).toBe('Lsp')
     expect(uiToolNameFromId('x_search')).toBe('XSearch')
+    expect(uiToolNameFromId('update_steps')).toBe('TodoWrite')
+    expect(uiToolNameFromId('update steps')).toBe('TodoWrite')
+  })
+
+  it('normalizes update_steps transcript input into TodoWrite todos', () => {
+    expect(normalizeTranscriptTool('update_steps', {
+      steps: [
+        { title: 'Read files', status: 'done' },
+        { title: 'Skip optional', status: 'skipped' },
+        { title: 'Failed step', status: 'failed' },
+        { title: 'Edit mapper', status: 'in_progress' },
+        { title: 'Run tests', status: 'pending' },
+      ],
+    })).toEqual({
+      toolName: 'TodoWrite',
+      input: {
+        steps: [
+          { title: 'Read files', status: 'done' },
+          { title: 'Skip optional', status: 'skipped' },
+          { title: 'Failed step', status: 'failed' },
+          { title: 'Edit mapper', status: 'in_progress' },
+          { title: 'Run tests', status: 'pending' },
+        ],
+        todos: [
+          { content: 'Read files', status: 'completed' },
+          { content: 'Skip optional', status: 'skipped' },
+          { content: 'Failed step', status: 'failed' },
+          { content: 'Edit mapper', status: 'in_progress', activeForm: 'Edit mapper' },
+          { content: 'Run tests', status: 'pending' },
+        ],
+      },
+    })
   })
 
   it('rejects human titles', () => {
@@ -100,6 +132,7 @@ describe('grok collab streaming input', () => {
 describe('isAlwaysHiddenToolName', () => {
   it('hides Grok wire names on the first streaming chunk', () => {
     expect(isAlwaysHiddenToolName('todo_write')).toBe(true)
+    expect(isAlwaysHiddenToolName('update_steps')).toBe(true)
     expect(isAlwaysHiddenToolName('TodoWrite')).toBe(true)
     expect(isAlwaysHiddenToolName('use_tool')).toBe(true)
     expect(isAlwaysHiddenToolName('UseTool')).toBe(true)

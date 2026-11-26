@@ -1,4 +1,4 @@
-import { lazy, Suspense, useMemo, useState, type ReactNode } from 'react'
+import { lazy, Suspense, useEffect, useMemo, useState, type ReactNode } from 'react'
 import type { CodexPlanApprovalState } from '@superone/shared/agent-types'
 import { PlanApprovalPrompt } from '../PlanApprovalPrompt'
 import { PlanFullscreenContext } from '../plan-fullscreen-context'
@@ -41,6 +41,16 @@ export function useChatOverlays(displayedSessionId: string | null | undefined) {
   )
 
   const [subagentView, setSubagentView] = useState<SubagentViewState | null>(null)
+  useEffect(() => {
+    const handler = (event: Event) => {
+      const detail = (event as CustomEvent<{ sessionId?: string; toolUseId?: string }>).detail
+      if (!detail?.toolUseId) return
+      if (detail.sessionId && detail.sessionId !== displayedSessionId) return
+      setSubagentView({ toolUseId: detail.toolUseId })
+    }
+    window.addEventListener('superone:open-subagent-full-view', handler)
+    return () => window.removeEventListener('superone:open-subagent-full-view', handler)
+  }, [displayedSessionId])
   const subagentNav = useMemo(
     () => ({
       current: subagentView,

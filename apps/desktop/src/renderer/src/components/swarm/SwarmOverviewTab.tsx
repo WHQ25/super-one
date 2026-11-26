@@ -9,21 +9,24 @@ import { computeSwarmProgress, getMemberPalette, isTaskDoneForMember } from './s
 interface SwarmOverviewTabProps {
   snapshot: SwarmBoardSnapshot
   memberColorMap?: Record<string, number>
-  onSelectMemberForBoard: (memberName: string | null) => void
 }
 
 export function SwarmOverviewTab({
   snapshot,
   memberColorMap = {},
-  onSelectMemberForBoard,
 }: SwarmOverviewTabProps) {
   const { t } = useTranslation()
   const [expandedThreads, setExpandedThreads] = useState<Record<string, boolean>>({})
+  const [selectedMember, setSelectedMember] = useState<string | null>(null)
   const { doneTasks, totalTasks, threads } = computeSwarmProgress(snapshot)
   const membersByName = new Map(snapshot.members.map((m) => [m.name, m]))
   const coordinator = snapshot.members.find((m) => m.role === 'coordinator')
   const workers = snapshot.members.filter((m) => m.role !== 'coordinator')
   const coordinatorLastPost = coordinator?.lastPostText?.split(/\r?\n/, 1)[0]
+
+  const visibleThreads = selectedMember
+    ? threads.filter((thread) => thread.tasks.includes(selectedMember))
+    : threads
 
   const toggleThread = (id: string) => {
     setExpandedThreads((prev) => ({ ...prev, [id]: !prev[id] }))
@@ -32,7 +35,7 @@ export function SwarmOverviewTab({
   return (
     <div className="space-y-5 p-4">
       {(snapshot.plan?.goal?.title || snapshot.plan?.goal?.line) && (
-        <section className="rounded-xl border border-border/70 bg-card/70 p-4">
+        <section className="rounded-xl border border-border/70 bg-card/40 p-4">
           <div className="text-[11px] font-medium uppercase tracking-wider text-muted-foreground">
             {t('swarmBoard.overview.goal')}
           </div>
@@ -50,7 +53,7 @@ export function SwarmOverviewTab({
       )}
 
       {totalTasks > 0 && (
-        <section className="flex items-center gap-3 rounded-xl border border-border/70 bg-card/50 px-4 py-2.5">
+        <section className="flex items-center gap-3 rounded-xl border border-border/70 bg-card/40 px-4 py-2.5">
           <CheckCircle2
             className={cn(
               'size-4 shrink-0',
@@ -69,19 +72,22 @@ export function SwarmOverviewTab({
         </section>
       )}
 
-      {threads.length > 0 && (
+      {visibleThreads.length > 0 && (
         <section className="space-y-2.5">
           <h3 className="text-xs font-medium text-muted-foreground">
             {t('swarmBoard.overview.threads')}
           </h3>
           <div className="space-y-2">
-            {threads.map((thread) => {
-              const isExpanded = Boolean(expandedThreads[thread.id])
+            {visibleThreads.map((thread) => {
+              const isExpanded = Boolean(expandedThreads[thread.id]) || Boolean(selectedMember)
+              const threadTasks = selectedMember
+                ? thread.tasks.filter((name) => name === selectedMember)
+                : thread.tasks
               const pct = thread.totalCount > 0 ? Math.round((thread.doneCount / thread.totalCount) * 100) : 0
               return (
                 <div
                   key={thread.id}
-                  className="rounded-xl border border-border/70 bg-card/70 transition-colors hover:border-border"
+                  className="rounded-xl border border-border/70 bg-card/40 transition-colors hover:border-border"
                 >
                   <button
                     type="button"
@@ -128,7 +134,7 @@ export function SwarmOverviewTab({
                   </button>
                   {isExpanded && (
                     <div className="space-y-1.5 border-t border-border/50 px-4 py-2.5">
-                      {thread.tasks.map((taskName) => {
+                      {threadTasks.map((taskName) => {
                         const done = isTaskDoneForMember(taskName, snapshot.messages, membersByName)
                         const member = membersByName.get(taskName)
                         const palette = getMemberPalette(taskName, memberColorMap[taskName.toLowerCase()])
@@ -164,11 +170,7 @@ export function SwarmOverviewTab({
           {t('swarmBoard.overview.theTeam')}
         </h3>
         {coordinator && (
-          <button
-            type="button"
-            onClick={() => onSelectMemberForBoard('coordinator')}
-            className="flex w-full items-center gap-3 rounded-xl border border-border/70 bg-card/70 p-3 text-left transition-colors hover:border-border hover:bg-card"
-          >
+          <div className="flex w-full items-center gap-3 rounded-xl border border-border/70 bg-card/40 p-3 text-left">
             <div className="flex size-10 shrink-0 items-center justify-center rounded-lg border border-amber-500/30 bg-amber-500/15 text-amber-500">
               <BeeIcon color="#f59e0b" crowned className="size-6" />
             </div>
@@ -180,32 +182,43 @@ export function SwarmOverviewTab({
                 {coordinatorLastPost || coordinator.model || '@coordinator'}
               </div>
             </div>
-          </button>
+          </div>
         )}
 
         <div className="flex flex-wrap gap-2 pt-1">
           <button
             type="button"
-            onClick={() => onSelectMemberForBoard(null)}
+            onClick={() => setSelectedMember(null)}
             className="flex flex-col items-center gap-1 rounded-lg p-1.5 transition-colors hover:bg-muted/60"
           >
-            <div className="relative flex size-10 items-center justify-center rounded-lg border border-border bg-muted/40">
+            <div
+              className={cn(
+                'relative flex size-10 items-center justify-center rounded-lg border bg-muted/40',
+                selectedMember === null ? 'border-foreground ring-1 ring-foreground' : 'border-border',
+              )}
+            >
               <BeeIcon color="#a855f7" className="absolute left-1 top-1 size-3" />
               <BeeIcon color="#3b82f6" className="absolute right-1 top-1.5 size-3" />
               <BeeIcon color="#f59e0b" className="absolute bottom-1 left-1/2 size-3 -translate-x-1/2" />
             </div>
-            <span className="max-w-14 truncate text-[11px] font-medium text-foreground">
+            <span
+              className={cn(
+                'max-w-14 truncate text-[11px]',
+                selectedMember === null ? 'font-semibold text-foreground' : 'text-muted-foreground',
+              )}
+            >
               {t('swarmBoard.overview.all')}
             </span>
           </button>
 
           {workers.map((member) => {
             const palette = getMemberPalette(member.name, memberColorMap[member.name.toLowerCase()])
+            const isSelected = selectedMember === member.name
             return (
               <button
                 key={member.name}
                 type="button"
-                onClick={() => onSelectMemberForBoard(member.name)}
+                onClick={() => setSelectedMember(isSelected ? null : member.name)}
                 className="flex flex-col items-center gap-1 rounded-lg p-1.5 transition-colors hover:bg-muted/60"
                 title={member.taskDescription || `@${member.name}`}
               >
@@ -213,8 +226,8 @@ export function SwarmOverviewTab({
                   className={cn(
                     'relative flex size-10 items-center justify-center rounded-lg border',
                     palette.bg,
-                    palette.border,
                     palette.text,
+                    isSelected ? 'border-foreground ring-1 ring-foreground' : palette.border,
                   )}
                 >
                   <BeeIcon color={palette.hex} className="size-5" />
@@ -222,7 +235,12 @@ export function SwarmOverviewTab({
                     <span className="absolute -right-0.5 -top-0.5 size-2.5 rounded-full border-2 border-background bg-emerald-500" />
                   )}
                 </div>
-                <span className="max-w-14 truncate text-[11px] text-muted-foreground">
+                <span
+                  className={cn(
+                    'max-w-14 truncate text-[11px]',
+                    isSelected ? 'font-semibold text-foreground' : 'text-muted-foreground',
+                  )}
+                >
                   @{member.name}
                 </span>
               </button>

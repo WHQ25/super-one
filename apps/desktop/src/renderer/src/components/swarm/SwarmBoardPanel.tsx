@@ -32,24 +32,26 @@ export function SwarmBoardPanel({ sessionId, initialSnapshot }: SwarmBoardPanelP
     return undefined
   })
 
-  const memberColorMap = useMemo<Record<string, number>>(() => {
-    if (!sessionState) return {}
-    const map: Record<string, number> = {}
+  const { memberColorMap, memberToolUseIdMap } = useMemo(() => {
+    if (!sessionState) return { memberColorMap: {} as Record<string, number>, memberToolUseIdMap: {} as Record<string, string> }
+    const colorMap: Record<string, number> = {}
+    const toolMap: Record<string, string> = {}
     for (const msg of sessionState.messages) {
       if (!Array.isArray(msg.content)) continue
       for (const block of msg.content) {
         if (block.type !== 'tool_use') continue
         if (block.toolName !== 'Agent' && block.toolName !== 'Task') continue
-        const colorIdx = sessionState.subagentColors[block.toolUseId]
-        if (colorIdx === undefined) continue
         const parsed = parseTaskInput(block.input)
         const key = (parsed.name || parsed.subagentType).trim().toLowerCase()
-        if (key && map[key] === undefined) {
-          map[key] = colorIdx
+        if (!key) continue
+        if (toolMap[key] === undefined) toolMap[key] = block.toolUseId
+        const colorIdx = sessionState.subagentColors[block.toolUseId]
+        if (colorIdx !== undefined && colorMap[key] === undefined) {
+          colorMap[key] = colorIdx
         }
       }
     }
-    return map
+    return { memberColorMap: colorMap, memberToolUseIdMap: toolMap }
   }, [sessionState])
 
   const loadSnapshot = useCallback(async () => {
@@ -189,7 +191,6 @@ export function SwarmBoardPanel({ sessionId, initialSnapshot }: SwarmBoardPanelP
           <SwarmOverviewTab
             snapshot={snapshot}
             memberColorMap={memberColorMap}
-            onSelectMemberForBoard={handleSelectMemberForBoard}
           />
         )}
         {activeTab === 'board' && (
@@ -204,7 +205,14 @@ export function SwarmBoardPanel({ sessionId, initialSnapshot }: SwarmBoardPanelP
           <SwarmMembersTab
             snapshot={snapshot}
             memberColorMap={memberColorMap}
-            onSelectMemberForBoard={(name) => handleSelectMemberForBoard(name)}
+            memberToolUseIdMap={memberToolUseIdMap}
+            onOpenMemberSubagent={(toolUseId) => {
+              window.dispatchEvent(
+                new CustomEvent('superone:open-subagent-full-view', {
+                  detail: { sessionId, toolUseId },
+                }),
+              )
+            }}
           />
         )}
         {activeTab === 'graph' && (

@@ -138,6 +138,7 @@ export interface WorkspaceGitPort {
   readonly servedMethods?: ReadonlySet<string>
   status(projectId: string): Promise<unknown>
   statusAt(projectId: string, absolutePath?: string | null): Promise<unknown>
+  resolveHeadTarget?(projectId: string, absolutePath?: string | null): Promise<{ dir: string; file: string } | null>
   diff(projectId: string, opts?: { staged?: boolean; path?: string; cwd?: string }): Promise<unknown>
   branches(projectId: string, absolutePath?: string | null): Promise<unknown>
   switchBranch(

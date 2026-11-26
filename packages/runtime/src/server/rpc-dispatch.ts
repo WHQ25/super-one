@@ -3,7 +3,7 @@ import { dirname as configDirname, isAbsolute, join as pathJoin, resolve as path
 import { attachmentOriginal } from './session-attachments'
 import { handleSessionCreate } from './rpc-session-create'
 import { isAllowedSessionCwd } from './session-cwd'
-import { existsSync, mkdirSync, readdirSync, statSync } from 'node:fs'
+import { existsSync, mkdirSync, readdirSync, statSync, watch, type FSWatcher } from 'node:fs'
 import { arch, cpus, freemem, homedir, hostname, platform, totalmem, uptime } from 'node:os'
 import { parseMessageDisplay } from '@superone/shared/message-display'
 import { forwardedVoiceDelegation } from '@superone/shared/voice-delegation'
@@ -164,12 +164,28 @@ const watchBuffers = new Map<
   { events: Array<{ path: string; type: string }>; cancel: () => void; owner: string }
 >()
 
+const headWatchBuffers = new Map<
+  string,
+  {
+    changed: boolean
+    closed: boolean
+    waiters: Array<(res: { changed: boolean; closed?: boolean }) => void>
+    cancel: () => void
+    owner: string
+  }
+>()
+
 /** Clear handler-side buffers when client disconnects/revokes. */
 export function clearWatchBuffersForClient(clientSessionId: string): void {
   for (const [watchId, buf] of [...watchBuffers]) {
     if (buf.owner !== clientSessionId) continue
     buf.cancel()
     watchBuffers.delete(watchId)
+  }
+  for (const [watchId, buf] of [...headWatchBuffers]) {
+    if (buf.owner !== clientSessionId) continue
+    buf.cancel()
+    headWatchBuffers.delete(watchId)
   }
 }
 
@@ -324,6 +340,9 @@ const HANDLERS: Readonly<Record<string, (payload: unknown, ctx: RpcContext, meth
   'workspace.tailWatchPoll': (payload, ctx) => handleWorkspaceTailWatchPoll(payload, ctx),
   'workspace.tailWatchStop': (payload, ctx) => handleWorkspaceTailWatchStop(payload, ctx),
   'git.status': (payload, ctx) => handleGitStatus(payload, ctx),
+  'git.headWatchStart': (payload, ctx) => handleGitHeadWatchStart(payload, ctx),
+  'git.headWatchWait': (payload, ctx) => handleGitHeadWatchWait(payload, ctx),
+  'git.headWatchStop': (payload, ctx) => handleGitHeadWatchStop(payload, ctx),
   'git.diff': (payload, ctx) => handleGitDiff(payload, ctx),
   'git.branches': (payload, ctx) => handleGitBranches(payload, ctx),
   'git.switchBranch': (payload, ctx) => handleGitSwitchBranch(payload, ctx),
@@ -1327,6 +1346,104 @@ async function handleGitStatus(payload: unknown, ctx: RpcContext): Promise<RpcRe
   } catch (err) {
     return mapThrown(err)
   }
+}
+
+async function handleGitHeadWatchStart(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  try {
+    const projectId = String(p.projectId ?? '')
+    const cwd = typeof p.cwd === 'string' ? p.cwd : null
+    const target = await ctx.workspaceGit.resolveHeadTarget?.(projectId, cwd)
+    if (!target) return { result: null }
+
+    const watchId = crypto.randomUUID()
+    let timer: ReturnType<typeof setTimeout> | null = null
+    let watcher: FSWatcher | null = null
+    const entry = {
+      changed: false,
+      closed: false,
+      waiters: [] as Array<(res: { changed: boolean; closed?: boolean }) => void>,
+      owner: ctx.client.clientSessionId,
+      cancel: () => {
+        entry.closed = true
+        if (timer) {
+          clearTimeout(timer)
+          timer = null
+        }
+        if (watcher) {
+          watcher.close()
+          watcher = null
+        }
+        const pending = entry.waiters.splice(0, entry.waiters.length)
+        for (const resolve of pending) resolve({ changed: false, closed: true })
+      },
+    }
+
+    watcher = watch(target.dir, { recursive: false }, (_eventType, filename) => {
+      if (filename && String(filename) !== target.file) return
+      if (timer) clearTimeout(timer)
+      timer = setTimeout(() => {
+        timer = null
+        if (entry.closed) return
+        if (entry.waiters.length > 0) {
+          const pending = entry.waiters.splice(0, entry.waiters.length)
+          for (const resolve of pending) resolve({ changed: true })
+        } else {
+          entry.changed = true
+        }
+      }, 100)
+    })
+    watcher.on('error', () => entry.cancel())
+    headWatchBuffers.set(watchId, entry)
+    return { result: { watchId } }
+  } catch (err) {
+    return mapThrown(err)
+  }
+}
+
+async function handleGitHeadWatchWait(payload: unknown, ctx: RpcContext): Promise<RpcResult> {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const watchId = String(p.watchId ?? '')
+  const buf = headWatchBuffers.get(watchId)
+  if (!buf || buf.owner !== ctx.client.clientSessionId) {
+    return { error: { code: 'not_found', message: 'watch not found' } }
+  }
+  if (buf.closed) return { result: { changed: false, closed: true } }
+  if (buf.changed) {
+    buf.changed = false
+    return { result: { changed: true } }
+  }
+  const waitMs = Math.min(Math.max(Number(p.waitMs) || 10_000, 100), 20_000)
+  const res = await new Promise<{ changed: boolean; closed?: boolean }>((resolve) => {
+    const onDone = (out: { changed: boolean; closed?: boolean }) => {
+      clearTimeout(timer)
+      resolve(out)
+    }
+    const timer = setTimeout(() => {
+      const idx = buf.waiters.indexOf(onDone)
+      if (idx >= 0) buf.waiters.splice(idx, 1)
+      resolve({ changed: false })
+    }, waitMs)
+    buf.waiters.push(onDone)
+  })
+  return { result: res }
+}
+
+function handleGitHeadWatchStop(payload: unknown, ctx: RpcContext): RpcResult {
+  const denied = requireScopes(ctx.client, OPERATION_SCOPES.readWorkspace)
+  if (denied) return denied
+  const p = asRecord(payload)
+  const watchId = String(p.watchId ?? '')
+  const buf = headWatchBuffers.get(watchId)
+  if (buf && buf.owner === ctx.client.clientSessionId) {
+    buf.cancel()
+    headWatchBuffers.delete(watchId)
+  }
+  return { result: { ok: true } }
 }
 
 async function handleGitDiff(payload: unknown, ctx: RpcContext): Promise<RpcResult> {

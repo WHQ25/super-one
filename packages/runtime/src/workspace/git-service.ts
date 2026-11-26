@@ -1,5 +1,5 @@
 import { existsSync, realpathSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { basename, dirname, join, resolve } from 'node:path'
 import {
   sanitizeGitRef as sanitizeGitRefCore,
   gitErrorMessage,
@@ -553,6 +553,18 @@ export class WorkspaceGitService {
 
   repoIdentity(projectId: string): string | null {
     return this.projects.get(projectId)?.repoIdentity ?? null
+  }
+
+  async resolveHeadTarget(projectId: string, absolutePath?: string | null): Promise<{ dir: string; file: string } | null> {
+    const cwd = absolutePath ? await this.assertRepoWorktreePath(projectId, absolutePath) : this.root(projectId)
+    try {
+      const raw = (await this.read(cwd, ['rev-parse', '--git-path', 'HEAD'])).trim()
+      if (!raw) return null
+      const full = resolve(cwd, raw)
+      return { dir: dirname(full), file: basename(full) }
+    } catch {
+      return null
+    }
   }
 }
 

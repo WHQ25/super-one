@@ -5074,6 +5074,8 @@ export const AgentIpcChannels = {
   // File watcher
   FILE_WATCH_START: 'app:file-watch-start',
   FILE_WATCH_STOP: 'app:file-watch-stop',
+  GIT_HEAD_WATCH_START: 'app:git-head-watch-start',
+  GIT_HEAD_WATCH_STOP: 'app:git-head-watch-stop',
   FILE_CHANGE_EVENT: 'app:file-change-event',
   GIT_HEAD_CHANGE: 'app:git-head-change',
 

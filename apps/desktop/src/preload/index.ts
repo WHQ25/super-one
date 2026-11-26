@@ -1843,6 +1843,10 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.FILE_WATCH_START, folderPath),
   stopFileWatch: () =>
     ipcRenderer.invoke(AgentIpcChannels.FILE_WATCH_STOP),
+  startGitHeadWatch: (folderPath: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.GIT_HEAD_WATCH_START, folderPath),
+  stopGitHeadWatch: () =>
+    ipcRenderer.invoke(AgentIpcChannels.GIT_HEAD_WATCH_STOP),
   onFileChangeEvent: (callback: (event: { folderPath: string }) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, event: { folderPath: string }): void => {
       callback(event)

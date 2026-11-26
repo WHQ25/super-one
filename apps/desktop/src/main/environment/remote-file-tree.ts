@@ -898,6 +898,9 @@ export async function saveRemoteProjectFile(
 type RemoteGitGateway = {
   resolveWorkspaceCwd?: (projectId: string, cwd: string) => Promise<{ cwd: string }>
   gitStatus: (projectId: string, opts?: { cwd?: string }) => Promise<unknown>
+  gitHeadWatchStart?: (projectId: string, opts?: { cwd?: string }) => Promise<{ watchId: string } | null>
+  gitHeadWatchWait?: (watchId: string, waitMs?: number) => Promise<{ changed: boolean; closed?: boolean }>
+  gitHeadWatchStop?: (watchId: string) => Promise<void>
   gitBranches?: (projectId: string, opts?: { cwd?: string }) => Promise<unknown>
   gitInit?: (projectId: string) => Promise<unknown>
   gitWorktrees?: (projectId: string) => Promise<unknown>
@@ -1372,4 +1375,49 @@ async function legacyCapabilities(host: EnvironmentHost, folderPath: string): Pr
   const probe = await getRemoteGitMentionRefs(host, folderPath, 'branch', '')
   const repo = probe.ok || probe.reason === 'error' ? 'ready' : probe.reason === 'gh-unavailable' ? 'ready' : probe.reason
   return { repo, github: false }
+}
+
+export function startRemoteGitHeadWatch(
+  host: EnvironmentHost,
+  folderPath: string,
+  onChange: () => void,
+): () => void {
+  let stopped = false
+  let watchId: string | null = null
+  let activeGw: RemoteGitGateway | null = null
+
+  void (async () => {
+    try {
+      const ctx = await resolveRemoteProjectContext(host, folderPath, { registerIfMissing: false })
+      if (stopped || !ctx) return
+      const gw = asRemoteGitGateway(host.getGateway(ctx.environmentId))
+      if (!gw?.gitHeadWatchStart || !gw.gitHeadWatchWait) return
+      activeGw = gw
+      const started = await gw.gitHeadWatchStart(ctx.projectId, ctx.cwd ? { cwd: ctx.cwd } : undefined)
+      if (stopped || !started?.watchId) {
+        if (started?.watchId) void gw.gitHeadWatchStop?.(started.watchId)
+        return
+      }
+      watchId = started.watchId
+      while (!stopped) {
+        const res = await gw.gitHeadWatchWait(watchId, 10_000)
+        if (stopped || res.closed) break
+        if (res.changed) {
+          invalidateRemoteGitReads(folderPath)
+          onChange()
+        }
+      }
+    } catch {
+      // Older nodes without git.headWatch* or disconnected links fall back to turn-boundary refresh.
+    }
+  })()
+
+  return () => {
+    stopped = true
+    if (watchId && activeGw?.gitHeadWatchStop) {
+      const id = watchId
+      watchId = null
+      void activeGw.gitHeadWatchStop(id)
+    }
+  }
 }

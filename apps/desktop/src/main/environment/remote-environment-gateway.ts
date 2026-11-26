@@ -570,6 +570,24 @@ export class RemoteEnvironmentGateway implements EnvironmentGateway {
     })
   }
 
+  async gitHeadWatchStart(projectId: string, opts?: { cwd?: string }): Promise<{ watchId: string } | null> {
+    return this.client.rpc<{ watchId: string } | null>('git.headWatchStart', {
+      projectId,
+      ...(opts?.cwd ? { cwd: opts.cwd } : {}),
+    })
+  }
+
+  async gitHeadWatchWait(watchId: string, waitMs = 10_000): Promise<{ changed: boolean; closed?: boolean }> {
+    return this.client.rpc<{ changed: boolean; closed?: boolean }>('git.headWatchWait', {
+      watchId,
+      waitMs,
+    })
+  }
+
+  async gitHeadWatchStop(watchId: string): Promise<void> {
+    await this.client.rpc('git.headWatchStop', { watchId }).catch(() => {})
+  }
+
   /** Validate a linked checkout and negotiate checkout-aware file operations. */
   async resolveWorkspaceCwd(projectId: string, cwd: string): Promise<{ cwd: string }> {
     return this.client.rpc('workspace.resolveCwd', { projectId, cwd })

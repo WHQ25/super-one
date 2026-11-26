@@ -542,6 +542,8 @@ interface AppAPI extends WindowLayoutAPI {
   // File watcher
   startFileWatch(folderPath: string): Promise<void>
   stopFileWatch(): Promise<void>
+  startGitHeadWatch(folderPath: string): Promise<void>
+  stopGitHeadWatch(): Promise<void>
   onFileChangeEvent(callback: (event: { folderPath: string }) => void): () => void
   onGitHeadChange(callback: (event: { folderPath: string }) => void): () => void
   onCodexSkillsChanged(callback: (event: { projectPath: string }) => void): () => void

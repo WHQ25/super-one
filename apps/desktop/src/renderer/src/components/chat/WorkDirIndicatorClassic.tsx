@@ -141,6 +141,15 @@ export function WorkDirIndicatorClassic({ compact = false, isGitRepo }: WorkDirI
 
   useOnTurnCompleted(refreshActiveWorktree)
 
+  const headWatchTarget = activeGitPath || currentFolder
+  useEffect(() => {
+    if (!headWatchTarget || isGitRepo === false) return
+    void window.app.startGitHeadWatch?.(headWatchTarget)
+    return () => {
+      void window.app.stopGitHeadWatch?.()
+    }
+  }, [headWatchTarget, isGitRepo])
+
   const loadPopoverData = useCallback(async () => {
     if (!currentFolder) return
     const [info, br, gitInfo, checkedOut] = await Promise.all([

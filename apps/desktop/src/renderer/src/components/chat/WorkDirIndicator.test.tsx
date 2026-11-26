@@ -130,6 +130,49 @@ describe('WorkDirIndicator turn-boundary refresh', () => {
 
     expect(getWorktreeInfo).toHaveBeenCalledTimes(1)
   })
+
+  it('refreshes main checkout branch when a turn ends', async () => {
+    useAppStore.setState({
+      _worktrees: {
+        [PROJECT]: {
+          pendingBaseBranch: null,
+          pendingMode: 'branch',
+          pendingBranchName: '',
+          pendingCarryLocalChanges: false,
+          activePath: null,
+        },
+      },
+    })
+    getWorktreeInfo.mockResolvedValue({
+      isWorktree: false,
+      currentBranch: 'main',
+      entries: [{ path: PROJECT, branch: 'main', head: HEAD, isMain: true, isCurrent: true }],
+    })
+    getGitInfo
+      .mockResolvedValueOnce({ branch: 'main', dirty: { files: 0, insertions: 0, deletions: 0 } })
+      .mockResolvedValue({ branch: 'feat/switched', dirty: { files: 0, insertions: 0, deletions: 0 } })
+
+    render(<WorkDirIndicator isGitRepo />)
+    await waitFor(() => expect(screen.getByTitle('This PC · main')).toBeTruthy())
+
+    act(() => setSessionStatus('streaming'))
+    act(() => setSessionStatus('idle'))
+
+    await waitFor(() => expect(screen.getByTitle('This PC · feat/switched')).toBeTruthy())
+  })
+
+  it('starts and stops lightweight git head watch for the active checkout', () => {
+    const startGitHeadWatch = vi.fn(() => Promise.resolve())
+    const stopGitHeadWatch = vi.fn(() => Promise.resolve())
+    Object.assign(window.app, { startGitHeadWatch, stopGitHeadWatch })
+    getWorktreeInfo.mockResolvedValue(worktreeInfo('feat/x'))
+
+    const { unmount } = render(<WorkDirIndicator isGitRepo />)
+    expect(startGitHeadWatch).toHaveBeenCalledWith(WT_PATH)
+
+    unmount()
+    expect(stopGitHeadWatch).toHaveBeenCalledTimes(1)
+  })
 })
 
 describe('classic chip while remote nodes are off', () => {

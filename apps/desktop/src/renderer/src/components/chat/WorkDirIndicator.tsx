@@ -507,6 +507,15 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
     return () => { cancelled = true }
   }, [currentFolder, isGitRepo, activePath])
 
+  const refreshMainCheckout = useCallback(() => {
+    if (!currentFolder || isGitRepo === false) return
+    window.app.getGitInfo(currentFolder).then((info) => {
+      setMainBranch((prev) => info?.branch || prev)
+      setMainDirty(info?.dirty)
+      setCheckoutResolvedFolder(currentFolder)
+    }).catch(() => {})
+  }, [currentFolder, isGitRepo])
+
   // The chip names the shared checkout's branch before the popover opens.
   // A missing read must not clear the name: session switches were painting
   // "Local Checkout" until this RPC returned.
@@ -562,7 +571,24 @@ function WorkDirIndicatorExperiment({ compact = false, isGitRepo, onRepositoryRe
     return () => { cancelled = true; unsub() }
   }, [activePath, activeGitPath, refreshActiveWorktree])
 
-  useOnTurnCompleted(refreshActiveWorktree)
+  const refreshOnTurnCompleted = useCallback(() => {
+    if (activePath) {
+      refreshActiveWorktree()
+    } else {
+      refreshMainCheckout()
+    }
+  }, [activePath, refreshActiveWorktree, refreshMainCheckout])
+
+  useOnTurnCompleted(refreshOnTurnCompleted)
+
+  const headWatchTarget = activeGitPath || currentFolder
+  useEffect(() => {
+    if (!headWatchTarget || isGitRepo === false) return
+    void window.app.startGitHeadWatch?.(headWatchTarget)
+    return () => {
+      void window.app.stopGitHeadWatch?.()
+    }
+  }, [headWatchTarget, isGitRepo])
 
   const loadPopoverData = useCallback(async () => {
     if (!currentFolder || isGitRepo === false) return

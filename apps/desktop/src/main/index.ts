@@ -194,7 +194,7 @@ import {
   revealNewIdentityInstaller,
 } from './mac-identity-migration'
 import { runIdentityHandoff } from './mac-identity-handoff'
-import { startWatching, stopWatching } from './file-watcher'
+import { startWatching, stopWatching, startGitHeadWatching, stopGitHeadWatching } from './file-watcher'
 import { detectTextOrBinary, maxReadableBytes } from './file-read-limits'
 import { notifyWidgetReady, clearAllGates } from './generative-ui/widget-gate'
 import { setBashOutputWindow, watchBashOutput, unwatchBashOutput, unwatchAll as unwatchAllBashOutputs, readBashOutputTail, getWatchedFilePath } from './bash-output-watcher'
@@ -4647,6 +4647,45 @@ function registerIpcHandlers(): void {
     stopWatching()
   })
 
+  let stopRemoteHeadWatch: (() => void) | null = null
+  let remoteHeadWatchToken = 0
+
+  ipcMain.handle(AgentIpcChannels.GIT_HEAD_WATCH_START, (_e, folderPath: string) => {
+    remoteHeadWatchToken += 1
+    const token = remoteHeadWatchToken
+    stopRemoteHeadWatch?.()
+    stopRemoteHeadWatch = null
+    stopGitHeadWatching()
+    if (!folderPath) return
+    if (parseRemoteProjectKey(folderPath)) {
+      void Promise.all([import('./environment'), import('./environment/remote-file-tree')]).then(
+        ([{ getEnvironmentHost }, { startRemoteGitHeadWatch }]) => {
+          if (token !== remoteHeadWatchToken) return
+          stopRemoteHeadWatch = startRemoteGitHeadWatch(getEnvironmentHost(), folderPath, () => {
+            invalidateGitReads(folderPath)
+            const mainWin = getMainWindow()
+            if (mainWin && !mainWin.isDestroyed()) {
+              mainWin.webContents.send(AgentIpcChannels.GIT_HEAD_CHANGE, { folderPath })
+            }
+          })
+        },
+      )
+      return
+    }
+    void startGitHeadWatching(getMainWindow(), folderPath, () => {
+      invalidateGitReads(folderPath)
+      const mainCheckout = mainCheckoutOfLinkedWorktree(folderPath)
+      if (mainCheckout) invalidateGitReads(mainCheckout)
+    })
+  })
+
+  ipcMain.handle(AgentIpcChannels.GIT_HEAD_WATCH_STOP, () => {
+    remoteHeadWatchToken += 1
+    stopRemoteHeadWatch?.()
+    stopRemoteHeadWatch = null
+    stopGitHeadWatching()
+  })
+
   ipcMain.handle(AgentIpcChannels.ACP_SET_UNSAVED_BUFFER, (_e, filePath: string, content: string | null) => {
     if (typeof filePath !== 'string' || !filePath) return
     setUnsavedBuffer(filePath, content)
@@ -6312,6 +6351,7 @@ function performQuit(): void {
   scheduledSendService.stop()
   stopAllMiniAppHosts()
   stopWatching()
+  stopGitHeadWatching()
   stopSuperoneMcpStdioBridge()
   const remoteStop = Promise.race([
     remoteControlService.stop(),

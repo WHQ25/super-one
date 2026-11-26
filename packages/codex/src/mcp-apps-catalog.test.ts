@@ -3,7 +3,7 @@ import { attachCodexMcpApp, createCodexMcpAppsProvider, prewarmCodexMcpAppCatalo
 import type { CodexMcpToolCallItem } from '@superone/shared/agent-types'
 import { invalidateCodexMcpAppsCatalog } from './mcp-apps-catalog'
 import { dispatchMcpAppsProviderRequest } from '@superone/runtime/mcp-apps/provider-rpc'
-import { MCP_APP_OUTPUT_MAX_BYTES, MCP_APP_RESULT_MAX_BYTES } from '@superone/shared/mcp-apps'
+import { MCP_APP_DATA_MAX_BYTES, MCP_APP_OUTPUT_MAX_BYTES, MCP_APP_RESULT_MAX_BYTES } from '@superone/shared/mcp-apps'
 import type { McpAppsBinding } from '@superone/shared/mcp-apps'
 
 const binding: McpAppsBinding = { node: 'local', session: 's', server: 'fixture', configGeneration: 0, configFingerprint: 'config' }
@@ -188,4 +188,33 @@ it('bounds transient tool and read output at the View output cap while keeping r
   const count = request.mock.calls.length
   await expect(p.callTool({ tool: 'next', args: { x: 'x'.repeat(1024 * 1024) } }, new AbortController().signal)).rejects.toMatchObject({ code: 'invalid' })
   expect(request.mock.calls).toHaveLength(count)
+})
+
+it('filters to the target server before enforcing MCP_APP_DATA_MAX_BYTES on mcpServerStatus/list', async () => {
+  const oversizedOther = { name: 'codex_apps', tools: { huge: { name: 'huge', description: 'x'.repeat(MCP_APP_DATA_MAX_BYTES + 1024) } } }
+  const target = {
+    name: 'fixture',
+    tools: { next: { name: 'next', inputSchema: { type: 'object' }, _meta: { ui: { visibility: ['app'] } } } },
+    resources: [{ uri: 'ui://fixture/view', _meta: { ui: { csp: { connectDomains: ['https://example.com'] } } } }],
+  }
+  const request = vi.fn<McpAppsRequest>(async (method) => {
+    if (method === 'mcpServerStatus/list') return { data: [oversizedOther, target], nextCursor: 'page-2' }
+    if (method === 'mcpServer/resource/read') return { contents: [{ uri: 'ui://fixture/view', text: '<html/>' }] }
+    return { content: [] }
+  })
+  const provider = () => createCodexMcpAppsProvider(binding, 'thread', request, {})
+  const key = {}
+  const sharedProvider = () => createCodexMcpAppsProvider(binding, 'thread', request, key)
+  expect((await sharedProvider().tools()).has('next')).toBe(true)
+  expect(await dispatchMcpAppsProviderRequest({ operation: 'callTool', binding, origin: { providerSessionId: 'thread' }, tool: 'next', args: {} }, sharedProvider())).toMatchObject({ ok: true })
+  expect(listCount(request)).toBe(1)
+  expect((await provider().readResource({ uri: 'ui://fixture/view' }, new AbortController().signal)).contents[0]._meta).toEqual({
+    ui: { csp: { connectDomains: ['https://example.com'] } },
+  })
+})
+
+it('still rejects when the target server entry itself exceeds MCP_APP_DATA_MAX_BYTES', async () => {
+  const oversizedTarget = { name: 'fixture', tools: { huge: { name: 'huge', description: 'x'.repeat(MCP_APP_DATA_MAX_BYTES + 1024) } } }
+  const request = vi.fn<McpAppsRequest>(async () => ({ data: [oversizedTarget] }))
+  await expect(createCodexMcpAppsProvider(binding, 'thread', request, {}).tools()).rejects.toMatchObject({ code: 'invalid' })
 })

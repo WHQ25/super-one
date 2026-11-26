@@ -102,7 +102,7 @@ export function createCodexMcpAppsProvider(binding: McpAppsBinding, threadId: st
       if (signal?.aborted) throw new McpAppsError(mutates ? 'unknown_outcome' : 'cancelled', 'MCP App request cancelled after dispatch')
       const challenge = challenges(readCodexMcpWwwAuthenticate(record(result._meta)))
       if (challenge !== undefined) throw new McpAppsError('auth_required', 'MCP authentication required', challenge)
-      assertMcpAppSize(result, maxBytes)
+      if (Number.isFinite(maxBytes)) assertMcpAppSize(result, maxBytes)
       return result
     } catch (error) {
       if (error instanceof McpAppsError) throw error
@@ -115,8 +115,13 @@ export function createCodexMcpAppsProvider(binding: McpAppsBinding, threadId: st
     let cursor: unknown
     const output: Record<string, unknown>[] = []
     for (let page = 0; page < 100; page++) {
-      const result = await invoke('mcpServerStatus/list', { detail, ...(cursor ? { cursor } : {}) })
-      output.push(...(Array.isArray(result.data) ? result.data : []).map(record).filter((s): s is Record<string, unknown> => !!s))
+      const result = await invoke('mcpServerStatus/list', { detail, ...(cursor ? { cursor } : {}) }, undefined, undefined, false, Infinity)
+      const server = (Array.isArray(result.data) ? result.data : []).map(record).find(s => s?.name === binding.server)
+      if (server) {
+        assertMcpAppSize(server, MCP_APP_DATA_MAX_BYTES)
+        output.push(server)
+        return output
+      }
       cursor = result.nextCursor
       if (!cursor) return output
     }

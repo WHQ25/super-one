@@ -349,7 +349,12 @@ function candidateProjectBodies(
   return result
 }
 
+export const ANTIGRAVITY_QUOTA_API_ENABLED: boolean = false
+
 export async function readAntigravityRateLimits(force = false): Promise<ProviderRateLimits | null> {
+  if (!ANTIGRAVITY_QUOTA_API_ENABLED) {
+    return null
+  }
   const now = Date.now()
   if (!force && cachedReading && now - cachedReading.at < MIN_FETCH_INTERVAL_MS) {
     return cachedReading.value

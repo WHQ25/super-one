@@ -20,4 +20,11 @@ describe('acp-usage-service', () => {
     await expect(getAcpRateLimits('gemini')).resolves.toBeNull()
     expect(runtime.readGrokRateLimits).not.toHaveBeenCalled()
   })
+
+  it('returns null for Antigravity while the quota API is disabled', async () => {
+    const fetchSpy = vi.spyOn(globalThis, 'fetch')
+    await expect(getAcpRateLimits('antigravity', true)).resolves.toBeNull()
+    expect(fetchSpy).not.toHaveBeenCalled()
+    fetchSpy.mockRestore()
+  })
 })

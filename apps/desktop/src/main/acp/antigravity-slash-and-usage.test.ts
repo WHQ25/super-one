@@ -406,13 +406,13 @@ disable-slash-command: true
           'teamwork',
           'learn',
           'boost',
-          'usage',
           'logout',
           'superone-tool',
           'chrome-devtools',
           'antigravity-guide',
         ]),
       )
+      expect(names).not.toContain('usage')
 
       const skillEntry = commands.find((c) => c.name === 'superone-tool')
       expect(skillEntry?.isSkill).toBe(true)

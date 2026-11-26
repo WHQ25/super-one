@@ -60,12 +60,6 @@ export const ANTIGRAVITY_BUILTIN_SLASH_COMMANDS: ReadonlyArray<SlashCommandInfo>
     isSkill: false,
   },
   {
-    name: 'usage',
-    description: 'Show model quota usage and reset times',
-    argumentHint: '',
-    isSkill: false,
-  },
-  {
     name: 'logout',
     description: 'Sign out and clear stored credentials',
     argumentHint: '',

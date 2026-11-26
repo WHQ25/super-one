@@ -145,6 +145,7 @@ import { publishVoiceRemoteEvent } from './session/voice-remote-events'
 import { SessionEventHub } from './stream/session-event-hub'
 import { recordHubEvents } from './stream/hub-recorder'
 import { deepseekTrajectorySource } from './deepseek/trajectory-source'
+import { readAntigravitySwarmBoard, setSwarmBoardWatch } from './acp/antigravity-swarm-board'
 import { clearTrajectoryWatches, setTrajectoryWatch } from './deepseek/trajectory-watch'
 import { resolveDshRoute } from './deepseek/deepseek-providers'
 import type { TrajectoryPayloadRef } from '@superone/shared/trajectory-types'
@@ -5324,6 +5325,30 @@ function registerIpcHandlers(): void {
     AgentIpcChannels.DEEPSEEK_TRAJECTORY_WATCH,
     async (event, sessionId: string, watching: boolean) => {
       await setTrajectoryWatch(event.sender, sessionId, watching)
+      return { ok: true }
+    },
+  )
+
+  ipcMain.handle(
+    AgentIpcChannels.SWARM_BOARD_READ,
+    async (_event, sessionId: string) => {
+      try {
+        const diskSessionId = getSessionRecord(sessionId)?.providerSessionId ?? sessionId
+        const snapshot = readAntigravitySwarmBoard(diskSessionId)
+        if (!snapshot) return { ok: false, reason: 'absent' }
+        return { ok: true, snapshot: { ...snapshot, sessionId } }
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error)
+        return { ok: false, reason: 'error', error: message }
+      }
+    },
+  )
+
+  ipcMain.handle(
+    AgentIpcChannels.SWARM_BOARD_WATCH,
+    async (event, sessionId: string, watching: boolean) => {
+      const diskSessionId = getSessionRecord(sessionId)?.providerSessionId ?? sessionId
+      setSwarmBoardWatch(event.sender, diskSessionId, watching, sessionId)
       return { ok: true }
     },
   )

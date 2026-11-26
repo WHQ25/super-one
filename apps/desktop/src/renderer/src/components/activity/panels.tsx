@@ -41,6 +41,10 @@ function TrajectoryDockPanel(props: IDockviewPanelProps<{ sessionId: string }>) 
   return <PluginDockPanel {...(props as any)} params={{ ...props.params, panelKey: 'trajectory' }} />
 }
 
+function SwarmBoardDockPanel(props: IDockviewPanelProps<{ sessionId: string }>) {
+  return <PluginDockPanel {...(props as any)} params={{ ...props.params, panelKey: 'swarm-board' }} />
+}
+
 function SideChatDockPanel(props: IDockviewPanelProps<{ projectPath: string; sessionId: string }>) {
   return <SideChatPanel projectPath={props.params.projectPath} sessionId={props.params.sessionId} />
 }
@@ -71,6 +75,7 @@ export const activityPanelComponents: Record<string, React.FunctionComponent<IDo
   'browser': BrowserPanel as React.FunctionComponent<IDockviewPanelProps>,
   'terminal': TerminalHostPanel as React.FunctionComponent<IDockviewPanelProps>,
   'trajectory': TrajectoryDockPanel as React.FunctionComponent<IDockviewPanelProps>,
+  'swarm-board': SwarmBoardDockPanel as React.FunctionComponent<IDockviewPanelProps>,
   'review': ReviewDockPanel as React.FunctionComponent<IDockviewPanelProps>,
   'device': DeviceDockPanel as React.FunctionComponent<IDockviewPanelProps>,
   'side-chat': SideChatDockPanel as React.FunctionComponent<IDockviewPanelProps>,

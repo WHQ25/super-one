@@ -664,6 +664,7 @@ function portableTaskInput(input: string, toolSummary?: string) {
     subagentType: labeled.subagentType,
     prompt: String(params.prompt ?? ''),
     model: typeof params.model === 'string' ? params.model : undefined,
+    isSwarmWorker: params.isSwarmWorker === true,
   }
 }
 

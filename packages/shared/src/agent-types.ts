@@ -4583,6 +4583,9 @@ export const AgentIpcChannels = {
   DEEPSEEK_TRAJECTORY_PAYLOAD: 'app:deepseek-trajectory-payload',
   DEEPSEEK_TRAJECTORY_WATCH: 'app:deepseek-trajectory-watch',
   DEEPSEEK_TRAJECTORY_CHANGED: 'app:deepseek-trajectory-changed',
+  SWARM_BOARD_READ: 'app:swarm-board-read',
+  SWARM_BOARD_WATCH: 'app:swarm-board-watch',
+  SWARM_BOARD_CHANGED: 'app:swarm-board-changed',
   SAVE_TEXT_AS: 'app:save-text-as',
   DEEPSEEK_PRESETS: 'app:deepseek-presets',
   SET_CURSOR_API_KEY: 'app:set-cursor-api-key',
@@ -6472,3 +6475,5 @@ export interface DshPluginInstallResult {
   /** dsh peers whose declared range this build does not satisfy (force installs only). */
   mismatched: { name: string; wanted: string; actual: string }[]
 }
+
+export * from './swarm-board-types'

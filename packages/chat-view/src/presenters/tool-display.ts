@@ -22,6 +22,7 @@ import { manageSubagentsSummaryText } from './manage-subagents-display'
 import { manageTaskSummaryText } from './manage-task-display'
 import { mcpResourceSummaryText } from './mcp-resource-display'
 import { artifactToolSummary } from './artifact-link'
+import { postMessageSummaryText, readBoardSummaryText, swarmWaitSummaryText } from './SwarmToolBlocks'
 import { isWorkflowSmokeCheck, workflowToolTargetLabel } from './workflow-utils'
 import { scheduleToolSummary } from './schedule-tool-display'
 import { durationSummary, formatToolLabel, getToolLabel, getToolVerb } from './tool-labels'
@@ -144,6 +145,15 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
       const messageId = typeof input.messageId === 'string' ? input.messageId : ''
       return { icon: 'message-circle', summary: [action, messageId].filter(Boolean).join(' · ') }
     }
+    case 'ReadBoard':
+    case 'read_board':
+      return { icon: 'message-circle', summary: readBoardSummaryText(input) }
+    case 'PostMessage':
+    case 'post_message':
+      return { icon: 'send', summary: postMessageSummaryText(input) }
+    case 'SwarmWait':
+    case 'swarm_wait':
+      return { icon: 'clock', summary: swarmWaitSummaryText(input) }
     case 'SendMessage':
       return { icon: 'send', summary: coordinationToolSummary(toolName, input, sp) ?? '' }
     case 'SubagentHandback':

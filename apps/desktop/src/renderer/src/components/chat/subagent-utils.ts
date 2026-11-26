@@ -262,6 +262,7 @@ export interface ParsedTaskInput {
   prompt: string
   model?: string
   runInBackground: boolean
+  isSwarmWorker?: boolean
 }
 
 /**
@@ -350,6 +351,7 @@ export function parseTaskInput(input: string): ParsedTaskInput {
     prompt: String(params.prompt ?? ''),
     model: params.model ? String(params.model) : undefined,
     runInBackground: params.run_in_background === true || params.background === true,
+    isSwarmWorker: params.isSwarmWorker === true,
   }
 }
 

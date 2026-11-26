@@ -1044,6 +1044,18 @@ const appAPI = {
     return () => ipcRenderer.removeListener(AgentIpcChannels.DEEPSEEK_TRAJECTORY_CHANGED, handler)
   },
 
+  readSwarmBoard: (sessionId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.SWARM_BOARD_READ, sessionId),
+
+  watchSwarmBoard: (sessionId: string, watching: boolean) =>
+    ipcRenderer.invoke(AgentIpcChannels.SWARM_BOARD_WATCH, sessionId, watching),
+
+  onSwarmBoardChanged: (callback: (sessionId: string) => void) => {
+    const handler = (_event: unknown, sessionId: string) => callback(sessionId)
+    ipcRenderer.on(AgentIpcChannels.SWARM_BOARD_CHANGED, handler)
+    return () => ipcRenderer.removeListener(AgentIpcChannels.SWARM_BOARD_CHANGED, handler)
+  },
+
   listDeepseekPresets: (sessionId?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.DEEPSEEK_PRESETS, sessionId),
 

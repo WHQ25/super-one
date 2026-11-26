@@ -12,6 +12,9 @@ import {
   Wrench,
 } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
+import { BeeIcon, getBeeColor } from './BeeIcon'
+
+export { BeeIcon, getBeeColor } from './BeeIcon'
 
 export interface SubagentColorClasses {
   text: string
@@ -28,6 +31,28 @@ export interface SubagentDisplayInput {
   subagentType: string
   prompt: string
   model?: string
+  isSwarmWorker?: boolean
+}
+
+export function dedupeSubagentDescription(
+  description: string,
+  input: Pick<SubagentDisplayInput, 'name' | 'teamName' | 'subagentType'>,
+): string {
+  const trimmed = description.trim()
+  if (!trimmed) return ''
+  const candidates = [
+    input.name && input.teamName ? `${input.name}@${input.teamName}` : '',
+    input.name,
+    input.subagentType,
+  ].filter(Boolean)
+  for (const label of candidates) {
+    const prefix = `${label}:`
+    if (trimmed.toLowerCase().startsWith(prefix.toLowerCase())) {
+      const rest = trimmed.slice(prefix.length).trim()
+      return rest || trimmed
+    }
+  }
+  return trimmed
 }
 
 /** Agent name when given (addressable via SendMessage), otherwise its type. */
@@ -251,7 +276,8 @@ export function SubagentBlockPresenter({
   Markdown,
 }: SubagentBlockPresenterProps) {
   const { t } = useTranslation()
-  const showSpawningPlaceholder = !taskInput.subagentType && !taskInput.description
+  const displayDescription = dedupeSubagentDescription(taskInput.description, taskInput)
+  const showSpawningPlaceholder = !taskInput.subagentType && !displayDescription
   const isExpandable = !showSpawningPlaceholder
   const isExpanded = expanded && isExpandable
   const startTimeRef = useRef(Date.now() - initialElapsed * 1000)
@@ -313,18 +339,33 @@ export function SubagentBlockPresenter({
           isExpandable ? 'hover:bg-muted/40' : 'cursor-default',
         )}
       >
-        <Bot className={cn(
-          'size-3.5 shrink-0',
-          isFailed
-            ? 'text-amber-600 dark:text-amber-400'
-            : isStopped
-              ? 'text-muted-foreground'
-              : colors.text,
-          isRunning && !isExpanded && 'animate-pulse',
-        )} />
+        {taskInput.isSwarmWorker ? (
+          <BeeIcon
+            color="currentColor"
+            className={cn(
+              'size-4 shrink-0',
+              isFailed
+                ? 'text-amber-600 dark:text-amber-400'
+                : isStopped
+                  ? 'text-muted-foreground'
+                  : colors.text,
+              isRunning && !isExpanded && 'animate-pulse',
+            )}
+          />
+        ) : (
+          <Bot className={cn(
+            'size-3.5 shrink-0',
+            isFailed
+              ? 'text-amber-600 dark:text-amber-400'
+              : isStopped
+                ? 'text-muted-foreground'
+                : colors.text,
+            isRunning && !isExpanded && 'animate-pulse',
+          )} />
+        )}
         <SubagentIdentityTag input={taskInput} colors={colors} />
-        {taskInput.description && (
-          <span className="min-w-0 truncate text-left text-muted-foreground">{taskInput.description}</span>
+        {displayDescription && (
+          <span className="min-w-0 truncate text-left text-muted-foreground">{displayDescription}</span>
         )}
         {showSpawningPlaceholder && (
           <span className="min-w-0 text-left text-muted-foreground">{t('chat.subagent.spawning')}</span>

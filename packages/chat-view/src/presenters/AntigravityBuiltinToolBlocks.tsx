@@ -5,6 +5,11 @@ import { ManageTaskToolBlockPresenter } from './ManageTaskToolBlock'
 import { McpResourceToolBlockPresenter } from './McpResourceToolBlock'
 import { isMcpResourceToolName } from './mcp-resource-display'
 import { ScheduleToolBlockPresenter } from './ScheduleToolBlock'
+import {
+  PostMessageToolBlockPresenter,
+  ReadBoardToolBlockPresenter,
+  SwarmWaitToolBlockPresenter,
+} from './SwarmToolBlocks'
 
 export interface AntigravityBuiltinToolRenderInput {
   toolName: string
@@ -64,6 +69,42 @@ export function renderAntigravityBuiltinToolBlock({
   if (toolName === 'DefineSubagent' || toolName === 'define_subagent') {
     return (
       <DefineSubagentToolBlockPresenter
+        params={params}
+        result={result}
+        isStreaming={isStreaming}
+        isError={isError}
+        isDenied={isDenied}
+        allowExpand={allowExpand}
+      />
+    )
+  }
+  if (toolName === 'ReadBoard' || toolName === 'read_board') {
+    return (
+      <ReadBoardToolBlockPresenter
+        params={params}
+        result={result}
+        isStreaming={isStreaming}
+        isError={isError}
+        isDenied={isDenied}
+        allowExpand={allowExpand}
+      />
+    )
+  }
+  if (toolName === 'PostMessage' || toolName === 'post_message') {
+    return (
+      <PostMessageToolBlockPresenter
+        params={params}
+        result={result}
+        isStreaming={isStreaming}
+        isError={isError}
+        isDenied={isDenied}
+        allowExpand={allowExpand}
+      />
+    )
+  }
+  if (toolName === 'SwarmWait' || toolName === 'swarm_wait') {
+    return (
+      <SwarmWaitToolBlockPresenter
         params={params}
         result={result}
         isStreaming={isStreaming}

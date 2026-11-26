@@ -178,6 +178,12 @@ export const TOOL_ID_TO_UI_NAME: Record<string, string> = {
   sed: 'Edit',
   manage_inbox: 'ManageInbox',
   manageinbox: 'ManageInbox',
+  read_board: 'ReadBoard',
+  readboard: 'ReadBoard',
+  post_message: 'PostMessage',
+  postmessage: 'PostMessage',
+  swarm_wait: 'SwarmWait',
+  swarmwait: 'SwarmWait',
 }
 
 export function normalizeToolIdKey(id: string): string {

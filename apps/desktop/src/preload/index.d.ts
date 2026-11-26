@@ -101,6 +101,11 @@ interface AppAPI extends WindowLayoutAPI {
   ): Promise<import('@superone/shared/trajectory-types').TrajectoryPayloadResult>
   watchDeepseekTrajectory(sessionId: string, watching: boolean): Promise<{ ok: boolean }>
   onDeepseekTrajectoryChanged(callback: (sessionId: string) => void): () => void
+  readSwarmBoard(
+    sessionId: string,
+  ): Promise<import('@superone/shared/swarm-board-types').SwarmBoardReadResult>
+  watchSwarmBoard(sessionId: string, watching: boolean): Promise<{ ok: boolean }>
+  onSwarmBoardChanged(callback: (sessionId: string) => void): () => void
   listDeepseekPresets(
     sessionId?: string,
   ): Promise<import('@superone/shared/agent-types').DeepseekPresetRoster>

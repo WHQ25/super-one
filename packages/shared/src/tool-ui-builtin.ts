@@ -8,6 +8,8 @@ export const FULL_RESULT_TOOL_NAMES = new Set([
   'DefineSubagent',
   'ListMcpResources',
   'ReadMcpResource',
+  'ReadBoard',
+  'PostMessage',
 ])
 
 const CUSTOM_VARIANT_TOOLS = new Set([
@@ -21,6 +23,9 @@ const CUSTOM_VARIANT_TOOLS = new Set([
   'NotebookEdit',
   'Wait',
   'ManageInbox',
+  'ReadBoard',
+  'PostMessage',
+  'SwarmWait',
 ])
 
 export function resolveCustomVariantToolName(variant: string): string | null {
@@ -207,6 +212,35 @@ export function normalizeCustomBuiltinInput(
       if (action) out.action = action
       const messageId = pickStr(raw, ['messageId', 'MessageId', 'message_id'])
       if (messageId) out.messageId = messageId
+      return Object.keys(out).length > 0 ? out : { ...raw }
+    }
+    case 'ReadBoard': {
+      const out: Record<string, unknown> = {}
+      const since = pickNum(raw, ['since', 'Since'])
+      if (since !== undefined) out.since = since
+      const limit = pickNum(raw, ['limit', 'Limit'])
+      if (limit !== undefined) out.limit = limit
+      const channel = pickStr(raw, ['channel', 'Channel'])
+      if (channel) out.channel = channel
+      const status = pickBool(raw, ['status', 'Status'])
+      if (status !== undefined) out.status = status
+      if (Array.isArray(raw.seqs)) out.seqs = raw.seqs
+      return Object.keys(out).length > 0 ? out : { ...raw }
+    }
+    case 'PostMessage': {
+      const out: Record<string, unknown> = {}
+      const text = pickStr(raw, ['text', 'Text', 'message', 'Message'], false)
+      if (text !== undefined) out.text = text
+      const channel = pickStr(raw, ['channel', 'Channel'])
+      if (channel) out.channel = channel
+      return Object.keys(out).length > 0 ? out : { ...raw }
+    }
+    case 'SwarmWait': {
+      const out: Record<string, unknown> = {}
+      const since = pickNum(raw, ['since', 'Since'])
+      if (since !== undefined) out.since = since
+      const mentionsOnly = pickBool(raw, ['mentions_only', 'mentionsOnly', 'MentionsOnly'])
+      if (mentionsOnly !== undefined) out.mentions_only = mentionsOnly
       return Object.keys(out).length > 0 ? out : { ...raw }
     }
     default:

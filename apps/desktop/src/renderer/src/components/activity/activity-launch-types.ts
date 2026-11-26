@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useSyncExternalStore, type ComponentType } from 'react'
+import { useCallback, useEffect, useMemo, useState, useSyncExternalStore, type ComponentType } from 'react'
 import { Globe, Puzzle, Smartphone, Terminal as TerminalIcon } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { useClientKernelOptional } from '@superone/client-kernel/react'
@@ -34,6 +34,53 @@ export function useActivityLaunchTypes(): ActivityLaunchType[] {
     return session ? resolveProvider(session) : null
   })
 
+  const hasSwarmInMessages = useChatStore((s) => {
+    if (activeSessionProvider !== 'acp-antigravity' || !activeSessionId) return false
+    const project = s.activeProject ? s.projectSessions[s.activeProject] : undefined
+    const session = project?._sessions[activeSessionId]
+    if (!session) return false
+    for (const msg of session.messages) {
+      if (!Array.isArray(msg.content)) continue
+      for (const block of msg.content) {
+        if (block.type !== 'tool_use') continue
+        if (
+          block.toolName === 'ReadBoard' ||
+          block.toolName === 'PostMessage' ||
+          block.toolName === 'SwarmWait' ||
+          block.toolName === 'read_board' ||
+          block.toolName === 'post_message' ||
+          block.toolName === 'swarm_wait'
+        ) {
+          return true
+        }
+        if ((block.toolName === 'Agent' || block.toolName === 'Task') && block.input.includes('"isSwarmWorker":true')) {
+          return true
+        }
+      }
+    }
+    return false
+  })
+
+  const [diskHasSwarm, setDiskHasSwarm] = useState(false)
+  useEffect(() => {
+    if (activeSessionProvider !== 'acp-antigravity' || !activeSessionId || hasSwarmInMessages) {
+      setDiskHasSwarm(false)
+      return
+    }
+    if (typeof window.app?.readSwarmBoard !== 'function') return
+    let cancelled = false
+    void window.app.readSwarmBoard(activeSessionId).then((res) => {
+      if (!cancelled) setDiskHasSwarm(Boolean(res?.ok))
+    }).catch(() => {
+      if (!cancelled) setDiskHasSwarm(false)
+    })
+    return () => {
+      cancelled = true
+    }
+  }, [activeSessionProvider, activeSessionId, hasSwarmInMessages])
+
+  const hasSwarm = hasSwarmInMessages || diskHasSwarm
+
   const kernel = useClientKernelOptional() ?? getAppClientKernel()
   const launcherMenuCtx = useMemo(
     () => ({
@@ -43,9 +90,9 @@ export function useActivityLaunchTypes(): ActivityLaunchType[] {
       provider: activeSessionProvider,
       supportsUiPlugins: activeSessionProvider ? HARNESS_CAPABILITIES[activeSessionProvider].supportsUiPlugins : false,
       hasFolder: Boolean(currentFolder),
-      extra: { t },
+      extra: { t, hasSwarm },
     }),
-    [activeSessionId, currentFolder, activeSessionProvider, t],
+    [activeSessionId, currentFolder, activeSessionProvider, t, hasSwarm],
   )
   const subscribeLauncherMenu = useCallback(
     (onStoreChange: () => void) => kernel.menus.subscribeMenu('activity.launcher', onStoreChange),

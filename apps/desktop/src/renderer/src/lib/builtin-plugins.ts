@@ -1,5 +1,6 @@
 import type { ClientKernel, KernelScope } from '@superone/client-kernel'
 import { registerReviewPlugin } from '@/components/review/review-plugin'
+import { registerSwarmPlugin } from '@/components/swarm/swarm-plugin'
 import { registerTrajectoryPlugin } from '@/components/trajectory/trajectory-plugin'
 
 const registeredByKernel = new WeakMap<ClientKernel, Map<string, KernelScope>>()
@@ -10,6 +11,7 @@ export function ensureBuiltinClientPlugins(kernel: ClientKernel): Map<string, Ke
   scopes = new Map<string, KernelScope>()
   registeredByKernel.set(kernel, scopes)
   scopes.set('builtin.review', registerReviewPlugin(kernel))
+  scopes.set('builtin.swarm', registerSwarmPlugin(kernel))
   scopes.set('builtin.trajectory', registerTrajectoryPlugin(kernel))
   return scopes
 }

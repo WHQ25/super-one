@@ -3,7 +3,7 @@ import { useTranslation } from 'react-i18next'
 import { ArrowLeft, Bot, ArrowUp, ArrowDown, Wrench, Check, Loader2, TriangleAlert, CircleSlash } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { Streamdown } from 'streamdown'
-import { SubagentIdentityTag } from '@superone/chat-view/presenters/SubagentBlock'
+import { BeeIcon, SubagentIdentityTag, dedupeSubagentDescription } from '@superone/chat-view/presenters/SubagentBlock'
 import type { ContentBlock, ChatMessage } from '@superone/shared/agent-types'
 import { useActiveSession } from '@/stores/chat'
 import { useSubagentNavigation, type SubagentViewState } from './subagent-navigation-context'
@@ -156,9 +156,15 @@ function SubagentFullViewBody({ segment: shell }: { segment: SubagentSegment }) 
         >
           <ArrowLeft className="size-3.5" />
         </button>
-        <Bot className={cn('size-3.5 shrink-0', colors.text)} />
+        {taskInput.isSwarmWorker ? (
+          <BeeIcon color="currentColor" className={cn('size-4 shrink-0', colors.text)} />
+        ) : (
+          <Bot className={cn('size-3.5 shrink-0', colors.text)} />
+        )}
         <SubagentIdentityTag input={taskInput} colors={colors} />
-        <span className="min-w-0 truncate font-medium text-foreground">{headerTitle}</span>
+        <span className="min-w-0 truncate font-medium text-foreground">
+          {dedupeSubagentDescription(headerTitle, taskInput)}
+        </span>
         <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
           {isRunning ? (
             <Loader2 className="size-3 animate-spin" />

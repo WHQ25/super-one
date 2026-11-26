@@ -19,6 +19,7 @@ export interface SpawnedSubagentRef {
   stepIndex: number
   createdAtMs?: number
   killedAtStepIndex?: number
+  swarmName?: string
 }
 
 export interface ParentSubagentTranscriptState {
@@ -147,6 +148,49 @@ export function extractParentSubagentTranscriptState(raw: string): ParentSubagen
       }
     }
 
+    if (rec.type === 'GENERIC' && rec.status !== 'ERROR' && matchedCall?.rawName === 'swarm') {
+      const stripped = content.replace(STEP_TIMESTAMP_HEADER_RE, '').trim()
+      const firstBrace = stripped.indexOf('{')
+      const endBrace = stripped.lastIndexOf('}')
+      if (firstBrace >= 0 && endBrace > firstBrace) {
+        try {
+          const parsed = JSON.parse(stripped.slice(firstBrace, endBrace + 1)) as Record<string, unknown>
+          const createdAtMs = typeof rec.created_at === 'string' ? Date.parse(rec.created_at) : Number.NaN
+          const pushSwarmRef = (item: Record<string, unknown>): void => {
+            const cidRaw = typeof item.conversation_id === 'string'
+              ? item.conversation_id
+              : typeof item.conversationId === 'string'
+                ? item.conversationId
+                : ''
+            const conversationId = cidRaw.trim()
+            if (!conversationId || byId.has(conversationId)) return
+            const swarmName = typeof item.name === 'string' ? item.name.trim() : undefined
+            const ref: SpawnedSubagentRef = {
+              conversationId,
+              outputFile: '',
+              stepIndex,
+              ...(Number.isFinite(createdAtMs) ? { createdAtMs } : {}),
+              ...(swarmName ? { swarmName } : {}),
+            }
+            spawned.push(ref)
+            byId.set(conversationId, ref)
+          }
+          if (parsed.status === 'added') {
+            pushSwarmRef(parsed)
+            if (Array.isArray(parsed.members)) {
+              for (const m of parsed.members) {
+                if (m && typeof m === 'object' && !Array.isArray(m)) {
+                  pushSwarmRef(m as Record<string, unknown>)
+                }
+              }
+            }
+          }
+        } catch {
+          void 0
+        }
+      }
+    }
+
     if (!content.includes('Created the following subagent')) continue
     try {
       let markerIdx = -1
@@ -230,7 +274,9 @@ export function parseAntigravitySubagentTranscript(raw: string): ParsedAntigravi
   let lastToolName: string | undefined
   let summary: string | undefined
   let sendMessageText: string | undefined
+  let postMessageText: string | undefined
   let lastContentText: string | undefined
+  let lastPlannerHadSwarmWait = false
   const toolEntries: Array<{ toolName: string; description: string }> = []
   const savedImagePaths: string[] = []
   const seenImages = new Set<string>()
@@ -272,6 +318,7 @@ export function parseAntigravitySubagentTranscript(raw: string): ParsedAntigravi
       }
 
       const calls = Array.isArray(rec.tool_calls) ? rec.tool_calls : []
+      lastPlannerHadSwarmWait = false
       for (const tc of calls) {
         if (!tc || typeof tc !== 'object') continue
         const tcObj = tc as Record<string, unknown>
@@ -279,6 +326,13 @@ export function parseAntigravitySubagentTranscript(raw: string): ParsedAntigravi
         const args = unwrapAntigravityTranscriptArgs(tcObj.args)
         if (rawName === 'send_message' && typeof args.Message === 'string' && args.Message.trim()) {
           sendMessageText = args.Message.trim()
+        }
+        if (rawName === 'post_message') {
+          const msg = typeof args.text === 'string' ? args.text : typeof args.Text === 'string' ? args.Text : ''
+          if (msg.trim()) postMessageText = msg.trim()
+        }
+        if (rawName === 'swarm_wait') {
+          lastPlannerHadSwarmWait = true
         }
         const normalized = normalizeTranscriptTool(rawName, args)
         lastToolName = normalized.toolName
@@ -315,8 +369,15 @@ export function parseAntigravitySubagentTranscript(raw: string): ParsedAntigravi
   const lastRec = records[records.length - 1]
   const lastCalls = lastRec && Array.isArray(lastRec.tool_calls) ? lastRec.tool_calls : []
   const failed = Boolean(lastRec && lastRec.type !== 'GENERIC' && lastRec.status === 'ERROR')
+  const parkedOnSwarmWait = Boolean(
+    lastPlannerHadSwarmWait &&
+    lastRec &&
+    lastRec.type === 'GENERIC' &&
+    lastRec.status === 'DONE',
+  )
   const completed =
     failed ||
+    parkedOnSwarmWait ||
     Boolean(
       lastRec &&
       lastRec.type === 'PLANNER_RESPONSE' &&
@@ -337,7 +398,7 @@ export function parseAntigravitySubagentTranscript(raw: string): ParsedAntigravi
     toolEntries,
     lastToolName,
     summary,
-    resultText: sendMessageText ?? lastContentText,
+    resultText: sendMessageText ?? postMessageText ?? lastContentText,
     savedImagePaths,
     completed,
     failed,

@@ -2,7 +2,7 @@ import { mcpAppPresentationIcon } from '@superone/shared/mcp-apps-metadata'
 import { useEffect, useLayoutEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import type { IDockviewPanelHeaderProps } from 'dockview-core'
-import { Blocks, Bot, Bug, FileDiff, Globe, Maximize, MessageCirclePlus, RotateCw, Route, Shrink, Smartphone, Terminal as TerminalIcon, Volume2, VolumeOff, X } from 'lucide-react'
+import { Blocks, Bot, Bug, FileDiff, Globe, Hexagon, Maximize, MessageCirclePlus, RotateCw, Route, Shrink, Smartphone, Terminal as TerminalIcon, Volume2, VolumeOff, X } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import { tabChipClass, TabTitle, TabActionButton } from './ActivityTabChrome'
 export { tabChipClass, TabTitle, TabActionButton } from './ActivityTabChrome'
@@ -19,7 +19,7 @@ import { BrowserFavicon } from '@/components/browser/BrowserFavicon'
 import { browserSetMuted } from '@/components/browser/browser-host-api'
 import { useDeviceTabActions } from '@/components/device/device-tab-actions'
 import { deviceFamilyIcon } from '@/components/device/device-icons'
-import { closeActivityTerminalTab, closeBrowserTab, closeDeviceTab, closeReviewTab, closeToolUiPreviewTab, closeTrajectoryTab, toggleMaximizedActivityGroup } from './activity-panel-api'
+import { closeActivityTerminalTab, closeBrowserTab, closeDeviceTab, closeReviewTab, closeSwarmBoardTab, closeToolUiPreviewTab, closeTrajectoryTab, toggleMaximizedActivityGroup } from './activity-panel-api'
 import { useTerminalAgentControl } from './activity-terminal'
 import { requestCloseSideChat } from '@/lib/side-chat-actions'
 import { ToolBrandIcon } from '@/components/chat/ToolIcon'
@@ -288,6 +288,21 @@ export function TrajectoryTab(props: IDockviewPanelHeaderProps<{ sessionId: stri
   )
 }
 
+export function SwarmBoardTab(props: IDockviewPanelHeaderProps<{ sessionId: string }>) {
+  const { t } = useTranslation()
+  const active = useIsActive(props.api)
+  const title = usePanelTitle(props.api)
+  return (
+    <div className={tabChipClass(active)}>
+      <HoverCloseSlot onClose={() => closeSwarmBoardTab(props.params.sessionId)}>
+        <Hexagon className="size-3.5 shrink-0" />
+      </HoverCloseSlot>
+      <TabTitle>{title || t('swarmBoard.title')}</TabTitle>
+      <MaximizeTabAction api={props.api} active={active} />
+    </div>
+  )
+}
+
 export function DeviceTab(props: IDockviewPanelHeaderProps<{ instanceId: string }>) {
   const { t } = useTranslation()
   const active = useIsActive(props.api)
@@ -408,6 +423,7 @@ export const activityTabComponents: Record<string, React.FunctionComponent<IDock
   'browser-tab': BrowserTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
   'terminal-tab': TerminalTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
   'trajectory-tab': TrajectoryTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
+  'swarm-board-tab': SwarmBoardTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
   'review-tab': ReviewTab,
   'device-tab': DeviceTab as React.FunctionComponent<IDockviewPanelHeaderProps>,
   'side-chat-tab': SideChatTab,

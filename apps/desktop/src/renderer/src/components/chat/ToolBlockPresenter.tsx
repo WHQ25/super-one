@@ -171,6 +171,12 @@ export function hasDedicatedToolRow(toolName: string): boolean {
     toolName === 'manage_task' ||
     toolName === 'ManageSubagents' ||
     toolName === 'manage_subagents' ||
+    toolName === 'ReadBoard' ||
+    toolName === 'read_board' ||
+    toolName === 'PostMessage' ||
+    toolName === 'post_message' ||
+    toolName === 'SwarmWait' ||
+    toolName === 'swarm_wait' ||
     isAskUserQuestionToolName(toolName)
   ) return true
   const serverName = parseMcpToolName(toolName)?.serverName

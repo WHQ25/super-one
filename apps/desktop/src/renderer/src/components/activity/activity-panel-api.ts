@@ -470,6 +470,35 @@ export function closeTrajectoryTab(sessionId: string) {
   dockApi?.panels.find((p) => p.id === panelId)?.api.close()
 }
 
+export function openSwarmBoardTab(sessionId: string, label: string) {
+  ensureVisible()
+  const panelId = `swarm-board-${sessionId}`
+  recordMosaicOpen(panelId, () => openSwarmBoardTab(sessionId, label))
+  execOrDefer(() => {
+    if (!dockApi) return
+    const existing = dockApi.panels.find((p) => p.id === panelId)
+    if (existing) {
+      activateInMaximizedGroup(existing)
+      return
+    }
+    const position = positionInMaximizedGroup()
+    dockApi.addPanel({
+      id: panelId,
+      component: 'swarm-board',
+      tabComponent: 'swarm-board-tab',
+      title: label,
+      params: { sessionId },
+      ...(position ? { position } : {}),
+    })
+  })
+}
+
+export function closeSwarmBoardTab(sessionId: string) {
+  const panelId = `swarm-board-${sessionId}`
+  removeMosaicOpen(panelId)
+  dockApi?.panels.find((p) => p.id === panelId)?.api.close()
+}
+
 export interface OpenReviewTabOptions {
   sessionId?: string
   projectPath?: string

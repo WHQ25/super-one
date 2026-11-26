@@ -103,12 +103,21 @@ export function syncTrackedSubagentEntries(
   for (const entry of ctx.trackedByToolUseId.values()) {
     if (entry.completed) continue
 
-    if (!entry.conversationId && spawnedRefs.length > 0 && !entry.isSwarmWorker) {
-      const match = spawnedRefs.find(
-        (ref) =>
-          !ctx.boundConversationIds.has(ref.conversationId) &&
-          (ref.createdAtMs === undefined || ref.createdAtMs >= entry.startedAtMs - 15_000),
-      )
+    if (!entry.conversationId && spawnedRefs.length > 0) {
+      const match =
+        (entry.isSwarmWorker && entry.swarmName
+          ? spawnedRefs.find(
+              (ref) =>
+                !ctx.boundConversationIds.has(ref.conversationId) &&
+                ref.swarmName === entry.swarmName,
+            )
+          : undefined) ??
+        spawnedRefs.find(
+          (ref) =>
+            !ctx.boundConversationIds.has(ref.conversationId) &&
+            (!entry.isSwarmWorker || !ref.swarmName || !entry.swarmName || ref.swarmName === entry.swarmName) &&
+            (ref.createdAtMs === undefined || ref.createdAtMs >= entry.startedAtMs - 15_000),
+        )
       if (match) {
         ctx.boundConversationIds.add(match.conversationId)
         entry.conversationId = match.conversationId

@@ -540,6 +540,7 @@ function normalizeInput(
       // Grok spawn_subagent uses `background`; Claude uses run_in_background.
       // Do not default true on subagent_type alone — Claude foreground Agents also set type.
       if (raw.run_in_background === true || raw.background === true) out.run_in_background = true
+      if (raw.isSwarmWorker === true) out.isSwarmWorker = true
       return Object.keys(out).length > 0 ? out : { ...raw }
     }
     case 'AskUserQuestion': {

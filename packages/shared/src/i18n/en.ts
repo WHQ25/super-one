@@ -299,6 +299,53 @@ export type Messages = {
     closeConfirm: { title: string; body: string; action: string; dontAsk: string }
     replaceConfirm: { title: string; body: string; action: string }
   }
+  swarmBoard: {
+    title: string
+    live: string
+    idle: string
+    emptyTitle: string
+    emptyHint: string
+    tabs: {
+      overview: string
+      board: string
+      members: string
+      graph: string
+    }
+    overview: {
+      goal: string
+      tasksDone: string
+      threads: string
+      done: string
+      inProgress: string
+      theTeam: string
+      coordinator: string
+      all: string
+    }
+    board: {
+      searchPlaceholder: string
+      allSenders: string
+      latest: string
+      newDivider: string
+      noMessages: string
+    }
+    members: {
+      searchPlaceholder: string
+      active: string
+      standingBy: string
+      killed: string
+      coordinator: string
+      working: string
+      waiting: string
+    }
+    graph: {
+      hive: string
+      mentions: string
+      tasksDoneLegend: string
+      messageSentLegend: string
+      waitingOnLegend: string
+      postsOver: string
+    }
+  }
   trajectory: {
     title: string
     toolbarAria: string
@@ -4005,6 +4052,17 @@ export type Messages = {
           unknown: string
         }
       }
+      swarm: {
+        readingBoard: string
+        readBoard: string
+        boardRead: string
+        postingMessage: string
+        postMessage: string
+        messagePosted: string
+        waiting: string
+        swarmWait: string
+        waited: string
+      }
       manageSubagents: {
         managing: string
         manageSubagents: string
@@ -5846,6 +5904,53 @@ export const en: Messages = {
       title: 'Replace the open side chat?',
       body: 'Only one side chat can be open at a time. The current one is discarded and cannot be reopened.',
       action: 'Replace',
+    },
+  },
+  swarmBoard: {
+    title: 'Swarm Board',
+    live: 'Live',
+    idle: 'Idle',
+    emptyTitle: 'No Swarm active in this session',
+    emptyHint: 'Start a /swarm session to see the overview, live message board, members, and collaboration graph.',
+    tabs: {
+      overview: 'Overview',
+      board: 'Board',
+      members: 'Members',
+      graph: 'Graph',
+    },
+    overview: {
+      goal: 'Goal',
+      tasksDone: '{{done}} of {{total}} tasks done',
+      threads: 'Threads',
+      done: 'Done',
+      inProgress: 'In progress',
+      theTeam: 'The Team',
+      coordinator: 'Coordinator',
+      all: 'All',
+    },
+    board: {
+      searchPlaceholder: 'Search',
+      allSenders: 'All',
+      latest: 'Latest',
+      newDivider: 'New',
+      noMessages: 'No board messages yet.',
+    },
+    members: {
+      searchPlaceholder: 'Search members',
+      active: 'Active',
+      standingBy: 'Standing by',
+      killed: 'Stopped',
+      coordinator: 'Coordinator',
+      working: 'Working',
+      waiting: 'Waiting',
+    },
+    graph: {
+      hive: 'Hive',
+      mentions: 'Mentions',
+      tasksDoneLegend: 'Tasks done',
+      messageSentLegend: 'Message just sent',
+      waitingOnLegend: 'Waiting on',
+      postsOver: '{{count}} posts over {{duration}}',
     },
   },
   trajectory: {
@@ -9596,6 +9701,17 @@ export const en: Messages = {
           cancelled: 'Cancelled',
           unknown: 'Unknown',
         },
+      },
+      swarm: {
+        readingBoard: 'Reading board',
+        readBoard: 'Read Board',
+        boardRead: 'Board Read',
+        postingMessage: 'Posting message',
+        postMessage: 'Post Message',
+        messagePosted: 'Message Posted',
+        waiting: 'Waiting on board',
+        swarmWait: 'Swarm Wait',
+        waited: 'Swarm Wait',
       },
       manageSubagents: {
         managing: 'Managing subagents',

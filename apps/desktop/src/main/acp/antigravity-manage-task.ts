@@ -233,6 +233,9 @@ const TRANSCRIPT_OUTPUT_VARIANTS = new Set([
   'ListMcpResources',
   'ReadMcpResource',
   'ManageInbox',
+  'ReadBoard',
+  'PostMessage',
+  'SwarmWait',
 ])
 
 export function isAntigravityTranscriptOutputTool(variant: unknown): boolean {
@@ -355,6 +358,9 @@ const SEND_MESSAGE_NAMES = new Set(['send_message', 'SendMessage'])
 const LIST_RESOURCES_NAMES = new Set(['list_resources', 'list_mcp_resources', 'ListMcpResources'])
 const READ_RESOURCE_NAMES = new Set(['read_resource', 'read_mcp_resource', 'ReadMcpResource'])
 const MANAGE_INBOX_NAMES = new Set(['manage_inbox', 'ManageInbox'])
+const READ_BOARD_NAMES = new Set(['read_board', 'ReadBoard'])
+const POST_MESSAGE_NAMES = new Set(['post_message', 'PostMessage'])
+const SWARM_WAIT_NAMES = new Set(['swarm_wait', 'SwarmWait'])
 
 export function resolveAntigravityManageTaskOutput(
   sessionId: string | undefined,
@@ -475,6 +481,37 @@ export function resolveAntigravityTranscriptToolOutput(
     return selectMatchingTranscriptOutput(candidates, (args) => {
       const cAction = pickStringArg(args, ['action', 'Action'])?.toLowerCase()
       return !(wantAction && cAction && cAction !== wantAction)
+    })
+  }
+  if (variant === 'ReadBoard') {
+    const candidates = collectTranscriptGenericOutputs(sessionId, READ_BOARD_NAMES, unwrapOutput, customBrainRoots)
+    if (candidates.length === 0) return undefined
+    const wantSince = pickNumberArg(rawInput, ['since', 'Since'])
+    const wantChannel = pickStringArg(rawInput, ['channel', 'Channel'])
+    return selectMatchingTranscriptOutput(candidates, (args) => {
+      const cSince = pickNumberArg(args, ['since', 'Since'])
+      const cChannel = pickStringArg(args, ['channel', 'Channel'])
+      if (wantSince !== undefined && cSince !== undefined && cSince !== wantSince) return false
+      if (wantChannel && cChannel && cChannel !== wantChannel) return false
+      return true
+    })
+  }
+  if (variant === 'PostMessage') {
+    const candidates = collectTranscriptGenericOutputs(sessionId, POST_MESSAGE_NAMES, unwrapOutput, customBrainRoots)
+    if (candidates.length === 0) return undefined
+    const wantText = pickStringArg(rawInput, ['text', 'Text', 'message', 'Message'])
+    return selectMatchingTranscriptOutput(candidates, (args) => {
+      const cText = pickStringArg(args, ['text', 'Text', 'message', 'Message'])
+      return !(wantText && cText && cText !== wantText)
+    })
+  }
+  if (variant === 'SwarmWait') {
+    const candidates = collectTranscriptGenericOutputs(sessionId, SWARM_WAIT_NAMES, unwrapOutput, customBrainRoots)
+    if (candidates.length === 0) return undefined
+    const wantSince = pickNumberArg(rawInput, ['since', 'Since'])
+    return selectMatchingTranscriptOutput(candidates, (args) => {
+      const cSince = pickNumberArg(args, ['since', 'Since'])
+      return !(wantSince !== undefined && cSince !== undefined && cSince !== wantSince)
     })
   }
   return undefined

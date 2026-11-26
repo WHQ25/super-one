@@ -3,26 +3,27 @@ import { useResolvedWorkflowGraph } from './use-workflow-graph'
 import { useWorkflowReplay } from './use-workflow-replay'
 import type { ReplayAgentRecord } from './workflow-replay'
 import { bindAgentsToDag, buildDag, runtimeStatusFromAgentState, type DagRuntimeAgent } from './workflow-dag'
-import { looksLikeRhaiWorkflow } from './workflow-graph-rhai'
-import { workflowArtifactPath } from './workflow-utils'
+import {
+  detectWorkflowScriptLanguage,
+  genericWorkflowAdapter,
+} from './workflow-utils'
 import type { WorkflowAgentInfo } from './use-workflow-agents'
 
-/**
- * Workflow script source: the inline script, else the first readable file among
- * the launch's script path and the run directory's script.rhai / script.js.
- */
 export function useWorkflowScriptSource({
   script,
   scriptPath,
   transcriptDir,
+  scriptCandidates,
   enabled = true,
 }: {
   script?: string
   scriptPath?: string
   transcriptDir?: string
+  scriptCandidates?: string[]
   enabled?: boolean
 }): { source?: string; path?: string } {
   const [loaded, setLoaded] = useState<{ source?: string; path?: string }>({})
+  const candidateKey = scriptCandidates?.join('\0') ?? ''
 
   useEffect(() => {
     if (script || !enabled) {
@@ -30,39 +31,53 @@ export function useWorkflowScriptSource({
       return
     }
     let cancelled = false
-    const candidates = [...new Set([
-      scriptPath,
-      workflowArtifactPath(transcriptDir, 'script.rhai'),
-      workflowArtifactPath(transcriptDir, 'script.js'),
-    ].filter((p): p is string => !!p))]
+    const candidates = scriptCandidates?.length
+      ? [...new Set(scriptCandidates.filter((p): p is string => Boolean(p)))]
+      : genericWorkflowAdapter.resolveScriptCandidates({ scriptPath, transcriptDir })
+
+    const reader = window.app?.readWorkflowScript
+    if (candidates.length === 0 || !reader) {
+      setLoaded((prev) => (prev.source === undefined && prev.path === undefined ? prev : {}))
+      return
+    }
 
     void (async () => {
       for (const path of candidates) {
-        const src = await Promise.resolve(window.app?.readWorkflowScript?.(path)).catch(() => null)
+        const src = await Promise.resolve(reader(path)).catch(() => null)
         if (cancelled) return
         if (typeof src === 'string' && src.length > 0) {
           setLoaded({ source: src, path })
           return
         }
       }
-      if (!cancelled) setLoaded({})
+      if (!cancelled) {
+        setLoaded((prev) => (prev.source === undefined && prev.path === undefined ? prev : {}))
+      }
     })()
 
     return () => {
       cancelled = true
     }
-  }, [enabled, script, scriptPath, transcriptDir])
+  }, [candidateKey, enabled, script, scriptPath, transcriptDir])
 
   return script ? { source: script } : loaded
 }
 
-/**
- * Script graph plus run agents bound to its nodes. JS scripts are replayed against
- * the recorded agents (which also resolves child workflows); Rhai cannot execute,
- * so it falls back to the static graph with label/prompt binding.
- */
-export function useWorkflowModel(script: string | undefined, agents: WorkflowAgentInfo[]) {
-  const { graph, childScripts } = useResolvedWorkflowGraph(script)
+export function useWorkflowModel(
+  script: string | undefined,
+  agents: WorkflowAgentInfo[],
+  options?: {
+    supportsJsReplay?: boolean
+    supportsStaticGraph?: boolean
+  },
+) {
+  const detectedLanguage = useMemo(
+    () => (script ? detectWorkflowScriptLanguage(script) : undefined),
+    [script],
+  )
+  const allowStaticGraph = options?.supportsStaticGraph ?? true
+  const allowJsReplay = options?.supportsJsReplay ?? (detectedLanguage === 'javascript')
+  const { graph, childScripts } = useResolvedWorkflowGraph(allowStaticGraph ? script : undefined)
   const records = useMemo<ReplayAgentRecord[]>(
     () => agents.map((a) => ({ agentId: a.agentId, prompt: a.prompt, label: a.label, result: a.result, toolCount: a.toolCount })),
     [agents],
@@ -71,7 +86,6 @@ export function useWorkflowModel(script: string | undefined, agents: WorkflowAge
     () => new Map(childScripts.map((cs) => [cs.scriptPath, { source: cs.source, name: cs.name }])),
     [childScripts],
   )
-  // Runtime rows for graph expansion (Grok labels / Claude fan-out without full JS replay).
   const runtimeAgents = useMemo<DagRuntimeAgent[]>(
     () => agents.map((a) => ({
       label: a.label,
@@ -83,14 +97,13 @@ export function useWorkflowModel(script: string | undefined, agents: WorkflowAge
     [agents],
   )
   const replay = useWorkflowReplay(
-    script && !looksLikeRhaiWorkflow(script) ? script : undefined,
+    script && allowJsReplay ? script : undefined,
     records,
     childWorkflowMap,
   )
   const dag = useMemo(() => {
     if (replay) return replay.dag
     if (!graph || graph.blocks.length === 0) return null
-    // Pass runtime so parallel(catalog:*) expands to one node per live agent.
     return buildDag(graph, runtimeAgents.length > 0 ? runtimeAgents : undefined)
   }, [replay, graph, runtimeAgents])
   const nodeToAgent = useMemo(() => {

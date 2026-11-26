@@ -371,6 +371,33 @@ function recordAntigravitySubagentInput(id: string, input: Record<string, unknow
   knownAntigravitySubagentInputs.set(id, input)
 }
 
+function hasNonEmptyToolPayload(rawOutput: unknown, content: unknown): boolean {
+  if (rawOutput !== undefined && rawOutput !== null) {
+    if (typeof rawOutput === 'string') {
+      if (rawOutput.trim().length > 0) return true
+    } else if (Array.isArray(rawOutput)) {
+      if (rawOutput.length > 0) return true
+    } else if (typeof rawOutput === 'object') {
+      if (Object.keys(rawOutput as Record<string, unknown>).length > 0) return true
+    } else {
+      return true
+    }
+  }
+  if (Array.isArray(content)) {
+    for (const item of content) {
+      if (!isRecord(item)) continue
+      if (item.type === 'diff' || item.type === 'terminal') return true
+      if (item.type === 'content' && isRecord(item.content)) {
+        if (item.content.type === 'text' && typeof item.content.text === 'string' && item.content.text.trim().length > 0) {
+          return true
+        }
+        if (item.content.type !== 'text') return true
+      }
+    }
+  }
+  return false
+}
+
 export function normalizeAntigravitySessionUpdate(
   update: SessionUpdate,
   sessionId?: string,
@@ -446,8 +473,7 @@ export function normalizeAntigravitySessionUpdate(
   if (
     isTranscriptTool &&
     (update.status === 'completed' || update.status === 'failed') &&
-    sanitizedOutput === undefined &&
-    (!Array.isArray(update.content) || update.content.length === 0)
+    !hasNonEmptyToolPayload(sanitizedOutput, update.content)
   ) {
     const transcriptOut = resolveAntigravityTranscriptToolOutput(
       normalizedIn.rawInput.variant,
@@ -455,6 +481,7 @@ export function normalizeAntigravitySessionUpdate(
       normalizedIn.rawInput,
       unwrapAntigravityToolOutputText,
       brainRoots,
+      update.toolCallId,
     )
     if (transcriptOut) sanitizedOutput = transcriptOut
   }

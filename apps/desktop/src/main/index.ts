@@ -219,7 +219,12 @@ import {
   unarchiveCursorAgent,
 } from './cursor/cursor-cloud'
 import { getBaseProvider, updateBaseProviderConfig } from './session/session-provider-repo'
-import { listWorkflowAgents, readWorkflowOutput, readWorkflowScript } from './workflow-transcripts'
+import {
+  listWorkflowAgents,
+  readWorkflowOutput,
+  readWorkflowScript,
+  resolveAntigravityWorkflowAgentTranscripts,
+} from './workflow-transcripts'
 import { discoverGrokWorkflows } from './workflow-discovery'
 import { readSubagentTranscript } from './agent/subagent-transcript'
 import {
@@ -4360,6 +4365,16 @@ function registerIpcHandlers(): void {
     if (typeof transcriptDir !== 'string' || !isAbsolute(transcriptDir)) return []
     return listWorkflowAgents(transcriptDir)
   })
+
+  ipcMain.handle(
+    AgentIpcChannels.RESOLVE_WORKFLOW_AGENT_TRANSCRIPTS,
+    async (_event, params: { agentIds?: unknown; logPath?: unknown }) => {
+      if (!params || typeof params !== 'object' || !Array.isArray(params.agentIds)) return {}
+      const agentIds = params.agentIds.filter((id): id is string => typeof id === 'string')
+      const logPath = typeof params.logPath === 'string' && isAbsolute(params.logPath) ? params.logPath : undefined
+      return resolveAntigravityWorkflowAgentTranscripts({ agentIds, logPath })
+    },
+  )
 
   ipcMain.handle(AgentIpcChannels.READ_WORKFLOW_OUTPUT, async (_event, filePath: string) => {
     if (typeof filePath !== 'string' || !isAbsolute(filePath)) return null

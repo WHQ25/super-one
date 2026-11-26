@@ -21,7 +21,7 @@ const hoisted = vi.hoisted(() => ({
       status?: 'completed' | 'failed' | 'stopped'
       resultText?: string
       toolHistory: Array<{ toolName: string; description: string }>
-      workflowAgents?: Array<{ agentId?: string; label: string; toolCount: number; tokens?: number; state?: string }>
+      workflowAgents?: Array<{ agentId?: string; label: string; toolCount: number; tokens?: number; state?: string; phase?: string }>
       workflowPhases?: Array<{ title: string; state?: string }>
       currentPhase?: string
     }>,
@@ -479,5 +479,240 @@ describe('WorkflowBlock — Claude transcript regression', () => {
     expect(screen.getByText(/Workflow complete/)).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'ClaudeAgent' })).toHaveAttribute('data-status', 'done')
     expect(screen.getByTitle('Open full view')).toBeInTheDocument()
+  })
+})
+
+describe('WorkflowBlock — Antigravity run_workflow', () => {
+  const antigravityInput = {
+    Description: 'Minimal run_workflow test with parallel flash_lite agents',
+    Script: 'phase("Demo")\nlog("ok")',
+  }
+  const antigravityBgResult: ContentBlock = {
+    type: 'tool_result',
+    toolUseId: 'tc_wf',
+    summary: [
+      'Tool is running as a background task with task id: 0a6e0690-bf30-4dec-ae4c-4bd5e0dd780d/task-6',
+      'Task logs are available at: file:///tmp/task-6.log',
+    ].join('\n'),
+  } as ContentBlock
+
+  it('stays Running after parent turn ends on background launch ack until task completion arrives', () => {
+    const { rerender } = render(
+      <WorkflowBlock
+        toolBlock={workflowTool(antigravityInput)}
+        resultBlock={antigravityBgResult}
+        isStreaming
+        defaultExpanded
+      />,
+    )
+    expect(screen.getByText('Minimal run_workflow test with parallel flash_lite agents')).toBeInTheDocument()
+    expect(screen.queryByText(/Starting workflow/)).not.toBeInTheDocument()
+    expect(screen.getByText('Running · Elapsed 0s')).toBeInTheDocument()
+
+    rerender(
+      <WorkflowBlock
+        toolBlock={workflowTool(antigravityInput)}
+        resultBlock={antigravityBgResult}
+        isStreaming={false}
+        defaultExpanded
+      />,
+    )
+    expect(screen.queryByText(/Starting workflow/)).not.toBeInTheDocument()
+    expect(screen.queryByText(/Workflow complete/)).not.toBeInTheDocument()
+    expect(screen.getByText('Running · Elapsed 0s')).toBeInTheDocument()
+
+    hoisted.sessionState.taskProgress = {
+      tc_wf: {
+        description: 'Minimal run_workflow test with parallel flash_lite agents',
+        taskId: '0a6e0690-bf30-4dec-ae4c-4bd5e0dd780d/task-6',
+        summary: 'phase: Demo',
+        currentPhase: 'Demo',
+        totalTokens: 1200,
+        toolUses: 3,
+        durationMs: 4000,
+        completed: false,
+        toolHistory: [],
+        workflowPhases: [{ title: 'Demo', state: 'active' }],
+        workflowAgents: [
+          { agentId: 'ag-apple', label: 'Fact: apple', toolCount: 3, tokens: 1200, state: 'running', phase: 'Demo' },
+        ],
+      },
+    }
+    rerender(
+      <WorkflowBlock
+        toolBlock={workflowTool(antigravityInput)}
+        resultBlock={antigravityBgResult}
+        isStreaming={false}
+        defaultExpanded
+      />,
+    )
+    expect(screen.getByText('Running · Elapsed 4s')).toBeInTheDocument()
+    expect(screen.getByText('Demo')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Fact: apple' })).toHaveAttribute('data-status', 'running')
+
+    hoisted.sessionState.taskProgress = {
+      tc_wf: {
+        ...hoisted.sessionState.taskProgress.tc_wf,
+        completed: true,
+        status: 'completed',
+        resultText: 'All done',
+        workflowPhases: [{ title: 'Demo', state: 'done' }],
+        workflowAgents: [
+          { agentId: 'ag-apple', label: 'Fact: apple', toolCount: 3, tokens: 1200, state: 'done', phase: 'Demo' },
+        ],
+      },
+    }
+    rerender(
+      <WorkflowBlock
+        toolBlock={workflowTool(antigravityInput)}
+        resultBlock={antigravityBgResult}
+        isStreaming={false}
+        defaultExpanded
+      />,
+    )
+    expect(screen.getByText(/Workflow complete/)).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Fact: apple' })).toHaveAttribute('data-status', 'done')
+  })
+
+  it('completes historical background launch ack when toolBlock carries taskStatus', () => {
+    const completedTool: ContentBlock & { type: 'tool_use' } = {
+      ...workflowTool(antigravityInput),
+      taskStatus: 'completed',
+      taskResultText: 'Persisted output',
+    }
+    render(
+      <WorkflowBlock
+        toolBlock={completedTool}
+        resultBlock={antigravityBgResult}
+        isStreaming={false}
+        defaultExpanded
+      />,
+    )
+    expect(screen.getByText(/Workflow complete/)).toBeInTheDocument()
+  })
+
+  it('completes synchronous run_workflow results without a task id once idle and parses inline logs', async () => {
+    const { userEvent } = await import('@testing-library/user-event')
+    const user = userEvent.setup()
+    const syncResult: ContentBlock = {
+      type: 'tool_result',
+      toolUseId: 'tc_wf',
+      summary: 'Logs:\n- [phase] Demo\n- apple: crisp\n- [agent:self] Fact: apple: done (ag-1): "Crisp fruit"\nOutput:\nok',
+    } as ContentBlock
+    render(
+      <WorkflowBlock
+        toolBlock={workflowTool(antigravityInput)}
+        resultBlock={syncResult}
+        isStreaming={false}
+        defaultExpanded
+      />,
+    )
+    expect(screen.queryByText(/Starting workflow/)).not.toBeInTheDocument()
+    expect(screen.getByText(/Workflow complete/)).toBeInTheDocument()
+    expect(screen.getByText('Demo')).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Fact: apple' })).toHaveAttribute('data-status', 'done')
+    await user.click(screen.getByRole('button', { name: /Log \/ Output/i }))
+    expect(screen.getByTestId('result-text')).toHaveTextContent('ok')
+  })
+
+  it('reads task-*.log to populate phases, agents, logs, and opens full view with logPath', async () => {
+    const { userEvent } = await import('@testing-library/user-event')
+    const user = userEvent.setup()
+    const logContent = [
+      '- [phase] Demo',
+      '- apple: red fruit',
+      '- [agent:self] Fact: apple: done (ag-apple): "Apples are red."',
+      '- [agent:self] Fact: banana: done (ag-banana): "Bananas are yellow."',
+      'Output:',
+      'Collected 2 facts',
+    ].join('\n')
+    const readBashOutputFile = vi.fn().mockResolvedValue(logContent)
+    const resolveWorkflowAgentTranscripts = vi.fn().mockResolvedValue({
+      'ag-apple': {
+        agentId: 'ag-apple',
+        jsonlPath: '/brain/ag-apple/.system_generated/logs/transcript.jsonl',
+        prompt: 'Give a fact about apple',
+        toolCount: 2,
+        tokens: 32818,
+        resultText: 'Apples are red.',
+        transcriptAvailable: true,
+      },
+    })
+    Object.assign(window, {
+      app: { readBashOutputFile, resolveWorkflowAgentTranscripts },
+    })
+
+    render(
+      <WorkflowBlock
+        toolBlock={workflowTool(antigravityInput)}
+        resultBlock={antigravityBgResult}
+        isStreaming={false}
+        defaultExpanded
+      />,
+    )
+
+    expect(await screen.findByText('Demo')).toBeInTheDocument()
+    expect(readBashOutputFile).toHaveBeenCalledWith('/tmp/task-6.log', 5000)
+    expect(await screen.findByText('32818')).toBeInTheDocument()
+    expect(resolveWorkflowAgentTranscripts).toHaveBeenCalledWith({
+      agentIds: ['ag-apple', 'ag-banana'],
+      logPath: '/tmp/task-6.log',
+    })
+    expect(screen.getByRole('button', { name: 'Fact: apple' })).toHaveAttribute('data-status', 'done')
+    expect(screen.getByRole('button', { name: 'Fact: banana' })).toHaveAttribute('data-status', 'done')
+
+    await user.click(screen.getByRole('button', { name: /Log \/ Output/i }))
+    expect(screen.getByTestId('result-text')).toHaveTextContent('Collected 2 facts')
+    await user.click(screen.getByRole('button', { name: 'Log' }))
+    expect(screen.getByText('apple: red fruit')).toBeInTheDocument()
+
+    await user.click(screen.getByTitle('Open full view'))
+    expect(hoisted.navOpen).toHaveBeenCalledWith(expect.objectContaining({
+      toolUseId: 'tc_wf',
+      harness: 'antigravity',
+      logPath: '/tmp/task-6.log',
+      transcriptDir: undefined,
+    }))
+  })
+
+  it('shows phases from Python script and enables full view even when tool_result summary is just done', () => {
+    const doneResult: ContentBlock = {
+      type: 'tool_result',
+      toolUseId: 'tc_wf',
+      summary: 'done',
+    } as ContentBlock
+    const echoInput = {
+      Description: 'Minimal run_workflow example',
+      Script: 'phase("Echo")\nresults = await parallel(["Hello", "World"], lambda word: agent(f"Upper {word}", role=f"Uppercase {word}", model="flash_lite"))',
+      WaitMsBeforeAsync: 10000,
+      variant: 'Workflow',
+    }
+    render(
+      <WorkflowBlock
+        toolBlock={workflowTool(echoInput)}
+        resultBlock={doneResult}
+        isStreaming={false}
+        defaultExpanded
+      />,
+    )
+    expect(screen.getByText('Echo')).toBeInTheDocument()
+    expect(screen.getByTitle('Open full view')).toBeInTheDocument()
+    expect(screen.getByText(/Workflow complete/)).toBeInTheDocument()
+  })
+
+  it('does not show ScriptPath filename in the Workflow badge', () => {
+    render(
+      <WorkflowBlock
+        toolBlock={workflowTool({
+          Description: 'UI test workflow',
+          ScriptPath: '/tmp/ui_test_workflow.py',
+        })}
+        resultBlock={antigravityBgResult}
+        isStreaming={false}
+      />,
+    )
+    expect(screen.getByText('Workflow')).toBeInTheDocument()
+    expect(screen.queryByText(/ui_test_workflow\.py/)).not.toBeInTheDocument()
+    expect(screen.getByText('UI test workflow')).toBeInTheDocument()
   })
 })

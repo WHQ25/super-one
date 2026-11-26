@@ -40,7 +40,7 @@ export function superoneToolGlyph(mcpToolName: string): ToolIcon | null {
   return WIDGET_TOOLS.has(mcpToolName) ? 'widget' : null
 }
 
-export type ToolIcon = 'terminal' | 'clock' | 'code' | 'file-text' | 'file-edit' | 'file-plus' | 'search' | 'folder-search' | 'globe' | 'download' | 'message-circle' | 'wrench' | 'mcp' | 'plug' | 'clipboard-list' | 'bot' | 'book-open' | 'canvas' | 'toolbox' | 'package' | 'pencil' | 'image' | 'smartphone' | 'widget' | 'git-branch' | 'send' | 'reply' | 'layout' | 'audio'
+export type ToolIcon = 'terminal' | 'clock' | 'code' | 'file-text' | 'file-edit' | 'file-plus' | 'search' | 'folder-search' | 'globe' | 'download' | 'message-circle' | 'wrench' | 'mcp' | 'plug' | 'clipboard-list' | 'bot' | 'book-open' | 'canvas' | 'toolbox' | 'package' | 'pencil' | 'image' | 'smartphone' | 'widget' | 'git-branch' | 'send' | 'reply' | 'layout' | 'audio' | 'check-circle'
 
 export interface ToolDisplay {
   icon: ToolIcon
@@ -61,7 +61,41 @@ export { isHiddenToolBlock } from '@superone/chat-core/turn-process/media-tools'
  * delivery receipt. Without the input (a phone's is stripped) the receipt's own sentence
  * stands in. Null leaves every other tool on its raw result.
  */
+function finishToolBody(input: Record<string, unknown>): string | null {
+  const raw = input.result ?? input.Result
+  if (raw === undefined || raw === null) return null
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim()
+    return trimmed || null
+  }
+  try {
+    return JSON.stringify(raw, null, 2)
+  } catch {
+    return String(raw)
+  }
+}
+
+function finishToolSummary(input: Record<string, unknown>): string {
+  const raw = input.result ?? input.Result
+  if (raw === undefined || raw === null) return ''
+  let text = ''
+  if (typeof raw === 'string') {
+    text = raw
+  } else {
+    try {
+      text = JSON.stringify(raw)
+    } catch {
+      text = String(raw)
+    }
+  }
+  const singleLine = text.replace(/\s+/g, ' ').trim()
+  return singleLine.length > 120 ? `${singleLine.slice(0, 120)}…` : singleLine
+}
+
 export function coordinationToolBody(toolName: string, params: Record<string, unknown>, result: string | null | undefined): string | null {
+  if (toolName === 'Finish' || toolName === 'finish') {
+    return finishToolBody(params) ?? (result?.trim() || null)
+  }
   if (toolName !== 'SendMessage' && toolName !== 'SubagentHandback') return null
   if (typeof params.message === 'string' && params.message.trim()) return params.message
   if (!result) return null
@@ -273,6 +307,9 @@ export function getToolDisplay(toolName: string, input: Record<string, unknown>,
       return { icon: 'wrench', summary: 'Entered plan mode' }
     case 'ExitPlanMode':
       return { icon: 'wrench', summary: 'Exited plan mode' }
+    case 'Finish':
+    case 'finish':
+      return { icon: 'check-circle', summary: finishToolSummary(input) }
     default:
       return { icon: 'wrench', summary: '' }
   }

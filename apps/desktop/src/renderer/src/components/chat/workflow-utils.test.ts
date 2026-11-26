@@ -5,11 +5,18 @@ import {
   parseWorkflowLaunch,
   isWorkflowSmokeCheck,
   workflowToolTargetLabel,
+  extractWorkflowScript,
   extractWorkflowScriptPath,
   resolveGrokWorkflowDir,
   workflowArtifactPath,
   stripWorkflowNamePrefix,
   mergeWorkflowPhaseRows,
+  detectWorkflowScriptLanguage,
+  looksLikePythonWorkflow,
+  parseAntigravityWorkflowLog,
+  resolveWorkflowAdapter,
+  normalizeWorkflowRun,
+  stripFileUri,
 } from './workflow-utils'
 
 const REAL_SCRIPT = `export const meta = {
@@ -215,5 +222,225 @@ describe('stripWorkflowNamePrefix', () => {
     expect(stripWorkflowNamePrefix('review-changes: do the thing', 'review-changes')).toBe('do the thing')
     expect(stripWorkflowNamePrefix('review-changes', 'review-changes')).toBeUndefined()
     expect(stripWorkflowNamePrefix('phase: Execute', 'review-changes')).toBe('phase: Execute')
+  })
+})
+
+describe('Antigravity run_workflow support', () => {
+  it('parses PascalCase Script, ScriptPath, and Description from input', () => {
+    const input = JSON.stringify({
+      Description: 'Minimal run_workflow test',
+      Script: 'phase("Demo")\nlog("hi")',
+      ScriptPath: '/tmp/scratch/demo.py',
+    })
+    expect(extractWorkflowScript(input)).toBe('phase("Demo")\nlog("hi")')
+    expect(extractWorkflowScriptPath(input)).toBe('/tmp/scratch/demo.py')
+    expect(parseWorkflowInput(input)).toEqual({
+      name: '',
+      description: 'Minimal run_workflow test',
+      phases: [{ title: 'Demo' }],
+    })
+    expect(workflowToolTargetLabel(input)).toBe('demo.py')
+  })
+
+  it('extracts Python phase() titles while skipping comments and strings even when summary is done', () => {
+    const script = [
+      '# phase("Commented")',
+      'note = "phase(\'InsideString\')"',
+      'phase("Echo")',
+      'phase("Verify")',
+      'phase("Echo")',
+    ].join('\n')
+    const normalized = normalizeWorkflowRun({
+      input: JSON.stringify({
+        Description: 'Minimal run_workflow example',
+        Script: script,
+        WaitMsBeforeAsync: 10000,
+        variant: 'Workflow',
+      }),
+      summary: 'done',
+    })
+    expect(normalized.harness).toBe('antigravity')
+    expect(normalized.scriptLanguage).toBe('python')
+    expect(normalized.supportsStaticGraph).toBe(true)
+    expect(normalized.supportsJsReplay).toBe(false)
+    expect(normalized.phases).toEqual([{ title: 'Echo' }, { title: 'Verify' }])
+  })
+
+  it('extracts lowercase task id and logPath from Antigravity background task ack', () => {
+    const summary = 'Tool is running as a background task with task id: 0a6e0690-bf30-4dec-ae4c-4bd5e0dd780d/task-6\nTask logs are available at: file:///tmp/task-6.log'
+    expect(parseWorkflowLaunch(summary)).toEqual({
+      harness: 'antigravity',
+      taskId: '0a6e0690-bf30-4dec-ae4c-4bd5e0dd780d/task-6',
+      logPath: '/tmp/task-6.log',
+      isBackgroundLaunchAck: true,
+    })
+  })
+
+  it('decodes file:// URIs with spaces when extracting logPath', () => {
+    expect(stripFileUri('file:///Users/me/My%20Logs/task-2.log')).toBe('/Users/me/My Logs/task-2.log')
+    const summary = 'Tool is running as a background task with task id: conv/task-2\nTask logs are available at: file:///Users/me/My%20Logs/task-2.log'
+    expect(parseWorkflowLaunch(summary).logPath).toBe('/Users/me/My Logs/task-2.log')
+  })
+})
+
+describe('detectWorkflowScriptLanguage', () => {
+  it('detects python from .py path and Python workflow syntax', () => {
+    expect(detectWorkflowScriptLanguage('x = 1', '/tmp/demo.py')).toBe('python')
+    expect(detectWorkflowScriptLanguage('phase("Demo")\nlog("ok")')).toBe('python')
+    expect(detectWorkflowScriptLanguage('results = await parallel(items, lambda x: agent(f"Check {x}"))')).toBe('python')
+    expect(detectWorkflowScriptLanguage('def helper(x):\n    return x')).toBe('python')
+    expect(detectWorkflowScriptLanguage('async def run(x):\n    return await agent(x)')).toBe('python')
+    expect(looksLikePythonWorkflow('msg = f"hello {name}"')).toBe(true)
+  })
+
+  it('keeps rhai and javascript detection intact', () => {
+    expect(detectWorkflowScriptLanguage('let meta = #{ name: "x" };\nphase("S");')).toBe('rhai')
+    expect(detectWorkflowScriptLanguage('phase("S")', '/tmp/wf.rhai')).toBe('rhai')
+    expect(detectWorkflowScriptLanguage(REAL_SCRIPT)).toBe('javascript')
+    expect(detectWorkflowScriptLanguage('phase("S")\nawait agent("hi", { label: "a" })')).toBe('javascript')
+    expect(detectWorkflowScriptLanguage('phase("S")', '/tmp/wf.js')).toBe('javascript')
+  })
+})
+
+describe('parseAntigravityWorkflowLog', () => {
+  it('parses phases, agents with colons in labels, logs, and Output section', () => {
+    const raw = [
+      'Logs:',
+      '- [phase] Demo',
+      '- apple: crisp red fruit',
+      '- [agent:self] Fact: apple: done (conv-apple): "Apples are red.\\nCrisp too."',
+      '- [agent:research] Fact: banana: failed (conv-banana): "Timed out"',
+      '- [phase] Summary',
+      '- [agent:self] Merge: running (conv-merge)',
+      'Output:',
+      'All done',
+      'Line 2',
+    ].join('\n')
+
+    expect(parseAntigravityWorkflowLog(raw)).toEqual({
+      phases: [{ title: 'Demo' }, { title: 'Summary' }],
+      agents: [
+        {
+          agentId: 'conv-apple',
+          jsonlPath: '',
+          label: 'Fact: apple',
+          toolCount: 0,
+          phase: 'Demo',
+          state: 'done',
+          agentType: 'self',
+          transcriptAvailable: false,
+          resultText: 'Apples are red.\nCrisp too.',
+          result: 'Apples are red.\nCrisp too.',
+        },
+        {
+          agentId: 'conv-banana',
+          jsonlPath: '',
+          label: 'Fact: banana',
+          toolCount: 0,
+          phase: 'Demo',
+          state: 'failed',
+          agentType: 'research',
+          transcriptAvailable: false,
+          resultText: 'Timed out',
+          result: 'Timed out',
+        },
+        {
+          agentId: 'conv-merge',
+          jsonlPath: '',
+          label: 'Merge',
+          toolCount: 0,
+          phase: 'Summary',
+          state: 'running',
+          agentType: 'self',
+          transcriptAvailable: false,
+        },
+      ],
+      logs: ['apple: crisp red fruit'],
+      resultText: 'All done\nLine 2',
+    })
+  })
+
+  it('upserts repeated agent lines by agentId and parses structured JSON results', () => {
+    const raw = [
+      '- [phase] Check',
+      '- [agent:self] Audit: running (a1)',
+      '- [agent:self] Audit: done (a1): {"ok":true}',
+    ].join('\n')
+    const parsed = parseAntigravityWorkflowLog(raw)
+    expect(parsed?.agents).toHaveLength(1)
+    expect(parsed?.agents[0]).toMatchObject({
+      agentId: 'a1',
+      label: 'Audit',
+      phase: 'Check',
+      state: 'done',
+      resultText: '{\n  "ok": true\n}',
+      result: { ok: true },
+    })
+  })
+
+  it('parses multi-turn agent lines with turn metadata without misclassifying them as logs', () => {
+    const raw = [
+      '- [phase] Phase 3: Critique',
+      '- [agent:self] Brand Critic: running, turn 2 (35f91d8c-2448-4d63-b941-b874b92ee4b6)',
+      '- [agent:self] Brand Critic: done, turn 4 (35f91d8c-2448-4d63-b941-b874b92ee4b6): "赛博朋克茶室"',
+    ].join('\n')
+    const parsed = parseAntigravityWorkflowLog(raw)
+    expect(parsed?.logs).toEqual([])
+    expect(parsed?.phases).toEqual([{ title: 'Phase 3: Critique' }])
+    expect(parsed?.agents).toEqual([
+      {
+        agentId: '35f91d8c-2448-4d63-b941-b874b92ee4b6',
+        jsonlPath: '',
+        label: 'Brand Critic',
+        toolCount: 0,
+        phase: 'Phase 3: Critique',
+        state: 'done',
+        agentType: 'self',
+        transcriptAvailable: false,
+        resultText: '赛博朋克茶室',
+        result: '赛博朋克茶室',
+      },
+    ])
+  })
+})
+
+describe('workflow harness adapters & normalizeWorkflowRun', () => {
+  it('resolves the matching adapter per harness without cross-leaking assumptions', () => {
+    expect(resolveWorkflowAdapter(
+      JSON.stringify({ Description: 'Py wf', Script: 'phase("Demo")\nlog("ok")' }),
+      'Tool is running as a background task with task id: c/task-1\nTask logs are available at: file:///tmp/task-1.log',
+    ).id).toBe('antigravity')
+
+    expect(resolveWorkflowAdapter(
+      JSON.stringify({ name: 'review-changes' }),
+      JSON.stringify({ run_id: 'wf_1', task_id: 'wf_1', name: 'review-changes' }),
+    ).id).toBe('grok')
+
+    expect(resolveWorkflowAdapter(
+      JSON.stringify({ script: REAL_SCRIPT }),
+      REAL_LAUNCH,
+    ).id).toBe('claude')
+  })
+
+  it('normalizes Antigravity runs with python language, logPath, and no Grok transcriptDir', () => {
+    const normalized = normalizeWorkflowRun({
+      input: JSON.stringify({
+        Description: 'Parallel facts',
+        Script: 'phase("Demo")\nres = await parallel(["apple"], lambda x: agent(f"Fact {x}"))',
+      }),
+      summary: 'Tool is running as a background task with task id: conv/task-6\nTask logs are available at: file:///tmp/task-6.log',
+      runContext: { cwd: '/Users/me/proj', providerSessionId: 'sess-1', homedir: '/Users/me' },
+      rawLogText: '- [phase] Demo\n- apple: red\n- [agent:self] Fact: apple: done (a1): "Red fruit"',
+    })
+    expect(normalized.harness).toBe('antigravity')
+    expect(normalized.scriptLanguage).toBe('python')
+    expect(normalized.transcriptDir).toBeUndefined()
+    expect(normalized.logPath).toBe('/tmp/task-6.log')
+    expect(normalized.supportsJsReplay).toBe(false)
+    expect(normalized.supportsStaticGraph).toBe(true)
+    expect(normalized.phases).toEqual([{ title: 'Demo' }])
+    expect(normalized.logs).toEqual(['apple: red'])
+    expect(normalized.agents).toHaveLength(1)
+    expect(normalized.agents[0].resultText).toBe('Red fruit')
   })
 })

@@ -206,4 +206,67 @@ describe('useSubagentJsonl remote / reload', () => {
     expect(toolEntries[0].completed).toBe(true)
     expect(toolEntries[1].completed).toBeUndefined()
   })
+
+  it('parses Antigravity workflow child transcript with INVALID tool error and finish result', () => {
+    const wfChildRaw = [
+      JSON.stringify({
+        step_index: 0,
+        source: 'USER_EXPLICIT',
+        type: 'USER_INPUT',
+        status: 'DONE',
+        content: '<USER_REQUEST>\nUppercase Hello\n</USER_REQUEST>',
+      }),
+      JSON.stringify({
+        step_index: 1,
+        source: 'MODEL',
+        type: 'PLANNER_RESPONSE',
+        status: 'DONE',
+        input_tokens: 16339,
+        cache_read_tokens: 0,
+        output_tokens: 31,
+        thinking: 'Checking tool availability.',
+        tool_calls: [{ name: 'session_rename', args: { tags: '["demo"]', title: '"Demo"' } }],
+      }),
+      JSON.stringify({
+        step_index: 2,
+        source: 'MODEL',
+        type: 'GENERIC',
+        status: 'INVALID',
+        error: 'unknown tool: "session_rename" — check spelling',
+        content: 'Created At: 2026-11-26T08:14:32Z\nError invalid tool call: unknown tool',
+      }),
+      JSON.stringify({
+        step_index: 3,
+        source: 'MODEL',
+        type: 'PLANNER_RESPONSE',
+        status: 'DONE',
+        input_tokens: 2179,
+        cache_read_tokens: 14223,
+        output_tokens: 46,
+        tool_calls: [{ name: 'finish', args: { result: '"HELLO"' } }],
+      }),
+      JSON.stringify({
+        step_index: 4,
+        source: 'MODEL',
+        type: 'GENERIC',
+        status: 'DONE',
+        content: 'Finished.',
+      }),
+    ].join('\n')
+
+    const parsed = parseJsonlOutput(wfChildRaw)
+    expect(parsed.entries.some((e) => e.type === 'activity' && e.text === 'Checking tool availability.')).toBe(true)
+    const tools = parsed.entries.filter((e) => e.type === 'tool')
+    expect(tools).toHaveLength(2)
+    expect(tools[0]).toMatchObject({
+      isError: true,
+      completed: true,
+    })
+    expect(tools[0].result).toContain('Error invalid tool call')
+    expect(tools[1]).toMatchObject({
+      toolName: 'Finish',
+      completed: true,
+    })
+    expect(parsed.resultText).toBe('HELLO')
+  })
 })

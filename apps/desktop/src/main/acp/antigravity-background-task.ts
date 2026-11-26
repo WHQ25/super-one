@@ -1,10 +1,18 @@
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { unwatchBashOutput, watchBashOutput } from '../bash-output-watcher'
 import {
+  expectedTranscriptToolNameForTracked,
   extractBackgroundTaskLaunchFromText,
   extractCompletedBackgroundTasksFromTranscript,
   extractSpawnedBackgroundTasksFromTranscript,
+  normalizeSpawnedBackgroundToolName,
+  parseBackgroundToolUseInput,
 } from './antigravity-background-task-transcript'
+import {
+  finishTrackedWorkflowTask,
+  pollWorkflowTaskProgress,
+  startTrackedWorkflowTask,
+} from './antigravity-background-workflow'
 import { extractParentWakeupProgress } from './antigravity-wakeup-transcript'
 
 export interface TrackedBackgroundTask {
@@ -26,6 +34,7 @@ export interface TrackedBackgroundTask {
   wireCompleted: boolean
   completed: boolean
   wakeupRequired: boolean
+  lastWorkflowProgressSignature?: string
 }
 
 export interface BackgroundTaskTrackerState {
@@ -52,29 +61,36 @@ export function createBackgroundTaskTrackerState(): BackgroundTaskTrackerState {
 }
 
 function isTrackedBackgroundCandidateTool(toolName: string): boolean {
-  return toolName === 'Bash' || toolName.toLowerCase() === 'schedule'
+  return toolName === 'Bash' || toolName === 'Workflow' || toolName.toLowerCase() === 'schedule'
 }
 
-function startTrackedBashTask(
+function startTrackedBackgroundTask(
   entry: TrackedBackgroundTask,
   emitEvent: (event: AgentEvent) => void,
+  brainRoots?: string[],
 ): void {
-  if (entry.toolName !== 'Bash' || !entry.taskId) return
-  if (!entry.emittedTaskStarted) {
-    entry.emittedTaskStarted = true
-    emitEvent({
-      type: 'task_started',
-      taskType: 'local_bash',
-      toolUseId: entry.toolUseId,
-      taskId: entry.taskId,
-      description: entry.description,
-      ...(entry.logFile ? { outputFile: entry.logFile } : {}),
-      isBackgrounded: true,
-    })
+  if (!entry.taskId) return
+  if (entry.toolName === 'Bash') {
+    if (!entry.emittedTaskStarted) {
+      entry.emittedTaskStarted = true
+      emitEvent({
+        type: 'task_started',
+        taskType: 'local_bash',
+        toolUseId: entry.toolUseId,
+        taskId: entry.taskId,
+        description: entry.description,
+        ...(entry.logFile ? { outputFile: entry.logFile } : {}),
+        isBackgrounded: true,
+      })
+    }
+    if (entry.logFile && !entry.watchingLog && !entry.completed) {
+      entry.watchingLog = true
+      watchBashOutput(entry.toolUseId, entry.logFile)
+    }
+    return
   }
-  if (entry.logFile && !entry.watchingLog && !entry.completed) {
-    entry.watchingLog = true
-    watchBashOutput(entry.toolUseId, entry.logFile)
+  if (entry.toolName === 'Workflow') {
+    startTrackedWorkflowTask(entry, emitEvent, brainRoots)
   }
 }
 
@@ -88,18 +104,22 @@ function finishTrackedBackgroundTask(
   entry: TrackedBackgroundTask,
   taskStatus: 'completed' | 'failed' | 'stopped',
   emitEvent?: (event: AgentEvent) => void,
+  opts?: { resultText?: string; brainRoots?: string[] },
 ): void {
   stopLogWatch(entry)
-  if (emitEvent && entry.emittedTaskStarted && entry.taskId) {
-    emitEvent({
-      type: 'task_notification',
-      toolUseId: entry.toolUseId,
-      taskId: entry.taskId,
-      taskStatus,
-      outputFile: entry.logFile ?? '',
-      summary: entry.description,
-    })
+  if (!emitEvent || !entry.emittedTaskStarted || !entry.taskId) return
+  if (entry.toolName === 'Workflow') {
+    finishTrackedWorkflowTask(entry, taskStatus, emitEvent, opts)
+    return
   }
+  emitEvent({
+    type: 'task_notification',
+    toolUseId: entry.toolUseId,
+    taskId: entry.taskId,
+    taskStatus,
+    outputFile: entry.logFile ?? '',
+    summary: entry.description,
+  })
 }
 
 export function noteBackgroundTaskMappedEvents(
@@ -107,6 +127,7 @@ export function noteBackgroundTaskMappedEvents(
   messageId: string,
   mappedEvents: ReadonlyArray<AgentEvent>,
   emitEvent: (event: AgentEvent) => void,
+  brainRoots?: string[],
 ): boolean {
   let touched = false
   for (const event of mappedEvents) {
@@ -115,48 +136,21 @@ export function noteBackgroundTaskMappedEvents(
     if (event.delta.type === 'tool_use') {
       if (!isTrackedBackgroundCandidateTool(event.delta.toolName)) continue
       touched = true
-      let command: string | undefined
-      let description = event.delta.toolSummary || event.delta.toolName
-      let isDaemon = false
-      try {
-        const parsed = JSON.parse(event.delta.input) as Record<string, unknown>
-        if (typeof parsed.command === 'string' && parsed.command.trim()) {
-          command = parsed.command.trim()
-        } else if (typeof parsed.CommandLine === 'string' && parsed.CommandLine.trim()) {
-          command = parsed.CommandLine.trim()
-        }
-        if (typeof parsed.description === 'string' && parsed.description.trim()) {
-          description = parsed.description.trim()
-        } else if (typeof parsed.Prompt === 'string' && parsed.Prompt.trim()) {
-          description = parsed.Prompt.trim().slice(0, 120)
-        } else if (command) {
-          description = command.slice(0, 120)
-        }
-        isDaemon =
-          parsed.run_in_background === true ||
-          parsed.IsDaemon === true ||
-          parsed.is_daemon === true
-      } catch {
-        void 0
-      }
+      const { command, description, isDaemon } = parseBackgroundToolUseInput(
+        event.delta.input,
+        event.delta.toolName,
+        event.delta.toolSummary,
+      )
 
       const existing = tracker.tasksByToolUseId.get(event.delta.toolUseId)
       if (!existing) {
         tracker.tasksByToolUseId.set(event.delta.toolUseId, {
-          toolUseId: event.delta.toolUseId,
-          messageId,
-          toolName: event.delta.toolName,
+          toolUseId: event.delta.toolUseId, messageId, toolName: event.delta.toolName,
           rawInputJson: event.delta.input,
           ...(event.delta.toolSummary ? { toolSummary: event.delta.toolSummary } : {}),
           ...(command ? { command } : {}),
-          description,
-          isDaemon,
-          startedAtMs: Date.now(),
-          watchingLog: false,
-          emittedTaskStarted: false,
-          wireCompleted: false,
-          completed: false,
-          wakeupRequired: false,
+          description, isDaemon, startedAtMs: Date.now(),
+          watchingLog: false, emittedTaskStarted: false, wireCompleted: false, completed: false, wakeupRequired: false,
         })
       } else {
         existing.rawInputJson = event.delta.input
@@ -184,7 +178,7 @@ export function noteBackgroundTaskMappedEvents(
           entry.wakeupRequired = true
           entry.wireCompleted = false
           entry.completed = false
-          startTrackedBashTask(entry, emitEvent)
+          startTrackedBackgroundTask(entry, emitEvent, brainRoots)
         }
         continue
       }
@@ -194,10 +188,17 @@ export function noteBackgroundTaskMappedEvents(
         continue
       }
 
+      if (entry.toolName === 'Workflow' && entry.taskId && !entry.completed) {
+        const trimmedSummary = (event.delta.summary ?? '').trim().toLowerCase()
+        if (!trimmedSummary || trimmedSummary === 'done') {
+          continue
+        }
+      }
+
       entry.wireCompleted = true
       entry.completed = true
       entry.wakeupRequired = false
-      finishTrackedBackgroundTask(entry, event.delta.isError ? 'failed' : 'completed', emitEvent)
+      finishTrackedBackgroundTask(entry, event.delta.isError ? 'failed' : 'completed', emitEvent, { brainRoots })
     }
   }
   return touched
@@ -211,6 +212,7 @@ export function syncBackgroundTasks(
   opts?: {
     fallbackMessageId?: string
     keepIdleWatch?: boolean
+    brainRoots?: string[]
   },
 ): BackgroundTaskSyncSummary {
   const { lastUserStepIndex, tasks: spawnedTasks } = extractSpawnedBackgroundTasksFromTranscript(parentRaw)
@@ -242,14 +244,14 @@ export function syncBackgroundTasks(
       if (boundRef) {
         entry.spawnStepIndex ??= boundRef.stepIndex
         if (!entry.logFile && boundRef.logFile) entry.logFile = boundRef.logFile
-        startTrackedBashTask(entry, emitEvent)
+        startTrackedBackgroundTask(entry, emitEvent, opts?.brainRoots)
       }
       continue
     }
     const isSchedule = entry.toolName.toLowerCase() === 'schedule'
     if (entry.wireCompleted && !isSchedule) continue
 
-    const expectedRawTool = isSchedule ? 'schedule' : 'run_command'
+    const expectedRawTool = expectedTranscriptToolNameForTracked(entry.toolName)
     let matchIdx = currentTurnTasks.findIndex((ref) => ref.toolUseId === entry.toolUseId)
     if (matchIdx < 0) {
       matchIdx = currentTurnTasks.findIndex(
@@ -298,7 +300,7 @@ export function syncBackgroundTasks(
     }
 
     entry.wakeupRequired = true
-    startTrackedBashTask(entry, emitEvent)
+    startTrackedBackgroundTask(entry, emitEvent, opts?.brainRoots)
   }
 
   if (opts?.fallbackMessageId) {
@@ -312,7 +314,7 @@ export function syncBackgroundTasks(
       ) {
         continue
       }
-      const normalizedToolName = ref.toolName === 'schedule' ? 'schedule' : 'Bash'
+      const normalizedToolName = normalizeSpawnedBackgroundToolName(ref.toolName)
       const description = ref.description || ref.toolSummary || ref.command || normalizedToolName
       tracker.boundTaskIds.add(ref.taskId)
       const entry: TrackedBackgroundTask = {
@@ -335,7 +337,7 @@ export function syncBackgroundTasks(
         wakeupRequired: true,
       }
       tracker.tasksByToolUseId.set(entry.toolUseId, entry)
-      startTrackedBashTask(entry, emitEvent)
+      startTrackedBackgroundTask(entry, emitEvent, opts?.brainRoots)
     }
   }
 
@@ -345,15 +347,21 @@ export function syncBackgroundTasks(
     if (spawnedById.get(entry.taskId)?.cancelledInTurn) {
       entry.completed = true
       entry.wakeupRequired = false
-      finishTrackedBackgroundTask(entry, 'stopped', emitEvent)
+      finishTrackedBackgroundTask(entry, 'stopped', emitEvent, { brainRoots: opts?.brainRoots })
       continue
     }
 
     const completedResult = completedMap.get(entry.taskId)
-    if (!completedResult) continue
+    if (!completedResult) {
+      pollWorkflowTaskProgress(entry, emitEvent, opts?.brainRoots)
+      continue
+    }
 
     entry.completed = true
     entry.completedStepIndex = completedResult.systemStepIndex
+    if (!entry.logFile && completedResult.logFile) {
+      entry.logFile = completedResult.logFile
+    }
     if (completedResult.priority === 'low') {
       entry.wakeupRequired = false
     }
@@ -384,7 +392,11 @@ export function syncBackgroundTasks(
         },
       })
     }
-    finishTrackedBackgroundTask(entry, completedResult.isError ? 'failed' : 'completed', emitEvent)
+    const taskStatus = completedResult.canceled ? 'stopped' : completedResult.isError ? 'failed' : 'completed'
+    finishTrackedBackgroundTask(entry, taskStatus, emitEvent, {
+      resultText: completedResult.outputSummary,
+      brainRoots: opts?.brainRoots,
+    })
   }
 
   let anyActiveNonDaemon = false
@@ -448,10 +460,11 @@ export function reconcileForegroundCompletedBackgroundTasks(
 export function clearSettledWakeupBackgroundTasks(
   tracker: BackgroundTaskTrackerState,
   emitStopped?: (event: AgentEvent) => void,
+  brainRoots?: string[],
 ): void {
   for (const entry of tracker.tasksByToolUseId.values()) {
     if (!entry.completed) {
-      finishTrackedBackgroundTask(entry, 'stopped', emitStopped)
+      finishTrackedBackgroundTask(entry, 'stopped', emitStopped, { brainRoots })
     } else {
       stopLogWatch(entry)
     }

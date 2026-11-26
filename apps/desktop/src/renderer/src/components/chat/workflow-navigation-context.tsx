@@ -1,14 +1,17 @@
 import { createContext, useContext } from 'react'
+import type { WorkflowHarnessKind } from './workflow-utils'
 
 export interface WorkflowViewState {
   toolUseId: string
+  harness?: WorkflowHarnessKind
   transcriptDir?: string
+  logPath?: string
+  inlineSummary?: string
+  runKey?: string
   name: string
-  /** Inline script body when already known (Claude tool input or preloaded). */
   script?: string
-  /** Absolute path to load when `script` is missing (Grok script.rhai / library path). */
   scriptPath?: string
-  /** Agent to open in the list tab instead of the graph. */
+  scriptCandidates?: string[]
   agentId?: string
 }
 

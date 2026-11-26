@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  coordinationToolBody,
   getToolDisplay,
   getToolLabel,
   getToolVerb,
@@ -317,5 +318,38 @@ describe('getToolDisplay for device tools', () => {
   it('leaves a third-party device_* tool on the generic MCP row', () => {
     expect(getToolDisplay('mcp__other__device_request_control', { device: 'x' }))
       .toEqual({ icon: 'mcp', summary: '' })
+  })
+})
+
+describe('Finish subagent tool display', () => {
+  it('maps Finish and finish to check-circle icon and concise summary from result', () => {
+    expect(getToolDisplay('Finish', { result: '#FF7700' })).toEqual({
+      icon: 'check-circle',
+      summary: '#FF7700',
+    })
+    expect(getToolDisplay('finish', { Result: 'Line 1\n  Line 2' })).toEqual({
+      icon: 'check-circle',
+      summary: 'Line 1 Line 2',
+    })
+    expect(getToolDisplay('Finish', { result: { color: '#FF7700' } })).toEqual({
+      icon: 'check-circle',
+      summary: '{"color":"#FF7700"}',
+    })
+    expect(getToolLabel('Finish')).toBe('Finish')
+    expect(getToolLabel('finish')).toBe('Finish')
+    expect(getToolVerb('Finish')).toBe('Finishing')
+    expect(getToolVerb('finish')).toBe('Finishing')
+  })
+
+  it('extracts clean expanded body from Finish params instead of generic ack', () => {
+    expect(coordinationToolBody('Finish', { result: 'Final answer\nLine 2' }, 'Finished.')).toBe('Final answer\nLine 2')
+    expect(coordinationToolBody('finish', { result: { ok: true } }, 'Finished.')).toBe('{\n  "ok": true\n}')
+    expect(coordinationToolBody('Finish', {}, 'Finished.')).toBe('Finished.')
+  })
+
+  it('normalizes PascalCase Result when parsing Finish tool input', () => {
+    expect(parseToolInput(JSON.stringify({ Result: 'HELLO' }), 'finish')).toMatchObject({
+      result: 'HELLO',
+    })
   })
 })

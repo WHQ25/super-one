@@ -121,9 +121,55 @@ export function isSpawnableBackgroundStep(
   rawName: string | undefined,
   stepStatus: unknown,
 ): boolean {
-  if (rawName === 'schedule') return true
+  if (rawName === 'schedule' || rawName === 'run_workflow') return true
   if (rawName !== undefined && rawName !== 'run_command') return false
   return stepStatus === 'RUNNING'
+}
+
+export function normalizeSpawnedBackgroundToolName(rawName: string): string {
+  if (rawName === 'schedule') return 'schedule'
+  if (rawName === 'run_workflow') return 'Workflow'
+  return 'Bash'
+}
+
+export function expectedTranscriptToolNameForTracked(toolName: string): string {
+  if (toolName.toLowerCase() === 'schedule') return 'schedule'
+  if (toolName === 'Workflow') return 'run_workflow'
+  return 'run_command'
+}
+
+export function parseBackgroundToolUseInput(
+  rawInput: string,
+  toolName: string,
+  toolSummary?: string,
+): { command?: string; description: string; isDaemon: boolean } {
+  let command: string | undefined
+  let description = toolSummary || toolName
+  let isDaemon = false
+  try {
+    const parsed = JSON.parse(rawInput) as Record<string, unknown>
+    if (typeof parsed.command === 'string' && parsed.command.trim()) {
+      command = parsed.command.trim()
+    } else if (typeof parsed.CommandLine === 'string' && parsed.CommandLine.trim()) {
+      command = parsed.CommandLine.trim()
+    }
+    if (typeof parsed.Description === 'string' && parsed.Description.trim()) {
+      description = parsed.Description.trim()
+    } else if (typeof parsed.description === 'string' && parsed.description.trim()) {
+      description = parsed.description.trim()
+    } else if (typeof parsed.Prompt === 'string' && parsed.Prompt.trim()) {
+      description = parsed.Prompt.trim().slice(0, 120)
+    } else if (command) {
+      description = command.slice(0, 120)
+    }
+    isDaemon =
+      parsed.run_in_background === true ||
+      parsed.IsDaemon === true ||
+      parsed.is_daemon === true
+  } catch {
+    void 0
+  }
+  return { ...(command ? { command } : {}), description, isDaemon }
 }
 
 export function extractBackgroundTaskLaunchFromText(
@@ -270,11 +316,15 @@ export function extractSpawnedBackgroundTasksFromTranscript(raw: string): {
             ? args.command.trim()
             : undefined
       const description =
-        typeof args.toolSummary === 'string' && args.toolSummary.trim()
-          ? args.toolSummary.trim()
-          : typeof args.Prompt === 'string' && args.Prompt.trim()
-            ? args.Prompt.trim().slice(0, 120)
-            : command?.slice(0, 120)
+        typeof args.Description === 'string' && args.Description.trim()
+          ? args.Description.trim().slice(0, 120)
+          : typeof args.description === 'string' && args.description.trim()
+            ? args.description.trim().slice(0, 120)
+            : typeof args.toolSummary === 'string' && args.toolSummary.trim()
+              ? args.toolSummary.trim()
+              : typeof args.Prompt === 'string' && args.Prompt.trim()
+                ? args.Prompt.trim().slice(0, 120)
+                : command?.slice(0, 120)
       const rawTimerCond =
         rawName === 'schedule'
           ? typeof args.TimerCondition === 'string'

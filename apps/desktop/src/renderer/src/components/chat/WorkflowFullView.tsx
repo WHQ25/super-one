@@ -1,169 +1,61 @@
 import { useState, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
-import { ArrowLeft, Workflow, Network, Code, Bot, Wrench, List, ChevronRight } from 'lucide-react'
+import { ArrowLeft, Workflow, Network, Code, Bot, List, Wrench } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
-import { Streamdown } from 'streamdown'
 import { useWorkflowNavigation, type WorkflowViewState } from './workflow-navigation-context'
 import { useActiveSession } from '@/stores/chat'
-import { getSubagentColorClasses, type SubagentColorClasses } from './subagent-colors'
+import { getSubagentColorClasses } from './subagent-colors'
 import { HighlightedCodeBlock } from './CodeBlock'
 import { mergeLiveWorkflowAgents, useWorkflowAgents, type WorkflowAgentInfo } from './use-workflow-agents'
+import { useWorkflowAgentTranscripts } from './use-workflow-agent-transcripts'
+import { useWorkflowLog } from './use-workflow-log'
 import { resolveAgentPhase, type DagNode } from './workflow-dag'
 import { useWorkflowModel, useWorkflowScriptSource } from './use-workflow-model'
-import { looksLikeRhaiWorkflow } from './workflow-graph-rhai'
 import { WorkflowDagCanvas } from './WorkflowDagCanvas'
-import { useSubagentJsonl } from './use-subagent-jsonl'
-import { renderJsonlEntry } from './subagent-activity'
-import { NestedToolContext } from './nested-tool-context'
-import { StructuredOutputView } from './StructuredOutputView'
-import { workflowAgentIconClass } from './workflow-utils'
 import {
-  streamdownPlugins,
-  streamdownRehypePlugins,
-  streamdownControls,
-  streamdownComponents,
-  streamdownLinkSafety,
-  codePlugin,
-  formatTokens,
-} from './chat-shared'
-
-function AgentTranscript({ agent, colors, phase }: { agent: WorkflowAgentInfo; colors: SubagentColorClasses; phase?: string }) {
-  const { t } = useTranslation()
-  // Claude: agent-*.jsonl. Grok: child-session chat_history.jsonl (tool_calls + tool_result).
-  // output.json alone is final text only — still useful as resultText fallback.
-  const isJsonlTranscript = !!agent.jsonlPath && agent.jsonlPath.endsWith('.jsonl')
-  const { entries, resultText } = useSubagentJsonl({
-    toolUseId: agent.agentId,
-    outputFile: isJsonlTranscript ? agent.jsonlPath : undefined,
-    enabled: isJsonlTranscript,
-    isRunning: false,
-    // Skip Claude SDK authoritative read for Grok paths (not agent-<id>.jsonl layout).
-    skipAuthoritativeRead: isJsonlTranscript && !/agent-[^/\\]+\.jsonl$/.test(agent.jsonlPath),
-  })
-  // Prefer the full final report from output.json when present; chat_history text is turn-level.
-  const finalText = agent.resultText ?? resultText
-  const hasActivity = entries.length > 0 || !!finalText
-
-  return (
-    <div className="space-y-2">
-      {agent.prompt && (
-        <div className="mb-3">
-          <div className="mb-1 flex items-center gap-1.5 text-xs font-medium uppercase tracking-wide text-muted-foreground">
-            <span>{t('chat.subagent.prompt')}</span>
-            {phase && <span className="rounded bg-muted px-1 py-px text-xs normal-case">{phase}</span>}
-            {agent.tokens != null && agent.tokens > 0 && (
-              <span className="rounded bg-muted px-1 py-px text-xs normal-case tabular-nums">{formatTokens(agent.tokens)}</span>
-            )}
-          </div>
-          <div className={cn('whitespace-pre-wrap rounded border-l-2 bg-muted/30 px-3 py-2 text-xs leading-relaxed text-foreground', colors.borderL)}>
-            {agent.prompt}
-          </div>
-        </div>
-      )}
-      {!hasActivity && (
-        <div className="px-1 py-2 text-xs text-muted-foreground">
-          {t('chat.subagent.noActivity', 'No activity recorded')}
-        </div>
-      )}
-      <NestedToolContext.Provider value={{ defaultAutoExpand: false }}>
-        <div className="space-y-1">
-          {entries.map((entry, i) => renderJsonlEntry(entry, i))}
-        </div>
-      </NestedToolContext.Provider>
-      {entries.length === 0 && finalText && (
-        <Streamdown
-          className="chat-md text-xs"
-          plugins={streamdownPlugins}
-          rehypePlugins={streamdownRehypePlugins}
-          components={streamdownComponents}
-          controls={streamdownControls}
-          linkSafety={streamdownLinkSafety}
-        >
-          {finalText}
-        </Streamdown>
-      )}
-    </div>
-  )
-}
-
-function TranscriptHeader({ agent, colors, isRunning }: {
-  agent: WorkflowAgentInfo
-  colors: SubagentColorClasses
-  isRunning: boolean
-}) {
-  return (
-    <div className="flex min-w-0 items-center gap-1.5 text-xs">
-      <Bot className={cn('size-3.5 shrink-0', workflowAgentIconClass(agent.state, isRunning, colors.text, colors.text))} />
-      <span className="min-w-0 truncate font-medium text-foreground">{agent.label}</span>
-      <span className="ml-auto flex shrink-0 items-center gap-1.5 text-xs text-muted-foreground">
-        {agent.toolCount > 0 && (
-          <span className="inline-flex items-center gap-0.5">
-            <Wrench className="size-2.5" />
-            {agent.toolCount}
-          </span>
-        )}
-        {agent.tokens != null && agent.tokens > 0 && (
-          <>
-            {agent.toolCount > 0 && <span>·</span>}
-            <span className="tabular-nums">{formatTokens(agent.tokens)}</span>
-          </>
-        )}
-      </span>
-    </div>
-  )
-}
-
-function WorkflowOutputFooter({ output }: { output: unknown }) {
-  const { t } = useTranslation()
-  const [open, setOpen] = useState(false)
-  return (
-    <div className="shrink-0 border-t border-border/40 bg-muted/20">
-      <button
-        type="button"
-        onClick={() => setOpen((o) => !o)}
-        className="flex w-full items-center gap-1.5 px-3 py-1.5 text-left text-xs font-medium text-muted-foreground transition-colors hover:text-foreground"
-      >
-        <ChevronRight className={cn('size-3 transition-transform', open && 'rotate-90')} />
-        {t('chat.workflow.output', 'Output')}
-      </button>
-      {open && (
-        <div className="max-h-72 overflow-y-auto px-3 pb-2">
-          <StructuredOutputView data={output} fill />
-        </div>
-      )}
-    </div>
-  )
-}
-
-function scriptLanguage(code: string, path?: string): string {
-  // Official TextMate grammar via rhai-highlight (not a Shiki bundled lang).
-  if (path?.endsWith('.rhai') || looksLikeRhaiWorkflow(code)) return 'rhai'
-  if (path?.endsWith('.js') || path?.endsWith('.ts')) return 'javascript'
-  return 'javascript'
-}
-
-function ScriptSection({ label, path, code }: { label: string; path?: string; code: string }) {
-  return (
-    <div className="mb-3 last:mb-0">
-      <div className="mb-1 flex items-baseline gap-1.5">
-        <span className="shrink-0 text-xs font-medium text-foreground">{label}</span>
-        {path && <span className="min-w-0 truncate text-xs text-muted-foreground opacity-70">{path}</span>}
-      </div>
-      <HighlightedCodeBlock code={code} language={scriptLanguage(code, path)} codePlugin={codePlugin} />
-    </div>
-  )
-}
+  AgentTranscript,
+  ScriptSection,
+  TranscriptHeader,
+  WorkflowOutputFooter,
+} from './WorkflowFullViewParts'
+import {
+  detectWorkflowScriptLanguage,
+  resolveWorkflowAdapter,
+  workflowAgentIconClass,
+} from './workflow-utils'
+import { codePlugin, formatTokens } from './chat-shared'
 
 export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
   const { t } = useTranslation()
   const nav = useWorkflowNavigation()
-  const diskAgents = useWorkflowAgents(view.transcriptDir, true)
+  const adapter = useMemo(() => {
+    const syntheticInput = view.script || view.scriptPath
+      ? JSON.stringify({
+        ...(view.script ? { script: view.script } : {}),
+        ...(view.scriptPath ? { scriptPath: view.scriptPath } : {}),
+      })
+      : ''
+    const syntheticSummary = view.inlineSummary
+      ?? (view.logPath ? `Task logs are available at: file://${view.logPath}` : undefined)
+      ?? (view.transcriptDir ? `Transcript dir: ${view.transcriptDir}` : undefined)
+    return resolveWorkflowAdapter(syntheticInput, syntheticSummary, view.harness)
+  }, [view.harness, view.inlineSummary, view.logPath, view.script, view.scriptPath, view.transcriptDir])
+
+  const diskAgents = useWorkflowAgents(view.transcriptDir, Boolean(view.transcriptDir))
+  const rawLogText = useWorkflowLog(view.logPath, Boolean(view.logPath))
+  const parsedLog = useMemo(() => {
+    if (rawLogText) return adapter.parseLogFile?.(rawLogText) ?? null
+    return adapter.parseInlineResult?.(view.inlineSummary) ?? null
+  }, [adapter, rawLogText, view.inlineSummary])
   const liveProgress = useActiveSession((s) => {
     const byTool = s.taskProgress[view.toolUseId]
     if (byTool?.workflowAgents?.length) return byTool
-    // Grok may key progress by run_id after launch correlation.
+    if (view.runKey && s.taskProgress[view.runKey]?.workflowAgents?.length) {
+      return s.taskProgress[view.runKey]
+    }
     for (const entry of Object.values(s.taskProgress)) {
-      if (entry.workflowAgents?.length && entry.taskId && view.transcriptDir?.includes(entry.taskId)) {
+      if (!entry.workflowAgents?.length || !entry.taskId) continue
+      if (entry.taskId === view.runKey || view.transcriptDir?.includes(entry.taskId)) {
         return entry
       }
     }
@@ -171,14 +63,35 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
   })
   const liveRows = liveProgress?.workflowAgents
   const isRunning = !!liveProgress && !liveProgress.completed
-  const agents = useMemo(() => mergeLiveWorkflowAgents(diskAgents, liveRows), [diskAgents, liveRows])
+  const baseAgents = diskAgents.length > 0 ? diskAgents : (parsedLog?.agents ?? [])
+  const enrichedBaseAgents = useWorkflowAgentTranscripts(
+    baseAgents,
+    view.logPath,
+    !view.transcriptDir && baseAgents.length > 0,
+  )
+  const agents = useMemo(() => mergeLiveWorkflowAgents(enrichedBaseAgents, liveRows), [enrichedBaseAgents, liveRows])
   const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null)
+  const scriptCandidates = useMemo(
+    () => view.scriptCandidates ?? adapter.resolveScriptCandidates({
+      scriptPath: view.scriptPath,
+      transcriptDir: view.transcriptDir,
+    }),
+    [adapter, view.scriptCandidates, view.scriptPath, view.transcriptDir],
+  )
   const { source: script, path: loadedFromPath } = useWorkflowScriptSource({
     script: view.script,
     scriptPath: view.scriptPath,
     transcriptDir: view.transcriptDir,
+    scriptCandidates,
   })
-  const { graph, childScripts, replay, dag, nodeToAgent } = useWorkflowModel(script, agents)
+  const resolvedScriptLanguage = useMemo(
+    () => detectWorkflowScriptLanguage(script, loadedFromPath ?? view.scriptPath, adapter.defaultLanguage),
+    [adapter.defaultLanguage, loadedFromPath, script, view.scriptPath],
+  )
+  const { graph, childScripts, replay, dag, nodeToAgent } = useWorkflowModel(script, agents, {
+    supportsJsReplay: adapter.supportsJsReplay && resolvedScriptLanguage === 'javascript',
+    supportsStaticGraph: adapter.supportsStaticGraph,
+  })
   const selected = useMemo(() => {
     const agentId = selectedNodeId ? nodeToAgent.get(selectedNodeId) : undefined
     return agentId ? agents.find((a) => a.agentId === agentId) : undefined
@@ -207,10 +120,10 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
         ? 'script'
         : dag
           ? 'graph'
-          : script
-            ? 'script'
-            : canList
-              ? 'list'
+          : canList
+            ? 'list'
+            : script
+              ? 'script'
               : null
   const listSelected = useMemo(
     () => agents.find((a) => a.agentId === listAgentId) ?? agents[0],
@@ -224,8 +137,11 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
       if (bucket) bucket.push(a)
       else byPhase.set(phase, [a])
     }
+    const orderedPhases = graph?.phases?.length
+      ? graph.phases
+      : (parsedLog?.phases.map((p) => p.title) ?? [])
     const groups: Array<{ phase?: string; agents: WorkflowAgentInfo[] }> = []
-    for (const phase of graph?.phases ?? []) {
+    for (const phase of orderedPhases) {
       const bucket = byPhase.get(phase)
       if (bucket) {
         groups.push({ phase, agents: bucket })
@@ -238,7 +154,7 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
     const noPhase = byPhase.get(undefined)
     if (noPhase) groups.push({ phase: undefined, agents: noPhase })
     return groups
-  }, [agents, graph])
+  }, [agents, graph, parsedLog?.phases])
 
   const [containerWidth, setContainerWidth] = useState(0)
   const isLarge = containerWidth >= 640
@@ -253,8 +169,10 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
       agent={selected}
       colors={colors}
       phase={resolveAgentPhase(graph, selected)}
+      usesAuthoritativeAgentJsonl={adapter.usesAuthoritativeAgentJsonl}
     />
   ) : null
+  const footerOutput = replay?.output ?? parsedLog?.resultText
 
   return (
     <div className="flex h-full min-w-0 flex-col">
@@ -326,8 +244,18 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
                     >
                       <Bot className={cn('size-3 shrink-0', workflowAgentIconClass(a.state, isRunning, colors.text, colors.text))} />
                       <span className="min-w-0 truncate">{a.label}</span>
-                      {a.tokens != null && a.tokens > 0 && (
-                        <span className="ml-auto shrink-0 tabular-nums text-xs text-muted-foreground">{formatTokens(a.tokens)}</span>
+                      {(a.toolCount > 0 || (a.tokens != null && a.tokens > 0)) && (
+                        <span className="ml-auto flex shrink-0 items-center gap-1 text-xs tabular-nums text-muted-foreground">
+                          {a.toolCount > 0 && (
+                            <span className="inline-flex items-center gap-0.5">
+                              <Wrench className="size-2.5" />
+                              {a.toolCount}
+                            </span>
+                          )}
+                          {a.tokens != null && a.tokens > 0 && (
+                            <span>{formatTokens(a.tokens)}</span>
+                          )}
+                        </span>
                       )}
                     </button>
                   ))}
@@ -342,6 +270,7 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
                     agent={listSelected}
                     colors={colors}
                     phase={resolveAgentPhase(graph, listSelected)}
+                    usesAuthoritativeAgentJsonl={adapter.usesAuthoritativeAgentJsonl}
                   />
                 </div>
               ) : (
@@ -356,7 +285,7 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
             {childScripts.length === 0 ? (
               <HighlightedCodeBlock
                 code={script}
-                language={scriptLanguage(script, loadedFromPath ?? view.scriptPath)}
+                language={resolvedScriptLanguage}
                 codePlugin={codePlugin}
               />
             ) : (
@@ -365,9 +294,16 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
                   label={view.name || t('chat.workflow.title', 'Workflow')}
                   path={loadedFromPath ?? view.scriptPath}
                   code={script}
+                  fallbackLanguage={adapter.defaultLanguage}
                 />
                 {childScripts.map((cs) => (
-                  <ScriptSection key={cs.scriptPath} label={`▸ ${cs.name ?? t('chat.workflow.subWorkflow', 'sub-workflow')}`} path={cs.scriptPath} code={cs.source} />
+                  <ScriptSection
+                    key={cs.scriptPath}
+                    label={`▸ ${cs.name ?? t('chat.workflow.subWorkflow', 'sub-workflow')}`}
+                    path={cs.scriptPath}
+                    code={cs.source}
+                    fallbackLanguage={adapter.defaultLanguage}
+                  />
                 ))}
               </>
             )}
@@ -410,7 +346,7 @@ export function WorkflowFullView({ view }: { view: WorkflowViewState }) {
         )}
       </div>
 
-      {replay?.output != null && <WorkflowOutputFooter output={replay.output} />}
+      {footerOutput != null && <WorkflowOutputFooter output={footerOutput} />}
     </div>
   )
 }

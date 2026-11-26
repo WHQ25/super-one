@@ -1,5 +1,7 @@
 import { parse } from 'acorn'
 import { looksLikeRhaiWorkflow, parseRhaiWorkflowGraph } from './workflow-graph-rhai'
+import { parsePythonWorkflowGraph } from './workflow-graph-python'
+import { looksLikePythonWorkflow } from './workflow-utils'
 
 export interface WorkflowAgentSpec {
   label?: string
@@ -235,9 +237,11 @@ function stageItemParam(cb: Node | undefined, stageIndex: number): string | unde
 }
 
 export function parseWorkflowGraph(script: string): WorkflowGraph {
-  // Grok Rhai sources use #{ maps and will fail acorn; use the lightweight scanner.
   if (looksLikeRhaiWorkflow(script)) {
     return parseRhaiWorkflowGraph(script)
+  }
+  if (looksLikePythonWorkflow(script)) {
+    return parsePythonWorkflowGraph(script)
   }
   return parseJsWorkflowGraph(script)
 }

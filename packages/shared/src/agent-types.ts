@@ -5144,6 +5144,7 @@ export const AgentIpcChannels = {
 
   // Workflow subagent transcripts
   LIST_WORKFLOW_AGENTS: 'app:list-workflow-agents',
+  RESOLVE_WORKFLOW_AGENT_TRANSCRIPTS: 'app:resolve-workflow-agent-transcripts',
   READ_WORKFLOW_OUTPUT: 'app:read-workflow-output',
   READ_WORKFLOW_SCRIPT: 'app:read-workflow-script',
   /** Scan project + user `.grok/workflows/*.rhai` with parsed args. */

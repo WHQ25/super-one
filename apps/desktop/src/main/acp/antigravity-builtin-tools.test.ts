@@ -364,4 +364,143 @@ describe('Antigravity built-in system tool normalization and transcript backfill
       },
     ])
   })
+
+  it('backfills omitted run_workflow completion outputs from transcript for both synchronous and background runs', () => {
+    const tmpRoot = mkdtempSync(join(tmpdir(), 'agy-workflow-tool-'))
+    try {
+      const sessionId = '9f1e2d3c-4b5a-6789-abcd-ef0123456789'
+      const logsDir = join(tmpRoot, sessionId, '.system_generated', 'logs')
+      mkdirSync(logsDir, { recursive: true })
+
+      const syncLongLog = `- detail: ${'x'.repeat(4200)}`
+      const syncOut = [
+        'Created At: 2026-11-26T09:00:00Z',
+        'Completed At: 2026-11-26T09:00:05Z',
+        'Logs:',
+        '- [phase] Echo',
+        '- [agent:self] Uppercase Hello: done (ag-1): "HELLO"',
+        '- [agent:self] Uppercase World: done (ag-2): "WORLD"',
+        syncLongLog,
+        'Output:',
+        "['HELLO', 'WORLD']",
+      ].join('\n')
+      const bgOut = [
+        'Created At: 2026-11-26T09:01:00Z',
+        'Tool is running as a background task with task id: 9f1e2d3c-4b5a-6789-abcd-ef0123456789/task-7',
+        'Task logs are available at: file:///tmp/task-7.log',
+      ].join('\n')
+
+      const syncInput = {
+        Description: 'Minimal run_workflow example',
+        Script: 'phase("Echo")\nlog("hi")',
+        WaitMsBeforeAsync: 10000,
+      }
+      const bgInput = {
+        Description: 'Background run_workflow example',
+        Script: 'phase("Long")\nlog("running")',
+      }
+
+      const lines = [
+        JSON.stringify({ step_index: 1, type: 'USER_INPUT', status: 'DONE', content: 'run workflows' }),
+        JSON.stringify({
+          step_index: 2,
+          type: 'PLANNER_RESPONSE',
+          status: 'DONE',
+          tool_calls: [
+            { id: 'tc_wf_sync', name: 'run_workflow', args: syncInput },
+            { id: 'tc_wf_bg', name: 'run_workflow', args: bgInput },
+          ],
+        }),
+        JSON.stringify({ step_index: 3, type: 'GENERIC', status: 'DONE', content: syncOut }),
+        JSON.stringify({ step_index: 4, type: 'GENERIC', status: 'RUNNING', content: bgOut }),
+      ]
+      writeFileSync(join(logsDir, 'transcript_full.jsonl'), `${lines.join('\n')}\n`, 'utf8')
+
+      const startSync = normalizeAntigravitySessionUpdate(
+        {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'tc_wf_sync',
+          title: 'Running run_workflow',
+          kind: 'other',
+          status: 'in_progress',
+          rawInput: syncInput,
+        } as unknown as SessionUpdate,
+        sessionId,
+        [tmpRoot],
+      )
+      expect(mapSessionUpdate(startSync, { messageId: 'm_wf' })).toEqual([
+        expect.objectContaining({
+          type: 'content_delta',
+          delta: expect.objectContaining({
+            type: 'tool_use',
+            toolUseId: 'tc_wf_sync',
+            toolName: 'Workflow',
+          }),
+        }),
+      ])
+
+      const doneSync = normalizeAntigravitySessionUpdate(
+        {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'tc_wf_sync',
+          status: 'completed',
+        } as unknown as SessionUpdate,
+        sessionId,
+        [tmpRoot],
+      )
+      const syncResult = mapSessionUpdate(doneSync, { messageId: 'm_wf' }).find(
+        (e) => e.type === 'content_delta' && e.delta.type === 'tool_result',
+      )
+      expect(syncResult).toEqual({
+        type: 'content_delta',
+        messageId: 'm_wf',
+        delta: {
+          type: 'tool_result',
+          toolUseId: 'tc_wf_sync',
+          summary: syncOut.replace(/^Created At:[^\n]+\nCompleted At:[^\n]+\n/, ''),
+          isError: false,
+        },
+      })
+
+      const startBg = normalizeAntigravitySessionUpdate(
+        {
+          sessionUpdate: 'tool_call',
+          toolCallId: 'tc_wf_bg',
+          title: 'Running run_workflow',
+          kind: 'other',
+          status: 'in_progress',
+          rawInput: bgInput,
+        } as unknown as SessionUpdate,
+        sessionId,
+        [tmpRoot],
+      )
+      mapSessionUpdate(startBg, { messageId: 'm_wf' })
+
+      const doneBg = normalizeAntigravitySessionUpdate(
+        {
+          sessionUpdate: 'tool_call_update',
+          toolCallId: 'tc_wf_bg',
+          status: 'completed',
+          rawOutput: {},
+        } as unknown as SessionUpdate,
+        sessionId,
+        [tmpRoot],
+      )
+      const bgResult = mapSessionUpdate(doneBg, { messageId: 'm_wf' }).find(
+        (e) => e.type === 'content_delta' && e.delta.type === 'tool_result',
+      )
+      expect(bgResult).toEqual({
+        type: 'content_delta',
+        messageId: 'm_wf',
+        delta: {
+          type: 'tool_result',
+          toolUseId: 'tc_wf_bg',
+          summary: bgOut.replace(/^Created At:[^\n]+\n/, ''),
+          isError: false,
+        },
+      })
+    } finally {
+      rmSync(tmpRoot, { recursive: true, force: true })
+    }
+  })
 })

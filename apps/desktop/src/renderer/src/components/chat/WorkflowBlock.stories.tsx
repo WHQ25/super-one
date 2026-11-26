@@ -331,3 +331,41 @@ export const RunningFooterNarrow: Story = {
     ),
   ],
 }
+
+export const AntigravityPython: Story = {
+  args: {
+    toolBlock: {
+      type: 'tool_use',
+      toolName: 'Workflow',
+      toolUseId: 'wf-antigravity',
+      input: JSON.stringify({
+        Description: 'Collect fruit facts in parallel',
+        Script: 'phase("Demo")\nresults = await parallel(["apple", "banana"], lambda f: agent(f"Fact: {f}"))',
+      }),
+      status: 'complete',
+    } as ContentBlock & { type: 'tool_use' },
+    resultBlock: {
+      type: 'tool_result',
+      toolUseId: 'wf-antigravity',
+      summary: [
+        'Tool is running as a background task with task id: conv-demo/task-6',
+        'Task logs are available at: file:///tmp/demo/task-6.log',
+      ].join('\n'),
+    } as ContentBlock,
+    isStreaming: false,
+    defaultExpanded: true,
+  },
+  decorators: [
+    (Story) => {
+      mockIpc('app', 'readBashOutputFile', async () => [
+        '- [phase] Demo',
+        '- apple: Apples float in water.',
+        '- [agent:self] Fact: apple: done (ag-apple): "Apples float in water."',
+        '- [agent:self] Fact: banana: done (ag-banana): "Bananas are berries."',
+        'Output:',
+        'Done',
+      ].join('\n'))
+      return <Story />
+    },
+  ],
+}

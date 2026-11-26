@@ -114,6 +114,7 @@ export function noteAntigravitySubagentEvents(
       ((ev.delta.type === 'tool_use' &&
         (isSubagentToolName(ev.delta.toolName) ||
           ev.delta.toolName === 'Bash' ||
+          ev.delta.toolName === 'Workflow' ||
           ev.delta.toolName.toLowerCase() === 'schedule')) ||
         ev.delta.type === 'tool_result'),
   )
@@ -205,7 +206,13 @@ export function noteAntigravitySubagentEvents(
     })
   }
 
-  const notedBg = noteBackgroundTaskMappedEvents(state.bgTasks, messageId, mappedEvents, state.emitEvent)
+  const notedBg = noteBackgroundTaskMappedEvents(
+    state.bgTasks,
+    messageId,
+    mappedEvents,
+    state.emitEvent,
+    state.brainRoots,
+  )
   const anyActiveSubagent = [...state.trackedByToolUseId.values()].some((e) => !e.completed)
   if (notedSubagent || notedBg || anyActiveSubagent || isEffectiveWakeupPending(state)) {
     syncSessionSubagents(state)

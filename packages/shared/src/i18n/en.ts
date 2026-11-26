@@ -4160,6 +4160,8 @@ export type Messages = {
       phase: string
       toolCalls: string
       tokens: string
+      transcriptUnavailable: string
+      transcriptUnavailableEmpty: string
       agentStatus: {
         done: string
         running: string
@@ -9810,6 +9812,8 @@ export const en: Messages = {
       phase: 'Phase',
       toolCalls: 'Tool Calls',
       tokens: 'Tokens',
+      transcriptUnavailable: 'Tool-level transcript is unavailable for this agent; showing final output.',
+      transcriptUnavailableEmpty: 'Tool-level transcript is unavailable for this agent.',
       agentStatus: {
         done: 'Done',
         running: 'Running',

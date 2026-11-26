@@ -1,20 +1,8 @@
 import { useState, useEffect } from 'react'
 import type { WorkflowAgentRow } from '@superone/shared/agent-types'
+import type { WorkflowNormalizedAgent } from './workflow-utils'
 
-export interface WorkflowAgentInfo {
-  agentId: string
-  jsonlPath: string
-  label: string
-  prompt?: string
-  toolCount: number
-  tokens?: number
-  resultText?: string
-  result?: unknown
-  /** Live / state.json phase title when known (Grok workflow_updated). */
-  phase?: string
-  /** Live agent state: running | completed | failed | … */
-  state?: string
-}
+export type WorkflowAgentInfo = WorkflowNormalizedAgent
 
 export function useWorkflowAgents(transcriptDir: string | undefined, enabled: boolean, refreshKey?: unknown): WorkflowAgentInfo[] {
   const [agents, setAgents] = useState<WorkflowAgentInfo[]>([])
@@ -36,11 +24,6 @@ export function useWorkflowAgents(transcriptDir: string | undefined, enabled: bo
   return agents
 }
 
-/**
- * Overlay live rows (Grok `workflow_updated`) on the agents read from disk: live
- * state wins, disk keeps the transcript-derived counts. Without disk rows the live
- * rows stand alone.
- */
 export function mergeLiveWorkflowAgents(
   diskAgents: WorkflowAgentInfo[],
   liveRows: WorkflowAgentRow[] | undefined,

@@ -1787,6 +1787,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.MODEL_CATALOG_REFRESH),
   listWorkflowAgents: (transcriptDir: string) =>
     ipcRenderer.invoke(AgentIpcChannels.LIST_WORKFLOW_AGENTS, transcriptDir),
+  resolveWorkflowAgentTranscripts: (params: { agentIds: string[]; logPath?: string }) =>
+    ipcRenderer.invoke(AgentIpcChannels.RESOLVE_WORKFLOW_AGENT_TRANSCRIPTS, params),
   readWorkflowOutput: (filePath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.READ_WORKFLOW_OUTPUT, filePath),
   readWorkflowScript: (filePath: string) =>

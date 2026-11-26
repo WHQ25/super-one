@@ -79,6 +79,8 @@ const TOOL_VERBS: Record<string, string> = {
   Lsp: 'Querying language server',
   DeployApp: 'Deploying',
   XSearch: 'Searching X',
+  Finish: 'Finishing',
+  finish: 'Finishing',
 }
 
 export function getToolVerb(toolName: string): string {
@@ -161,6 +163,8 @@ const TOOL_LABELS: Record<string, string> = {
   SubagentHandback: 'Hand Back',
   EnterWorktree: 'Enter Worktree',
   ExitWorktree: 'Exit Worktree',
+  Finish: 'Finish',
+  finish: 'Finish',
 }
 
 export function formatToolLabel(toolName: string): string {

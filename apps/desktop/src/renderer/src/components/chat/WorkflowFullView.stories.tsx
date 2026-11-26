@@ -115,3 +115,41 @@ export const Empty: Story = {
   },
   decorators: [(Story) => { mockIpc('app', 'listWorkflowAgents', async () => []); return <Story /> }],
 }
+
+const ANTIGRAVITY_PYTHON_SCRIPT = `phase("Demo")
+results = await parallel(
+    ["apple", "banana"],
+    lambda item: agent(f"Share one crisp fact about {item}.", schema={"type": "string"}, role=f"Fact: {item}"),
+)
+for item, fact in zip(["apple", "banana"], results):
+    log(f"{item}: {fact}")
+`
+
+const ANTIGRAVITY_TASK_LOG = [
+  '- [phase] Demo',
+  '- apple: Apples float because 25% of their volume is air.',
+  '- banana: Bananas are botanically berries.',
+  '- [agent:self] Fact: apple: done (ag-apple): "Apples float because 25% of their volume is air."',
+  '- [agent:self] Fact: banana: done (ag-banana): "Bananas are botanically berries."',
+  'Output:',
+  'Collected 2 fruit facts.',
+].join('\n')
+
+export const AntigravityPythonLog: Story = {
+  args: {
+    view: {
+      toolUseId: 'wf-antigravity',
+      harness: 'antigravity',
+      logPath: '/tmp/demo/task-6.log',
+      name: 'fruit-facts.py',
+      script: ANTIGRAVITY_PYTHON_SCRIPT,
+      scriptPath: '/tmp/demo/fruit-facts.py',
+    },
+  },
+  decorators: [
+    (Story) => {
+      mockIpc('app', 'readBashOutputFile', async () => ANTIGRAVITY_TASK_LOG)
+      return <Story />
+    },
+  ],
+}

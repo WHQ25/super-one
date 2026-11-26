@@ -740,3 +740,34 @@ describe('ToolBlock MCP App calls', () => {
     expect(screen.getByText(/pick/i)).toBeInTheDocument()
   })
 })
+
+describe('ToolBlock Finish subagent tool', () => {
+  it('renders clean Finish label and summary instead of raw JSON, and expands the result body', () => {
+    const { container } = render(
+      <ToolBlock
+        toolName="Finish"
+        input={JSON.stringify({ result: '#FF7700\nAccent orange' })}
+        result="Finished."
+        status="complete"
+      />,
+    )
+    expect(screen.getByText('Finish')).toBeInTheDocument()
+    expect(screen.getByText('#FF7700 Accent orange')).toBeInTheDocument()
+    expect(container.textContent).not.toContain('{"result"')
+
+    fireEvent.click(container.querySelector('.tool-node-header')!)
+    expect(container.textContent).toContain('#FF7700\nAccent orange')
+  })
+
+  it('shows Finishing… while streaming', () => {
+    render(
+      <ToolBlock
+        toolName="finish"
+        input={JSON.stringify({ result: '#FF7700' })}
+        status="streaming"
+      />,
+    )
+    expect(screen.getByText('Finishing…')).toBeInTheDocument()
+    expect(screen.getByText('#FF7700')).toBeInTheDocument()
+  })
+})

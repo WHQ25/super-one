@@ -2,7 +2,14 @@ import { describe, it, expect, beforeAll, afterAll } from 'vitest'
 import { mkdtemp, writeFile, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { listWorkflowAgents } from './workflow-transcripts'
+import {
+  deriveAntigravityBrainRootFromLogPath,
+  extractAntigravityPrompt,
+  listWorkflowAgents,
+  readWorkflowScript,
+  resolveAntigravityWorkflowAgentTranscripts,
+  summarizeAntigravityAgentTranscript,
+} from './workflow-transcripts'
 
 function jsonl(lines: object[]): string {
   return lines.map((l) => JSON.stringify(l)).join('\n') + '\n'
@@ -167,5 +174,142 @@ describe('listWorkflowAgents — Grok layout', () => {
     })
     expect(agents[0].jsonlPath).toBe(join(childSessionDir, 'chat_history.jsonl'))
     expect(agents[1]).toMatchObject({ agentId: 'agent-2', label: 'verify', tokens: 400 })
+  })
+})
+
+describe('readWorkflowScript', () => {
+  let dir: string
+
+  beforeAll(async () => {
+    dir = await mkdtemp(join(tmpdir(), 'wf-scripts-'))
+    await writeFile(join(dir, 'demo.py'), 'phase("Demo")\nlog("ok")\n')
+    await writeFile(join(dir, 'demo.js'), 'phase("Demo")\n')
+    await writeFile(join(dir, 'demo.rhai'), 'phase("Demo");\n')
+    await writeFile(join(dir, 'notes.txt'), 'ignored')
+  })
+
+  afterAll(async () => {
+    await rm(dir, { recursive: true, force: true })
+  })
+
+  it('reads .py, .js, and .rhai workflow scripts and rejects other extensions', async () => {
+    expect(await readWorkflowScript(join(dir, 'demo.py'))).toBe('phase("Demo")\nlog("ok")\n')
+    expect(await readWorkflowScript(join(dir, 'demo.js'))).toBe('phase("Demo")\n')
+    expect(await readWorkflowScript(join(dir, 'demo.rhai'))).toBe('phase("Demo");\n')
+    expect(await readWorkflowScript(join(dir, 'notes.txt'))).toBeNull()
+  })
+})
+
+describe('Antigravity workflow child agent transcript.jsonl support', () => {
+  let brainRoot: string
+  const parentId = 'parent-conv-1'
+  const childId = '9f0dcf74-84b2-4228-a843-64512b3139b9'
+  const sampleTranscript = [
+    JSON.stringify({
+      step_index: 0,
+      source: 'USER_EXPLICIT',
+      type: 'USER_INPUT',
+      status: 'DONE',
+      created_at: '2026-11-26T08:14:28Z',
+      content: '<USER_REQUEST>\nReply with only the uppercase version of: Hello\n</USER_REQUEST>\nExtra metadata',
+    }),
+    JSON.stringify({
+      step_index: 1,
+      source: 'MODEL',
+      type: 'PLANNER_RESPONSE',
+      status: 'DONE',
+      created_at: '2026-11-26T08:14:30Z',
+      model: 'gemini-3.5-flash-lite',
+      input_tokens: 16339,
+      cache_read_tokens: 0,
+      output_tokens: 31,
+      thinking: 'Need to return HELLO.',
+      tool_calls: [{ name: 'session_rename', args: { tags: '["demo"]', title: '"Demo"' } }],
+    }),
+    JSON.stringify({
+      step_index: 2,
+      source: 'MODEL',
+      type: 'GENERIC',
+      status: 'INVALID',
+      error: 'unknown tool: "session_rename" — check spelling',
+      created_at: '2026-11-26T08:14:32Z',
+      content: 'Created At: 2026-11-26T08:14:32Z\nError invalid tool call: unknown tool',
+    }),
+    JSON.stringify({
+      step_index: 3,
+      source: 'MODEL',
+      type: 'PLANNER_RESPONSE',
+      status: 'DONE',
+      created_at: '2026-11-26T08:14:36Z',
+      model: 'gemini-3.5-flash-lite',
+      input_tokens: 2179,
+      cache_read_tokens: 14223,
+      output_tokens: 46,
+      tool_calls: [{ name: 'finish', args: { result: '"HELLO"' } }],
+    }),
+    JSON.stringify({
+      step_index: 4,
+      source: 'MODEL',
+      type: 'GENERIC',
+      status: 'DONE',
+      created_at: '2026-11-26T08:14:37Z',
+      content: 'Finished.',
+    }),
+  ].join('\n') + '\n'
+
+  beforeAll(async () => {
+    const { mkdir } = await import('node:fs/promises')
+    brainRoot = await mkdtemp(join(tmpdir(), 'wf-agy-brain-'))
+    await mkdir(join(brainRoot, parentId, '.system_generated', 'tasks'), { recursive: true })
+    await mkdir(join(brainRoot, childId, '.system_generated', 'logs'), { recursive: true })
+    await writeFile(join(brainRoot, childId, '.system_generated', 'logs', 'transcript.jsonl'), sampleTranscript)
+  })
+
+  afterAll(async () => {
+    await rm(brainRoot, { recursive: true, force: true })
+  })
+
+  it('derives brainRoot from task-N.log path and extracts USER_REQUEST prompt', () => {
+    const logPath = join(brainRoot, parentId, '.system_generated', 'tasks', 'task-6.log')
+    expect(deriveAntigravityBrainRootFromLogPath(logPath)).toBe(brainRoot)
+    expect(deriveAntigravityBrainRootFromLogPath('/tmp/task-6.log')).toBeUndefined()
+    expect(extractAntigravityPrompt('<USER_REQUEST>\nHello\n</USER_REQUEST>\nTrailing')).toBe('Hello')
+    expect(extractAntigravityPrompt('Plain prompt')).toBe('Plain prompt')
+  })
+
+  it('summarizes prompt, toolCount, tokens, and finish resultText from Antigravity transcript.jsonl', () => {
+    expect(summarizeAntigravityAgentTranscript(sampleTranscript)).toEqual({
+      prompt: 'Reply with only the uppercase version of: Hello',
+      toolCount: 2,
+      tokens: 32818,
+      resultText: 'HELLO',
+    })
+  })
+
+  it('resolves existing child transcripts from logPath or fallback brainRoots and omits missing/unsafe ids', async () => {
+    const logPath = join(brainRoot, parentId, '.system_generated', 'tasks', 'task-6.log')
+    const resolved = await resolveAntigravityWorkflowAgentTranscripts({
+      agentIds: [childId, 'missing-agent', '../escape'],
+      logPath,
+      customBrainRoots: [],
+    })
+    expect(Object.keys(resolved)).toEqual([childId])
+    expect(resolved[childId]).toEqual({
+      agentId: childId,
+      jsonlPath: join(brainRoot, childId, '.system_generated', 'logs', 'transcript.jsonl'),
+      prompt: 'Reply with only the uppercase version of: Hello',
+      toolCount: 2,
+      tokens: 32818,
+      resultText: 'HELLO',
+      transcriptAvailable: true,
+    })
+
+    const viaFallbackRoot = await resolveAntigravityWorkflowAgentTranscripts({
+      agentIds: [childId],
+      customBrainRoots: [brainRoot],
+    })
+    expect(viaFallbackRoot[childId]?.jsonlPath).toBe(
+      join(brainRoot, childId, '.system_generated', 'logs', 'transcript.jsonl'),
+    )
   })
 })

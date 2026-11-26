@@ -3,6 +3,13 @@ import { join } from 'node:path'
 import { summarizeAgentJsonl, type AgentJsonlSummary } from '@superone/runtime/stream/delivery/workflow-agents'
 
 export { listWorkflowAgentsSync } from '@superone/runtime/stream/delivery/workflow-agents'
+export {
+  deriveAntigravityBrainRootFromLogPath,
+  extractAntigravityPrompt,
+  resolveAntigravityWorkflowAgentTranscripts,
+  summarizeAntigravityAgentTranscript,
+  type WorkflowAgentTranscriptSummary,
+} from './antigravity-workflow-transcripts'
 
 export interface WorkflowAgentSummary {
   label: string
@@ -73,8 +80,7 @@ export async function readWorkflowOutput(filePath: string): Promise<WorkflowOutp
 }
 
 export async function readWorkflowScript(filePath: string): Promise<string | null> {
-  // Claude stores compiled JS under workflows/scripts/; Grok uses `.rhai` sources.
-  if (!filePath.endsWith('.js') && !filePath.endsWith('.rhai')) return null
+  if (!filePath.endsWith('.js') && !filePath.endsWith('.rhai') && !filePath.endsWith('.py')) return null
   try {
     return await readFile(filePath, 'utf8')
   } catch {

@@ -88,7 +88,7 @@ export function settleWakeupWaiters(
   state.awaitingToolSinceMs = null
   state.hasExplicitStallTimeout = false
   state.wireWakeupStreamed = false
-  clearSettledWakeupBackgroundTasks(state.bgTasks, state.emitEvent)
+  clearSettledWakeupBackgroundTasks(state.bgTasks, state.emitEvent, state.brainRoots)
   const waiters = state.wakeupWaiters.splice(0, state.wakeupWaiters.length)
   for (const resolve of waiters) {
     resolve(outcome)
@@ -283,6 +283,7 @@ export function syncSessionSubagents(state: SessionSubagentState): void {
     ? syncBackgroundTasks(state.bgTasks, parentRaw, state.parentTurnEnded, state.emitEvent, {
         fallbackMessageId: state.idleWakeupMessageId ?? state.wakeupMessageId,
         keepIdleWatch: state.backgroundWatch || state.parentTurnEnded || anyActiveSubagentBefore || hasUnreadInbox,
+        brainRoots: state.brainRoots,
       })
     : {
         anyActiveNonDaemon: false,
@@ -430,6 +431,7 @@ export function noteForegroundTurnEndedOnState(state: SessionSubagentState): voi
   syncBackgroundTasks(state.bgTasks, parentRaw, false, state.emitEvent, {
     fallbackMessageId: state.wakeupMessageId,
     keepIdleWatch: state.backgroundWatch || anyActiveSubagent || hasUnreadInbox,
+    brainRoots: state.brainRoots,
   })
   const endStep = resolveAntigravityForegroundEndStepIndex(parentRaw)
   if (endStep !== null) {
@@ -444,7 +446,7 @@ export function noteForegroundTurnEndedOnState(state: SessionSubagentState): voi
 function desiredPollingIntervalMs(state: SessionSubagentState, hasUnreadInbox = false): number | null {
   const anyActiveSubagent = [...state.trackedByToolUseId.values()].some((e) => !e.completed)
   const anyActiveBg = [...state.bgTasks.tasksByToolUseId.values()].some(
-    (e) => Boolean(e.taskId) && e.wakeupRequired && !e.completed,
+    (e) => (Boolean(e.taskId) && e.wakeupRequired && !e.completed) || (!e.completed && e.toolName === 'Workflow'),
   )
   const wakeupPending = isEffectiveWakeupPending(state)
   if (

@@ -8,16 +8,9 @@
  */
 
 import type { WorkflowAgentSpec, WorkflowBlock, WorkflowGraph } from './workflow-graph'
+import { looksLikeRhaiWorkflow } from './workflow-utils'
 
-/** True when source looks like Grok Rhai rather than Claude compiled JS. */
-export function looksLikeRhaiWorkflow(script: string): boolean {
-  if (!script) return false
-  if (/#\{/.test(script)) return true
-  if (/\blet\s+meta\s*=/.test(script) && !/\bexport\s+const\s+meta\b/.test(script)) return true
-  // Rhai-only surface often used in workflows.
-  if (/\bfn\s+\w+\s*\(/.test(script) && /\bphase\s*\(/.test(script)) return true
-  return false
-}
+export { looksLikeRhaiWorkflow }
 
 /** Strip line and block comments without touching string contents (e.g. https URLs). */
 function stripComments(src: string): string {

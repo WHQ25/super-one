@@ -186,6 +186,7 @@ export const TOOL_ID_TO_UI_NAME: Record<string, string> = {
   postmessage: 'PostMessage',
   swarm_wait: 'SwarmWait',
   swarmwait: 'SwarmWait',
+  finish: 'Finish',
 }
 
 export function normalizeToolIdKey(id: string): string {

@@ -13,6 +13,7 @@ export interface AntigravityTranscriptRecord {
   source?: string
   type?: string
   status?: string
+  error?: string
   created_at?: string
   input_tokens?: number
   cache_read_tokens?: number
@@ -89,6 +90,7 @@ export function entriesFromAntigravityTranscript(
   const entries: JsonlEntry[] = []
   const pendingToolIndices: number[] = []
   let sendMessageText: string | undefined
+  let finishResultText: string | undefined
   let lastContentText: string | undefined
   let toolCount = 0
 
@@ -118,6 +120,12 @@ export function entriesFromAntigravityTranscript(
         if (name === 'send_message' && typeof args.Message === 'string' && args.Message.trim()) {
           sendMessageText = args.Message.trim()
         }
+        const finishArg = args.result ?? args.Result
+        if (name === 'finish' && finishArg !== undefined && finishArg !== null) {
+          finishResultText = typeof finishArg === 'string'
+            ? finishArg.trim() || undefined
+            : JSON.stringify(finishArg, null, 2)
+        }
         const id =
           typeof tc.id === 'string' && tc.id
             ? tc.id
@@ -146,14 +154,17 @@ export function entriesFromAntigravityTranscript(
         Array.isArray(record.media) && typeof record.media[0]?.uri === 'string'
           ? stripFileUri(record.media[0].uri)
           : ''
+      const errorText = typeof record.error === 'string' && record.error.trim() ? record.error.trim() : ''
       const resultText = stripped
         ? formatTranscriptToolResult(stripped)
-        : mediaUri
-          ? `Saved to ${mediaUri}`
-          : entry.toolName === 'ImageGen' || entry.toolName === 'ImageEdit'
-            ? 'Completed'
-            : ''
-      const isError = record.status === 'ERROR'
+        : errorText
+          ? errorText
+          : mediaUri
+            ? `Saved to ${mediaUri}`
+            : entry.toolName === 'ImageGen' || entry.toolName === 'ImageEdit'
+              ? 'Completed'
+              : ''
+      const isError = record.status === 'ERROR' || record.status === 'INVALID' || Boolean(errorText)
       entries[idx] = {
         ...entry,
         ...(resultText ? { result: resultText } : {}),
@@ -165,14 +176,13 @@ export function entriesFromAntigravityTranscript(
 
   const lastRecord = records[records.length - 1]
   const sawPlanner = records.some((record) => record.type === 'PLANNER_RESPONSE')
-  // A finished invoke often ends on the GENERIC result of send_message, not another planner step.
   const isCompleted =
     pendingToolIndices.length === 0 &&
     (sawPlanner || lastRecord?.status === 'ERROR')
 
   return {
     entries,
-    resultText: isCompleted ? (sendMessageText ?? lastContentText) : undefined,
+    resultText: isCompleted ? (sendMessageText ?? finishResultText ?? lastContentText) : undefined,
     toolCount,
   }
 }

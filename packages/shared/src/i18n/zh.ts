@@ -4214,6 +4214,8 @@ export const zh: Messages = {
       phase: '阶段',
       toolCalls: '工具调用',
       tokens: 'Tokens',
+      transcriptUnavailable: '此代理暂无工具调用记录，仅显示最终输出。',
+      transcriptUnavailableEmpty: '此代理暂无工具调用记录。',
       agentStatus: {
         done: '完成',
         running: '运行中',

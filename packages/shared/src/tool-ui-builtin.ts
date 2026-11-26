@@ -434,6 +434,8 @@ export function normalizeTranscriptTool(
   } else if (toolName === 'TaskOutput') {
     const taskId = pickStr(input, ['task_id', 'taskId', 'CommandId', 'commandId', 'command_id'])
     if (input.task_id == null && taskId != null) input.task_id = taskId
+  } else if (toolName === 'Finish') {
+    if (input.result === undefined && input.Result !== undefined) input.result = input.Result
   }
 
   return { toolName, input }

@@ -347,4 +347,131 @@ describe('sessionPatchFromAcpCatalog', () => {
       defaultPrefsCache.agentPreference = prevPrefs
     }
   })
+
+  it('preserves catalog system-default effort when antigravity defaultEffort is empty string', async () => {
+    const { defaultPrefsCache } = await import('../helpers/prefs-cache')
+    const prevPrefs = defaultPrefsCache.agentPreference
+    defaultPrefsCache.agentPreference = {
+      'acp-antigravity': { defaultModel: 'gemini-4-hydrogen', defaultEffort: '' },
+    } as never
+    try {
+      const antigravityResources: AcpResources = {
+        agents: [{ id: 'antigravity', name: 'Antigravity', installed: true, commandPreview: 'agy --acp' }],
+        selectedAgentId: 'antigravity',
+        modelsByAgentId: {},
+        configByAgentId: {
+          antigravity: {
+            configOptions: [
+              {
+                id: 'model',
+                name: 'Model',
+                category: 'model',
+                type: 'select',
+                currentValue: 'gemini-4-hydrogen',
+                options: [{ value: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen', description: null }],
+              },
+              {
+                id: 'thought_level',
+                name: 'Thinking Level',
+                category: 'thought_level',
+                type: 'select',
+                currentValue: 'xhigh',
+                options: [
+                  { value: 'low', name: 'Low', description: null },
+                  { value: 'medium', name: 'Medium', description: null },
+                  { value: 'high', name: 'High', description: null },
+                  { value: 'xhigh', name: 'Extra High', description: null },
+                ],
+              },
+            ],
+            extraModels: [
+              { id: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen', description: '', supportsEffort: true, supportedEffortLevels: ['low', 'medium', 'high', 'xhigh'] },
+            ],
+            updatedAt: '2026-11-27T00:00:00.000Z',
+          },
+        },
+      }
+      const catalog = getCachedAcpCatalog(antigravityResources, 'antigravity')!
+      const patch = sessionPatchFromAcpCatalog(catalog, { agentId: 'antigravity' })
+      expect(patch.selectedModel).toBe('gemini-4-hydrogen')
+      expect(patch.selectedAcpModeId).toBe('xhigh')
+    } finally {
+      defaultPrefsCache.agentPreference = prevPrefs
+    }
+  })
+
+  it('does not overwrite existing catalog default model/effort on session-specific acp_models/acp_modes events', async () => {
+    const { patchAcpResourcesFromEvent } = await import('./acp-event-patch')
+    const base: AcpResources = {
+      agents: [{ id: 'antigravity', name: 'Antigravity', installed: true, commandPreview: 'agy --acp' }],
+      selectedAgentId: 'antigravity',
+      modelsByAgentId: {},
+      configByAgentId: {
+        antigravity: {
+          configOptions: [
+            {
+              id: 'model',
+              name: 'Model',
+              category: 'model',
+              type: 'select',
+              currentValue: 'gemini-4-hydrogen',
+              options: [
+                { value: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen', description: null },
+                { value: 'claude-opus-5-5', name: 'Claude Opus 5.5', description: null },
+              ],
+            },
+            {
+              id: 'thought_level',
+              name: 'Thinking Level',
+              category: 'thought_level',
+              type: 'select',
+              currentValue: 'xhigh',
+              options: [
+                { value: 'low', name: 'Low', description: null },
+                { value: 'xhigh', name: 'Extra High', description: null },
+              ],
+            },
+          ],
+          selectedModelId: 'gemini-4-hydrogen',
+          modelConfigId: 'model',
+          selectedModeId: 'xhigh',
+          modeConfigId: 'thought_level',
+          updatedAt: '2026-11-27T00:00:00.000Z',
+        },
+      },
+    }
+    const slots = { 'acp-grok': null, 'acp-antigravity': base }
+    const afterModel = patchAcpResourcesFromEvent(
+      slots,
+      {
+        type: 'acp_models',
+        models: [
+          { id: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen', description: '' },
+          { id: 'claude-opus-5-5', name: 'Claude Opus 5.5', description: '' },
+        ],
+        selectedModelId: 'claude-opus-5-5',
+        configId: 'model',
+        status: 'ready',
+        agentId: 'antigravity',
+      },
+      'antigravity',
+    )!
+    const afterMode = patchAcpResourcesFromEvent(
+      afterModel,
+      {
+        type: 'acp_modes',
+        modes: [
+          { id: 'low', name: 'Low', description: '' },
+          { id: 'xhigh', name: 'Extra High', description: '' },
+        ],
+        selectedModeId: 'low',
+        configId: 'thought_level',
+        status: 'ready',
+        agentId: 'antigravity',
+      },
+      'antigravity',
+    )!
+    expect(afterMode['acp-antigravity']?.configByAgentId?.antigravity?.selectedModelId).toBe('gemini-4-hydrogen')
+    expect(afterMode['acp-antigravity']?.configByAgentId?.antigravity?.selectedModeId).toBe('xhigh')
+  })
 })

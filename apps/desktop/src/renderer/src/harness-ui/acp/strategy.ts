@@ -54,20 +54,21 @@ function createAcpStrategy(harnessId: AcpHarnessId): HarnessStrategy {
     slash: acpSlash,
     seed: (session, { state, previousSession }) => {
       const previousAgent = previousSession?.acpAgentId
-      const carryPrevious = !!previousAgent
+      const carryPrevious = harnessId === 'acp-grok'
+        && !!previousAgent
         && acpHarnessForAgent(previousAgent) === harnessId
-        && (isGrokAcpAgent(previousAgent) || isAntigravityAcpAgent(previousAgent))
+        && isGrokAcpAgent(previousAgent)
       const agentId = canonicalAgentId
       session.acpAgentId = agentId
       const catalog = getCachedAcpCatalog(state.harnessResources[harnessId], agentId)
       if (catalog) {
         const defaults = acpAgentDefaultsFor(defaultPrefsCache.agentPreference, harnessId)
-        const preferSelected = defaults.defaultModel && !previousSession?.modelUserChosen
-          ? null
-          : (carryPrevious ? (previousSession?.selectedModel ?? null) : null)
-        const preferModeId = defaults.defaultEffort && !previousSession?.effortUserChosen
-          ? null
-          : (carryPrevious ? (previousSession?.selectedAcpModeId ?? null) : null)
+        const preferSelected = carryPrevious && !(defaults.defaultModel && !previousSession?.modelUserChosen)
+          ? (previousSession?.selectedModel ?? null)
+          : null
+        const preferModeId = carryPrevious && !(defaults.defaultEffort && !previousSession?.effortUserChosen)
+          ? (previousSession?.selectedAcpModeId ?? null)
+          : null
         Object.assign(session, sessionPatchFromAcpCatalog(catalog, {
           preferSelected,
           preferModeId,

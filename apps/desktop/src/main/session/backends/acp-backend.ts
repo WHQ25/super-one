@@ -527,6 +527,7 @@ export class AcpBackend implements SessionBackend {
     extracted: AcpModeConfig | null,
     agentId: string | null,
     epoch: number,
+    persistCache = false,
   ): void {
     if (epoch !== this.runtimeEpoch) return
     if (!extracted || extracted.modes.length === 0) {
@@ -544,7 +545,7 @@ export class AcpBackend implements SessionBackend {
     }
     this.modeConfigId = extracted.configId
     this.lastModeConfig = extracted
-    if (agentId) {
+    if (agentId && persistCache) {
       try {
         upsertAcpAgentModes(agentId, extracted)
       } catch (err) {
@@ -566,11 +567,12 @@ export class AcpBackend implements SessionBackend {
     agentId: string | null,
     epoch: number,
     modeFallback?: AcpModeConfig | null,
+    persistCache = false,
   ): void {
     if (epoch !== this.runtimeEpoch) return
     const extracted = modesFromConfigOptions(configOptions)
       ?? (modeFallback && modeFallback.modes.length > 0 ? modeFallback : null)
-    this.emitModes(extracted, agentId, epoch)
+    this.emitModes(extracted, agentId, epoch, persistCache)
   }
 
   private emitConfigFromOptions(
@@ -583,13 +585,14 @@ export class AcpBackend implements SessionBackend {
       configId: string | null
     } | null,
     modeFallback?: AcpModeConfig | null,
+    persistCache = false,
   ): void {
     if (epoch !== this.runtimeEpoch) return
     const fromOptions = extractModelConfig(configOptions)
     const models = fromOptions
       ? (modelFallback ? mergeModelConfig(fromOptions, modelFallback) : fromOptions)
       : (modelFallback && modelFallback.models.length > 0 ? modelFallback : null)
-    this.persistConfigCache(configOptions, models, agentId)
+    if (persistCache) this.persistConfigCache(configOptions, models, agentId)
     if (models && models.models.length > 0) {
       this.emitModels(models, agentId, epoch)
     } else if (isAntigravityAcpAgent(agentId ?? undefined) && (configOptions?.length ?? 0) > 0) {
@@ -625,7 +628,7 @@ export class AcpBackend implements SessionBackend {
         agentId,
       })
     }
-    this.emitModesFromConfigOptions(configOptions, agentId, epoch, modeFallback)
+    this.emitModesFromConfigOptions(configOptions, agentId, epoch, modeFallback, persistCache)
   }
 
   private emitConfigFromRuntime(runtime: AcpRuntime, agentId: string | null, epoch: number): void {
@@ -634,7 +637,7 @@ export class AcpBackend implements SessionBackend {
     const modelFallback = runtime.getModelConfig() ?? extractModelConfig(options)
     // Pass the runtime catalog so a Grok effort list that is not a category=mode
     // select is not wiped by an empty ready acp_modes event.
-    this.emitConfigFromOptions(options, agentId, epoch, modelFallback, runtime.getModeConfig())
+    this.emitConfigFromOptions(options, agentId, epoch, modelFallback, runtime.getModeConfig(), true)
   }
 
   private emitModelsError(error: string, agentId: string | null, epoch: number): void {
@@ -1962,7 +1965,6 @@ export class AcpBackend implements SessionBackend {
       agentId,
       epoch,
     )
-    this.persistConfigCache(null, { ...cfg, selectedModelId: model }, agentId)
   }
 
   private requestedEffort(): string | undefined {

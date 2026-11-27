@@ -63,6 +63,64 @@ describe('seedNewSession', () => {
     seedNewSession(session, 'acp-grok', { ...context(), previousSession: { ...createDefaultPerSessionState(), acpAgentId: 'other-agent' } })
     expect(session).toMatchObject({ acpAgentId: 'grok-build', acpModelsStatus: 'loading', selectedModel: '' })
   })
+
+  it('seeds acp-antigravity with catalog defaults rather than carrying previousSession picks', () => {
+    const antigravityResources = {
+      agents: [{ id: 'antigravity', name: 'Antigravity', installed: true, commandPreview: 'agy --acp' }],
+      selectedAgentId: 'antigravity',
+      modelsByAgentId: {},
+      configByAgentId: {
+        antigravity: {
+          configOptions: [
+            {
+              id: 'model',
+              name: 'Model',
+              category: 'model',
+              type: 'select',
+              currentValue: 'gemini-4-hydrogen',
+              options: [
+                { value: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen', description: null },
+                { value: 'claude-opus-5-5', name: 'Claude Opus 5.5', description: null },
+              ],
+            },
+            {
+              id: 'thought_level',
+              name: 'Thinking Level',
+              category: 'thought_level',
+              type: 'select',
+              currentValue: 'xhigh',
+              options: [
+                { value: 'low', name: 'Low', description: null },
+                { value: 'medium', name: 'Medium', description: null },
+                { value: 'high', name: 'High', description: null },
+                { value: 'xhigh', name: 'Extra High', description: null },
+              ],
+            },
+          ],
+          extraModels: [
+            { id: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen', description: '', supportsEffort: true, supportedEffortLevels: ['low', 'medium', 'high', 'xhigh'] },
+            { id: 'claude-opus-5-5', name: 'Claude Opus 5.5', description: '', supportsEffort: true, supportedEffortLevels: ['low', 'medium', 'high'] },
+          ],
+          updatedAt: '2026-11-27T00:00:00.000Z',
+        },
+      },
+    }
+    const previousSession = {
+      ...createDefaultPerSessionState(),
+      acpAgentId: 'antigravity',
+      selectedModel: 'claude-opus-5-5',
+      selectedAcpModeId: 'low',
+      modelUserChosen: true,
+      effortUserChosen: true,
+    }
+    const session = createDefaultPerSessionState()
+    seedNewSession(session, 'acp-antigravity', {
+      ...context({ 'acp-antigravity': antigravityResources as never }),
+      previousSession,
+    })
+    expect(session.selectedModel).toBe('gemini-4-hydrogen')
+    expect(session.selectedAcpModeId).toBe('xhigh')
+  })
 })
 
 describe('missingDefaults and restore', () => {

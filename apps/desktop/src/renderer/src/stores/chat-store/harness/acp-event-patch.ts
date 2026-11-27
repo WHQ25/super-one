@@ -47,12 +47,16 @@ export function patchAcpResourcesFromEvent(
     const enrichedModels = prevConfig?.extraModels?.length
       ? overlayAcpModelList(event.models, prevConfig.extraModels)
       : event.models
+    const preservedSelectedModelId =
+      prevConfig?.selectedModelId && enrichedModels.some((m) => m.id === prevConfig.selectedModelId)
+        ? prevConfig.selectedModelId
+        : event.selectedModelId
     const modelOpt = {
       id: modelId,
       name: 'Model',
       category: 'model' as const,
       type: 'select' as const,
-      currentValue: event.selectedModelId,
+      currentValue: preservedSelectedModelId,
       options: enrichedModels.map((model) => ({
         value: model.id,
         name: model.name,
@@ -66,7 +70,7 @@ export function patchAcpResourcesFromEvent(
         ...(slot.modelsByAgentId ?? {}),
         [agentId]: {
           models: enrichedModels,
-          selectedModelId: event.selectedModelId,
+          selectedModelId: preservedSelectedModelId,
           configId: event.configId,
           updatedAt: now,
         },
@@ -76,7 +80,7 @@ export function patchAcpResourcesFromEvent(
         [agentId]: {
           configOptions: event.configId ? [...withoutModel, modelOpt] : prevOptions,
           extraModels: enrichedModels,
-          selectedModelId: event.selectedModelId,
+          selectedModelId: preservedSelectedModelId,
           modelConfigId: event.configId,
           extraModes: prevConfig?.extraModes,
           selectedModeId: prevConfig?.selectedModeId,
@@ -87,6 +91,10 @@ export function patchAcpResourcesFromEvent(
       },
     }
   } else if (event.type === 'acp_modes' && isAcpEffortConfigId(event.configId)) {
+    const preservedSelectedModeId =
+      prevConfig?.selectedModeId && event.modes.some((m) => m.id === prevConfig.selectedModeId)
+        ? prevConfig.selectedModeId
+        : event.selectedModeId
     const withoutEffort = prevOptions.filter(
       (option) => option.category !== 'mode' && option.id !== 'mode' && !isAcpEffortConfigOption(option),
     )
@@ -96,7 +104,7 @@ export function patchAcpResourcesFromEvent(
           name: 'Reasoning Effort',
           category: 'thought_level' as const,
           type: 'select' as const,
-          currentValue: event.selectedModeId,
+          currentValue: preservedSelectedModeId,
           options: event.modes.map((mode) => ({
             value: mode.id,
             name: mode.name,
@@ -112,7 +120,7 @@ export function patchAcpResourcesFromEvent(
           ...base,
           configOptions,
           extraModes: event.modes,
-          selectedModeId: event.selectedModeId,
+          selectedModeId: preservedSelectedModeId,
           modeConfigId: event.configId,
         },
       },

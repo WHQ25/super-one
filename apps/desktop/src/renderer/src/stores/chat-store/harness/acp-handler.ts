@@ -363,7 +363,7 @@ function resolveDefaultAcpModelAndMode(
     }).efforts
     return clampAcpEffortForModel(
       acpEffortOptionsForModel(session.models, modelId, modeEfforts),
-      preferMode ?? defaults.defaultEffort ?? session.selectedModeId,
+      (preferMode || null) ?? (defaults.defaultEffort || null) ?? session.selectedModeId,
     )
   }
 

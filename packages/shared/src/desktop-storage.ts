@@ -115,3 +115,12 @@ export interface StorageWorktreeRemoval {
   removed: string[]
   failed: { path: string; error: string }[]
 }
+
+export interface StorageArchivedProject {
+  id: string
+  name: string
+  path: string
+  hiddenAt: string
+  sessionCount: number
+  messageCount: number
+}

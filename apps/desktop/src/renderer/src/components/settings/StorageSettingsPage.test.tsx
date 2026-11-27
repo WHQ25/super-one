@@ -60,12 +60,14 @@ function stub(options: { inventory?: StorageInventory; result?: StorageActionRes
   const revealFile = vi.fn().mockResolvedValue(undefined)
   // The worktree section loads on its own; its states are covered in WorktreeStorageSection.test.tsx.
   const getStorageWorktrees = vi.fn().mockResolvedValue([])
+  const getStorageArchivedProjects = vi.fn().mockResolvedValue([])
   const retrySyncZoneHandoffs = vi.fn().mockResolvedValue({ retried: 2, recovered: 2 })
   Object.assign(window.app, {
     getStorageInventory,
     applyStorageAction,
     revealFile,
     getStorageWorktrees,
+    getStorageArchivedProjects,
     retrySyncZoneHandoffs,
   })
   return { getStorageInventory, applyStorageAction, revealFile, retrySyncZoneHandoffs }

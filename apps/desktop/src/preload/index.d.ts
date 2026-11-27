@@ -164,7 +164,7 @@ interface AppAPI extends WindowLayoutAPI {
   getRecentFolders(): Promise<RecentFolder[]>
   getMediaServerPort(): Promise<number>
   addRecentFolder(folderPath: string): Promise<boolean>
-  removeRecentFolder(folderPath: string): Promise<RecentFolder[]>
+  removeRecentFolder(folderPath: string, options?: { deleteData?: boolean }): Promise<RecentFolder[]>
   getProjectId(folderPath: string): Promise<string | null>
   openFolder(folderPath: string): Promise<boolean>
   openTmpFolder(): Promise<string>
@@ -604,6 +604,8 @@ interface AppAPI extends WindowLayoutAPI {
   applyStorageAction(action: import('@superone/shared/desktop-storage').StorageApplyAction, harnessId?: string): Promise<import('@superone/shared/desktop-storage').StorageActionResult>
   getStorageWorktrees(): Promise<import('@superone/shared/desktop-storage').StorageWorktree[]>
   removeStorageWorktrees(paths: string[]): Promise<import('@superone/shared/desktop-storage').StorageWorktreeRemoval>
+  getStorageArchivedProjects(): Promise<import('@superone/shared/desktop-storage').StorageArchivedProject[]>
+  purgeStorageArchivedProjects(projectIds?: string[]): Promise<{ purgedCount: number }>
   listLspServers(): Promise<import('@superone/shared/desktop-lsp').LspServerInfo[]>
   fetchLspRegistry(forceRefresh?: boolean): Promise<import('@superone/shared/desktop-lsp').LspServerInfo[]>
   fetchLspGithubStars(repos: string[], forceRefresh?: boolean): Promise<{ hasGh: boolean; stars: Record<string, number> }>

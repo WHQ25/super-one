@@ -210,6 +210,9 @@ function applyMigrations(db: Database.Database): void {
     // Once set, addRecentFolder stops clobbering it on every re-open.
     db.exec('ALTER TABLE projects ADD COLUMN is_user_renamed INTEGER NOT NULL DEFAULT 0')
   }
+  if (!projectCols.some((c) => c.name === 'hidden_at')) {
+    db.exec('ALTER TABLE projects ADD COLUMN hidden_at TEXT')
+  }
 
   const cols = db.prepare("PRAGMA table_info(sessions)").all() as Array<{ name: string }>
   if (!cols.some((c) => c.name === 'is_worktree')) {

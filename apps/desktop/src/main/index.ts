@@ -250,7 +250,7 @@ import { claudeAccountConfig, listAccounts as listClaudeAccounts, onClaudeAccoun
 import { claudeAccountStore } from './agent/claude-account-store'
 import { registerClaudeAccountIpc } from './agent/claude-account-ipc'
 import { getProviderRateLimits } from './agent/provider-usage-service'
-import { getRecentFolders, getRecentFoldersWithPresence, addRecentFolder, removeRecentFolder, getProjectExtraDirs, getProjectId, getProjectPathById } from './recent-folders'
+import { getRecentFolders, getRecentFoldersWithPresence, addRecentFolder, removeRecentFolder, waitForPendingProjectPurge, getProjectExtraDirs, getProjectId, getProjectPathById } from './recent-folders'
 import { PATH_EXISTS_OPEN_TIMEOUT_MS, pathExistsBounded } from './path-exists-bounded'
 import { registerHarnessIpcHandlers } from './harness/ipc'
 import { registerIosSimulatorIpc } from './ios-simulator/ipc'
@@ -2773,12 +2773,13 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.ADD_RECENT_FOLDER, async (_event, folderPath: string) => {
     if (!(await pathExistsBounded(folderPath, PATH_EXISTS_OPEN_TIMEOUT_MS))) return false
+    await waitForPendingProjectPurge(folderPath)
     addRecentFolder(folderPath)
     return true
   })
 
-  ipcMain.handle(AgentIpcChannels.REMOVE_RECENT_FOLDER, async (_event, folderPath: string) => {
-    removeRecentFolder(folderPath)
+  ipcMain.handle(AgentIpcChannels.REMOVE_RECENT_FOLDER, async (_event, folderPath: string, options?: { deleteData?: boolean }) => {
+    removeRecentFolder(folderPath, options)
     return getRecentFoldersWithPresence()
   })
 
@@ -2788,6 +2789,7 @@ function registerIpcHandlers(): void {
 
   ipcMain.handle(AgentIpcChannels.OPEN_FOLDER, async (_event, folderPath: string) => {
     if (!(await pathExistsBounded(folderPath, PATH_EXISTS_OPEN_TIMEOUT_MS))) return false
+    await waitForPendingProjectPurge(folderPath)
     addRecentFolder(folderPath)
     await agentService.openFolder(folderPath)
     codexService.prewarmAppServerConnection(folderPath)
@@ -4799,6 +4801,8 @@ function registerIpcHandlers(): void {
   ipcMain.handle(AgentIpcChannels.STORAGE_ACTION, async (_e, action: unknown, harnessId: unknown) => (await import('./storage-ipc')).runDesktopStorageAction(action, harnessId))
   ipcMain.handle(AgentIpcChannels.STORAGE_WORKTREES_GET, async () => (await import('./storage-ipc')).getDesktopStorageWorktrees())
   ipcMain.handle(AgentIpcChannels.STORAGE_WORKTREES_REMOVE, async (_e, paths: unknown) => (await import('./storage-ipc')).removeDesktopStorageWorktrees(paths))
+  ipcMain.handle(AgentIpcChannels.STORAGE_ARCHIVED_PROJECTS_GET, async () => (await import('./storage-ipc')).getDesktopStorageArchivedProjects())
+  ipcMain.handle(AgentIpcChannels.STORAGE_ARCHIVED_PROJECTS_PURGE, async (_e, projectIds?: unknown) => (await import('./storage-ipc')).purgeDesktopStorageArchivedProjects(projectIds))
   ipcMain.handle(AgentIpcChannels.LSP_LIST_SERVERS, async () => {
     lspManagerLoaded = true
     return (await import('./lsp-manager')).listLspServers()

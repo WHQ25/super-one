@@ -670,6 +670,8 @@ export type Messages = {
     removeProject: {
       title: string
       description: string
+      descriptionKeepHistory: string
+      deleteDataLabel: string
       remove: string
     }
     renameSession: {
@@ -5523,6 +5525,20 @@ export type Messages = {
       confirm: string
       confirmDirty: string
     }
+    archivedProjects: {
+      section: string
+      loading: string
+      unreadable: string
+      empty: string
+      sessionsCount: string
+      purgeAll: string
+      purgeOne: string
+      purged_one: string
+      purged_other: string
+      confirmTitle_one: string
+      confirmTitle_other: string
+      confirm: string
+    }
     categories: {
       chatDatabase: { label: string; description: string }
       backup: { label: string; description: string }
@@ -6314,6 +6330,8 @@ export const en: Messages = {
     removeProject: {
       title: 'Remove Project?',
       description: 'and all its chat sessions will be removed from SuperOne. Your project files will not be affected.',
+      descriptionKeepHistory: 'will be removed from the project list. Its chat history will be kept and restored if you reopen this folder.',
+      deleteDataLabel: 'Also permanently delete all chat sessions and history',
       remove: 'Remove',
     },
     renameSession: {
@@ -11232,6 +11250,20 @@ export const en: Messages = {
       confirmTitle_other: 'Remove {{count}} worktrees?',
       confirm: 'No session uses this. Removing frees {{bytes}}. Branches and commits stay in the repository.',
       confirmDirty: 'This worktree has uncommitted changes that will be lost. Branches and commits stay in the repository.',
+    },
+    archivedProjects: {
+      section: 'Removed Projects',
+      loading: 'Loading removed projects…',
+      unreadable: 'Removed project history could not be read.',
+      empty: 'No removed projects with retained chat history.',
+      sessionsCount: '{{sessions}} sessions · {{messages}} messages',
+      purgeAll: 'Clear All',
+      purgeOne: 'Delete History',
+      purged_one: 'Cleared chat history for {{count}} removed project.',
+      purged_other: 'Cleared chat history for {{count}} removed projects.',
+      confirmTitle_one: 'Delete history for {{count}} removed project?',
+      confirmTitle_other: 'Delete history for {{count}} removed projects?',
+      confirm: 'This permanently deletes all chat sessions and messages retained for the selected removed projects. Your project files on disk are not affected.',
     },
     categories: {
       chatDatabase: { label: 'Chat Database', description: 'Sessions, messages, and Cursor resume state. These files are never deleted from here.' },

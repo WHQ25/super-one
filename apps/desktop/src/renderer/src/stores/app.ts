@@ -218,7 +218,7 @@ interface AppState extends HarnessThemeState {
     options?: ProjectSelectionOptions,
   ) => Promise<void>
   openTmpFolder: () => Promise<void>
-  removeRecentFolder: (folderPath: string) => Promise<void>
+  removeRecentFolder: (folderPath: string, options?: { deleteData?: boolean }) => Promise<void>
   startInstall: () => Promise<void>
   handleSetupEvent: (event: SetupEvent) => void
   continueToMain: () => Promise<void>
@@ -949,12 +949,11 @@ export const useAppStore = create<AppState>((set, get) => ({
     void window.app.migrationReveal()
   },
 
-  removeRecentFolder: async (folderPath: string) => {
+  removeRecentFolder: async (folderPath: string, options?: { deleteData?: boolean }) => {
     const wasActive = get().currentFolder === folderPath
-    // Dispose agent and clean up DB (cascade deletes sessions + messages)
-    await window.app.closeProject(folderPath).catch(() => {})
+    void window.app.closeProject(folderPath).catch(() => {})
     disposeHighlightCache(folderPath)
-    const updated = await window.app.removeRecentFolder(folderPath)
+    const updated = await window.app.removeRecentFolder(folderPath, options)
     // Clean up in-memory worktree state
     set((s) => {
       const { [folderPath]: _, ..._worktrees } = s._worktrees

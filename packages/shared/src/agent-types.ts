@@ -4974,6 +4974,8 @@ export const AgentIpcChannels = {
   STORAGE_ACTION: 'app:storage-action',
   STORAGE_WORKTREES_GET: 'app:storage-worktrees',
   STORAGE_WORKTREES_REMOVE: 'app:storage-worktrees-remove',
+  STORAGE_ARCHIVED_PROJECTS_GET: 'app:storage-archived-projects',
+  STORAGE_ARCHIVED_PROJECTS_PURGE: 'app:storage-archived-projects-purge',
   LSP_LIST_SERVERS: 'app:lsp-list-servers',
   LSP_FETCH_REGISTRY: 'app:lsp-fetch-registry',
   LSP_FETCH_STARS: 'app:lsp-fetch-stars',

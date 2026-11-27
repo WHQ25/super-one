@@ -1151,8 +1151,8 @@ const appAPI = {
   addRecentFolder: (folderPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.ADD_RECENT_FOLDER, folderPath),
 
-  removeRecentFolder: (folderPath: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.REMOVE_RECENT_FOLDER, folderPath),
+  removeRecentFolder: (folderPath: string, options?: { deleteData?: boolean }) =>
+    ipcRenderer.invoke(AgentIpcChannels.REMOVE_RECENT_FOLDER, folderPath, options),
 
   getProjectId: (folderPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.GET_PROJECT_ID, folderPath) as Promise<string | null>,
@@ -1972,6 +1972,10 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.STORAGE_WORKTREES_GET),
   removeStorageWorktrees: (paths: string[]) =>
     ipcRenderer.invoke(AgentIpcChannels.STORAGE_WORKTREES_REMOVE, paths),
+  getStorageArchivedProjects: () =>
+    ipcRenderer.invoke(AgentIpcChannels.STORAGE_ARCHIVED_PROJECTS_GET),
+  purgeStorageArchivedProjects: (projectIds?: string[]) =>
+    ipcRenderer.invoke(AgentIpcChannels.STORAGE_ARCHIVED_PROJECTS_PURGE, projectIds),
   listLspServers: () =>
     ipcRenderer.invoke(AgentIpcChannels.LSP_LIST_SERVERS) as Promise<import('@superone/shared/desktop-lsp').LspServerInfo[]>,
   fetchLspRegistry: (forceRefresh = false) =>

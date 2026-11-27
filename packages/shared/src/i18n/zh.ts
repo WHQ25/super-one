@@ -690,6 +690,8 @@ export const zh: Messages = {
     removeProject: {
       title: '移除项目？',
       description: '及其所有对话会话将从 SuperOne 中移除。你的项目文件不会受影响。',
+      descriptionKeepHistory: '将从项目列表中移除。关联的对话历史仍会保留，重新打开该文件夹时可恢复。',
+      deleteDataLabel: '同时永久删除该项目的所有对话会话和历史记录',
       remove: '移除',
     },
     renameSession: {
@@ -5591,6 +5593,20 @@ export const zh: Messages = {
       confirmTitle_other: '移除 {{count}} 个工作树？',
       confirm: '没有会话在使用。移除后可释放 {{bytes}}。分支和提交仍保留在仓库中。',
       confirmDirty: '这个工作树有未提交的改动，移除后无法恢复。分支和提交仍保留在仓库中。',
+    },
+    archivedProjects: {
+      section: '已移除的项目历史',
+      loading: '正在加载已移除的项目…',
+      unreadable: '无法读取已移除项目的历史记录。',
+      empty: '没有保留历史记录的已移除项目。',
+      sessionsCount: '{{sessions}} 个会话 · {{messages}} 条消息',
+      purgeAll: '全部清理',
+      purgeOne: '彻底删除',
+      purged_one: '已清理 {{count}} 个已移除项目的历史记录。',
+      purged_other: '已清理 {{count}} 个已移除项目的历史记录。',
+      confirmTitle_one: '删除 {{count}} 个已移除项目的历史记录？',
+      confirmTitle_other: '删除 {{count}} 个已移除项目的历史记录？',
+      confirm: '此操作将永久删除选定已移除项目的全部对话会话和消息记录。磁盘上的项目文件不受影响。',
     },
     categories: {
       chatDatabase: { label: '聊天数据库', description: '会话、消息和 Cursor 的恢复状态。这里不能删除这些文件。' },

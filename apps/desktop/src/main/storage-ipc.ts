@@ -4,12 +4,14 @@ import { app, session } from 'electron'
 import {
   isStorageApplyAction,
   type StorageActionResult,
+  type StorageArchivedProject,
   type StorageInventory,
   type StorageWorktree,
   type StorageWorktreeRemoval,
 } from '@superone/shared/desktop-storage'
 import { worktreeGit } from '@superone/runtime/git'
 import { getDb } from './database'
+import { listHiddenProjects, purgeHiddenProjects } from './recent-folders'
 import { listSessionDeliveries } from './db-session-deliveries'
 import { previewSyncZoneReclaim, sweepSyncZone, syncZoneUploadIssues } from './environment/session-zone-reclaim'
 import { canonicalClaimPath } from './environment/sync-zone-paths'
@@ -157,4 +159,15 @@ export async function removeDesktopStorageWorktrees(paths: unknown): Promise<Sto
   const result = await removeUnusedWorktrees(worktreeStorageContext(), targets)
   for (const failure of result.failed) log.warn('[storage] worktree %s was not removed: %s', failure.path, failure.error)
   return result
+}
+
+export async function getDesktopStorageArchivedProjects(): Promise<StorageArchivedProject[]> {
+  return listHiddenProjects()
+}
+
+export async function purgeDesktopStorageArchivedProjects(projectIds?: unknown): Promise<{ purgedCount: number }> {
+  const ids = Array.isArray(projectIds)
+    ? projectIds.filter((id): id is string => typeof id === 'string')
+    : undefined
+  return { purgedCount: purgeHiddenProjects(ids) }
 }

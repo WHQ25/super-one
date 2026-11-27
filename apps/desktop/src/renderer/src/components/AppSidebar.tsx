@@ -175,6 +175,7 @@ const DefaultAppSidebar = memo(function DefaultAppSidebar() {
     id?: string
   } | null>(null)
   const [removeBusy, setRemoveBusy] = useState(false)
+  const [removeDeleteData, setRemoveDeleteData] = useState(false)
   const [removeError, setRemoveError] = useState<string | null>(null)
   const [renameTarget, setRenameTarget] = useState<{ sessionId: string; title: string; folderPath: string } | null>(null)
   const [editProjectTarget, setEditProjectTarget] = useState<RecentFolder | null>(null)
@@ -587,6 +588,7 @@ const DefaultAppSidebar = memo(function DefaultAppSidebar() {
 
   const handleRemoveProject = useCallback((folder: RecentFolder) => {
     setRemoveError(null)
+    setRemoveDeleteData(false)
     setRemoveTarget({ name: folder.name, path: folder.path, id: folder.id })
   }, [])
 
@@ -597,7 +599,7 @@ const DefaultAppSidebar = memo(function DefaultAppSidebar() {
     try {
       const remoteTarget = parseRemoteProjectKey(removeTarget.path)
       if (!remoteTarget) {
-        await removeRecentFolder(removeTarget.path)
+        await removeRecentFolder(removeTarget.path, { deleteData: removeDeleteData })
       } else {
         await window.environment.removeProject(remoteTarget.connectionId, {
           projectId: removeTarget.id,
@@ -635,7 +637,7 @@ const DefaultAppSidebar = memo(function DefaultAppSidebar() {
     } finally {
       setRemoveBusy(false)
     }
-  }, [removeTarget, removeBusy, selectedHostConnectionId, removeRecentFolder])
+  }, [removeTarget, removeBusy, removeDeleteData, selectedHostConnectionId, removeRecentFolder])
 
   const handleRequestRenameSession = useCallback((target: { sessionId: string; title: string; folderPath: string }) => {
     setRenameTarget(target)
@@ -1169,9 +1171,24 @@ const DefaultAppSidebar = memo(function DefaultAppSidebar() {
           <DialogHeader>
             <DialogTitle>{t('sidebar.removeProject.title')}</DialogTitle>
             <DialogDescription>
-              <span className="font-medium text-foreground">{removeTarget?.name}</span> {t('sidebar.removeProject.description')}
+              <span className="font-medium text-foreground">{removeTarget?.name}</span>{' '}
+              {removeTarget && !parseRemoteProjectKey(removeTarget.path)
+                ? (removeDeleteData ? t('sidebar.removeProject.description') : t('sidebar.removeProject.descriptionKeepHistory'))
+                : t('sidebar.removeProject.description')}
             </DialogDescription>
           </DialogHeader>
+          {removeTarget && !parseRemoteProjectKey(removeTarget.path) ? (
+            <label className="flex items-start gap-2.5 text-sm text-foreground cursor-pointer select-none">
+              <Checkbox
+                checked={removeDeleteData}
+                disabled={removeBusy}
+                onCheckedChange={(checked) => setRemoveDeleteData(checked === true)}
+                className="mt-0.5"
+                data-testid="remove-project-delete-data"
+              />
+              <span className="leading-snug text-muted-foreground">{t('sidebar.removeProject.deleteDataLabel')}</span>
+            </label>
+          ) : null}
           {removeError ? (
             <p className="text-sm text-destructive break-words">{removeError}</p>
           ) : null}

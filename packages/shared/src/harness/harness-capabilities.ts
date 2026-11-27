@@ -259,7 +259,12 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     supportsNativeFork: false,
     supportsSwarmBoard: true,
     supportsAntigravityAccounts: true,
-    goal: null,
+    goal: {
+      lifecycleArgs: [],
+      canPause: false,
+      transport: 'slash',
+      semantics: 'objective',
+    },
     displayName: 'Antigravity',
   },
   opencode: {

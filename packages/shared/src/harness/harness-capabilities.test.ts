@@ -67,12 +67,22 @@ describe('resolveGoalCapability', () => {
     expect(resolveGoalCapability('opencode')).toBeNull()
   })
 
-  it('grants a goal to Grok and not to Antigravity', () => {
+  it('grants goal capabilities to both Grok and Antigravity', () => {
     expect(resolveGoalCapability('acp-grok')?.canPause).toBe(true)
     expect(resolveGoalCapability('acp', 'grok-build')?.canPause).toBe(true)
     expect(resolveGoalCapability('acp', null)?.canPause).toBe(true)
-    expect(resolveGoalCapability('acp-antigravity')).toBeNull()
-    expect(resolveGoalCapability('acp', 'antigravity')).toBeNull()
+    expect(resolveGoalCapability('acp-antigravity')).toEqual({
+      lifecycleArgs: [],
+      canPause: false,
+      transport: 'slash',
+      semantics: 'objective',
+    })
+    expect(resolveGoalCapability('acp', 'antigravity')).toEqual({
+      lifecycleArgs: [],
+      canPause: false,
+      transport: 'slash',
+      semantics: 'objective',
+    })
   })
 
   it('has no goal surface without a harness', () => {

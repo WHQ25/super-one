@@ -850,9 +850,15 @@ export function ChatInput({
     const goalActions = useMemo(() => {
       if (!goalCapability) return null
       if (goalCapability.transport === 'slash') {
+        const canClearViaSlash = goalCapability.lifecycleArgs.includes('clear')
         return {
           save: async (objective: string) => { dispatchGoalSlash(`/goal ${objective}`) },
-          clear: async () => { dispatchGoalSlash('/goal clear') },
+          clear: canClearViaSlash
+            ? async () => { dispatchGoalSlash('/goal clear') }
+            : async () => {
+                if (isStreaming) await scopedInterrupt()
+                useChatStore.setState((state) => commitPerSession(state, sessionScope ?? undefined, () => ({ sessionGoal: null })))
+              },
           // Grok treats session/cancel on an active goal as a user pause, so
           // Stop is enough while a turn is live — posting `/goal pause` after
           // that is a second prompt that just says the goal is already paused.
@@ -883,7 +889,7 @@ export function ChatInput({
           if (sessionGoal) await setGoal(sessionGoal.objective, 'active')
         },
       }
-    }, [goalCapability, dispatchGoalSlash, sessionProject, displayedSessionId, sessionGoal, isStreaming, scopedInterrupt])
+    }, [goalCapability, dispatchGoalSlash, sessionProject, displayedSessionId, sessionGoal, isStreaming, scopedInterrupt, sessionScope])
 
     const toolbarChipVisible = Boolean(isCodexPlanMode || (goalCapability && goalActions && (sessionGoal || goalComposing)))
     const toolbarChipLabelKey = `${isCodexPlanMode ? 'plan' : ''}:${!goalComposing && sessionGoal?.status === 'complete' ? 'achieved' : 'label'}`

@@ -83,6 +83,7 @@ import {
   type TaskNotificationOptions,
 } from '../task-notification-queue'
 import { QueuedUserMessageQueue } from '../queued-user-message-queue'
+import { AntigravityGoalTracker } from './antigravity-goal-tracker'
 import type { BackendCommand, BackendStartOptions, HarnessId, SendDelivery, SessionBackend, TaskNotificationInjectResult } from '../types'
 import {
   isGrokGoalClear,
@@ -198,6 +199,17 @@ export class AcpBackend implements SessionBackend {
 
   private started = false
   private disposed = false
+  private readonly antigravityGoalTracker = new AntigravityGoalTracker()
+
+  private emitWithGoalTracker(event: AgentEvent): void {
+    if (!isAntigravityAcpAgent(this.config.agentId)) {
+      this.emit(event)
+      return
+    }
+    for (const out of this.antigravityGoalTracker.reconcile(event)) {
+      this.emit(out)
+    }
+  }
   private startOpts: BackendStartOptions | null = null
   private config: AcpBackendConfig = {}
   private runtime: AcpRuntime | null = null
@@ -1050,7 +1062,7 @@ export class AcpBackend implements SessionBackend {
       this.emit({ ...event, agentId })
       return
     }
-    this.emit(event)
+    this.emitWithGoalTracker(event)
   }
 
   private handlePermissionRequest(params: RequestPermissionRequest): Promise<RequestPermissionResponse> {
@@ -1686,6 +1698,11 @@ export class AcpBackend implements SessionBackend {
     }
 
     let emittedTerminal = false
+    if (isAntigravityAcpAgent(this.config.agentId)) {
+      for (const goalEvent of this.antigravityGoalTracker.noteSend(request.content)) {
+        this.emit(goalEvent)
+      }
+    }
     // Grok confirms `/goal clear` in prose only; if no `goal_updated` arrives
     // during the turn the host drops the snapshot itself once it settles.
     const clearsGoal = isGrokGoalClear(request.content)
@@ -1770,14 +1787,14 @@ export class AcpBackend implements SessionBackend {
       this.cancelPendingInteractions('abandoned')
       if (this.interrupted) {
         if (!emittedTerminal) {
-          this.emit({ type: 'message_interrupted', messageId: failId })
+          this.emitWithGoalTracker({ type: 'message_interrupted', messageId: failId })
           this.emit({ type: 'status_change', status: 'idle' })
         }
         return
       }
       if (!emittedTerminal) {
         const errorInfo = describeAcpRequestFailure(err)
-        this.emit({ type: 'message_error', messageId: failId, error: errorInfo.raw, errorInfo })
+        this.emitWithGoalTracker({ type: 'message_error', messageId: failId, error: errorInfo.raw, errorInfo })
         this.emit({ type: 'status_change', status: 'error' })
       }
     } finally {

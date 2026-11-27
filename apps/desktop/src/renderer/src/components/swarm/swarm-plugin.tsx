@@ -2,6 +2,7 @@ import { Suspense, lazy } from 'react'
 import i18next from 'i18next'
 import { Hexagon } from 'lucide-react'
 import type { ClientKernel, KernelScope, MenuContext } from '@superone/client-kernel'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { openSwarmBoardTab } from '@/components/activity/activity-panel-api'
 
 function translateMenu(ctx: MenuContext, key: string): string {
@@ -47,7 +48,7 @@ export function registerSwarmPlugin(kernel: ClientKernel): KernelScope {
     icon: Hexagon,
     label: (ctx) => translateMenu(ctx, 'swarmBoard.title'),
     when: (ctx) =>
-      ctx.provider === 'acp-antigravity' &&
+      Boolean(ctx.provider && HARNESS_CAPABILITIES[ctx.provider as keyof typeof HARNESS_CAPABILITIES]?.supportsSwarmBoard) &&
       Boolean(ctx.sessionId) &&
       ctx.extra?.hasSwarm === true,
     onSelect: (ctx) => {

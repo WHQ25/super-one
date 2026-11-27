@@ -22,6 +22,7 @@ vi.mock('../database', () => ({ getDb: getDbMock }))
 const wire = vi.hoisted(() => ({ handlers: new Map<string, (...args: unknown[]) => void>() }))
 vi.mock('electron', () => ({
   app: { getPath: () => zone.userData },
+  BrowserWindow: { getAllWindows: () => [] },
   session: {
     fromPartition: () => ({
       fetch: async () => ({ ok: false, status: 500, statusText: 'unused' }),

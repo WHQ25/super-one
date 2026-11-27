@@ -1,5 +1,6 @@
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
 import { assertAntigravityAccountSwitchAllowed } from '@superone/shared/antigravity-auth'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import { toast } from 'sonner'
 import type {
@@ -394,7 +395,7 @@ export async function setSessionApiProviderIdImpl(
   if (!sessionId) return
   const provider = sess.sessionProvider ?? sess.preferredProvider ?? 'claude'
   const isCodex = provider === 'codex'
-  const isAntigravity = provider === 'acp-antigravity'
+  const isAntigravity = Boolean(HARNESS_CAPABILITIES[provider].supportsAntigravityAccounts)
   const isDsh = new Set<HarnessId>(['dsh']).has(provider)
   try {
     if (isCodex) assertCodexAccountSwitchAllowed(sess.apiProviderId, apiProviderId, sess.messages.length > 0)

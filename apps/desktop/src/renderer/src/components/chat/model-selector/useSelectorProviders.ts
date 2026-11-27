@@ -8,6 +8,7 @@ import { useChatStore } from '@/stores/chat'
 import { useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { claudeAccountProviderId, type ClaudeAccount, type HarnessId } from '@superone/shared/agent-types'
+import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
 import { type Credential } from '@superone/shared/platform-registry'
 import { useActiveSession, useScopedSessionActions } from '@/stores/chat'
 import { useSessionScope } from '@/stores/chat-store/session-scope'
@@ -126,10 +127,11 @@ export function useSelectorProviders(harness: HarnessId) {
     return () => { cancelled = true; window.removeEventListener('codex-accounts-changed', refresh) }
   }, [harness, projectPath, providerScope])
 
+  const supportsAntigravityAccounts = Boolean(HARNESS_CAPABILITIES[harness].supportsAntigravityAccounts)
   const [antigravityAccounts, setAntigravityAccounts] = useState<AntigravityAccountSummary[]>([])
   useEffect(() => {
     setAntigravityAccounts([])
-    if (harness !== 'acp-antigravity' || typeof window.app?.antigravityAuth !== 'function') return
+    if (!supportsAntigravityAccounts || typeof window.app?.antigravityAuth !== 'function') return
     let cancelled = false
     const refresh = () => {
       void window.app.antigravityAuth({ action: 'list' })
@@ -146,7 +148,7 @@ export function useSelectorProviders(harness: HarnessId) {
       cancelled = true
       window.removeEventListener('antigravity-accounts-changed', refresh)
     }
-  }, [harness])
+  }, [supportsAntigravityAccounts])
 
   const consumer = consumerForHarness(harness)
   const filtered = useMemo<Credential[]>(
@@ -163,7 +165,7 @@ export function useSelectorProviders(harness: HarnessId) {
             id: codexAccountProviderId(account.id), brand: 'openai', name: defaultLabel,
             keyName: [account.email || account.id, account.signedIn ? account.planType : t('settings.harnesses.codexAccount.signedOut')].filter(Boolean).join(' · '),
           }))
-        : harness === 'acp-antigravity' && antigravityAccounts.length > 0
+        : supportsAntigravityAccounts && antigravityAccounts.length > 0
         ? antigravityAccounts.map((account) => ({
             id: antigravityAccountProviderId(account.id),
             brand: 'acp-antigravity',
@@ -192,7 +194,7 @@ export function useSelectorProviders(harness: HarnessId) {
   }, [filtered, platforms, harness, t, claudeAccounts, codexAccounts, antigravityAccounts, resolvedProviderId])
 
   const defaultAntigravityProviderId =
-    harness === 'acp-antigravity' && antigravityAccounts.some((a) => a.isDefault)
+    supportsAntigravityAccounts && antigravityAccounts.some((a) => a.isDefault)
       ? antigravityAccountProviderId(antigravityAccounts.find((a) => a.isDefault)!.id)
       : null
 
@@ -207,7 +209,7 @@ export function useSelectorProviders(harness: HarnessId) {
           : null)),
     onSelectProvider: (id: string | null) => { void setSessionApiProviderId(id) },
     onManageProviders: () => {
-      if (harness === 'acp-antigravity') {
+      if (supportsAntigravityAccounts) {
         setSettingsProvider('acp-antigravity')
         setHarnessConfigSection('account')
         setSettingsTab('harnesses')

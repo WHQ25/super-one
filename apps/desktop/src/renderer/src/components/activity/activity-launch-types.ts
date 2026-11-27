@@ -34,8 +34,10 @@ export function useActivityLaunchTypes(): ActivityLaunchType[] {
     return session ? resolveProvider(session) : null
   })
 
+  const supportsSwarmBoard = Boolean(activeSessionProvider && HARNESS_CAPABILITIES[activeSessionProvider].supportsSwarmBoard)
+
   const hasSwarmInMessages = useChatStore((s) => {
-    if (activeSessionProvider !== 'acp-antigravity' || !activeSessionId) return false
+    if (!supportsSwarmBoard || !activeSessionId) return false
     const project = s.activeProject ? s.projectSessions[s.activeProject] : undefined
     const session = project?._sessions[activeSessionId]
     if (!session) return false
@@ -63,7 +65,7 @@ export function useActivityLaunchTypes(): ActivityLaunchType[] {
 
   const [diskHasSwarm, setDiskHasSwarm] = useState(false)
   useEffect(() => {
-    if (activeSessionProvider !== 'acp-antigravity' || !activeSessionId || hasSwarmInMessages) {
+    if (!supportsSwarmBoard || !activeSessionId || hasSwarmInMessages) {
       setDiskHasSwarm(false)
       return
     }
@@ -77,7 +79,7 @@ export function useActivityLaunchTypes(): ActivityLaunchType[] {
     return () => {
       cancelled = true
     }
-  }, [activeSessionProvider, activeSessionId, hasSwarmInMessages])
+  }, [supportsSwarmBoard, activeSessionId, hasSwarmInMessages])
 
   const hasSwarm = hasSwarmInMessages || diskHasSwarm
 

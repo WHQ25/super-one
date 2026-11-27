@@ -143,6 +143,8 @@ export interface HarnessCapabilities {
    */
   supportsMcpToolPermissionRules: boolean
   supportsUiPlugins: boolean
+  supportsSwarmBoard?: boolean
+  supportsAntigravityAccounts?: boolean
   /**
    * Words the harness acts on when they appear in the prompt text, for that turn
    * only. The composer highlights them; on any other harness they are plain text.
@@ -255,6 +257,8 @@ export const HARNESS_CAPABILITIES: Record<HarnessId, HarnessCapabilities> = {
     ...ACP_PROTOCOL_CAPABILITIES,
     supportsFork: true,
     supportsNativeFork: false,
+    supportsSwarmBoard: true,
+    supportsAntigravityAccounts: true,
     goal: null,
     displayName: 'Antigravity',
   },

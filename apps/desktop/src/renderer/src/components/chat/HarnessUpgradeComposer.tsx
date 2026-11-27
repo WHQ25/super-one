@@ -22,10 +22,13 @@ export interface HarnessUpgradeComposerProps {
   platform?: string
 }
 
+const DEFAULT_ACP_AGENT_IDS: Partial<Record<ExternalCliHarnessId, string>> = {
+  'acp-antigravity': 'antigravity',
+  'acp-grok': 'grok-build',
+}
+
 function defaultAcpAgentId(harnessId: ExternalCliHarnessId): string | null {
-  if (harnessId === 'acp-antigravity') return 'antigravity'
-  if (harnessId === 'acp-grok') return 'grok-build'
-  return null
+  return DEFAULT_ACP_AGENT_IDS[harnessId] ?? null
 }
 
 export function HarnessUpgradeComposer({
@@ -123,7 +126,7 @@ export function HarnessUpgradeComposer({
                 <span className="text-sm font-medium text-foreground">
                   {t('settings.harnesses.cliInstall.composerUpgradeTitle', { label })}
                 </span>
-                <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 font-mono text-[11px] text-warning">
+                <span className="inline-flex items-center gap-1 rounded-full bg-warning/15 px-2 py-0.5 font-mono text-xs text-warning">
                   {currentVersion ? <span>{currentVersion}</span> : null}
                   {currentVersion ? <span>→</span> : null}
                   <span>

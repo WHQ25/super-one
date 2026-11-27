@@ -11,6 +11,8 @@ import { compareMentionMatchKeys, gitMentionRefMatchKey, mentionMatchTier } from
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
 import { MentionPopup, type MentionPopupHandle } from './MentionPopup'
+import { clearMentionCatalogCache } from '@/lib/mention-catalog'
+import { clearAgentMentionTargetsCache } from '@/lib/agent-mention-targets'
 import { mockIpc } from '../../../../../.storybook/mock-ipc'
 
 const PROJECT = '/storybook/mention-popup'
@@ -174,6 +176,8 @@ function Preview({ remote = false, catalog, query, repo = true, github = true, r
   const [log, setLog] = useState<string[]>([])
   const ref = useRef<MentionPopupHandle>(null)
   useEffect(() => {
+    clearMentionCatalogCache()
+    clearAgentMentionTargetsCache()
     catalogAnswer = catalog ?? (async () => DEFAULT_MENTION_CATALOG)
     if (remote) useChatStore.getState().ensureSession('remote:storybook-node:/srv/repo')
     capabilities = { repo: repo ? 'ready' : 'not-repo', github: repo && github }

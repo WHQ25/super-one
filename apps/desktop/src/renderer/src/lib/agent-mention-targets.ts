@@ -8,10 +8,55 @@
  * "Unknown agent profile" on launch.
  */
 
+import { useEffect, useSyncExternalStore } from 'react'
 import { isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import { AgentIpcChannels, type AgentMentionTarget, type HarnessId } from '@superone/shared/agent-types'
 import { buildAgentMentionTargets } from '@superone/shared/agent-mention-tags'
 import { parseRemoteProjectKey } from './remote-project-key'
+
+const EMPTY_AGENT_TARGETS: AgentMentionTarget[] = []
+const targetsByProject = new Map<string, AgentMentionTarget[]>()
+const pendingTargetsByProject = new Map<string, Promise<AgentMentionTarget[]>>()
+const latestTargetRequestByProject = new Map<string, number>()
+const targetListeners = new Set<() => void>()
+
+const targetCacheKey = (projectPath: string | null | undefined) => projectPath || '__local__'
+const subscribeTargets = (callback: () => void) => {
+  targetListeners.add(callback)
+  return () => {
+    targetListeners.delete(callback)
+  }
+}
+
+function sameAgentTargets(a: readonly AgentMentionTarget[] | undefined, b: readonly AgentMentionTarget[]): boolean {
+  if (!a || a.length !== b.length) return false
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i]
+    const y = b[i]
+    if (
+      x.ref !== y.ref
+      || x.providerId !== y.providerId
+      || x.harnessId !== y.harnessId
+      || x.slug !== y.slug
+      || x.displayName !== y.displayName
+      || x.brandKey !== y.brandKey
+      || x.isBase !== y.isBase
+      || x.aliases.length !== y.aliases.length
+    ) {
+      return false
+    }
+    for (let j = 0; j < x.aliases.length; j++) {
+      if (x.aliases[j] !== y.aliases[j]) return false
+    }
+  }
+  return true
+}
+
+function storeAgentTargets(key: string, targets: AgentMentionTarget[]): void {
+  if (sameAgentTargets(targetsByProject.get(key), targets)) return
+  targetsByProject.set(key, targets)
+  for (const listener of targetListeners) listener()
+}
 
 type IpcInvoke = (channel: string, ...args: unknown[]) => Promise<unknown>
 
@@ -95,26 +140,81 @@ function profilesToTargets(raw: unknown): AgentMentionTarget[] {
   return buildAgentMentionTargets(rows)
 }
 
-export async function listAgentMentionTargets(
+async function fetchAgentMentionTargets(
   projectPath: string | null | undefined,
   apis?: AgentMentionTargetApis,
 ): Promise<AgentMentionTarget[]> {
   const remote = projectPath ? parseRemoteProjectKey(projectPath) : null
+  if (!remote) {
+    const list = localApi(apis)
+    return list ? asTargets(await list()) : []
+  }
+  const remoteList = apis?.remoteCollabProfiles ?? envCollabProfiles()
+  if (remoteList) return profilesToTargets(await remoteList(remote.connectionId))
+  const invoke = getIpcInvoke()
+  if (!invoke) return []
+  return profilesToTargets(
+    await invoke(AgentIpcChannels.ENVIRONMENT_COLLAB_LIST_PROFILES, remote.connectionId),
+  )
+}
+
+export async function listAgentMentionTargets(
+  projectPath: string | null | undefined,
+  apis?: AgentMentionTargetApis,
+): Promise<AgentMentionTarget[]> {
   try {
-    if (!remote) {
-      const list = localApi(apis)
-      return list ? asTargets(await list()) : []
-    }
-    const remoteList = apis?.remoteCollabProfiles ?? envCollabProfiles()
-    if (remoteList) return profilesToTargets(await remoteList(remote.connectionId))
-    // Fall back to raw IPC when the preload wrapper is missing (same pattern as
-    // remote-session-providers / remote-resource-ops).
-    const invoke = getIpcInvoke()
-    if (!invoke) return []
-    return profilesToTargets(
-      await invoke(AgentIpcChannels.ENVIRONMENT_COLLAB_LIST_PROFILES, remote.connectionId),
-    )
+    return await fetchAgentMentionTargets(projectPath, apis)
   } catch {
     return []
   }
+}
+
+export function loadAgentMentionTargets(
+  projectPath: string | null | undefined,
+  opts?: { fresh?: boolean },
+): Promise<AgentMentionTarget[]> {
+  const key = targetCacheKey(projectPath)
+  if (!opts?.fresh) {
+    const existing = pendingTargetsByProject.get(key)
+    if (existing) return existing
+  }
+  const generation = (latestTargetRequestByProject.get(key) ?? 0) + 1
+  latestTargetRequestByProject.set(key, generation)
+  const request = fetchAgentMentionTargets(projectPath)
+    .then((targets) => {
+      if (latestTargetRequestByProject.get(key) === generation) {
+        storeAgentTargets(key, targets)
+      }
+      return targets
+    })
+    .catch(() => targetsByProject.get(key) ?? EMPTY_AGENT_TARGETS)
+    .finally(() => {
+      if (pendingTargetsByProject.get(key) === request) pendingTargetsByProject.delete(key)
+    })
+  pendingTargetsByProject.set(key, request)
+  return request
+}
+
+export function useAgentMentionTargets(
+  projectPath: string | null | undefined,
+  refreshKey?: unknown,
+): AgentMentionTarget[] {
+  const key = targetCacheKey(projectPath)
+  const targets = useSyncExternalStore(
+    subscribeTargets,
+    () => targetsByProject.get(key) ?? EMPTY_AGENT_TARGETS,
+  )
+
+  useEffect(() => {
+    void loadAgentMentionTargets(projectPath)
+  }, [projectPath, refreshKey])
+
+  return targets
+}
+
+export function clearAgentMentionTargetsCache(): void {
+  targetsByProject.clear()
+  pendingTargetsByProject.clear()
+  latestTargetRequestByProject.clear()
+  for (const listener of targetListeners) listener()
 }

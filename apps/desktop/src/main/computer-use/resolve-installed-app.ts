@@ -1,6 +1,6 @@
 import { execFile } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { readdir, readFile } from 'node:fs/promises'
+import { readdir, readFile, stat } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { basename, join } from 'node:path'
 import { promisify } from 'node:util'
@@ -18,24 +18,22 @@ export type ResolvedInstalledApp = {
 
 type CacheEntry = {
   at: number
+  signature: string | null
   apps: ResolvedInstalledApp[]
 }
 
 const SCAN_TTL_MS = 60_000
-/** Cap concurrent Info.plist / plutil work so cold scan does not flood the event loop. */
 const READ_CONCURRENCY = 12
 
 let cache: CacheEntry | null = null
-/** Coalesce concurrent cold scans (e.g. @-mention + computer_apps). */
 let inFlightScan: Promise<ResolvedInstalledApp[]> | null = null
 
-/** Test injection — bypasses LaunchServices / disk scan. */
 let testOverride:
   | ((query: string) => Promise<ResolvedInstalledApp | null> | ResolvedInstalledApp | null)
   | null = null
-/** Instant catalog for unit tests — skips mdfind + filesystem walk. */
 let testCatalog: ResolvedInstalledApp[] | null = null
 let testScan: (() => Promise<ResolvedInstalledApp[]>) | null = null
+let testSignature: (() => Promise<string>) | null = null
 
 export function setResolveInstalledAppForTests(
   fn: typeof testOverride,
@@ -57,13 +55,21 @@ export function setInstalledAppsScanForTests(
   inFlightScan = null
 }
 
-/** Test helper. */
+export function setInstalledAppsSignatureForTests(
+  fn: (() => Promise<string>) | null,
+): void {
+  testSignature = fn
+  cache = null
+  inFlightScan = null
+}
+
 export function clearInstalledAppCacheForTests(): void {
   cache = null
   inFlightScan = null
   testOverride = null
   testCatalog = null
   testScan = null
+  testSignature = null
 }
 
 /**
@@ -135,33 +141,68 @@ function synthetic(path: string, bundleId: string): ResolvedInstalledApp {
   return { app: name, bundleId, path, aliases: [name, bundleId] }
 }
 
-/**
- * Public catalog of installed .app bundles (cached ~60s).
- * Async so cold scan never blocks the Electron main thread with sync I/O / plutil.
- */
-export async function listInstalledApps(): Promise<ResolvedInstalledApp[]> {
-  if (testCatalog) return testCatalog
-  if (cache && Date.now() - cache.at < SCAN_TTL_MS) return cache.apps
-  if (inFlightScan) return inFlightScan
-
-  inFlightScan = (testScan ?? scanInstalledApps)()
-    .then((apps) => {
-      cache = { at: Date.now(), apps }
-      return apps
-    })
-    .finally(() => {
-      inFlightScan = null
-    })
-
-  return inFlightScan
-}
-
-async function scanInstalledApps(): Promise<ResolvedInstalledApp[]> {
-  const dirs = [
+function getScanDirs(): string[] {
+  return [
     '/Applications',
     '/System/Applications',
     join(homedir(), 'Applications'),
   ]
+}
+
+async function readAppDirsSignature(): Promise<string> {
+  const parts = await Promise.all(
+    getScanDirs().map(async (dir) => {
+      try {
+        const s = await stat(dir)
+        return `${dir}:${s.mtimeMs}:${s.ctimeMs}`
+      } catch {
+        return `${dir}:missing`
+      }
+    }),
+  )
+  return parts.join('|')
+}
+
+function startInstalledAppsScan(isRefresh: boolean): Promise<ResolvedInstalledApp[]> {
+  if (inFlightScan) return inFlightScan
+  const readSignature = testSignature ?? (testScan ? null : readAppDirsSignature)
+  const scan = testScan ?? scanInstalledApps
+
+  inFlightScan = (async () => {
+    if (isRefresh && cache && cache.signature && readSignature) {
+      const nextSignature = await readSignature()
+      if (nextSignature === cache.signature) {
+        cache = { ...cache, at: Date.now() }
+        return cache.apps
+      }
+      const apps = await scan()
+      cache = { at: Date.now(), signature: nextSignature, apps }
+      return apps
+    }
+    const signature = readSignature ? await readSignature() : null
+    const apps = await scan()
+    cache = { at: Date.now(), signature, apps }
+    return apps
+  })().finally(() => {
+    inFlightScan = null
+  })
+
+  return inFlightScan
+}
+
+export async function listInstalledApps(): Promise<ResolvedInstalledApp[]> {
+  if (testCatalog) return testCatalog
+  if (cache) {
+    if (Date.now() - cache.at >= SCAN_TTL_MS) {
+      void startInstalledAppsScan(true).catch(() => {})
+    }
+    return cache.apps
+  }
+  return startInstalledAppsScan(false)
+}
+
+async function scanInstalledApps(): Promise<ResolvedInstalledApp[]> {
+  const dirs = getScanDirs()
 
   const appPaths: string[] = []
   for (const dir of dirs) {

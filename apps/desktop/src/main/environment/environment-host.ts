@@ -2960,7 +2960,7 @@ export class EnvironmentHost {
    * chip, and installed memory are kept from that descriptor so they still
    * show after disconnect. Live CPU and free memory are not stored.
    */
-  async listEnvironments(options?: { includeDescriptors?: boolean }): Promise<EnvironmentListItem[]> {
+  async listEnvironments(options?: { includeDescriptors?: boolean; cachedDescriptorsOnly?: boolean }): Promise<EnvironmentListItem[]> {
     const local = this.registry.getLocal()
     const localDescriptor = await local.getDescriptor()
     const items: EnvironmentListItem[] = [
@@ -2990,7 +2990,9 @@ export class EnvironmentHost {
       // listed without those fields.
       const reachable = snapshot?.state === 'connected' || snapshot?.state === 'synchronizing'
       const descriptor = gateway && options?.includeDescriptors !== false && reachable
-        ? await gateway.getDescriptor().catch(() => null)
+        ? options?.cachedDescriptorsOnly
+          ? gateway.cachedDescriptor
+          : await gateway.getDescriptor().catch(() => null)
         : null
       // A connection with no live entry was disconnected or never dialed; the
       // last snapshot is stale in that case, so report it as disconnected.

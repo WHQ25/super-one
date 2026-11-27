@@ -3,7 +3,7 @@ import { getEnvironmentHost } from '../environment/environment-host'
 
 /** The `@env` catalog a paired phone asks for: this machine, remote nodes, and other desktops. */
 export async function readEnvironmentMentionTargets(): Promise<EnvironmentMentionCandidate[]> {
-  const items = await getEnvironmentHost().listEnvironments({ includeDescriptors: true })
+  const items = await getEnvironmentHost().listEnvironments({ includeDescriptors: true, cachedDescriptorsOnly: true })
   return buildEnvironmentMentionCandidates({
     environments: items.map((item) => ({
       kind: item.kind,

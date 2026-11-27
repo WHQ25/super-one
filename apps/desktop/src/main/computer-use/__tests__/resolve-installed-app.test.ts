@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { matchRunningApp } from '../app-identity'
 import {
   clearInstalledAppCacheForTests,
@@ -6,6 +6,7 @@ import {
   resolveInstalledApp,
   setInstalledAppsCatalogForTests,
   setInstalledAppsScanForTests,
+  setInstalledAppsSignatureForTests,
 } from '../resolve-installed-app'
 
 const TEXT_EDIT = {
@@ -62,6 +63,11 @@ describe('resolveInstalledApp (injected catalog)', () => {
 })
 
 describe('listInstalledApps (async catalog)', () => {
+  afterEach(() => {
+    vi.useRealTimers()
+    clearInstalledAppCacheForTests()
+  })
+
   it('returns apps and coalesces concurrent cold scans onto one result', async () => {
     clearInstalledAppCacheForTests()
     let calls = 0
@@ -85,5 +91,71 @@ describe('listInstalledApps (async catalog)', () => {
     const cached = await listInstalledApps()
     expect(cached).toBe(a)
     expect(calls).toBe(1)
+  })
+
+  it('returns stale cache immediately after TTL while refreshing in the background', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-11-27T00:00:00Z'))
+    clearInstalledAppCacheForTests()
+
+    let calls = 0
+    let releaseRefresh!: () => void
+    const refreshGate = new Promise<void>((resolve) => {
+      releaseRefresh = resolve
+    })
+    setInstalledAppsScanForTests(async () => {
+      calls += 1
+      if (calls === 1) return [TEXT_EDIT]
+      await refreshGate
+      return [TEXT_EDIT, DOUBAO]
+    })
+
+    const initial = await listInstalledApps()
+    expect(initial).toEqual([TEXT_EDIT])
+    expect(calls).toBe(1)
+
+    vi.advanceTimersByTime(61_000)
+    const staleA = await listInstalledApps()
+    const staleB = await listInstalledApps()
+    expect(staleA).toEqual([TEXT_EDIT])
+    expect(staleB).toEqual([TEXT_EDIT])
+    expect(calls).toBe(2)
+
+    releaseRefresh()
+    await Promise.resolve()
+    await Promise.resolve()
+
+    const refreshed = await listInstalledApps()
+    expect(refreshed).toEqual([TEXT_EDIT, DOUBAO])
+    expect(calls).toBe(2)
+  })
+
+  it('skips rescanning when application directory signatures have not changed', async () => {
+    vi.useFakeTimers()
+    vi.setSystemTime(new Date('2026-11-27T00:00:00Z'))
+    clearInstalledAppCacheForTests()
+
+    let calls = 0
+    let sig = 'v1'
+    setInstalledAppsSignatureForTests(async () => sig)
+    setInstalledAppsScanForTests(async () => {
+      calls += 1
+      return calls === 1 ? [TEXT_EDIT] : [TEXT_EDIT, DOUBAO]
+    })
+
+    expect(await listInstalledApps()).toEqual([TEXT_EDIT])
+    expect(calls).toBe(1)
+
+    vi.advanceTimersByTime(61_000)
+    expect(await listInstalledApps()).toEqual([TEXT_EDIT])
+    await vi.runAllTimersAsync()
+    expect(calls).toBe(1)
+
+    sig = 'v2'
+    vi.advanceTimersByTime(61_000)
+    expect(await listInstalledApps()).toEqual([TEXT_EDIT])
+    await vi.runAllTimersAsync()
+    expect(calls).toBe(2)
+    expect(await listInstalledApps()).toEqual([TEXT_EDIT, DOUBAO])
   })
 })

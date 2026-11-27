@@ -8,8 +8,7 @@ import { useActiveSession, type MentionKind } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { MENTION_SEARCH_DEBOUNCE_MS } from '@superone/shared/mention-search-debounce'
 import { useMentionContext } from './use-mention-context'
-import { loadMentionCatalog, EMPTY_MENTION_CATALOG } from '@/lib/mention-catalog'
-import type { MentionCatalog } from '@superone/shared/mention-catalog'
+import { useMentionCatalog } from '@/lib/mention-catalog'
 import { useTranslation } from 'react-i18next'
 import type {
   AgentMentionTarget,
@@ -22,7 +21,7 @@ import { PLAIN_MENTION_GROUP_LIMIT, orderDirectSearchGroups, shouldDirectSearch,
 import { compareMentionMatchKeys, fileMentionMatchKey, gitMentionRefMatchKey, mentionMatchKey, sortByMentionMatch, type MentionMatchKey } from '@superone/shared/mention-match-tier'
 import { BUILTIN_CAPABILITIES, type BuiltinCapabilityId } from '@superone/shared/capability-prompt-tags'
 import { desktopMentionScope, includeDesktopMention } from '@superone/shared/chrome-browser-apps'
-import { listAgentMentionTargets } from '@/lib/agent-mention-targets'
+import { useAgentMentionTargets } from '@/lib/agent-mention-targets'
 import { resolveSessionIconFromBrandKey } from '@/components/harness/resolve-session-icon'
 import { groupItems, PopupSectionHeader } from './popup-groups'
 import {
@@ -130,6 +129,7 @@ type FlatItem =
       /** Sort key: id matches beat display-name matches. */
       matchRank: BuiltinMentionMatchRank
       disabled?: boolean
+      pending?: boolean
     }
   | {
       /** Built-in “Session” portal — Tab/Enter navigates into session search. */
@@ -543,30 +543,11 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       }
     }, [selectedIndex])
 
-    const [catalogState, setCatalogState] = useState<{ project: string | null; value: MentionCatalog } | null>(null)
-    const catalog = catalogState?.project === activeProject ? catalogState.value : EMPTY_MENTION_CATALOG
-    const desktopAppsReady = catalogState?.project === activeProject
+    const { catalog, ready: catalogReady } = useMentionCatalog(activeProject)
+    const desktopAppsReady = catalogReady
     const environmentRows = catalog.environments ?? []
-    const environmentLoading = !desktopAppsReady
-    const environmentSettled = desktopAppsReady
-    useEffect(() => {
-      let cancelled = false
-      let request = 0
-      const refresh = (fresh = false) => {
-        if (!activeProject) {
-          setCatalogState({ project: activeProject, value: EMPTY_MENTION_CATALOG })
-          return
-        }
-        const id = ++request
-        void loadMentionCatalog(activeProject, { fresh }).then(value => {
-          if (!cancelled && id === request) setCatalogState({ project: activeProject, value })
-        })
-      }
-      refresh()
-      const unsubscribe = window.app?.onAppSettingsChange?.(() => refresh(true))
-      const unsubscribeChrome = window.app?.onChromeBridgeStatus?.(() => refresh(true))
-      return () => { cancelled = true; unsubscribe?.(); unsubscribeChrome?.() }
-    }, [activeProject])
+    const environmentLoading = !catalogReady
+    const environmentSettled = catalogReady
 
     // Reset selection when entering a portal or changing its phase.
     // Typing an environment name stays on the same portal, so the highlight holds.
@@ -611,19 +592,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       return matches
     }, [miniApps, query, isBrowseMode])
 
-    // Usable agents for THIS project: local desktop rows, or the node's own
-    // profiles for a remote project (their agentIds differ).
-    const [agentTargets, setAgentTargets] = useState<AgentMentionTarget[]>([])
-    useEffect(() => {
-      let cancelled = false
-      setAgentTargets([])
-      void listAgentMentionTargets(activeProject).then((targets) => {
-        if (!cancelled) setAgentTargets(targets)
-      })
-      return () => {
-        cancelled = true
-      }
-    }, [activeProject, agentProfilesEnabled])
+    const agentTargets = useAgentMentionTargets(activeProject, agentProfilesEnabled)
 
     const matchedAgentTargets = useMemo<FlatItem[]>(() => {
       if (isPortalMode) return []
@@ -690,8 +659,8 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
           matchIndices: scored.labelIndices,
           keywordMatchIndices: scored.keywordIndices,
           matchRank: scored.rank,
-          // Stay visible but not selectable when the matching settings toggle is off.
-          disabled: !capabilityEnabled[cap.id],
+          disabled: catalogReady && !capabilityEnabled[cap.id],
+          pending: !catalogReady,
         })
       }
       // Built-in Session portal — always on; Tab/Enter opens session search page.
@@ -773,7 +742,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         )
       }
       return matches
-    }, [capabilityLabel, sessionPortalLabel, query, isBrowseMode, isPortalMode, capabilityEnabled, git.availability, git.githubAvailable, t])
+    }, [capabilityLabel, sessionPortalLabel, query, isBrowseMode, isPortalMode, capabilityEnabled, catalogReady, git.availability, git.githubAvailable, t])
 
     const sessionFlatItems = useCallback((rows: PinnedSessionEntry[], titleQ: string, showProject: boolean): FlatItem[] => {
       return rows.map((row) => {
@@ -1011,7 +980,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
 
     const handleItemClick = useCallback(
       (item: FlatItem, action: 'navigate' | 'select') => {
-        if (item.kind === 'capability' && item.disabled) return
+        if (item.kind === 'capability' && (item.disabled || item.pending)) return
         // Built-in Session → switch popup to session search page (both Tab and Enter).
         if (item.kind === 'session-portal') {
           onSelect(SESSION_MENTION_NAV_PREFIX, 'navigate')
@@ -1374,6 +1343,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       }
       if (item.kind === 'capability') {
         const disabled = !!item.disabled
+        const pending = !!item.pending
         const disabledHint =
           item.id === 'computer'
             ? t('chat.mentionPopup.computerUseDisabledHint')
@@ -1384,9 +1354,10 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
             ref={setItemRef(i)}
             type="button"
             disabled={disabled}
+            aria-busy={pending || undefined}
             onMouseDown={(e) => e.preventDefault()}
             onClick={() => {
-              if (disabled) return
+              if (disabled || pending) return
               onSelect(item.id, 'select', item.id, item.displayName)
             }}
             onMouseEnter={() => onSetSelectedIndex(i)}

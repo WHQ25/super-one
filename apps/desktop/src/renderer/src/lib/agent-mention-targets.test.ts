@@ -1,5 +1,9 @@
-import { describe, it, expect, vi } from 'vitest'
-import { listAgentMentionTargets } from './agent-mention-targets'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
+import {
+  clearAgentMentionTargetsCache,
+  listAgentMentionTargets,
+  loadAgentMentionTargets,
+} from './agent-mention-targets'
 
 const LOCAL_TARGET = {
   ref: 'codex-base',
@@ -13,6 +17,10 @@ const LOCAL_TARGET = {
 }
 
 describe('agent mention targets', () => {
+  beforeEach(() => {
+    clearAgentMentionTargetsCache()
+  })
+
   it('uses the desktop list for a local project', async () => {
     const localList = vi.fn().mockResolvedValue([LOCAL_TARGET])
     const remoteCollabProfiles = vi.fn()
@@ -61,5 +69,21 @@ describe('agent mention targets', () => {
     const remoteCollabProfiles = vi.fn().mockRejectedValue(new Error('offline'))
     expect(await listAgentMentionTargets('remote:conn-1:/srv/app', { remoteCollabProfiles }))
       .toEqual([])
+  })
+
+  it('caches loaded targets and preserves them if a refresh fails', async () => {
+    const listMentionTargets = vi.fn()
+      .mockResolvedValueOnce([LOCAL_TARGET])
+      .mockRejectedValueOnce(new Error('transient'))
+    Object.assign(globalThis, {
+      window: {
+        app: { sessionProviders: { listMentionTargets } },
+      },
+    })
+
+    const first = await loadAgentMentionTargets('/proj')
+    expect(first).toEqual([LOCAL_TARGET])
+    const fallback = await loadAgentMentionTargets('/proj', { fresh: true })
+    expect(fallback).toEqual([LOCAL_TARGET])
   })
 })

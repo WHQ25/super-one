@@ -4,6 +4,8 @@ import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { useAppStore } from '@/stores/app'
 import { useChatStore } from '@/stores/chat'
 import { SessionScopeProvider } from '@/stores/chat-store/session-scope'
+import { clearMentionCatalogCache, loadMentionCatalog } from '@/lib/mention-catalog'
+import { clearAgentMentionTargetsCache } from '@/lib/agent-mention-targets'
 import { MentionPopup } from './MentionPopup'
 
 vi.mock('react-i18next', () => ({ useTranslation: () => ({ t: (key: string) => key }) }))
@@ -17,6 +19,8 @@ function popup(query: string) {
 
 describe('mention resources in a remote session pane', () => {
   beforeEach(() => {
+    clearMentionCatalogCache()
+    clearAgentMentionTargetsCache()
     useAppStore.setState({ currentFolder: '/local/repo', _worktrees: {} })
     useChatStore.getState().ensureSession(PROJECT)
     const project = useChatStore.getState().projectSessions[PROJECT]!
@@ -75,5 +79,59 @@ describe('mention resources in a remote session pane', () => {
     expect(window.app.getAppSettings).not.toHaveBeenCalled()
     expect(window.app.listComputerUseInstalledApps).not.toHaveBeenCalled()
     expect(container.textContent).not.toContain('Local only')
+  })
+
+  it('renders cached computer and browser capabilities enabled immediately on remount', async () => {
+    vi.mocked(window.environment.getMentionCatalog).mockResolvedValueOnce({
+      capabilityIds: ['computer', 'browser', 'widget'],
+      apps: [],
+      environments: [],
+    })
+    await loadMentionCatalog(PROJECT)
+
+    let resolveRefresh!: (value: { capabilityIds: string[]; apps: []; environments: [] }) => void
+    vi.mocked(window.environment.getMentionCatalog).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRefresh = resolve as typeof resolveRefresh
+      }),
+    )
+
+    const { container } = render(popup(''))
+    const buttons = Array.from(container.querySelectorAll('button'))
+    const computerBtn = buttons.find((b) => b.textContent?.includes('chat.mentionPopup.capabilityComputer'))
+    const browserBtn = buttons.find((b) => b.textContent?.includes('chat.mentionPopup.capabilityBrowser'))
+    expect(computerBtn?.disabled).toBe(false)
+    expect(browserBtn?.disabled).toBe(false)
+    expect(container.textContent).not.toContain('chat.mentionPopup.computerUseDisabledHint')
+    expect(container.textContent).not.toContain('chat.mentionPopup.browserDisabledHint')
+
+    resolveRefresh({ capabilityIds: ['computer', 'browser', 'widget'], apps: [], environments: [] })
+    await waitFor(() => expect(window.environment.getMentionCatalog).toHaveBeenCalledTimes(2))
+  })
+
+  it('does not flash capability rows as disabled while cold catalog is loading', async () => {
+    let resolveCatalog!: (value: { capabilityIds: string[]; apps: []; environments: [] }) => void
+    vi.mocked(window.environment.getMentionCatalog).mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveCatalog = resolve as typeof resolveCatalog
+      }),
+    )
+
+    const { container } = render(popup(''))
+    const buttons = Array.from(container.querySelectorAll('button'))
+    const computerBtn = buttons.find((b) => b.textContent?.includes('chat.mentionPopup.capabilityComputer'))
+    const browserBtn = buttons.find((b) => b.textContent?.includes('chat.mentionPopup.capabilityBrowser'))
+    expect(computerBtn?.disabled).toBe(false)
+    expect(browserBtn?.disabled).toBe(false)
+    expect(computerBtn?.getAttribute('aria-busy')).toBe('true')
+    expect(browserBtn?.getAttribute('aria-busy')).toBe('true')
+    expect(container.textContent).not.toContain('chat.mentionPopup.computerUseDisabledHint')
+
+    resolveCatalog({ capabilityIds: ['widget'], apps: [], environments: [] })
+    await waitFor(() => {
+      const updated = Array.from(container.querySelectorAll('button'))
+      expect(updated.find((b) => b.textContent?.includes('chat.mentionPopup.capabilityComputer'))?.disabled).toBe(true)
+      expect(updated.find((b) => b.textContent?.includes('chat.mentionPopup.capabilityBrowser'))?.disabled).toBe(true)
+    })
   })
 })

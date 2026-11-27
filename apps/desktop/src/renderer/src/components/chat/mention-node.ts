@@ -18,6 +18,7 @@ export interface MentionNodeAttrs {
     | 'mcp-resource'
   value: string
   displayName: string
+  upToMessageId?: string
 }
 
 export const MentionNode = Node.create({
@@ -33,6 +34,7 @@ export const MentionNode = Node.create({
       kind: { default: 'file' },
       value: { default: '' },
       displayName: { default: '' },
+      upToMessageId: { default: undefined },
     }
   },
 

@@ -93,6 +93,7 @@ export interface Mention {
   kind: MentionKind
   value: string
   displayName: string
+  upToMessageId?: string
 }
 
 /** An ordered piece of a composed message: a text run (optionally a paste chip) or an inline attachment reference. */

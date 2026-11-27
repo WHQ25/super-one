@@ -1,16 +1,18 @@
 import { useState } from 'react'
 import { toast } from 'sonner'
 import { useTranslation } from 'react-i18next'
-import { GitFork, Loader2, Split } from 'lucide-react'
+import { Forward, GitFork, Loader2, Split } from 'lucide-react'
 import { cn } from '@superone/ui/lib/utils'
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@superone/ui/components/ui/dropdown-menu'
 import type { ChatMessage, SessionForkMode } from '@superone/shared/agent-types'
 import { useChatStore } from '@/stores/chat'
+import { handoffToNewSession } from '@/lib/session-continuation'
 
 interface ForkButtonProps {
   /** The assistant message whose turn marks the fork point. */
@@ -54,6 +56,19 @@ export function ForkButton({ message, className }: ForkButtonProps) {
     setBusy(false)
   }
 
+  const handleHandoff = () => {
+    if (busy) return
+    const state = useChatStore.getState()
+    const projectPath = state.activeProject
+    const project = projectPath ? state.projectSessions[projectPath] : undefined
+    const sessionId = project?._activeSessionId
+    if (!projectPath || !sessionId) return
+    const messages = project._sessions[sessionId]?.messages ?? []
+    const idx = messages.findIndex((m) => m.id === message.id)
+    const upToMessageId = idx >= 0 && idx < messages.length - 1 ? message.id : undefined
+    handoffToNewSession(projectPath, sessionId, upToMessageId)
+  }
+
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
@@ -67,6 +82,11 @@ export function ForkButton({ message, className }: ForkButtonProps) {
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-48">
+        <DropdownMenuItem className="text-xs" onClick={handleHandoff}>
+          <Forward className="size-3.5" />
+          {t('sidebar.contextMenu.handOffToNewSession')}
+        </DropdownMenuItem>
+        <DropdownMenuSeparator />
         <DropdownMenuItem className="text-xs" onClick={() => handleFork('worktree')}>
           <GitFork className="size-3.5" />
           {t('sidebar.contextMenu.forkToWorktree')}

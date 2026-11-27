@@ -797,6 +797,7 @@ export const zh: Messages = {
       newSideChat: '新建临时对话',
       forkToLocal: 'Fork 到同一工作树',
       forkToSameWorktree: 'Fork 到同一工作树',
+      handOffToNewSession: '交接到新会话',
       forkingToast: '正在 Fork 会话…',
       forkedToast: '已 Fork 到新工作树',
       forkedLocalToast: '已 Fork 到同一工作树',

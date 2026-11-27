@@ -5,15 +5,16 @@ import { wrapAgentMention } from '@superone/shared/agent-mention-tags'
 import { wrapGitMention } from '@superone/shared/git-mention-tags'
 import { wrapMcpResourceMention } from '@superone/shared/mcp-app-mentions'
 import { wrapEnvironmentMention } from '@superone/shared/environment-mention'
+import { wrapSessionMention } from '@superone/shared/miniapp-prompt-tags'
 import { wrapPathRefMention } from '@superone/shared/user-mention-parser'
 import type { InputSegment } from '@/stores/chat-store/types'
 import type { MentionNodeAttrs } from '../mention-node'
 
 function mentionText(attrs: MentionNodeAttrs): string {
-  const { kind, value, displayName } = attrs
+  const { kind, value, displayName, upToMessageId } = attrs
   if (kind === 'miniapp') return `<superone-miniapp><appname>${displayName}</appname><appid>${value}</appid></superone-miniapp>`
   if (kind === 'desktop-app') return `<superone-desktop-app><name>${displayName}</name><bundleId>${value}</bundleId></superone-desktop-app>`
-  if (kind === 'session') return `<superone-session><title>${displayName}</title><sessionId>${value}</sessionId></superone-session>`
+  if (kind === 'session') return wrapSessionMention(value, displayName, upToMessageId || undefined)
   if (kind === 'environment') return wrapEnvironmentMention(displayName, value)
   if (kind === 'git') return wrapGitMention(value, displayName)
   if (kind === 'mcp-resource') return wrapMcpResourceMention(value, displayName)

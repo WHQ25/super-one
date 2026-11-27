@@ -792,6 +792,7 @@ export type Messages = {
       forkToLocal: string
       /** Same directory / no new worktree (local + remote). */
       forkToSameWorktree: string
+      handOffToNewSession: string
       forkingToast: string
       forkedToast: string
       forkedLocalToast: string
@@ -6386,6 +6387,7 @@ export const en: Messages = {
       newSideChat: 'New Side Chat',
       forkToLocal: 'Fork to Same Worktree',
       forkToSameWorktree: 'Fork to Same Worktree',
+      handOffToNewSession: 'Hand Off to New Session',
       forkingToast: 'Forking session…',
       forkedToast: 'Forked to a new worktree',
       forkedLocalToast: 'Forked in the same worktree',

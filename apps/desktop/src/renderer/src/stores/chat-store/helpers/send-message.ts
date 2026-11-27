@@ -231,7 +231,7 @@ export async function sendMessageImpl(
     for (const m of sessionMentions) {
       if (!m.value || seen.has(m.value)) continue
       seen.add(m.value)
-      lines.push(`- "${m.displayName || m.value}" (sessionId: ${m.value})`)
+      lines.push(`- "${m.displayName || m.value}" (sessionId: ${m.value}${m.upToMessageId ? `, upToMessageId: ${m.upToMessageId} — do not read past this message` : ''})`)
     }
     if (session.continuesFrom && seen.has(session.continuesFrom)) {
       lines.push(

@@ -3223,6 +3223,38 @@ describe('Session persist hook', () => {
       expect(last.worktreePath).toBe('/tmp/proj/.worktrees/abc')
       expect(last.gitBranch).toBe('feature/x')
     })
+
+    it('switchCwd on an unsent prewarmed session clears providerSessionId and releases runtime', async () => {
+      const { session, backend } = makeSession({ harnessId: 'acp-antigravity', providerId: 'acp-antigravity' })
+      backend.activeRuntime = true
+      backend.fireProviderSessionId('prewarm-main-id')
+      expect(session.getProviderSessionId()).toBe('prewarm-main-id')
+
+      await session.switchCwd('/tmp/proj/.worktrees/abc', 'feature/x')
+
+      expect(session.getProviderSessionId()).toBeNull()
+      expect(backend.releaseRuntimeCalls).toBe(1)
+      expect(backend.activeRuntime).toBe(false)
+
+      const p = session.send({ content: 'hi', clientMessageId: 'u-wt' })
+      await new Promise((r) => setTimeout(r, 0))
+      expect(backend.startOpts?.cwd).toBe('/tmp/proj/.worktrees/abc')
+      expect(backend.startOpts?.providerSessionId).toBeUndefined()
+      backend.emit({ type: 'message_complete', messageId: 'a-wt' } as AgentEvent)
+      backend.resolveSend?.()
+      await p
+    })
+
+    it('switchCwd preserves providerSessionId when only gitBranch changes', async () => {
+      const { session, backend } = makeSession({ cwd: '/tmp/proj/.worktrees/abc', gitBranch: null })
+      backend.activeRuntime = true
+      backend.fireProviderSessionId('wt-session-id')
+
+      await session.switchCwd('/tmp/proj/.worktrees/abc', 'feature/x')
+
+      expect(session.getProviderSessionId()).toBe('wt-session-id')
+      expect(backend.releaseRuntimeCalls).toBe(0)
+    })
   })
 
   describe('worktreeMissing', () => {

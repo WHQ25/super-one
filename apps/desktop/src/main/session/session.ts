@@ -2310,16 +2310,25 @@ export class Session implements SessionContract {
     this.lease.assertMutation()
     this.assertNotDisposed()
     this.touchRuntimeActivity()
+    const cwdChanged = this._cwd !== nextCwd
     const branchChanged = gitBranch !== undefined && gitBranch !== this._gitBranch
-    if (this._cwd === nextCwd && !branchChanged) return
+    if (!cwdChanged && !branchChanged) return
     if (this._pendingQueuedRequests.size > 0) {
       throw new Error('Cannot switch worktree while Codex queued messages are pending')
     }
     this._cwd = nextCwd
     if (gitBranch !== undefined) this._gitBranch = gitBranch
+    if (cwdChanged && this._messages.length === 0) {
+      this._providerSessionId = null
+    }
     this.emitInitReady()
     this.notifyStateChange()
-    if (!this.backendStarted) return
+    if (!this.backendStarted) {
+      if (cwdChanged && this._messages.length === 0 && this.backend.hasActiveRuntime?.()) {
+        await this.backend.releaseRuntime?.('idle')
+      }
+      return
+    }
     // isStreaming(), not an inline copy of it: a continuation turn runs with
     // `_status === 'ended'`, and rebuilding under it kills the live stream.
     if (this.isStreaming() || this.backend.hasActiveBackgroundTasks?.()) {

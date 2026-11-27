@@ -10,6 +10,18 @@ export type EditorTool =
   | 'mosaic'
 
 export const EDITOR_TOOL_SHORTCUTS: Record<EditorTool, string> = {
+  select: '1',
+  pen: '2',
+  rect: '3',
+  ellipse: '4',
+  line: '5',
+  arrow: '6',
+  text: '7',
+  marker: '8',
+  mosaic: '9',
+}
+
+export const EDITOR_TOOL_ALT_SHORTCUTS: Record<EditorTool, string> = {
   select: 'V',
   pen: 'P',
   rect: 'R',

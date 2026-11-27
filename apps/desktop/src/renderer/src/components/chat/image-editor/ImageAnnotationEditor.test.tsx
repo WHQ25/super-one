@@ -214,23 +214,23 @@ describe('ImageAnnotationEditor & ImageLightbox', () => {
     canvas.setPointerCapture = vi.fn()
     canvas.releasePointerCapture = vi.fn()
 
-    // Switch to sequential marker tool via keyboard shortcut M
-    const markerToolBtn = screen.getByTestId('image-editor-tool-marker')
-    fireEvent.keyDown(window, { key: 'm' })
-    expect(markerToolBtn.textContent).toBe('1')
+    // Switch to sequential marker tool via keyboard shortcut 8
+    const markerNextNum = screen.getByTestId('image-editor-marker-next')
+    fireEvent.keyDown(window, { key: '8' })
+    expect(markerNextNum.textContent).toBe('1')
 
     // Click once on canvas to place Marker #1
     fireEvent.pointerDown(canvas, { button: 0, clientX: 50, clientY: 50, pointerId: 1 })
     fireEvent.pointerUp(canvas, { button: 0, clientX: 50, clientY: 50, pointerId: 1 })
-    expect(markerToolBtn.textContent).toBe('2')
+    expect(markerNextNum.textContent).toBe('2')
 
     // Click again to place Marker #2
     fireEvent.pointerDown(canvas, { button: 0, clientX: 120, clientY: 80, pointerId: 1 })
     fireEvent.pointerUp(canvas, { button: 0, clientX: 120, clientY: 80, pointerId: 1 })
-    expect(markerToolBtn.textContent).toBe('3')
+    expect(markerNextNum.textContent).toBe('3')
 
-    // Switch to Text tool via keyboard shortcut T and add a text annotation
-    fireEvent.keyDown(window, { key: 't' })
+    // Switch to Text tool via keyboard shortcut 7 and add a text annotation
+    fireEvent.keyDown(window, { key: '7' })
     fireEvent.pointerDown(canvas, { button: 0, clientX: 80, clientY: 100, pointerId: 1 })
     fireEvent.pointerUp(canvas, { button: 0, clientX: 80, clientY: 100, pointerId: 1 })
 
@@ -245,10 +245,10 @@ describe('ImageAnnotationEditor & ImageLightbox', () => {
     // Undo and Redo
     fireEvent.click(screen.getByTestId('image-editor-undo'))
     fireEvent.click(screen.getByTestId('image-editor-undo'))
-    expect(markerToolBtn.textContent).toBe('2')
+    expect(markerNextNum.textContent).toBe('2')
 
     fireEvent.click(screen.getByTestId('image-editor-redo'))
-    expect(markerToolBtn.textContent).toBe('3')
+    expect(markerNextNum.textContent).toBe('3')
 
     // Save replaces the composer attachment directly
     fireEvent.click(screen.getByTestId('image-editor-save'))
@@ -370,5 +370,57 @@ describe('ImageAnnotationEditor & ImageLightbox', () => {
     // Clicking the Edit button enters edit mode with the top toolbar
     fireEvent.click(screen.getByTestId('image-lightbox-edit-button'))
     expect(await screen.findByTestId('image-editor-toolbar')).toBeTruthy()
+  })
+
+  it('renders numeric shortcut badges (1-9) on tool buttons and switches tools with both number and letter keys', async () => {
+    render(<ImageAnnotationEditor src="data:image/png;base64,AAA=" alt="demo.png" onExitEdit={vi.fn()} />)
+    await screen.findByTestId('image-editor-canvas')
+
+    const expectedTools: Array<[string, string, string]> = [
+      ['select', '1', 'v'],
+      ['pen', '2', 'p'],
+      ['rect', '3', 'r'],
+      ['ellipse', '4', 'e'],
+      ['line', '5', 'l'],
+      ['arrow', '6', 'a'],
+      ['text', '7', 't'],
+      ['marker', '8', 'm'],
+      ['mosaic', '9', 'b'],
+    ]
+
+    for (const [toolId, numKey, letterKey] of expectedTools) {
+      expect(screen.getByTestId(`image-editor-tool-shortcut-${toolId}`).textContent).toBe(numKey)
+      fireEvent.keyDown(window, { key: numKey })
+      expect(screen.getByTestId(`image-editor-tool-${toolId}`).className).toContain('bg-primary/15')
+      fireEvent.keyDown(window, { key: '1' })
+      fireEvent.keyDown(window, { key: letterKey })
+      expect(screen.getByTestId(`image-editor-tool-${toolId}`).className).toContain('bg-primary/15')
+    }
+  })
+
+  it('supports +, -, and 0 keyboard shortcuts to zoom in, zoom out, and reset zoom', async () => {
+    render(<ImageAnnotationEditor src="data:image/png;base64,AAA=" alt="demo.png" onExitEdit={vi.fn()} />)
+    await screen.findByTestId('image-editor-canvas')
+
+    const zoomValue = screen.getByTestId('image-editor-zoom-value')
+    expect(zoomValue.textContent).toBe('100%')
+
+    fireEvent.keyDown(window, { key: '=' })
+    expect(zoomValue.textContent).toBe('120%')
+
+    fireEvent.keyDown(window, { key: '+', metaKey: true })
+    expect(zoomValue.textContent).toBe('140%')
+
+    fireEvent.keyDown(window, { key: '-' })
+    expect(zoomValue.textContent).toBe('120%')
+
+    fireEvent.keyDown(window, { key: '-', ctrlKey: true })
+    expect(zoomValue.textContent).toBe('100%')
+
+    fireEvent.keyDown(window, { key: '-' })
+    expect(zoomValue.textContent).toBe('80%')
+
+    fireEvent.keyDown(window, { key: '0' })
+    expect(zoomValue.textContent).toBe('100%')
   })
 })

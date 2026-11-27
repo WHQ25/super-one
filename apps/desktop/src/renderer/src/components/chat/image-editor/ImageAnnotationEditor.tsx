@@ -45,6 +45,7 @@ import {
   defaultTextFontSize,
   EDITOR_COLORS,
   EDITOR_STROKE_WIDTHS,
+  EDITOR_TOOL_ALT_SHORTCUTS,
   EDITOR_TOOL_SHORTCUTS,
   annotationRotation,
   findTopmostAnnotationAt,
@@ -162,7 +163,10 @@ function focusMovedToControl(target: EventTarget | null, field: HTMLElement): bo
   return target instanceof Element && target !== field && Boolean(target.closest('button, a, input, textarea, label, [role="button"]'))
 }
 
-const SHORTCUT_KEY_TO_TOOL: Record<string, EditorTool> = Object.entries(EDITOR_TOOL_SHORTCUTS).reduce(
+const SHORTCUT_KEY_TO_TOOL: Record<string, EditorTool> = [
+  ...Object.entries(EDITOR_TOOL_SHORTCUTS),
+  ...Object.entries(EDITOR_TOOL_ALT_SHORTCUTS),
+].reduce(
   (acc, [toolId, key]) => {
     acc[key.toLowerCase()] = toolId as EditorTool
     return acc
@@ -734,7 +738,20 @@ export function ImageAnnotationEditor({
     }
   }, [imageEl, previewBackground, saving, getAnnotationsWithPendingText, dismissEditingText, alt, filePath, fileName, t, onCloseViewer, onExitEdit])
 
-  // Keyboard shortcuts for tools, Undo, Redo, Save, Save As, Add to Chat, Delete, Space-pan, Escape
+  const handleZoomOut = useCallback(() => {
+    setZoom((z) => Math.max(0.25, Math.round((z - 0.2) * 100) / 100))
+  }, [])
+
+  const handleZoomIn = useCallback(() => {
+    setZoom((z) => Math.min(8, Math.round((z + 0.2) * 100) / 100))
+  }, [])
+
+  const handleResetZoom = useCallback(() => {
+    setZoom(1)
+    setPan({ x: 0, y: 0 })
+  }, [])
+
+  // Keyboard shortcuts for tools, Undo, Redo, Save, Save As, Add to Chat, Delete, Space-pan, Zoom, Escape
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -791,6 +808,26 @@ export function ImageAnnotationEditor({
         else void handleAddToChat()
         return
       }
+      if (!e.altKey) {
+        if (e.key === '+' || e.key === '=' || e.code === 'NumpadAdd') {
+          e.preventDefault()
+          e.stopPropagation()
+          handleZoomIn()
+          return
+        }
+        if (e.key === '-' || e.key === '_' || e.code === 'NumpadSubtract') {
+          e.preventDefault()
+          e.stopPropagation()
+          handleZoomOut()
+          return
+        }
+        if (e.key === '0' || e.code === 'Numpad0') {
+          e.preventDefault()
+          e.stopPropagation()
+          handleResetZoom()
+          return
+        }
+      }
       if (!mod && !e.altKey) {
         const matchedTool = SHORTCUT_KEY_TO_TOOL[e.key.toLowerCase()]
         if (matchedTool) {
@@ -823,6 +860,9 @@ export function ImageAnnotationEditor({
     handleSave,
     handleSaveAs,
     handleAddToChat,
+    handleZoomIn,
+    handleZoomOut,
+    handleResetZoom,
     onReplaceAttachment,
     selectedId,
     commitEditingText,
@@ -1279,64 +1319,76 @@ export function ImageAnnotationEditor({
     tool === 'marker' ||
     (selectedAnnotation !== null && selectedAnnotation.kind !== 'mosaic')
 
-  const toolButtons: Array<{ id: EditorTool; icon: React.ReactNode; label: string; shortcut: string }> = [
+  const toolButtons: Array<{ id: EditorTool; icon: React.ReactNode; label: string; shortcut: string; altShortcut: string }> = [
     {
       id: 'select',
       icon: <MousePointer className="size-4" />,
       label: t('chat.imageEditor.select'),
       shortcut: EDITOR_TOOL_SHORTCUTS.select,
+      altShortcut: EDITOR_TOOL_ALT_SHORTCUTS.select,
     },
     {
       id: 'pen',
       icon: <Pencil className="size-4" />,
       label: t('chat.imageEditor.pen'),
       shortcut: EDITOR_TOOL_SHORTCUTS.pen,
+      altShortcut: EDITOR_TOOL_ALT_SHORTCUTS.pen,
     },
     {
       id: 'rect',
       icon: <Square className="size-4" />,
       label: t('chat.imageEditor.rect'),
       shortcut: EDITOR_TOOL_SHORTCUTS.rect,
+      altShortcut: EDITOR_TOOL_ALT_SHORTCUTS.rect,
     },
     {
       id: 'ellipse',
       icon: <Circle className="size-4" />,
       label: t('chat.imageEditor.ellipse'),
       shortcut: EDITOR_TOOL_SHORTCUTS.ellipse,
+      altShortcut: EDITOR_TOOL_ALT_SHORTCUTS.ellipse,
     },
     {
       id: 'line',
       icon: <Minus className="size-4 -rotate-45" />,
       label: t('chat.imageEditor.line'),
       shortcut: EDITOR_TOOL_SHORTCUTS.line,
+      altShortcut: EDITOR_TOOL_ALT_SHORTCUTS.line,
     },
     {
       id: 'arrow',
       icon: <MoveUpRight className="size-4" />,
       label: t('chat.imageEditor.arrow'),
       shortcut: EDITOR_TOOL_SHORTCUTS.arrow,
+      altShortcut: EDITOR_TOOL_ALT_SHORTCUTS.arrow,
     },
     {
       id: 'text',
       icon: <Type className="size-4" />,
       label: t('chat.imageEditor.text'),
       shortcut: EDITOR_TOOL_SHORTCUTS.text,
+      altShortcut: EDITOR_TOOL_ALT_SHORTCUTS.text,
     },
     {
       id: 'marker',
       icon: (
-        <span className="inline-flex size-4.5 items-center justify-center rounded-full border-[1.75px] border-current text-2xs font-bold leading-none tabular-nums">
+        <span
+          data-testid="image-editor-marker-next"
+          className="inline-flex size-4.5 items-center justify-center rounded-full border-[1.75px] border-current text-2xs font-bold leading-none tabular-nums"
+        >
           {nextMarkerNum}
         </span>
       ),
       label: t('chat.imageEditor.marker'),
       shortcut: EDITOR_TOOL_SHORTCUTS.marker,
+      altShortcut: EDITOR_TOOL_ALT_SHORTCUTS.marker,
     },
     {
       id: 'mosaic',
       icon: <Grid2x2 className="size-4" />,
       label: t('chat.imageEditor.mosaic'),
       shortcut: EDITOR_TOOL_SHORTCUTS.mosaic,
+      altShortcut: EDITOR_TOOL_ALT_SHORTCUTS.mosaic,
     },
   ]
 
@@ -1386,14 +1438,14 @@ export function ImageAnnotationEditor({
               aria-label={item.label}
               tooltip={
                 <>
-                  <span>{item.label}</span> <CommandShortcut>{item.shortcut}</CommandShortcut>
+                  <span>{item.label}</span> <CommandShortcut>{`${item.shortcut} / ${item.altShortcut}`}</CommandShortcut>
                 </>
               }
               tooltipSide="bottom"
               tooltipSideOffset={4}
               data-testid={`image-editor-tool-${item.id}`}
               className={cn(
-                'size-8 rounded-lg',
+                'relative size-8 rounded-lg',
                 tool === item.id && 'bg-primary/15 text-primary ring-1 ring-primary/30',
               )}
               onClick={() => {
@@ -1402,6 +1454,13 @@ export function ImageAnnotationEditor({
               }}
             >
               {item.icon}
+              <span
+                aria-hidden="true"
+                data-testid={`image-editor-tool-shortcut-${item.id}`}
+                className="pointer-events-none absolute right-[3px] bottom-[2px] text-[9px] font-medium leading-none tabular-nums opacity-65"
+              >
+                {item.shortcut}
+              </span>
             </IconButton>
           ))}
 
@@ -1793,18 +1852,18 @@ export function ImageAnnotationEditor({
       >
         <button
           type="button"
-          onClick={() => setZoom((z) => Math.max(0.25, Math.round((z - 0.2) * 100) / 100))}
+          onClick={handleZoomOut}
           className="rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
           aria-label="Zoom out"
         >
           <ZoomOut className="size-3.5" />
         </button>
-        <span className="min-w-10 text-center font-mono text-2xs tabular-nums text-muted-foreground">
+        <span data-testid="image-editor-zoom-value" className="min-w-10 text-center font-mono text-2xs tabular-nums text-muted-foreground">
           {Math.round(zoom * 100)}%
         </span>
         <button
           type="button"
-          onClick={() => setZoom((z) => Math.min(8, Math.round((z + 0.2) * 100) / 100))}
+          onClick={handleZoomIn}
           className="rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
           aria-label="Zoom in"
         >
@@ -1813,10 +1872,7 @@ export function ImageAnnotationEditor({
         <div className="mx-0.5 h-3 w-px bg-border" />
         <button
           type="button"
-          onClick={() => {
-            setZoom(1)
-            setPan({ x: 0, y: 0 })
-          }}
+          onClick={handleResetZoom}
           className="rounded p-1 text-muted-foreground transition-colors hover:text-foreground"
           aria-label="Reset zoom"
         >

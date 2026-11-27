@@ -138,7 +138,7 @@ export function CodexRealtimeTranscript({
           ? 'common.loading'
           : 'chat.realtimeVoice.emptyTimeline'
   return (
-    <div className="relative min-w-0 flex-1 overflow-hidden">
+    <div className="relative z-0 min-w-0 flex-1 overflow-hidden">
       <ScrollArea key={sessionId} className="chat-scroll-area h-full min-w-0" viewportRef={scrollViewportRef}>
         <SelectionContextMenuZone className="mx-auto flex w-full min-w-0 max-w-3xl flex-col gap-1 p-3 @lg:gap-1.5 @lg:p-3.5 @2xl:gap-1.5 @2xl:p-4">
           {layout.map((row) => {
@@ -183,7 +183,7 @@ export function CodexRealtimeTranscript({
           onClick={scrollToBottom}
           style={{ bottom: 'calc(var(--composer-overhang, 0px) + var(--spacing) * 3)' }}
           aria-label={t('chat.realtimeVoice.scrollToBottom')}
-          className="absolute bottom-3 left-1/2 z-10 flex size-7 -translate-x-1/2 cursor-pointer items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm transition-colors hover:text-foreground"
+          className="absolute bottom-3 left-1/2 z-40 flex size-7 -translate-x-1/2 cursor-pointer items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm transition-colors hover:text-foreground"
         >
           <ArrowDown className="size-3.5" />
         </button>

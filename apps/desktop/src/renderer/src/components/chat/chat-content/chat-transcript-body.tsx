@@ -200,7 +200,7 @@ export function ChatTranscriptBody({
 
   return (
     <TurnDetailStateProvider scope={displayedSessionId ?? 'default'}>
-      <div className="chat-transcript-layout relative min-w-0 flex-1 overflow-hidden">
+      <div className="chat-transcript-layout relative z-0 min-w-0 flex-1 overflow-hidden">
         {displayMessages.length === 0 && !historyHydrated && !hasRealtimeTimeline ? (
           <p className="py-16 text-center text-sm text-muted-foreground">{t('common.loading')}</p>
         ) : displayMessages.length === 0 && historyHydrated && sessionStatus !== 'streaming' && sessionStatus !== 'background' && !awaitingAssistantReply && !apiRetry ? (
@@ -366,7 +366,7 @@ export function ChatTranscriptBody({
             <motion.button
               onClick={scrollToBottom}
               style={{ bottom: 'calc(var(--composer-overhang, 0px) + var(--spacing) * 3)' }}
-              className="absolute bottom-3 left-1/2 z-10 flex size-7 -translate-x-1/2 cursor-pointer items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm transition-colors hover:text-foreground"
+              className="absolute bottom-3 left-1/2 z-40 flex size-7 -translate-x-1/2 cursor-pointer items-center justify-center rounded-full border border-border bg-background text-muted-foreground shadow-sm transition-colors hover:text-foreground"
               initial={{ opacity: 0, scale: 0.8 }}
               animate={{ opacity: 1, scale: 1 }}
               exit={{ opacity: 0, scale: 0.8 }}

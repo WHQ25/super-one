@@ -111,7 +111,9 @@ vi.mock('zustand/react/shallow', () => ({
 vi.mock('motion/react', () => ({
   AnimatePresence: ({ children }: { children: React.ReactNode }) => <>{children}</>,
   motion: new Proxy({}, {
-    get: () => ({ children }: { children?: React.ReactNode }) => <div>{children}</div>,
+    get: (_target, tag) => ({ children, className }: { children?: React.ReactNode; className?: string }) => (
+      <div data-motion-tag={String(tag)} className={className}>{children}</div>
+    ),
   }),
 }))
 
@@ -1471,6 +1473,33 @@ describe('ChatContent scroll indicator height and action stacking context', () =
     expect(queuedGroup.querySelector('.opacity-50')).not.toBeNull()
     hoisted.sessionState.queuedMessages = []
     hoisted.sessionState.status = 'idle'
+  })
+
+  it('stacks the scroll-to-bottom button above hover:z-30 transcript content inside an isolated transcript layout', () => {
+    hoisted.sessionState._worktreeRemoved = false
+    hoisted.sessionState._historyHydrated = true
+    hoisted.sessionState.draftId = null
+    hoisted.sessionState.messages = [
+      {
+        id: 'u-1', role: 'user', status: 'complete', providerId: 'claude',
+        createdAt: new Date().toISOString(), content: [{ type: 'text', text: 'First question' }],
+      },
+    ]
+
+    const { container } = render(
+      <ChatContent
+        scrollViewportRef={{ current: null }}
+        showScrollButton
+        scrollToBottom={vi.fn()}
+      />,
+    )
+
+    const layoutRoot = container.querySelector('.chat-transcript-layout') as HTMLElement
+    expect(layoutRoot).toHaveClass('z-0')
+
+    const scrollBtn = container.querySelector('svg.lucide-arrow-down')?.closest('[data-motion-tag="button"]')
+    expect(scrollBtn).not.toBeNull()
+    expect(scrollBtn).toHaveClass('z-40')
   })
 })
 

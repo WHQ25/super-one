@@ -11,6 +11,7 @@
  */
 
 import { create } from 'zustand'
+import { isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import type { HarnessId } from '@superone/shared/agent-types'
 import { HARNESS_STRATEGIES } from '@/harness-ui/strategies'
 import { useChatStore, lastTouchedPane, markPaneTouched } from './chat'
@@ -104,6 +105,7 @@ function registerSession(
   useChatStore.setState((s) => {
     const project = s.projectSessions[projectPath]
     if (!project) return s
+    const parent = project._sessions[parentSessionId]
     const session = createDefaultPerSessionState()
     session.cwd = init.cwd
     session.sessionProvider = init.harnessId
@@ -117,6 +119,31 @@ function registerSession(
       { model: init.selectedModel, effort: init.selectedEffort },
       { modelUserChosen: !!init.selectedModel },
     ))
+    if (isAcpProtocolHarness(init.harnessId)) {
+      if (parent && parent.acpAgentId === init.acpAgentId) {
+        session.acpModels = parent.acpModels
+        session.acpModelConfigId = parent.acpModelConfigId
+        session.acpModelsStatus = parent.acpModelsStatus
+        session.acpModelsError = parent.acpModelsError
+        session.acpModes = parent.acpModes
+        session.acpModeConfigId = parent.acpModeConfigId
+        session.selectedAcpModeId = parent.selectedAcpModeId
+        session.acpModesStatus = parent.acpModesStatus
+        session.selectedAcpContextWindow = parent.selectedAcpContextWindow
+        session.acpSlashCommands = parent.acpSlashCommands
+        session.acpSlashCommandsStatus = parent.acpSlashCommandsStatus
+      }
+      if (session.acpModels.length === 0) {
+        const restored = HARNESS_STRATEGIES[init.harnessId].restore?.(session, {
+          state: s,
+          project,
+          claudeModels: s.harnessResources.claude?.models ?? [],
+        })
+        if (restored) {
+          Object.assign(session, restored, { modelUserChosen: !!init.selectedModel })
+        }
+      }
+    }
     // dsh resumes the forked durable log, which is authoritative for the preset.
     // Seeding the picker's draft with the preset the fork actually inherited is
     // what stops it from showing the roster's first entry instead.

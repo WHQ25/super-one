@@ -243,6 +243,104 @@ describe('opening a side chat', () => {
     // panel falls back to a default session view — a blank new-session surface.
     expect(project()._sessions[SIDE]).toBeDefined()
   })
+
+  it('carries ACP model catalog and mode state from the Antigravity parent', async () => {
+    const models = [{ id: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen', description: '' }]
+    const modes = [
+      { id: 'low', name: 'Low', description: '' },
+      { id: 'medium', name: 'Medium', description: '' },
+    ]
+    useChatStore.setState((st) => ({
+      projectSessions: {
+        ...st.projectSessions,
+        [PROJECT]: {
+          ...st.projectSessions[PROJECT]!,
+          _sessions: {
+            [PARENT]: {
+              ...st.projectSessions[PROJECT]!._sessions[PARENT]!,
+              sessionProvider: 'acp-antigravity',
+              preferredProvider: 'acp-antigravity',
+              acpAgentId: 'antigravity',
+              selectedModel: 'gemini-4-hydrogen',
+              acpModels: models,
+              acpModelConfigId: 'model',
+              acpModelsStatus: 'ready',
+              acpModes: modes,
+              acpModeConfigId: 'thought_level',
+              selectedAcpModeId: 'medium',
+              acpModesStatus: 'ready',
+              selectedAcpContextWindow: 256_000,
+            },
+          },
+        },
+      },
+    }))
+    startSideChat.mockResolvedValue({
+      ok: true,
+      sessionId: SIDE,
+      projectPath: PROJECT,
+      cwd: PROJECT,
+      harnessId: 'acp-antigravity',
+      providerId: 'acp-antigravity-base',
+      apiProviderId: null,
+      acpAgentId: 'antigravity',
+      selectedModel: 'gemini-4-hydrogen',
+      selectedEffort: null,
+      agentPreset: null,
+    })
+
+    await openSideChat(PROJECT, PARENT)
+
+    const side = project()._sessions[SIDE]!
+    expect(side.acpModels).toEqual(models)
+    expect(side.acpModelsStatus).toBe('ready')
+    expect(side.acpModes).toEqual(modes)
+    expect(side.acpModeConfigId).toBe('thought_level')
+    expect(side.selectedAcpModeId).toBe('medium')
+    expect(side.selectedAcpContextWindow).toBe(256_000)
+  })
+
+  it('restores ACP model catalog from harnessResources when parent has none', async () => {
+    const models = [{ id: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen', description: '' }]
+    useChatStore.setState((st) => ({
+      harnessResources: {
+        ...st.harnessResources,
+        'acp-antigravity': {
+          selectedAgentId: null,
+          agents: [],
+          modelsByAgentId: {
+            antigravity: {
+              models,
+              configId: 'model',
+              selectedModelId: 'gemini-4-hydrogen',
+              updatedAt: '2026-11-27T00:00:00Z',
+            },
+          },
+        },
+      },
+    }))
+    startSideChat.mockResolvedValue({
+      ok: true,
+      sessionId: SIDE,
+      projectPath: PROJECT,
+      cwd: PROJECT,
+      harnessId: 'acp-antigravity',
+      providerId: 'acp-antigravity-base',
+      apiProviderId: null,
+      acpAgentId: 'antigravity',
+      selectedModel: 'gemini-4-hydrogen',
+      selectedEffort: null,
+      agentPreset: null,
+    })
+
+    await openSideChat(PROJECT, PARENT)
+
+    const side = project()._sessions[SIDE]!
+    expect(side.acpModels).toEqual(models)
+    expect(side.acpModelsStatus).toBe('ready')
+    expect(side.selectedModel).toBe('gemini-4-hydrogen')
+    expect(side.modelUserChosen).toBe(true)
+  })
 })
 
 describe('closing a side chat', () => {

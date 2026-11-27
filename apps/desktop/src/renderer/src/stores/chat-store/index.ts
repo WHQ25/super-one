@@ -1080,6 +1080,9 @@ export const useChatStore = create<ChatStore>((set, get, store) => ({
         })
       }).catch((err) => console.warn('[mountSession] title back-fill failed:', err))
     }
+    if (sess && isAcpProtocolHarness(resolveProvider(sess)) && sess.acpModels.length === 0) {
+      hydrateAcpCatalogForSession(set, get, projectPath, sessionId)
+    }
   },
 
   unmountSession: (projectPath, sessionId) => {

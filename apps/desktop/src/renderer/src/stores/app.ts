@@ -1252,6 +1252,9 @@ export const useAppStore = create<AppState>((set, get) => ({
           id: row.id,
           enabled: Boolean(row.enabled),
           state: String(row.state ?? ''),
+          ...(typeof row.runtimeVersion === 'string' && row.runtimeVersion
+            ? { runtimeVersion: row.runtimeVersion }
+            : {}),
         })),
       })
     } catch {

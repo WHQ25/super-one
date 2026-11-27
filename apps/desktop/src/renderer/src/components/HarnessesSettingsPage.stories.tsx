@@ -266,6 +266,28 @@ export const ExternalCliNarrow: Story = withScenario(
   },
 )
 
+export const ExternalCliOutdatedUpgrade: Story = withScenario(
+  'External CLI outdated — upgrade required',
+  {
+    select: 'acp-antigravity',
+    section: 'account',
+    focusKey: 'acp-antigravity',
+    catalog: baseCatalog({
+      'acp-antigravity': {
+        enabled: true,
+        state: 'incompatible',
+        runtimeSource: 'external',
+        runtimeVersion: '1.5.3',
+        command: '/Users/demo/.local/bin/agy',
+        diagnostic: {
+          code: 'incompatible',
+          message: 'runtime version or platform is incompatible (expected 1.5.16, actual 1.5.3)',
+        },
+      },
+    }),
+  },
+)
+
 export const OpenCodePreferences: Story = withScenario('OpenCode (session defaults only)', {
   select: 'opencode',
   catalog: baseCatalog({

@@ -16,6 +16,7 @@ export interface HarnessCatalogStatus {
   id: string
   enabled: boolean
   state: string
+  runtimeVersion?: string
 }
 
 export function catalogEntryOn(
@@ -41,6 +42,15 @@ export function isCatalogHarnessDisabled(
   if (catalog == null) return false
   const row = catalog.find((r) => r.id === id)
   return Boolean(row && !row.enabled)
+}
+
+export function isCatalogHarnessIncompatible(
+  catalog: HarnessCatalogStatus[] | null | undefined,
+  id: string,
+): boolean {
+  if (catalog == null) return false
+  const row = catalog.find((r) => r.id === id)
+  return Boolean(row?.enabled && row.state === 'incompatible')
 }
 
 export function catalogFromHarnessIds(harnessIds: readonly string[]): HarnessCatalogStatus[] {

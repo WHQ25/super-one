@@ -7,9 +7,6 @@ import type { AcpRuntime } from './acp-runtime'
 const UNKNOWN_MODEL_RE = /\bunknown model(?:\s+id|\s+key)?\b/i
 const PLAN_MODEL_UNSPECIFIED_RE = /\bplan model not specified\b/i
 
-export const ANTIGRAVITY_WAKEUP_CONTINUATION_PROMPT =
-  '[System: Resume stream for pending tool interaction. Follow the tool result or user decision above; if cancelled or denied, stop and wait for the user.]'
-
 export function isDegradedAntigravityModelCatalog(
   agentId: string | null | undefined,
   runtime: Pick<AcpRuntime, 'getConfigOptions' | 'getModelConfig'>,

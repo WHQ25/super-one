@@ -10,12 +10,18 @@ import { applyControlHolder, applyRemoteControlChange } from '@/stores/chat-stor
 import { parseRemoteProjectKey } from '@/lib/remote-project-key'
 import { useAppStore } from '@/stores/app'
 import { useEnvironmentLabel } from '@/hooks/use-environment-label'
+import { isExternalCliHarnessId } from '@superone/shared/environment/external-cli-install'
 import { useProjectHarnessCatalog } from '@/hooks/use-project-harness-catalog'
-import { catalogIdForSessionProvider, isCatalogHarnessDisabled } from '@/lib/harness-visibility'
+import {
+  catalogIdForSessionProvider,
+  isCatalogHarnessDisabled,
+  isCatalogHarnessIncompatible,
+} from '@/lib/harness-visibility'
 import { resolveSessionIcon, resolveSessionIconFromBrandKey } from '@/components/harness/resolve-session-icon'
 import { resolveProvider } from '@/stores/chat-store/helpers/provider-routing'
 import { ChatInput } from './ChatInput'
 import { ChatStatusBar } from './ChatStatusBar'
+import { HarnessUpgradeComposer } from './HarnessUpgradeComposer'
 import { RemoteComposerBanner } from './RemoteComposerBanner'
 import { RemoteControlBanner } from './RemoteControllerBanner'
 import { CursorApiKeyDialog } from './CursorApiKeyDialog'
@@ -62,7 +68,9 @@ export const ChatComposerShell = memo(function ChatComposerShell({
 
   const provider = resolveProvider({ sessionProvider, preferredProvider })
   const catalogId = catalogIdForSessionProvider(provider, acpAgentId)
+  const harnessRow = catalogId ? harnessCatalog?.find((r) => r.id === catalogId) : undefined
   const harnessDisabled = catalogId != null && isCatalogHarnessDisabled(harnessCatalog, catalogId)
+  const harnessIncompatible = catalogId != null && isCatalogHarnessIncompatible(harnessCatalog, catalogId)
   const harnessLabel = catalogId
     ? t(`settings.harnesses.ids.${catalogId}` as 'settings.harnesses.ids.claude', {
         defaultValue: catalogId,
@@ -109,6 +117,18 @@ export const ChatComposerShell = memo(function ChatComposerShell({
           </button>
         )}
       </div>
+    )
+  }
+  if (harnessIncompatible && catalogId && isExternalCliHarnessId(catalogId)) {
+    return (
+      <HarnessUpgradeComposer
+        harnessId={catalogId}
+        label={harnessLabel}
+        provider={provider}
+        acpAgentId={acpAgentId}
+        currentVersion={harnessRow?.runtimeVersion}
+        remoteOn={Boolean(remoteOn)}
+      />
     )
   }
   /** Disconnect, Reconnect or Take over; the toast names which one failed. */

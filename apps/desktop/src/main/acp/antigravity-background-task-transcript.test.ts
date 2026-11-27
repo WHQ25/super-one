@@ -15,10 +15,8 @@ import {
 } from './antigravity-background-task-transcript'
 import {
   disposeAntigravitySubagentTracker,
-  hasPendingAntigravitySubagentWakeup,
   noteAntigravitySubagentEvents,
 } from './antigravity-subagent'
-import { extractParentWakeupProgress } from './antigravity-wakeup-transcript'
 
 const tempDirs: string[] = []
 
@@ -119,42 +117,7 @@ describe('antigravity background task launch detection guard', () => {
     )
 
     expect(emitted.some((e) => e.type === 'task_started')).toBe(false)
-    expect(hasPendingAntigravitySubagentWakeup(parentSid)).toBe(false)
     expect(hold.adjust({ type: 'status_change', status: 'idle' })).toEqual({ type: 'status_change', status: 'idle' })
-  })
-
-  it('does not mark wakeup read_file steps containing launch regex as resultPending', () => {
-    const nowIso = new Date().toISOString()
-    const raw = [
-      JSON.stringify({ step_index: 1, type: 'USER_INPUT', status: 'DONE', created_at: nowIso, content: 'Start' }),
-      JSON.stringify({
-        step_index: 2,
-        type: 'SYSTEM_MESSAGE',
-        status: 'DONE',
-        created_at: nowIso,
-        content: `<SYSTEM_MESSAGE>\n[Message] sender=sid/task-1 priority=MESSAGE_PRIORITY_HIGH content=Task id "sid/task-1" finished with result:\nok\n</SYSTEM_MESSAGE>`,
-      }),
-      JSON.stringify({
-        step_index: 3,
-        type: 'PLANNER_RESPONSE',
-        status: 'DONE',
-        created_at: nowIso,
-        tool_calls: [{ name: 'read_file', args: { Path: '/repo/antigravity-background-task-transcript.ts' } }],
-      }),
-      JSON.stringify({
-        step_index: 4,
-        type: 'GENERIC',
-        status: 'DONE',
-        created_at: nowIso,
-        content: `Created At: ${nowIso}\nCompleted At: ${nowIso}\n5: const BACKGROUND_TASK_ID_RE = /Tool is running as a background task with task id:\\s*([^\\r\\n]+)/`,
-      }),
-      JSON.stringify({ step_index: 5, type: 'PLANNER_RESPONSE', status: 'DONE', created_at: nowIso, content: 'Checked file.' }),
-    ].join('\n')
-
-    const wakeup = extractParentWakeupProgress(raw, 1)
-    expect(wakeup.completed).toBe(true)
-    expect(wakeup.steps[0]?.toolCalls[0]?.resultPending).toBe(false)
-    expect(wakeup.steps[0]?.toolCalls[0]?.hasResult).toBe(true)
   })
 
   it('still extracts genuine background run_command and schedule launches', () => {

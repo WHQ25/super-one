@@ -11,7 +11,7 @@ import {
 import type { HarnessManager } from './manager'
 import type { HarnessCatalogReader } from './types'
 
-function createExecutable(filePath: string, content = '#!/bin/sh\necho agy 1.5.3\n'): void {
+function createExecutable(filePath: string, content = '#!/bin/sh\necho agy 1.5.18\n'): void {
   mkdirSync(join(filePath, '..'), { recursive: true })
   writeFileSync(filePath, content, 'utf8')
   chmodSync(filePath, 0o755)
@@ -170,5 +170,15 @@ describe('resolveAntigravityCommand and resolveAntigravityRuntime', () => {
     })
     expect(missingStatus.state).toBe('missing')
     expect(lastPatch.diagnosticCode).toBe('not_found')
+
+    const oldAgy = join(root, 'bin', 'agy-old')
+    createExecutable(oldAgy, '#!/bin/sh\necho agy 1.5.3\n')
+    const outdatedStatus = enableAcpAntigravity(fakeManager, {
+      command: oldAgy,
+      args: [],
+    })
+    expect(outdatedStatus.state).toBe('incompatible')
+    expect(lastPatch.diagnosticCode).toBe('incompatible')
+    expect(lastPatch.runtimeVersion).toBe('1.5.3')
   })
 })

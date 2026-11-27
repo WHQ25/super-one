@@ -8,6 +8,7 @@ import { cn } from '@superone/ui/lib/utils'
 import { acpAgentIdForHarness, isAcpProtocolHarness, isAntigravityAcpAgent, isGrokAcpAgent } from '@superone/shared/acp-brand'
 import type { AcpAgentDescriptor, SettingsProvider } from '@superone/shared/agent-types'
 import {
+  getExternalCliMinVersion,
   isExternalCliHarnessId,
   type ExternalCliHarnessId,
 } from '@superone/shared/environment/external-cli-install'
@@ -172,6 +173,11 @@ export function HarnessDetailHeaderAndStatus({
       ? item.catalogId
       : null
   const cliInstalling = cliInstall?.phase === 'running'
+  const isExternalCliIncompatible = Boolean(
+    externalCliId
+      && enabled
+      && (catalog?.state === 'incompatible' || catalog?.diagnostic?.code === 'incompatible'),
+  )
   const showExternalCliInstall = Boolean(
     externalCliId
       && onInstallCli
@@ -179,6 +185,7 @@ export function HarnessDetailHeaderAndStatus({
       && (
         catalog?.state === 'missing'
         || catalog?.diagnostic?.code === 'not_found'
+        || isExternalCliIncompatible
         || cliInstalling
         || (cliInstall?.phase === 'error' && catalog?.state !== 'ready')
       ),
@@ -189,11 +196,12 @@ export function HarnessDetailHeaderAndStatus({
     progress && progress.total > 0
       ? Math.min(100, Math.round((progress.received / progress.total) * 100))
       : null
-  const suppressNotFoundDiagnostic =
-    showExternalCliInstall && catalog?.diagnostic?.code === 'not_found'
+  const suppressExternalCliDiagnostic =
+    showExternalCliInstall
+    && (catalog?.diagnostic?.code === 'not_found' || catalog?.diagnostic?.code === 'incompatible')
   const errorMessage =
     (progress?.phase === 'error' && progress.message) ||
-    (!suppressNotFoundDiagnostic ? catalog?.diagnostic?.message : null) ||
+    (!suppressExternalCliDiagnostic ? catalog?.diagnostic?.message : null) ||
     null
   const needsAuth = !!catalog?.requiresAuth && catalog.state === 'needs_auth'
   const showProgress = catalog?.state === 'installing' || progress?.phase === 'download'
@@ -203,7 +211,23 @@ export function HarnessDetailHeaderAndStatus({
   if (item.kind === 'catalog' && catalog?.runtimeVersion) {
     statusRows.push(
       <SettingsRow key="version" label={t('settings.harnesses.fields.version')}>
-        <span className="text-sm text-muted-foreground tabular-nums">{catalog.runtimeVersion}</span>
+        <div className="flex items-center gap-2">
+          <span
+            className={cn(
+              'text-sm tabular-nums',
+              isExternalCliIncompatible ? 'text-warning' : 'text-muted-foreground',
+            )}
+          >
+            {catalog.runtimeVersion}
+          </span>
+          {isExternalCliIncompatible && externalCliId ? (
+            <Badge variant="outline" className="border-warning/40 px-1.5 py-0 text-[10px] font-normal text-warning">
+              {t('settings.harnesses.cliInstall.minVersionBadge', {
+                min: getExternalCliMinVersion(externalCliId),
+              })}
+            </Badge>
+          ) : null}
+        </div>
       </SettingsRow>,
     )
   }
@@ -253,6 +277,8 @@ export function HarnessDetailHeaderAndStatus({
       <div key="cli-install" className={settingsRowClassName}>
         <ExternalCliInstallBlock
           harnessId={externalCliId}
+          mode={isExternalCliIncompatible ? 'upgrade' : 'install'}
+          currentVersion={catalog?.runtimeVersion}
           installState={cliInstall}
           onInstall={() => onInstallCli(externalCliId)}
         />

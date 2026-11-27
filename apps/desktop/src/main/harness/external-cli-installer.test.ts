@@ -40,36 +40,48 @@ describe('external CLI install specs', () => {
       binaryName: 'grok',
       language: 'bash',
       command: 'curl -fsSL https://x.ai/cli/install.sh | bash',
+      upgradeCommand: 'grok update',
+      minVersion: '1.0.92',
     })
     expect(getExternalCliInstallSpec('acp-grok', 'win32')).toEqual({
       harnessId: 'acp-grok',
       binaryName: 'grok',
       language: 'powershell',
       command: 'irm https://x.ai/cli/install.ps1 | iex',
+      upgradeCommand: 'grok update',
+      minVersion: '1.0.92',
     })
     expect(getExternalCliInstallSpec('acp-antigravity', 'linux')).toEqual({
       harnessId: 'acp-antigravity',
       binaryName: 'agy',
       language: 'bash',
       command: 'curl -fsSL https://antigravity.google/cli/install.sh | bash',
+      upgradeCommand: 'agy update',
+      minVersion: '1.5.16',
     })
     expect(getExternalCliInstallSpec('acp-antigravity', 'win32')).toEqual({
       harnessId: 'acp-antigravity',
       binaryName: 'agy',
       language: 'powershell',
       command: 'irm https://antigravity.google/cli/install.ps1 | iex',
+      upgradeCommand: 'agy update',
+      minVersion: '1.5.16',
     })
     expect(getExternalCliInstallSpec('opencode', 'darwin')).toEqual({
       harnessId: 'opencode',
       binaryName: 'opencode',
       language: 'bash',
       command: 'curl -fsSL https://opencode.ai/v2/install | bash',
+      upgradeCommand: 'opencode upgrade',
+      minVersion: '2.0.0',
     })
     expect(getExternalCliInstallSpec('opencode', 'win32')).toEqual({
       harnessId: 'opencode',
       binaryName: 'opencode',
       language: 'powershell',
       command: 'npm install -g @opencode/cli',
+      upgradeCommand: 'opencode upgrade',
+      minVersion: '2.0.0',
     })
   })
 })
@@ -81,7 +93,7 @@ describe('installExternalHarnessCli', () => {
     )
   })
 
-  it('spawns the allowlisted installer, streams output, refreshes PATH, and enables the harness', async () => {
+  it('spawns the allowlisted installer when binary is missing, streams output, refreshes PATH, and enables the harness', async () => {
     const events: ExternalCliInstallEvent[] = []
     const proc = createFakeChildProcess()
     const spawnProcess = vi.fn().mockReturnValue(proc)
@@ -101,6 +113,7 @@ describe('installExternalHarnessCli', () => {
       cwd: '/Users/test',
       ensurePath: async () => undefined,
       refreshPath,
+      resolveExistingBinary: () => null,
       spawnProcess,
       enableHarness,
       refreshAcpAgents,
@@ -135,6 +148,101 @@ describe('installExternalHarnessCli', () => {
     ])
   })
 
+  it('invokes native update commands when existing CLI binaries are present', async () => {
+    const agyProc = createFakeChildProcess()
+    const agySpawn = vi.fn().mockReturnValue(agyProc)
+    const agyPromise = installExternalHarnessCli('acp-antigravity', {
+      platform: 'darwin',
+      cwd: '/Users/test',
+      ensurePath: async () => undefined,
+      refreshPath: async () => undefined,
+      resolveExistingBinary: () => '/Users/test/.local/bin/agy',
+      spawnProcess: agySpawn,
+      enableHarness: async () => ({
+        id: 'acp-antigravity',
+        enabled: true,
+        state: 'ready',
+        runtimeSource: 'external',
+        requiresAuth: false,
+        runtimeVersion: '1.5.18',
+      }),
+      refreshAcpAgents: async () => undefined,
+      emit: () => undefined,
+    })
+    await vi.waitFor(() => expect(agySpawn).toHaveBeenCalledTimes(1))
+    expect(agySpawn).toHaveBeenCalledWith(
+      '/Users/test/.local/bin/agy',
+      ['update'],
+      expect.objectContaining({ cwd: '/Users/test' }),
+    )
+    agyProc.emit('close', 0)
+    expect((await agyPromise).ok).toBe(true)
+
+    const grokProc = createFakeChildProcess()
+    const grokSpawn = vi.fn().mockReturnValue(grokProc)
+    const grokPromise = installExternalHarnessCli('acp-grok', {
+      platform: 'darwin',
+      cwd: '/Users/test',
+      ensurePath: async () => undefined,
+      refreshPath: async () => undefined,
+      resolveExistingBinary: () => '/Users/test/.grok/bin/grok',
+      spawnProcess: grokSpawn,
+      enableHarness: async () => ({
+        id: 'acp-grok',
+        enabled: true,
+        state: 'ready',
+        runtimeSource: 'external',
+        requiresAuth: true,
+        runtimeVersion: '1.0.92',
+      }),
+      refreshAcpAgents: async () => undefined,
+      emit: () => undefined,
+    })
+    await vi.waitFor(() => expect(grokSpawn).toHaveBeenCalledTimes(1))
+    expect(grokSpawn).toHaveBeenCalledWith(
+      '/Users/test/.grok/bin/grok',
+      ['update'],
+      expect.objectContaining({
+        cwd: '/Users/test',
+        env: expect.objectContaining({ npm_config_allow_scripts: '@xai-official/grok' }),
+      }),
+    )
+    grokProc.emit('close', 0)
+    expect((await grokPromise).ok).toBe(true)
+
+    const ocProc = createFakeChildProcess()
+    const ocSpawn = vi.fn().mockReturnValue(ocProc)
+    const ocPromise = installExternalHarnessCli('opencode', {
+      platform: 'darwin',
+      cwd: '/Users/test',
+      ensurePath: async () => undefined,
+      refreshPath: async () => undefined,
+      resolveExistingBinary: () => '/Users/test/.opencode/bin/opencode',
+      spawnProcess: ocSpawn,
+      enableHarness: async () => ({
+        id: 'opencode',
+        enabled: true,
+        state: 'ready',
+        runtimeSource: 'external',
+        requiresAuth: false,
+        runtimeVersion: '2.0.1',
+      }),
+      refreshAcpAgents: async () => undefined,
+      emit: () => undefined,
+    })
+    await vi.waitFor(() => expect(ocSpawn).toHaveBeenCalledTimes(1))
+    expect(ocSpawn).toHaveBeenCalledWith(
+      '/Users/test/.opencode/bin/opencode',
+      ['upgrade', '--method', 'curl'],
+      expect.objectContaining({
+        cwd: '/Users/test',
+        env: expect.objectContaining({ HOME: '/Users/test' }),
+      }),
+    )
+    ocProc.emit('close', 0)
+    expect((await ocPromise).ok).toBe(true)
+  })
+
   it('uses PowerShell on win32 and coalesces concurrent calls for the same harness', async () => {
     const proc = createFakeChildProcess()
     const spawnProcess = vi.fn().mockReturnValue(proc)
@@ -144,6 +252,7 @@ describe('installExternalHarnessCli', () => {
       cwd: 'C:\\Users\\test',
       ensurePath: async () => undefined,
       refreshPath: async () => undefined,
+      resolveExistingBinary: () => null,
       spawnProcess,
       enableHarness: async () => ({
         id: 'acp-grok',
@@ -181,6 +290,7 @@ describe('installExternalHarnessCli', () => {
       cwd: '/home/test',
       ensurePath: async () => undefined,
       refreshPath: async () => undefined,
+      resolveExistingBinary: () => null,
       spawnProcess: () => proc,
       enableHarness,
       refreshAcpAgents: async () => undefined,
@@ -202,6 +312,40 @@ describe('installExternalHarnessCli', () => {
       harnessId: 'opencode',
       phase: 'error',
       exitCode: 6,
+    })
+  })
+
+  it('reports ok=false when installed CLI remains incompatible after installer exits 0', async () => {
+    const proc = createFakeChildProcess()
+    const promise = installExternalHarnessCli('acp-antigravity', {
+      platform: 'darwin',
+      cwd: '/Users/test',
+      ensurePath: async () => undefined,
+      refreshPath: async () => undefined,
+      resolveExistingBinary: () => '/Users/test/.local/bin/agy',
+      spawnProcess: () => proc,
+      enableHarness: async () => ({
+        id: 'acp-antigravity',
+        enabled: true,
+        state: 'incompatible',
+        runtimeSource: 'external',
+        requiresAuth: false,
+        command: '/Users/test/.local/bin/agy',
+        runtimeVersion: '1.5.10',
+      }),
+      refreshAcpAgents: async () => undefined,
+      emit: () => undefined,
+    })
+
+    await vi.waitFor(() => expect(proc.listenerCount('close')).toBeGreaterThan(0))
+    proc.emit('close', 0)
+
+    const result = await promise
+    expect(result).toMatchObject({
+      ok: false,
+      harnessId: 'acp-antigravity',
+      exitCode: 0,
+      status: { state: 'incompatible', runtimeVersion: '1.5.10' },
     })
   })
 })

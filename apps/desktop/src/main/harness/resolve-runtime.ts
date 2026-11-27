@@ -7,8 +7,14 @@
  */
 
 import { existsSync } from 'node:fs'
-import type { NodeHarnessId } from '@superone/shared/environment'
-import type { HarnessInstallState } from '@superone/shared/environment'
+import { evaluateExternalCliCompatibility } from '@superone/runtime/harness'
+import {
+  checkExternalCliVersion,
+  formatExternalCliUpgradeMessage,
+  type ExternalCliHarnessId,
+  type HarnessInstallState,
+  type NodeHarnessId,
+} from '@superone/shared/environment'
 import { getHarnessManager } from './service'
 import { desktopHarnessResolver } from './host'
 
@@ -74,12 +80,46 @@ export function resolveHarnessRuntime(id: 'claude' | 'codex'): string {
   })
 }
 
-/** Soft probe — null when not ready (no throw). */
 export function tryResolveHarnessRuntime(id: 'claude' | 'codex'): string | null {
   try {
     return resolveHarnessRuntime(id)
   } catch (err) {
     if (isHarnessNotReadyError(err)) return null
     throw err
+  }
+}
+
+export function assertExternalCliCompatible(
+  harnessId: ExternalCliHarnessId,
+  command: string,
+): void {
+  const compat = evaluateExternalCliCompatibility(harnessId, command)
+  if (!compat.compatible) {
+    throw new HarnessNotReadyError({
+      harnessId,
+      state: 'incompatible',
+      enabled: true,
+      message: compat.upgradeMessage,
+    })
+  }
+}
+
+export function assertExternalCliVersionCompatible(
+  harnessId: ExternalCliHarnessId,
+  version: string | undefined,
+): void {
+  const check = checkExternalCliVersion(harnessId, version)
+  if (!check.ok) {
+    throw new HarnessNotReadyError({
+      harnessId,
+      state: 'incompatible',
+      enabled: true,
+      message: formatExternalCliUpgradeMessage(
+        harnessId,
+        check.actualVersion,
+        check.minVersion,
+        process.platform,
+      ),
+    })
   }
 }

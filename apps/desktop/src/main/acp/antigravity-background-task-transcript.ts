@@ -13,7 +13,13 @@ const SYSTEM_MESSAGE_TASK_HEADER_RE =
 const SYSTEM_MESSAGE_CONTENT_RE = /\bcontent=([\s\S]*)$/
 const SYSTEM_MESSAGE_TRAILING_LOG_RE = /\r?\nLog:\s*(file:\/\/[^\r\n]+|\/[^\r\n]+)\s*$/
 const SYSTEM_MESSAGE_CLOSE_TAG_RE = /\r?\n?<\/SYSTEM_MESSAGE>\s*$/
+const ALL_TASKS_STOPPED_NOTICE_RE = /All your subagents and background tasks have been stopped\b/i
 export const COMMAND_EXIT_CODE_RE = /(?:^|\r?\n)(?:The command|Command) exited with code (-?\d+)\./
+
+export function isWakeupSystemMessage(content: string): boolean {
+  if (!SYSTEM_MESSAGE_SENDER_RE.test(content)) return false
+  return SYSTEM_MESSAGE_PRIORITY_RE.exec(content)?.[1] !== 'LOW'
+}
 
 export interface SpawnedBackgroundTaskRef {
   taskId: string
@@ -295,6 +301,16 @@ export function extractSpawnedBackgroundTasksFromTranscript(raw: string): {
       continue
     }
 
+    if (rec.type === 'SYSTEM_MESSAGE' || (typeof rec.content === 'string' && rec.content.includes('<SYSTEM_MESSAGE>'))) {
+      const content = typeof rec.content === 'string' ? rec.content : ''
+      if (ALL_TASKS_STOPPED_NOTICE_RE.test(content)) {
+        for (const existing of byTaskId.values()) {
+          existing.cancelledInTurn = true
+        }
+      }
+      continue
+    }
+
     if (rec.type === 'GENERIC') {
       const matchedCall = pendingPlannerCalls[pendingCallIdx]
       if (pendingCallIdx < pendingPlannerCalls.length) pendingCallIdx += 1
@@ -361,33 +377,6 @@ export function extractSpawnedBackgroundTasksFromTranscript(raw: string): {
   return { lastUserStepIndex, tasks }
 }
 
-export function resolveAntigravityForegroundEndStepIndex(raw: string): number | null {
-  const records = parseAntigravityTranscriptRecords(raw)
-  let lastUserStepIndex = -1
-  for (const { stepIndex, rec } of records) {
-    if (rec.type === 'USER_INPUT' && stepIndex > lastUserStepIndex) {
-      lastUserStepIndex = stepIndex
-    }
-  }
-  let lastDoneStepIndex: number | null = null
-  for (const { stepIndex, rec } of records) {
-    if (stepIndex <= lastUserStepIndex) continue
-    const content = typeof rec.content === 'string' ? rec.content : ''
-    const isSystemMsg = rec.type === 'SYSTEM_MESSAGE' || content.includes('<SYSTEM_MESSAGE>')
-    if (isSystemMsg) continue
-    if (rec.type === 'PLANNER_RESPONSE') {
-      if (rec.status === 'DONE' || rec.status === 'ERROR') {
-        lastDoneStepIndex = stepIndex
-      }
-      continue
-    }
-    if (rec.type === 'GENERIC') {
-      lastDoneStepIndex = stepIndex
-    }
-  }
-  return lastDoneStepIndex ?? (lastUserStepIndex >= 0 ? lastUserStepIndex : null)
-}
-
 export function extractCompletedBackgroundTasksFromTranscript(
   raw: string,
   afterStepIndex = -1,
@@ -406,7 +395,7 @@ export function extractCompletedBackgroundTasksFromTranscript(
     if (!isSystemMsg) continue
     const parsed = parseSystemMessageTaskResult(content, stepIndex)
     if (parsed) out.set(parsed.taskId, parsed)
-    if (conditionalSchedules.length === 0) continue
+    if (conditionalSchedules.length === 0 || !isWakeupSystemMessage(content)) continue
     const withoutClose = content.replace(SYSTEM_MESSAGE_CLOSE_TAG_RE, '')
     const sender = SYSTEM_MESSAGE_SENDER_RE.exec(withoutClose)?.[1]?.trim() ?? ''
     for (const sched of conditionalSchedules) {

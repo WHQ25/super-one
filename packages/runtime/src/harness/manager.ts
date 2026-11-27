@@ -14,6 +14,8 @@ import {
   NODE_HARNESS_DEFINITIONS,
   buildHarnessDiagnostic,
   defaultHarnessInstallationStatus,
+  getExternalCliMinVersion,
+  isExternalCliHarnessId,
   isHarnessRunnable,
   isNodeHarnessId,
   readySessionHarnessIds as listAdvertisedHarnessIds,
@@ -183,11 +185,16 @@ export class HarnessManager {
     const command = sanitizeHarnessCommand(row.command)
     if (command) status.command = command
 
-    // Rebuild message from allowlisted code only — never trust stored free-form text.
     const code = sanitizeHarnessDiagnosticCode(row.diagnostic_code)
     if (code && code !== 'simulated') {
+      const externalIncompatible = code === 'incompatible' && isExternalCliHarnessId(id)
       status.diagnostic = buildHarnessDiagnostic(code, {
-        runtimeVersion: status.runtimeVersion,
+        ...(externalIncompatible
+          ? {
+              expectedVersion: getExternalCliMinVersion(id),
+              actualVersion: status.runtimeVersion,
+            }
+          : { runtimeVersion: status.runtimeVersion }),
         command: status.command,
       })
     }

@@ -31,6 +31,7 @@ import {
 } from './managed-release'
 import { isCursorSdkAvailable, resolveCursorApiKeyPlain } from './cursor-availability'
 import { enableAcpAntigravity } from './antigravity-runtime'
+import { evaluateExternalCliCompatibility } from './external-cli-version'
 import { probeHarnessReadiness } from './runtime-ready'
 import type { HarnessKernelDeps } from './types'
 
@@ -256,11 +257,14 @@ export function enableOpencode(
       configJson: JSON.stringify({}),
     })
   }
+  const compat = evaluateExternalCliCompatibility('opencode', resolved)
   return manager.update('opencode', {
     enabled: true,
-    state: 'ready',
+    state: compat.compatible ? 'ready' : 'incompatible',
     command: resolved,
-    diagnosticCode: null,
+    runtimeVersion: compat.version ?? null,
+    diagnosticCode: compat.compatible ? null : 'incompatible',
+    diagnosticFields: compat.compatible ? null : (compat.diagnosticFields ?? null),
     lastProbedAt: Date.now(),
     configJson: JSON.stringify({ command: resolved }),
   })
@@ -339,11 +343,14 @@ export function enableAcpGrok(
       configJson: JSON.stringify({ commandSource: opts.command ? 'explicit' : 'path', command: opts.command, args, usesDefaultArgs: opts.args.length === 0 }),
     })
   }
+  const compat = evaluateExternalCliCompatibility('acp-grok', resolved)
   return manager.update('acp-grok', {
     enabled: true,
-    state: 'ready',
+    state: compat.compatible ? 'ready' : 'incompatible',
     command: resolved,
-    diagnosticCode: null,
+    runtimeVersion: compat.version ?? null,
+    diagnosticCode: compat.compatible ? null : 'incompatible',
+    diagnosticFields: compat.compatible ? null : (compat.diagnosticFields ?? null),
     lastProbedAt: Date.now(),
     configJson: JSON.stringify({
       command: resolved,

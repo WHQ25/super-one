@@ -11,17 +11,13 @@ import {
   type HighlightedCodeBlockPresenterPorts,
 } from '@/components/chat/presenters/CodeBlock'
 import { useIsDark } from '@/hooks/use-is-dark'
+import type { CliInstallUiState } from '@/hooks/use-external-cli-install'
 import { parseAnsiToTailwind } from '@/lib/ansi'
 import { tryCopy } from '@/lib/clipboard'
 
-export interface CliInstallUiState {
-  phase: 'idle' | 'running' | 'done' | 'error'
-  output: string
-  exitCode?: number
-  message?: string
-}
+export type { CliInstallUiState }
 
-function AnsiTerminalLines({ text }: { text: string }) {
+export function AnsiTerminalLines({ text }: { text: string }) {
   const lines = useMemo(() => text.split('\n'), [text])
   return (
     <>
@@ -42,11 +38,15 @@ function AnsiTerminalLines({ text }: { text: string }) {
 
 export function ExternalCliInstallBlock({
   harnessId,
+  mode = 'install',
+  currentVersion,
   installState,
   platform,
   onInstall,
 }: {
   harnessId: ExternalCliHarnessId
+  mode?: 'install' | 'upgrade'
+  currentVersion?: string
   installState?: CliInstallUiState
   platform?: string
   onInstall: () => Promise<void>
@@ -84,10 +84,17 @@ export function ExternalCliInstallBlock({
     await onInstall()
   }, [onInstall])
 
+  const isUpgrade = mode === 'upgrade'
   const errorText = useMemo(() => {
     if (installState?.phase !== 'error') return null
     if (installState.exitCode === 0) {
-      return t('settings.harnesses.cliInstall.stillMissing', { binary: spec.binaryName })
+      return isUpgrade
+        ? t('settings.harnesses.cliInstall.stillIncompatible', {
+            binary: spec.binaryName,
+            actual: currentVersion ?? '?',
+            min: spec.minVersion,
+          })
+        : t('settings.harnesses.cliInstall.stillMissing', { binary: spec.binaryName })
     }
     if (installState.exitCode == null && installState.message) {
       return installState.message
@@ -95,16 +102,22 @@ export function ExternalCliInstallBlock({
     return t('settings.harnesses.cliInstall.failed', {
       code: installState.exitCode ?? 1,
     })
-  }, [installState, spec.binaryName, t])
+  }, [currentVersion, installState, isUpgrade, spec.binaryName, spec.minVersion, t])
 
   return (
     <div className="space-y-2" data-harness-cli-install={harnessId}>
-      <p className="text-xs text-muted-foreground">
-        {t('settings.harnesses.cliInstall.prompt', { binary: spec.binaryName })}
+      <p className={isUpgrade ? 'text-xs text-warning' : 'text-xs text-muted-foreground'}>
+        {isUpgrade
+          ? t('settings.harnesses.cliInstall.upgradePrompt', {
+              binary: spec.binaryName,
+              actual: currentVersion ?? '?',
+              min: spec.minVersion,
+            })
+          : t('settings.harnesses.cliInstall.prompt', { binary: spec.binaryName })}
       </p>
 
       <HighlightedCodeBlockPresenter
-        code={spec.command}
+        code={isUpgrade ? spec.upgradeCommand : spec.command}
         language={spec.language}
         codePlugin={codePlugin}
         canRun
@@ -123,7 +136,12 @@ export function ExternalCliInstallBlock({
             )}
             <span className="truncate">
               {isRunning
-                ? t('settings.harnesses.cliInstall.running', { binary: spec.binaryName })
+                ? t(
+                    isUpgrade
+                      ? 'settings.harnesses.cliInstall.upgrading'
+                      : 'settings.harnesses.cliInstall.running',
+                    { binary: spec.binaryName },
+                  )
                 : t('common.terminal')}
             </span>
           </div>

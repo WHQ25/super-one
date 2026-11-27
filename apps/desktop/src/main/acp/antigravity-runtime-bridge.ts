@@ -9,6 +9,7 @@ import {
 import type { PermissionMode } from '@superone/shared/agent-types'
 import { ANTIGRAVITY_AUTH_REQUIRED } from '@superone/shared/antigravity-auth'
 import { resolveDesktopAntigravityLaunch } from '../harness/antigravity-launch'
+import { assertExternalCliCompatible } from '../harness/resolve-runtime'
 import { getSuperoneMcpStdioConfig } from '../mcp/superone-mcp-stdio-state'
 import type { SpawnAcpProcessOptions } from './acp-process'
 import {
@@ -133,6 +134,7 @@ export async function prepareAntigravityProcessLaunch(
   if (!resolved) {
     throw new Error('Antigravity runtime not found. Check Settings → Harnesses → Antigravity.')
   }
+  assertExternalCliCompatible('acp-antigravity', resolved.command)
   const spawnCtx = prepareAntigravitySpawnContext({
     extraEnv: launch.env,
   })

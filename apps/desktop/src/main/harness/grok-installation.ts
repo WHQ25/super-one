@@ -1,7 +1,10 @@
-import { resolveGrokRuntime, type HarnessManager } from '@superone/runtime/harness'
+import {
+  evaluateExternalCliCompatibility,
+  resolveGrokRuntime,
+  type HarnessManager,
+} from '@superone/runtime/harness'
 import { buildHarnessDiagnostic, type HarnessInstallationStatus } from '@superone/shared/environment'
 
-/** Refresh settings from the launch resolver instead of a historical realpath. */
 export function refreshGrokInstallation(manager: HarnessManager): HarnessInstallationStatus {
   const status = manager.get('acp-grok')
   if (!status.enabled) return status
@@ -9,21 +12,37 @@ export function refreshGrokInstallation(manager: HarnessManager): HarnessInstall
   const config = manager.getExternalLaunchConfig('acp-grok')
   const fromEnv = !!process.env.SUPERONE_ACP_BINARY?.trim()
   const repaired = !fromEnv && !config.commandSource && launch?.source === 'path'
-  // Keep a missing explicit path in storage so a second refresh cannot silently
-  // turn it into automatic discovery. The public row hides the stale command.
   const nextCommand = launch?.command ?? status.command
-  const state = launch ? 'ready' : 'missing'
-  if (!fromEnv && (status.command !== nextCommand || repaired || status.state !== state || status.runtimeVersion)) {
+  const compat = launch ? evaluateExternalCliCompatibility('acp-grok', launch.command) : null
+  const state = !launch ? 'missing' : compat?.compatible ? 'ready' : 'incompatible'
+  const nextVersion = launch ? compat?.version : undefined
+  const diagnosticCode = !launch ? 'not_found' : compat?.compatible ? null : 'incompatible'
+  const diagnosticFields = !launch || compat?.compatible ? null : (compat?.diagnosticFields ?? null)
+
+  if (
+    !fromEnv &&
+    (status.command !== nextCommand ||
+      repaired ||
+      status.state !== state ||
+      status.runtimeVersion !== nextVersion ||
+      (status.diagnostic?.code ?? null) !== diagnosticCode)
+  ) {
     manager.update('acp-grok', {
       command: nextCommand ?? null,
-      runtimeVersion: null,
+      runtimeVersion: nextVersion ?? null,
       state,
-      diagnosticCode: launch ? null : 'not_found',
+      diagnosticCode,
+      diagnosticFields,
       ...(repaired ? { configJson: JSON.stringify({ ...config, command: launch.command, commandSource: 'path' }) } : {}),
     })
   }
   return {
-    ...status, state, command: launch?.command, runtimeVersion: undefined,
-    diagnostic: launch ? undefined : buildHarnessDiagnostic('not_found'),
+    ...status,
+    state,
+    command: launch?.command,
+    runtimeVersion: nextVersion,
+    diagnostic: diagnosticCode
+      ? buildHarnessDiagnostic(diagnosticCode, diagnosticFields ?? undefined)
+      : undefined,
   }
 }

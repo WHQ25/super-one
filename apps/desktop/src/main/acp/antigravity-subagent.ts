@@ -1,102 +1,119 @@
+import { readFileSync } from 'node:fs'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { isSubagentToolName } from '@superone/shared/tool-ui'
 import {
+  clearSettledWakeupBackgroundTasks,
   createBackgroundTaskTrackerState,
   disposeBackgroundTaskTracker,
   noteBackgroundTaskMappedEvents,
   pruneStaleUnboundBackgroundTasks,
+  syncBackgroundTasks,
+  type BackgroundTaskTrackerState,
 } from './antigravity-background-task'
 import { resolveAntigravityBrainRoots } from './antigravity-profile'
 import {
-  emitStoppedTrackedSubagent,
-  evaluateWakeupReplayDrop,
-  resetWakeupReplayState,
-} from './antigravity-wakeup-emitter'
+  extractParentSubagentTranscriptState,
+  type SpawnedSubagentRef,
+} from './antigravity-subagent-transcript'
 import {
-  ensurePollingTimer,
-  isEffectiveWakeupPending,
-  noteForegroundTurnEndedOnState,
-  settleWakeupWaiters,
-  stopPollingTimer,
-  syncSessionSubagents,
-  type AntigravityIdleWakeupHooks,
-  type SessionSubagentState,
-} from './antigravity-wakeup-coordinator'
+  emitStoppedTrackedSubagent,
+  findAntigravityTranscriptPath,
+  syncTrackedSubagentEntries,
+  type SubagentSyncContext,
+  type TrackedSubagent,
+} from './antigravity-wakeup-emitter'
 
 export * from './antigravity-subagent-transcript'
 export * from './antigravity-background-task'
-export type { AntigravityIdleWakeupHooks }
 
-const DEFAULT_NO_WAKEUP_TIMEOUT_MS = 5_000
-const DEFAULT_WAKEUP_RESPONSE_TIMEOUT_MS = 120_000
-const DEFAULT_INTERACTION_STALL_TIMEOUT_MS = 1_500
+const POLL_INTERVAL_MS = 250
+
+interface SessionSubagentState extends SubagentSyncContext {
+  parentSessionId: string
+  bgTasks: BackgroundTaskTrackerState
+  activeMessageId: string
+  timer: ReturnType<typeof setInterval> | null
+}
 
 const sessionStates = new Map<string, SessionSubagentState>()
+
+function stopPollingTimer(state: SessionSubagentState): void {
+  if (!state.timer) return
+  clearInterval(state.timer)
+  state.timer = null
+}
+
+function syncSessionSubagents(state: SessionSubagentState): void {
+  const now = Date.now()
+  const parentTranscriptPath = findAntigravityTranscriptPath(state.parentSessionId, state.brainRoots, true)
+  let parentRaw = ''
+  let spawnedRefs: SpawnedSubagentRef[] = []
+  let killedAllAtStepIndex: number | undefined
+  let killedSwarmNames: ReadonlySet<string> | undefined
+  if (parentTranscriptPath) {
+    try {
+      parentRaw = readFileSync(parentTranscriptPath, 'utf8')
+      if (state.trackedByToolUseId.size > 0) {
+        const subState = extractParentSubagentTranscriptState(parentRaw)
+        spawnedRefs = subState.spawned
+        killedAllAtStepIndex = subState.killedAllAtStepIndex
+        killedSwarmNames = subState.killedSwarmNames
+      }
+    } catch {
+      void 0
+    }
+  }
+
+  syncTrackedSubagentEntries(state, spawnedRefs, now, {
+    ...(killedAllAtStepIndex !== undefined ? { killedAllAtStepIndex } : {}),
+    ...(killedSwarmNames ? { killedSwarmNames } : {}),
+  })
+
+  const bgSummary = parentRaw
+    ? syncBackgroundTasks(state.bgTasks, parentRaw, state.emitEvent, {
+        fallbackMessageId: state.activeMessageId,
+        brainRoots: state.brainRoots,
+      })
+    : { anyActiveNonDaemon: false }
+
+  const anyActiveSubagent = [...state.trackedByToolUseId.values()].some((e) => !e.completed)
+  if (anyActiveSubagent || bgSummary.anyActiveNonDaemon) {
+    if (!state.timer) {
+      state.timer = setInterval(() => syncSessionSubagents(state), POLL_INTERVAL_MS)
+      state.timer.unref?.()
+    }
+  } else {
+    stopPollingTimer(state)
+  }
+}
 
 function getOrCreateSessionState(
   parentSessionId: string,
   messageId: string,
   emitEvent: (event: AgentEvent) => void,
   customBrainRoots?: string[],
-  idleHooks?: AntigravityIdleWakeupHooks,
 ): SessionSubagentState {
   let state = sessionStates.get(parentSessionId)
   if (!state) {
-    const bgTasks = createBackgroundTaskTrackerState()
     state = {
       parentSessionId,
       brainRoots: customBrainRoots ?? resolveAntigravityBrainRoots(),
       emitEvent,
-      ...(idleHooks ? { idleHooks } : {}),
       boundConversationIds: new Set(),
       trackedByToolUseId: new Map(),
-      bgTasks,
-      wakeupMessageId: messageId,
-      idleWakeupMessageId: null,
-      subagentWakeupPending: false,
-      backgroundWatch: false,
-      parentTurnEnded: false,
-      foregroundEndStepIndex: null,
-      lastParentRawLength: 0,
-      lastWakeupActivityAtMs: null,
-      resumedInteractionStepIndex: null,
-      activeWakeupMinSpawnStepIndex: null,
-      allWorkCompletedAtMs: null,
-      awaitingToolSinceMs: null,
-      noWakeupTimeoutMs: DEFAULT_NO_WAKEUP_TIMEOUT_MS,
-      wakeupResponseTimeoutMs: DEFAULT_WAKEUP_RESPONSE_TIMEOUT_MS,
-      interactionStallTimeoutMs: DEFAULT_INTERACTION_STALL_TIMEOUT_MS,
-      hasExplicitStallTimeout: false,
-      emittedWakeupStepIndices: new Set(),
-      emittedWakeupToolUseIds: new Set(),
-      emittedWakeupToolResultIds: new Set(),
-      replayedBackgroundToolIds: new Set(),
-      unflushedWakeupReplay: false,
-      stalledWakeupToolReplay: false,
-      unlockedPostStallStream: false,
-      streamedPreUserPostStall: false,
-      onWakeupToolUseEmitted: (toolUseId, targetMsgId) => {
-        const bgEntry = bgTasks.tasksByToolUseId.get(toolUseId)
-        if (bgEntry) bgEntry.messageId = targetMsgId
-      },
-      wakeupWaiters: [],
+      bgTasks: createBackgroundTaskTrackerState(),
+      activeMessageId: messageId,
       timer: null,
-      timerIntervalMs: 0,
     }
     sessionStates.set(parentSessionId, state)
     return state
   }
-  if (!state.parentTurnEnded && state.wakeupMessageId !== messageId) {
-    state.idleWakeupMessageId = null
+  if (state.activeMessageId !== messageId) {
     pruneStaleUnboundBackgroundTasks(state.bgTasks)
-    if (!isEffectiveWakeupPending(state)) {
-      state.activeWakeupMinSpawnStepIndex = null
-    }
   }
   state.emitEvent = emitEvent
-  state.wakeupMessageId = messageId
+  state.activeMessageId = messageId
   if (customBrainRoots) state.brainRoots = customBrainRoots
-  if (idleHooks) state.idleHooks = idleHooks
   return state
 }
 
@@ -106,7 +123,6 @@ export function noteAntigravitySubagentEvents(
   mappedEvents: ReadonlyArray<AgentEvent>,
   emitEvent: (event: AgentEvent) => void,
   customBrainRoots?: string[],
-  idleHooks?: AntigravityIdleWakeupHooks,
 ): void {
   const hasRelevantEvent = mappedEvents.some(
     (ev) =>
@@ -119,31 +135,9 @@ export function noteAntigravitySubagentEvents(
         ev.delta.type === 'tool_result'),
   )
   const existingState = sessionStates.get(parentSessionId)
-  const hasWireWakeupContent =
-    Boolean(existingState) &&
-    !idleHooks?.isPromptActive() &&
-    (existingState!.backgroundWatch || existingState!.bgTasks.idleWatchStepIndex !== null) &&
-    mappedEvents.some(
-      (ev) =>
-        ev.type === 'content_delta' &&
-        (ev.delta.type === 'text' ||
-          ev.delta.type === 'thinking' ||
-          ev.delta.type === 'tool_use' ||
-          ev.delta.type === 'tool_result'),
-    )
-  if (!hasRelevantEvent && !hasWireWakeupContent && !existingState) return
+  if (!hasRelevantEvent && !existingState) return
 
-  const state = getOrCreateSessionState(
-    parentSessionId,
-    messageId,
-    emitEvent,
-    customBrainRoots,
-    idleHooks,
-  )
-  if (hasWireWakeupContent) {
-    state.wireWakeupStreamed = true
-    state.unflushedWakeupReplay = false
-  }
+  const state = getOrCreateSessionState(parentSessionId, messageId, emitEvent, customBrainRoots)
 
   let notedSubagent = false
   for (const event of mappedEvents) {
@@ -151,13 +145,6 @@ export function noteAntigravitySubagentEvents(
     if (!isSubagentToolName(event.delta.toolName)) continue
 
     notedSubagent = true
-    if (!isEffectiveWakeupPending(state)) {
-      state.activeWakeupMinSpawnStepIndex = null
-    }
-    state.subagentWakeupPending = true
-    state.parentTurnEnded = false
-    state.allWorkCompletedAtMs = null
-
     if (state.trackedByToolUseId.has(event.delta.toolUseId)) continue
 
     let description = 'Subagent'
@@ -186,16 +173,16 @@ export function noteAntigravitySubagentEvents(
       void 0
     }
 
-    state.trackedByToolUseId.set(event.delta.toolUseId, {
+    const entry: TrackedSubagent = {
       toolUseId: event.delta.toolUseId,
       messageId,
       description,
       startedAtMs: Date.now(),
       ...(isSwarmWorker ? { isSwarmWorker: true, ...(swarmName ? { swarmName } : {}) } : {}),
       lastRawLength: 0,
-      wakeupRequired: true,
       completed: false,
-    })
+    }
+    state.trackedByToolUseId.set(event.delta.toolUseId, entry)
 
     emitEvent({
       type: 'task_started',
@@ -214,7 +201,7 @@ export function noteAntigravitySubagentEvents(
     state.brainRoots,
   )
   const anyActiveSubagent = [...state.trackedByToolUseId.values()].some((e) => !e.completed)
-  if (notedSubagent || notedBg || anyActiveSubagent || isEffectiveWakeupPending(state)) {
+  if (notedSubagent || notedBg || anyActiveSubagent) {
     syncSessionSubagents(state)
   }
 }
@@ -222,113 +209,39 @@ export function noteAntigravitySubagentEvents(
 export function markAntigravityForegroundTurnEnded(parentSessionId: string): void {
   const state = sessionStates.get(parentSessionId)
   if (!state) return
-  noteForegroundTurnEndedOnState(state)
-}
-
-export function hasPendingAntigravitySubagentWakeup(parentSessionId: string): boolean {
-  const state = sessionStates.get(parentSessionId)
-  if (!state) return false
   syncSessionSubagents(state)
-  const anyActiveSubagent = [...state.trackedByToolUseId.values()].some((e) => !e.completed)
-  return anyActiveSubagent || isEffectiveWakeupPending(state)
-}
-
-export function hasActiveAntigravityWakeup(parentSessionId: string): boolean {
-  const state = sessionStates.get(parentSessionId)
-  if (!state) return false
-  const anyActiveSubagent = [...state.trackedByToolUseId.values()].some((e) => !e.completed)
-  return (
-    anyActiveSubagent ||
-    isEffectiveWakeupPending(state) ||
-    state.backgroundWatch ||
-    state.parentTurnEnded ||
-    state.idleWakeupMessageId !== null
-  )
-}
-
-export function waitForAntigravitySubagentWakeup(
-  parentSessionId: string,
-  opts?: {
-    noWakeupTimeoutMs?: number
-    wakeupResponseTimeoutMs?: number
-    interactionStallTimeoutMs?: number
-  },
-): Promise<'completed' | 'cancelled'> {
-  const state = sessionStates.get(parentSessionId)
-  if (!state) return Promise.resolve('completed')
-  syncSessionSubagents(state)
-  const anyActiveSubagent = [...state.trackedByToolUseId.values()].some((e) => !e.completed)
-  if (!anyActiveSubagent && !isEffectiveWakeupPending(state)) {
-    return Promise.resolve('completed')
-  }
-  if (typeof opts?.noWakeupTimeoutMs === 'number' && opts.noWakeupTimeoutMs >= 0) {
-    state.noWakeupTimeoutMs = opts.noWakeupTimeoutMs
-  }
-  if (typeof opts?.wakeupResponseTimeoutMs === 'number' && opts.wakeupResponseTimeoutMs >= 0) {
-    state.wakeupResponseTimeoutMs = opts.wakeupResponseTimeoutMs
-  }
-  if (typeof opts?.interactionStallTimeoutMs === 'number' && opts.interactionStallTimeoutMs >= 0) {
-    state.interactionStallTimeoutMs = opts.interactionStallTimeoutMs
-    state.hasExplicitStallTimeout = true
-  }
-  state.parentTurnEnded = true
-  return new Promise<'completed' | 'cancelled'>((resolve) => {
-    state.wakeupWaiters.push(resolve)
-    syncSessionSubagents(state)
-  })
+  clearSettledWakeupBackgroundTasks(state.bgTasks, state.emitEvent, state.brainRoots)
+  stopPollingTimer(state)
 }
 
 export function cancelAntigravitySubagentWakeupWait(parentSessionId: string): boolean {
   const state = sessionStates.get(parentSessionId)
   if (!state) return false
-  const hadWaiters = state.wakeupWaiters.length > 0 || isEffectiveWakeupPending(state)
+  let hadActive = false
   for (const entry of state.trackedByToolUseId.values()) {
     if (!entry.completed) {
+      hadActive = true
       emitStoppedTrackedSubagent(state, entry)
     }
   }
+  clearSettledWakeupBackgroundTasks(state.bgTasks, state.emitEvent, state.brainRoots)
   stopPollingTimer(state)
-  settleWakeupWaiters(state, 'cancelled')
-  return hadWaiters
-}
-
-export function resumeAntigravityTurnOnSteer(parentSessionId: string): void {
-  const state = sessionStates.get(parentSessionId)
-  if (!state) return
-  state.parentTurnEnded = false
-  state.foregroundEndStepIndex = null
-  for (const resolve of state.wakeupWaiters.splice(0, state.wakeupWaiters.length)) resolve('completed')
-  ensurePollingTimer(state)
-}
-
-export function hasUnflushedAntigravityWakeupReplay(parentSessionId: string): boolean {
-  return sessionStates.get(parentSessionId)?.unflushedWakeupReplay === true
-}
-
-export function shouldDropAntigravityPreUserReplay(
-  parentSessionId: string,
-  update: { sessionUpdate: string; toolCallId?: string; content?: unknown },
-): boolean {
-  return evaluateWakeupReplayDrop(sessionStates.get(parentSessionId), update)
-}
-
-export function clearUnflushedAntigravityWakeupReplay(parentSessionId: string): boolean {
-  return resetWakeupReplayState(sessionStates.get(parentSessionId))
-}
-
-function disposeSessionState(state: SessionSubagentState): void {
-  stopPollingTimer(state)
-  disposeBackgroundTaskTracker(state.bgTasks)
-  settleWakeupWaiters(state, 'cancelled')
+  return hadActive
 }
 
 export function disposeAntigravitySubagentTracker(parentSessionId?: string): void {
   if (parentSessionId) {
     const state = sessionStates.get(parentSessionId)
-    if (state) disposeSessionState(state)
+    if (state) {
+      stopPollingTimer(state)
+      disposeBackgroundTaskTracker(state.bgTasks)
+    }
     sessionStates.delete(parentSessionId)
     return
   }
-  for (const state of sessionStates.values()) disposeSessionState(state)
+  for (const state of sessionStates.values()) {
+    stopPollingTimer(state)
+    disposeBackgroundTaskTracker(state.bgTasks)
+  }
   sessionStates.clear()
 }

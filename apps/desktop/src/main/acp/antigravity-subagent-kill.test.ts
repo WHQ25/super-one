@@ -1,15 +1,14 @@
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { AgentEvent } from '@superone/shared/agent-types'
 import { MonitorSessionHold } from '@superone/shared/monitor-session-hold'
 import {
   cancelAntigravitySubagentWakeupWait,
   disposeAntigravitySubagentTracker,
-  hasPendingAntigravitySubagentWakeup,
+  markAntigravityForegroundTurnEnded,
   noteAntigravitySubagentEvents,
-  waitForAntigravitySubagentWakeup,
 } from './antigravity-subagent'
 
 const tempDirs: string[] = []
@@ -120,7 +119,7 @@ afterEach(() => {
 })
 
 describe('antigravity subagent and background task termination (#214)', () => {
-  it('releases MonitorSessionHold and liveBackgroundTaskIds when a subagent is killed via manage_subagents', () => {
+  it('releases MonitorSessionHold and liveBackgroundTaskIds when a subagent is killed via manage_subagents', async () => {
     const parentSid = '4ec9c100-0000-4000-8000-000000000214'
     const subSid = 'a9383a2e-0000-4000-8000-000000000214'
     const iso = new Date().toISOString()
@@ -148,7 +147,6 @@ describe('antigravity subagent and background task termination (#214)', () => {
       [brainRoot],
     )
 
-    expect(hasPendingAntigravitySubagentWakeup(parentSid)).toBe(true)
     expect([...liveBackgroundTaskIds]).toEqual([subSid])
     expect(hold.adjust({ type: 'status_change', status: 'idle' })).toEqual({ type: 'status_change', status: 'background' })
 
@@ -158,8 +156,9 @@ describe('antigravity subagent and background task termination (#214)', () => {
       genericLine(190, iso, 'Successfully killed 1 subagent(s) and their descendants.\nKilled roles: Implementer'),
     ])
 
-    expect(hasPendingAntigravitySubagentWakeup(parentSid)).toBe(false)
-    expect([...liveBackgroundTaskIds]).toEqual([])
+    await vi.waitFor(() => {
+      expect([...liveBackgroundTaskIds]).toEqual([])
+    })
     expect(
       emitted.some((e) => e.type === 'task_notification' && e.taskId === subSid && e.toolUseId === 'call_sub_kill_1' && e.taskStatus === 'stopped'),
     ).toBe(true)
@@ -268,7 +267,6 @@ describe('antigravity subagent and background task termination (#214)', () => {
       [brainRoot],
     )
 
-    expect(hasPendingAntigravitySubagentWakeup(parentSid)).toBe(false)
     expect(emitted.some((e) => e.type === 'task_notification' && e.taskId === sub1 && e.taskStatus === 'stopped')).toBe(true)
     expect(emitted.some((e) => e.type === 'task_notification' && e.toolUseId === 'call_sub_prekilled' && e.taskStatus === 'stopped')).toBe(true)
     expect(emitted.some((e) => e.type === 'task_notification' && e.taskId === bgTaskId && e.taskStatus === 'stopped')).toBe(true)
@@ -276,7 +274,7 @@ describe('antigravity subagent and background task termination (#214)', () => {
     expect(hold.followUp()).toEqual({ type: 'status_change', status: 'idle' })
   })
 
-  it('clears subagentWakeupPending on a subsequent turn kill after an earlier subagent completed normally, and handles swarm kill', async () => {
+  it('reconciles a subsequent turn kill after an earlier subagent completed normally, and handles swarm kill', async () => {
     const parentSid = '4ec9c100-0000-4000-8000-000000000217'
     const sub1 = 'a9383a2e-0000-4000-8000-000000000217'
     const sub2 = 'b9383a2e-0000-4000-8000-000000000217'
@@ -301,8 +299,8 @@ describe('antigravity subagent and background task termination (#214)', () => {
 
     const { liveBackgroundTaskIds, record } = createLifecycleObserver()
     noteAntigravitySubagentEvents(parentSid, 'msg-t1', [agentToolUse('msg-t1', 'call_s1')], record, [brainRoot])
-    expect(await waitForAntigravitySubagentWakeup(parentSid)).toBe('completed')
-    expect(hasPendingAntigravitySubagentWakeup(parentSid)).toBe(false)
+    markAntigravityForegroundTurnEnded(parentSid)
+    expect([...liveBackgroundTaskIds]).toEqual([])
 
     writeJsonl(parentFullPath, [
       ...turn1,
@@ -332,7 +330,6 @@ describe('antigravity subagent and background task termination (#214)', () => {
       [brainRoot],
     )
 
-    expect(hasPendingAntigravitySubagentWakeup(parentSid)).toBe(false)
     expect([...liveBackgroundTaskIds]).toEqual([])
   })
 })

@@ -13,7 +13,6 @@ import {
   pollWorkflowTaskProgress,
   startTrackedWorkflowTask,
 } from './antigravity-background-workflow'
-import { extractParentWakeupProgress } from './antigravity-wakeup-transcript'
 
 export interface TrackedBackgroundTask {
   toolUseId: string
@@ -33,30 +32,22 @@ export interface TrackedBackgroundTask {
   emittedTaskStarted: boolean
   wireCompleted: boolean
   completed: boolean
-  wakeupRequired: boolean
   lastWorkflowProgressSignature?: string
 }
 
 export interface BackgroundTaskTrackerState {
   boundTaskIds: Set<string>
   tasksByToolUseId: Map<string, TrackedBackgroundTask>
-  idleWatchStepIndex: number | null
 }
 
 export interface BackgroundTaskSyncSummary {
   anyActiveNonDaemon: boolean
-  anyWakeupRequired: boolean
-  minWakeupSpawnStepIndex: number | null
-  emittedCompletionFromTranscript: boolean
-  emittedCompletedToolUseIds: string[]
-  hasActiveIdleWatch: boolean
 }
 
 export function createBackgroundTaskTrackerState(): BackgroundTaskTrackerState {
   return {
     boundTaskIds: new Set(),
     tasksByToolUseId: new Map(),
-    idleWatchStepIndex: null,
   }
 }
 
@@ -145,12 +136,19 @@ export function noteBackgroundTaskMappedEvents(
       const existing = tracker.tasksByToolUseId.get(event.delta.toolUseId)
       if (!existing) {
         tracker.tasksByToolUseId.set(event.delta.toolUseId, {
-          toolUseId: event.delta.toolUseId, messageId, toolName: event.delta.toolName,
+          toolUseId: event.delta.toolUseId,
+          messageId,
+          toolName: event.delta.toolName,
           rawInputJson: event.delta.input,
           ...(event.delta.toolSummary ? { toolSummary: event.delta.toolSummary } : {}),
           ...(command ? { command } : {}),
-          description, isDaemon, startedAtMs: Date.now(),
-          watchingLog: false, emittedTaskStarted: false, wireCompleted: false, completed: false, wakeupRequired: false,
+          description,
+          isDaemon,
+          startedAtMs: Date.now(),
+          watchingLog: false,
+          emittedTaskStarted: false,
+          wireCompleted: false,
+          completed: false,
         })
       } else {
         existing.rawInputJson = event.delta.input
@@ -173,9 +171,7 @@ export function noteBackgroundTaskMappedEvents(
         if (launch.logFile) entry.logFile = launch.logFile
         if (entry.isDaemon) {
           entry.completed = true
-          entry.wakeupRequired = false
         } else {
-          entry.wakeupRequired = true
           entry.wireCompleted = false
           entry.completed = false
           startTrackedBackgroundTask(entry, emitEvent, brainRoots)
@@ -190,14 +186,11 @@ export function noteBackgroundTaskMappedEvents(
 
       if (entry.toolName === 'Workflow' && entry.taskId && !entry.completed) {
         const trimmedSummary = (event.delta.summary ?? '').trim().toLowerCase()
-        if (!trimmedSummary || trimmedSummary === 'done') {
-          continue
-        }
+        if (!trimmedSummary || trimmedSummary === 'done') continue
       }
 
       entry.wireCompleted = true
       entry.completed = true
-      entry.wakeupRequired = false
       finishTrackedBackgroundTask(entry, event.delta.isError ? 'failed' : 'completed', emitEvent, { brainRoots })
     }
   }
@@ -207,38 +200,18 @@ export function noteBackgroundTaskMappedEvents(
 export function syncBackgroundTasks(
   tracker: BackgroundTaskTrackerState,
   parentRaw: string,
-  parentTurnEnded: boolean,
   emitEvent: (event: AgentEvent) => void,
-  opts?: {
-    fallbackMessageId?: string
-    keepIdleWatch?: boolean
-    brainRoots?: string[]
-  },
+  opts?: { fallbackMessageId?: string; brainRoots?: string[] },
 ): BackgroundTaskSyncSummary {
   const { lastUserStepIndex, tasks: spawnedTasks } = extractSpawnedBackgroundTasksFromTranscript(parentRaw)
-  const completedMap = extractCompletedBackgroundTasksFromTranscript(
-    parentRaw,
-    -1,
-    spawnedTasks,
-  )
-  let emittedCompletionFromTranscript = false
-  const emittedCompletedToolUseIds: string[] = []
-
-  for (const ref of spawnedTasks) {
-    if (ref.isDaemon && !ref.cancelledInTurn && !completedMap.has(ref.taskId)) {
-      if (tracker.idleWatchStepIndex === null || ref.stepIndex < tracker.idleWatchStepIndex) {
-        tracker.idleWatchStepIndex = ref.stepIndex
-      }
-    }
-  }
-
+  const completedMap = extractCompletedBackgroundTasksFromTranscript(parentRaw, -1, spawnedTasks)
   const spawnedById = new Map(spawnedTasks.map((t) => [t.taskId, t]))
   const currentTurnTasks = spawnedTasks.filter(
     (ref) => ref.stepIndex > lastUserStepIndex && !tracker.boundTaskIds.has(ref.taskId),
   )
 
   for (const entry of tracker.tasksByToolUseId.values()) {
-    if (entry.completed && !entry.wakeupRequired) continue
+    if (entry.completed) continue
     if (entry.taskId) {
       const boundRef = spawnedById.get(entry.taskId)
       if (boundRef) {
@@ -274,38 +247,18 @@ export function syncBackgroundTasks(
     if (match.logFile) entry.logFile = match.logFile
     if (match.isDaemon) entry.isDaemon = true
 
-    if (match.cancelledInTurn) {
+    if (match.cancelledInTurn || entry.isDaemon) {
       entry.completed = true
-      entry.wakeupRequired = false
       continue
     }
 
-    if (entry.isDaemon) {
-      entry.completed = true
-      entry.wakeupRequired = false
-      if (tracker.idleWatchStepIndex === null || match.stepIndex < tracker.idleWatchStepIndex) {
-        tracker.idleWatchStepIndex = match.stepIndex
-      }
-      continue
-    }
-
-    if (isSchedule && completedMap.has(match.taskId) && !parentTurnEnded) {
-      const preCheck = extractParentWakeupProgress(parentRaw, match.stepIndex)
-      if (preCheck.completed) {
-        entry.completed = true
-        entry.completedStepIndex = completedMap.get(match.taskId)?.systemStepIndex
-        entry.wakeupRequired = false
-        continue
-      }
-    }
-
-    entry.wakeupRequired = true
     startTrackedBackgroundTask(entry, emitEvent, opts?.brainRoots)
   }
 
   if (opts?.fallbackMessageId) {
     for (const ref of spawnedTasks) {
       if (
+        ref.stepIndex <= lastUserStepIndex ||
         tracker.boundTaskIds.has(ref.taskId) ||
         tracker.tasksByToolUseId.has(ref.toolUseId) ||
         ref.isDaemon ||
@@ -334,7 +287,6 @@ export function syncBackgroundTasks(
         emittedTaskStarted: false,
         wireCompleted: false,
         completed: false,
-        wakeupRequired: true,
       }
       tracker.tasksByToolUseId.set(entry.toolUseId, entry)
       startTrackedBackgroundTask(entry, emitEvent, opts?.brainRoots)
@@ -346,7 +298,6 @@ export function syncBackgroundTasks(
 
     if (spawnedById.get(entry.taskId)?.cancelledInTurn) {
       entry.completed = true
-      entry.wakeupRequired = false
       finishTrackedBackgroundTask(entry, 'stopped', emitEvent, { brainRoots: opts?.brainRoots })
       continue
     }
@@ -362,12 +313,7 @@ export function syncBackgroundTasks(
     if (!entry.logFile && completedResult.logFile) {
       entry.logFile = completedResult.logFile
     }
-    if (completedResult.priority === 'low') {
-      entry.wakeupRequired = false
-    }
     if (!entry.wireCompleted && entry.toolName === 'Bash') {
-      emittedCompletionFromTranscript = true
-      emittedCompletedToolUseIds.push(entry.toolUseId)
       emitEvent({
         type: 'content_delta',
         messageId: entry.messageId,
@@ -400,61 +346,14 @@ export function syncBackgroundTasks(
   }
 
   let anyActiveNonDaemon = false
-  let anyWakeupRequired = false
-  let minWakeupSpawnStepIndex: number | null = null
-
   for (const entry of tracker.tasksByToolUseId.values()) {
-    if (!entry.wakeupRequired) continue
-    anyWakeupRequired = true
-    if (!entry.completed) {
+    if (!entry.completed && !entry.isDaemon && (Boolean(entry.taskId) || entry.toolName === 'Workflow')) {
       anyActiveNonDaemon = true
-    }
-    if (
-      typeof entry.spawnStepIndex === 'number' &&
-      (minWakeupSpawnStepIndex === null || entry.spawnStepIndex < minWakeupSpawnStepIndex)
-    ) {
-      minWakeupSpawnStepIndex = entry.spawnStepIndex
+      break
     }
   }
 
-  const hasActiveDaemonInTranscript = spawnedTasks.some(
-    (ref) => ref.isDaemon && !ref.cancelledInTurn && !completedMap.has(ref.taskId),
-  )
-  if (
-    !hasActiveDaemonInTranscript &&
-    !anyActiveNonDaemon &&
-    !opts?.keepIdleWatch &&
-    tracker.idleWatchStepIndex !== null
-  ) {
-    const idleCheck = extractParentWakeupProgress(parentRaw, tracker.idleWatchStepIndex)
-    if (!idleCheck.sawSystemMessage) {
-      tracker.idleWatchStepIndex = null
-    }
-  }
-
-  return {
-    anyActiveNonDaemon,
-    anyWakeupRequired,
-    minWakeupSpawnStepIndex,
-    emittedCompletionFromTranscript,
-    emittedCompletedToolUseIds,
-    hasActiveIdleWatch: tracker.idleWatchStepIndex !== null,
-  }
-}
-
-export function reconcileForegroundCompletedBackgroundTasks(
-  tracker: BackgroundTaskTrackerState,
-  foregroundEndStepIndex: number,
-): void {
-  for (const entry of tracker.tasksByToolUseId.values()) {
-    if (
-      entry.completed &&
-      typeof entry.completedStepIndex === 'number' &&
-      entry.completedStepIndex <= foregroundEndStepIndex
-    ) {
-      entry.wakeupRequired = false
-    }
-  }
+  return { anyActiveNonDaemon }
 }
 
 export function clearSettledWakeupBackgroundTasks(
@@ -469,13 +368,12 @@ export function clearSettledWakeupBackgroundTasks(
       stopLogWatch(entry)
     }
     entry.completed = true
-    entry.wakeupRequired = false
   }
 }
 
 export function pruneStaleUnboundBackgroundTasks(tracker: BackgroundTaskTrackerState): void {
   for (const [id, entry] of tracker.tasksByToolUseId.entries()) {
-    if (!entry.taskId && !entry.wakeupRequired) {
+    if (!entry.taskId && entry.completed) {
       stopLogWatch(entry)
       tracker.tasksByToolUseId.delete(id)
     }
@@ -483,10 +381,7 @@ export function pruneStaleUnboundBackgroundTasks(tracker: BackgroundTaskTrackerS
 }
 
 export function disposeBackgroundTaskTracker(tracker: BackgroundTaskTrackerState): void {
-  for (const entry of tracker.tasksByToolUseId.values()) {
-    stopLogWatch(entry)
-  }
+  for (const entry of tracker.tasksByToolUseId.values()) stopLogWatch(entry)
   tracker.tasksByToolUseId.clear()
   tracker.boundTaskIds.clear()
-  tracker.idleWatchStepIndex = null
 }

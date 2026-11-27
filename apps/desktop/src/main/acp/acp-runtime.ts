@@ -137,7 +137,6 @@ import {
 import { describeAcpRequestFailure } from './acp-request-error'
 import {
   advanceAntigravityThinkingStepAfterTools,
-  antigravityPermissionLaunchProfile,
   antigravitySessionMeta,
   applyAntigravityPermissionMode,
   authenticateAntigravityRuntime,
@@ -172,13 +171,14 @@ import {
 } from './antigravity-protocol'
 import {
   cancelAntigravitySubagentWakeupWait,
-  clearUnflushedAntigravityWakeupReplay,
   disposeAntigravitySubagentTracker,
-  hasActiveAntigravityWakeup,
   noteAntigravitySubagentEvents,
-  shouldDropAntigravityPreUserReplay,
 } from './antigravity-subagent'
-import { ANTIGRAVITY_WAKEUP_CONTINUATION_PROMPT } from './antigravity-model-guard'
+import {
+  assertExternalCliCompatible,
+  assertExternalCliVersionCompatible,
+  isHarnessNotReadyError,
+} from '../harness/resolve-runtime'
 import { pushBashOutput } from '../bash-output-watcher'
 import type {
   AgentErrorInfo,
@@ -292,7 +292,7 @@ export interface AcpRuntime {
      * emit idle over the replacement. `onInputAccepted` runs just before
      * session/prompt goes out (see `SendDelivery`).
      */
-    opts?: { sendNow?: boolean; onInputAccepted?: () => void; inheritedOpenToolIds?: readonly string[] },
+    opts?: { sendNow?: boolean; onInputAccepted?: () => void },
   ): Promise<void>
   isPromptActive?: () => boolean
   hasActiveBackgroundWork?: () => boolean
@@ -534,6 +534,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       const { resolveDesktopGrokLaunch } = await import('../harness/grok-launch')
       const resolved = resolveDesktopGrokLaunch(opts.launch)
       if (!resolved) throw new Error('Grok command not found. Check Settings → Harnesses → Grok.')
+      assertExternalCliCompatible('acp-grok', resolved.command)
       launch.command = resolved.command
       launch.args = resolved.args
     } else if (launch.agentId === 'antigravity') {
@@ -865,6 +866,14 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
       },
     } as never)
     agentCapabilities = readAgentCapabilities(initResult)
+    const agentVersion = (initResult as { agentInfo?: { version?: unknown } | null }).agentInfo?.version
+    if (typeof agentVersion === 'string') {
+      if (launch.agentId === 'antigravity') {
+        assertExternalCliVersionCompatible('acp-antigravity', agentVersion)
+      } else if (launch.agentId === 'grok-build') {
+        assertExternalCliVersionCompatible('acp-grok', agentVersion)
+      }
+    }
     {
       const meta = (initResult as { _meta?: Record<string, unknown> | null })._meta
       sessionRecapAvailable = meta?.sessionRecap === true
@@ -1142,6 +1151,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     await processHandle?.kill().catch(() => undefined)
     disposeStream?.()
     connection?.close(err)
+    if (isHarnessNotReadyError(err)) throw err
     const base = describeAcpRequestFailure(err)
     if (exitInfo) throw new Error(`${base}. ${formatProcessExit(exitInfo)}`)
     throw err
@@ -1194,7 +1204,6 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     readonly agentMsgToLocal: Map<string, string>
     readonly openToolIds: Set<string>
     lastMessageId: string | null
-    sawUserMessageChunk: boolean
   }
   interface AcpPromptTurn extends AcpTurnScope {
     readonly gen: number
@@ -1214,7 +1223,6 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     agentMsgToLocal: new Map<string, string>(),
     openToolIds: new Set<string>(),
     lastMessageId,
-    sawUserMessageChunk: false,
     sawAgentThoughtChunk: false,
     stepIndex: 0,
     stepStartedAt: Date.now(),
@@ -1391,37 +1399,6 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         }
         const turn = liveTurn()
         const turnScope = scope()
-        if (launch.agentId === 'antigravity') {
-          if (message.update.sessionUpdate === 'user_message_chunk') {
-            turnScope.sawUserMessageChunk = true
-            const streamedPostStall = clearUnflushedAntigravityWakeupReplay(activeSession.sessionId)
-            if (streamedPostStall && turn) {
-              if (turn.currentStepHasThinking && !turn.currentStepThinkingClosed) {
-                closeAntigravityThinkingStep(
-                  turn,
-                  turn.lastMessageId ?? turn.primaryMessageId,
-                  turn.onEvent,
-                )
-              }
-              turn.stepIndex += 1
-              turn.currentStepHasThinking = false
-              turn.currentStepThinkingClosed = false
-              turn.currentStepHasThoughtText = false
-              turn.pendingThoughtNewline = false
-              turn.stepStartedAt = Date.now()
-            }
-          } else if (
-            turn &&
-            !turnScope.sawUserMessageChunk &&
-            shouldDropAntigravityPreUserReplay(activeSession.sessionId, message.update)
-          ) {
-            log.debug(
-              '[acp-runtime] dropping stale pre-user_message_chunk antigravity wakeup replay update=%s',
-              message.update.sessionUpdate,
-            )
-            continue
-          }
-        }
         const update =
           launch.agentId === 'antigravity'
             ? normalizeAntigravitySessionUpdate(message.update, activeSession.sessionId)
@@ -1575,15 +1552,6 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
               if (superoneSid) noteAcpTaskLifecycle(superoneSid, ev)
               deliver(ev)
             },
-            undefined,
-            {
-              isPromptActive: () => Boolean(liveTurn()),
-              ensureMessage: () => ensureAgentInitiatedMessage(null),
-              completeMessage: () => completeAgentInitiated('complete'),
-              permissionProfile: () => antigravityPermissionLaunchProfile(currentPermissionMode),
-              permissionMode: () => currentPermissionMode,
-              resumeInteractionStream: (targetMessageId) => resumeAntigravityInteractionStream(targetMessageId),
-            },
           )
         }
         if (launch.agentId === 'antigravity' && hadOpenTools && turnScope.openToolIds.size === 0) {
@@ -1624,37 +1592,11 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
     }
   }
 
-  const resumeAntigravityInteractionStream = (targetMessageId: string): boolean => {
-    if (closed || !pumping || liveTurn()) return false
-    if (agentInitiatedMessageId === targetMessageId) {
-      agentInitiatedMessageId = null
-    }
-    const inheritedOpenToolIds = [...wakeScope.openToolIds]
-    wakeScope.openToolIds.clear()
-    void runtimeApi
-      .prompt(
-        ANTIGRAVITY_WAKEUP_CONTINUATION_PROMPT,
-        targetMessageId,
-        (ev) => opts.onSessionEvent?.(ev),
-        undefined,
-        { inheritedOpenToolIds },
-      )
-      .catch((err) => {
-        log.warn('[acp-runtime] wakeup interaction continuation failed:', err)
-      })
-    return true
-  }
-
   const runtimeApi: AcpRuntime = {
     sessionId: activeSession.sessionId,
     launch,
     isPromptActive: () => Boolean(liveTurn()),
-    hasActiveBackgroundWork: () =>
-      Boolean(
-        liveTurn() ||
-          agentInitiatedMessageId ||
-          (launch.agentId === 'antigravity' && hasActiveAntigravityWakeup(activeSession.sessionId)),
-      ),
+    hasActiveBackgroundWork: () => Boolean(liveTurn() || agentInitiatedMessageId),
     isSessionRecapAvailable: () => sessionRecapAvailable,
     async requestRecap(auto) {
       if (!sessionRecapAvailable) {
@@ -1861,11 +1803,6 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         manualCompact: false,
         compactStartedAt: 0,
         compactionSettled: false,
-      }
-      if (promptOpts?.inheritedOpenToolIds) {
-        for (const toolId of promptOpts.inheritedOpenToolIds) {
-          turn.openToolIds.add(toolId)
-        }
       }
       currentTurn = turn
       wakeScope = newTurnScope()
@@ -2113,9 +2050,6 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         antigravitySteer?.dispose()
         if (gen === promptGen && currentTurn === turn) {
           currentTurn = null
-          if (launch.agentId === 'antigravity') {
-            clearUnflushedAntigravityWakeupReplay(activeSession.sessionId)
-          }
         }
         turn.agentMsgToLocal.clear()
         turn.openToolIds.clear()
@@ -2194,7 +2128,6 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
             preSteerUsage,
           )
         }
-        clearUnflushedAntigravityWakeupReplay(activeSession.sessionId)
         turn.stepIndex = 0
         turn.emittedStepThinkingIds.length = 0
         turn.sawAgentThoughtChunk = false

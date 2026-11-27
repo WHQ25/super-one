@@ -10,9 +10,8 @@ vi.mock('../logger', () => ({
 
 import {
   disposeAntigravitySubagentTracker,
-  hasPendingAntigravitySubagentWakeup,
+  markAntigravityForegroundTurnEnded,
   noteAntigravitySubagentEvents,
-  waitForAntigravitySubagentWakeup,
 } from './antigravity-subagent'
 
 const tempDirs: string[] = []
@@ -135,7 +134,6 @@ describe('antigravity background run_workflow live tracking', () => {
       [brainRoot],
     )
 
-    expect(hasPendingAntigravitySubagentWakeup(parentSid)).toBe(true)
     expect(emitted).toContainEqual(expect.objectContaining({
       type: 'task_started',
       taskType: 'workflow',
@@ -166,8 +164,6 @@ describe('antigravity background run_workflow live tracking', () => {
         toolUses: 1,
       },
     })
-
-    const waitPromise = waitForAntigravitySubagentWakeup(parentSid)
 
     writeChildTranscript(brainRoot, 'child-apple', [
       { step_index: 0, type: 'USER_INPUT', status: 'DONE', content: 'Give a fact about apple' },
@@ -252,7 +248,9 @@ describe('antigravity background run_workflow live tracking', () => {
       'utf8',
     )
 
-    expect(await waitPromise).toBe('completed')
+    await vi.waitFor(() => {
+      expect(emitted.some((e) => e.type === 'task_notification' && e.toolUseId === 'call_wf_6')).toBe(true)
+    })
 
     const notification = emitted.find((e) => e.type === 'task_notification' && e.toolUseId === 'call_wf_6')
     expect(notification).toMatchObject({
@@ -328,7 +326,12 @@ describe('antigravity background run_workflow live tracking', () => {
       [brainRoot],
     )
 
-    expect(hasPendingAntigravitySubagentWakeup(parentSid)).toBe(true)
+    expect(emitted).toContainEqual(expect.objectContaining({
+      type: 'task_started',
+      taskType: 'workflow',
+      toolUseId: 'call_wf_9',
+      taskId: `${parentSid}/task-9`,
+    }))
 
     noteAntigravitySubagentEvents(
       parentSid,
@@ -351,9 +354,6 @@ describe('antigravity background run_workflow live tracking', () => {
     )
 
     expect(emitted.some((e) => e.type === 'task_notification')).toBe(false)
-    expect(hasPendingAntigravitySubagentWakeup(parentSid)).toBe(true)
-
-    const waitPromise = waitForAntigravitySubagentWakeup(parentSid, { noWakeupTimeoutMs: 50 })
 
     writeFileSync(
       transcriptPath,
@@ -371,7 +371,7 @@ describe('antigravity background run_workflow live tracking', () => {
       'utf8',
     )
 
-    expect(await waitPromise).toBe('completed')
+    markAntigravityForegroundTurnEnded(parentSid)
     expect(emitted).toContainEqual(expect.objectContaining({
       type: 'task_notification',
       toolUseId: 'call_wf_9',

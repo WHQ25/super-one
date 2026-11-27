@@ -27,9 +27,11 @@ import {
 import type { OpenCodeV2Event } from './opencode-v2-types'
 import { startOpenCodeSessionServer } from '@superone/opencode/owned-service'
 import { startOpenCodeCatalogServer } from '@superone/opencode/launch'
+import { resolveExternalCommand } from '@superone/runtime/harness'
 import { app } from 'electron'
 import { join } from 'node:path'
 import { nativeForkBoundary } from '@superone/opencode/native-history'
+import { assertExternalCliCompatible } from '../harness/resolve-runtime'
 import { listMcpConfigs } from '../mcp-config-service'
 import log from '../logger'
 import {
@@ -145,6 +147,11 @@ export function startOpenCodeServerFromConfig(
 }
 
 export async function createOpenCodeRuntime(opts: OpenCodeRuntimeOptions): Promise<OpenCodeRuntime> {
+  if (!opts.config.serverUrl?.trim()) {
+    const explicit = opts.config.binaryPath?.trim()
+    const resolvedBin = resolveExternalCommand(explicit, ['opencode', 'opencode.exe', 'opencode.cmd'])
+    if (resolvedBin) assertExternalCliCompatible('opencode', resolvedBin)
+  }
   const server = opts.config.serviceHome ? await startOpenCodeSessionServer({ ...opts.config, sessionId: opts.sessionId, nativeSessionId: opts.providerSessionId,
     hostMcp: getSuperoneMcpHttpConfig(opts.sessionId),
     cwd: opts.cwd, signal: opts.signal, timeoutMs: opts.config.startupTimeoutMs }) : await startOpenCodeServerFromConfig(opts.config, opts.cwd, opts.signal)

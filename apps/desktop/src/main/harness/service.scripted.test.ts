@@ -20,6 +20,7 @@ vi.mock('./home', () => ({ resolveHarnessHomeRoot: fixture.home }))
 vi.mock('./host', () => ({ desktopHarnessDeps: () => ({}), desktopHarnessResolver: {}, desktopHarnessAuthProbe: () => ({}) }))
 vi.mock('./tarball-installer', () => ({ desktopPackagePins: () => ({}), isDesktopManagedPinAligned: () => false }))
 vi.mock('./grok-installation', () => ({ refreshGrokInstallation: vi.fn() }))
+vi.mock('./opencode-installation', () => ({ refreshOpencodeInstallation: vi.fn() }))
 
 const { alignEnabledManagedHarnesses, enabledManagedHarnessesNeedAlign, enableDesktopHarness, resetHarnessManagerForTests } = await import('./service')
 

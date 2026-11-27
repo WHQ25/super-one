@@ -72,6 +72,8 @@ export { registerHarnessIpcHandlers } from './ipc'
 export {
   resolveHarnessRuntime,
   tryResolveHarnessRuntime,
+  assertExternalCliCompatible,
+  assertExternalCliVersionCompatible,
   HarnessNotReadyError,
   isHarnessNotReadyError,
 } from './resolve-runtime'

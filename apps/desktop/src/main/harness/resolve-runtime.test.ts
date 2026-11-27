@@ -71,6 +71,8 @@ const {
 const {
   resolveHarnessRuntime,
   tryResolveHarnessRuntime,
+  assertExternalCliCompatible,
+  assertExternalCliVersionCompatible,
   HarnessNotReadyError,
   isHarnessNotReadyError,
 } = await import('./resolve-runtime')
@@ -203,5 +205,34 @@ describe('Grok settings and launch resolution', () => {
       expect(resolveDesktopGrokLaunch()?.command).toBe(override)
       expect(manager.get('acp-grok').command).toBe(binary)
     } finally { rmSync(dir, { recursive: true, force: true }) }
+  })
+
+  it('throws HarnessNotReadyError when external CLI binary or reported version is below minimum', () => {
+    const dir = mkdtempSync(join(tmpdir(), 'ext-cli-compat-'))
+    try {
+      const oldAgy = join(dir, 'agy')
+      writeFileSync(oldAgy, '#!/bin/sh\necho "agy 1.5.10"\n')
+      chmodSync(oldAgy, 0o755)
+      expect(() => assertExternalCliCompatible('acp-antigravity', oldAgy)).toThrow(HarnessNotReadyError)
+      try {
+        assertExternalCliCompatible('acp-antigravity', oldAgy)
+      } catch (err) {
+        expect(err).toBeInstanceOf(HarnessNotReadyError)
+        if (err instanceof HarnessNotReadyError) {
+          expect(err.harnessId).toBe('acp-antigravity')
+          expect(err.state).toBe('incompatible')
+          expect(err.message).toContain('1.5.16')
+        }
+      }
+
+      expect(() => assertExternalCliVersionCompatible('acp-antigravity', '1.5.15')).toThrow(HarnessNotReadyError)
+      expect(() => assertExternalCliVersionCompatible('acp-antigravity', '1.5.16')).not.toThrow()
+      expect(() => assertExternalCliVersionCompatible('acp-grok', '1.0.91')).toThrow(HarnessNotReadyError)
+      expect(() => assertExternalCliVersionCompatible('acp-grok', '1.0.92')).not.toThrow()
+      expect(() => assertExternalCliVersionCompatible('opencode', '1.9.9')).toThrow(HarnessNotReadyError)
+      expect(() => assertExternalCliVersionCompatible('opencode', '2.0.0')).not.toThrow()
+    } finally {
+      rmSync(dir, { recursive: true, force: true })
+    }
   })
 })

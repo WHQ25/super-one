@@ -35,6 +35,7 @@ import log from '../logger'
 import { scriptedHarnessEnabled } from '../session/scripted-harness-gate'
 import { refreshAntigravityInstallation } from './antigravity-installation'
 import { refreshGrokInstallation } from './grok-installation'
+import { refreshOpencodeInstallation } from './opencode-installation'
 
 let manager: HarnessManager | null = null
 
@@ -105,9 +106,11 @@ export function listHarnessInstallations(): HarnessInstallationStatus[] {
   const manager = getHarnessManager()
   const grok = refreshGrokInstallation(manager)
   const antigravity = refreshAntigravityInstallation(manager)
+  const opencode = refreshOpencodeInstallation(manager)
   return manager.list().map((row) => {
     if (row.id === 'acp-grok') return grok
     if (row.id === 'acp-antigravity') return antigravity
+    if (row.id === 'opencode') return opencode
     return row
   })
 }

@@ -1,11 +1,11 @@
 import {
+  evaluateExternalCliCompatibility,
   isLegacyAntigravityServerCommand,
   resolveAntigravityRuntime,
   type HarnessManager,
 } from '@superone/runtime/harness'
 import { buildHarnessDiagnostic, type HarnessInstallationStatus } from '@superone/shared/environment'
 
-/** Refresh settings from the launch resolver instead of a historical realpath. */
 export function refreshAntigravityInstallation(manager: HarnessManager): HarnessInstallationStatus {
   const status = manager.get('acp-antigravity')
   if (!status.enabled) return status
@@ -15,17 +15,26 @@ export function refreshAntigravityInstallation(manager: HarnessManager): Harness
   const migratedLegacy = isLegacyAntigravityServerCommand(config.command ?? status.command)
   const repaired = !fromEnv && (!config.commandSource || migratedLegacy) && launch?.source === 'path'
   const nextCommand = launch?.command ?? (migratedLegacy ? undefined : status.command)
-  const state = launch ? 'ready' : 'missing'
+  const compat = launch ? evaluateExternalCliCompatibility('acp-antigravity', launch.command) : null
+  const state = !launch ? 'missing' : compat?.compatible ? 'ready' : 'incompatible'
+  const nextVersion = launch ? compat?.version : undefined
+  const diagnosticCode = !launch ? 'not_found' : compat?.compatible ? null : 'incompatible'
+  const diagnosticFields = !launch || compat?.compatible ? null : (compat?.diagnosticFields ?? null)
+
   if (
     !fromEnv &&
-    (status.command !== nextCommand || repaired || status.state !== state || status.runtimeVersion)
+    (status.command !== nextCommand ||
+      repaired ||
+      status.state !== state ||
+      status.runtimeVersion !== nextVersion ||
+      (status.diagnostic?.code ?? null) !== diagnosticCode)
   ) {
     manager.update('acp-antigravity', {
       command: nextCommand ?? null,
-      runtimeVersion: null,
+      runtimeVersion: nextVersion ?? null,
       state,
-      diagnosticCode: launch ? null : 'not_found',
-      diagnosticFields: null,
+      diagnosticCode,
+      diagnosticFields,
       ...(repaired
         ? {
             configJson: JSON.stringify({
@@ -43,7 +52,9 @@ export function refreshAntigravityInstallation(manager: HarnessManager): Harness
     ...status,
     state,
     command: launch?.command,
-    runtimeVersion: undefined,
-    diagnostic: launch ? undefined : buildHarnessDiagnostic('not_found'),
+    runtimeVersion: nextVersion,
+    diagnostic: diagnosticCode
+      ? buildHarnessDiagnostic(diagnosticCode, diagnosticFields ?? undefined)
+      : undefined,
   }
 }

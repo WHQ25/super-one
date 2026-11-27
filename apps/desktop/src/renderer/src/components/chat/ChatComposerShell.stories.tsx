@@ -398,3 +398,93 @@ export const HarnessRunsOnNodeOnly: Story = {
     expect(canvas.queryByText(/READ ONLY/)).toBeNull()
   },
 }
+
+function HarnessUpgradePreview({ narrow = false }: { narrow?: boolean }) {
+  const [ready, setReady] = useState(false)
+  useEffect(() => {
+    const previous = useChatStore.getState()
+    const oldCatalog = useAppStore.getState().harnessCatalog
+    const originalApp = window.app
+    let upgraded = false
+    const listeners = new Set<(event: { harnessId: 'acp-antigravity'; phase: 'start' | 'output' | 'done' | 'error'; data?: string; exitCode?: number }) => void>()
+    const project = createDefaultProjectState()
+    const session = createDefaultPerSessionState()
+    session.sessionProvider = 'acp-antigravity'
+    session.acpAgentId = 'antigravity'
+    useChatStore.setState({
+      activeProject: projectPath,
+      projectSessions: {
+        ...previous.projectSessions,
+        [projectPath]: { ...project, _activeSessionId: sessionId, _sessions: { [sessionId]: session } },
+      },
+    })
+    useAppStore.setState({
+      harnessCatalog: [
+        { id: 'acp-antigravity', enabled: true, state: 'incompatible', runtimeVersion: '1.5.3' },
+      ],
+    })
+    window.app = new Proxy(originalApp, {
+      get: (target, key) => {
+        if (key === 'listHarnesses') {
+          return async () => [
+            {
+              id: 'acp-antigravity',
+              enabled: true,
+              state: upgraded ? 'ready' : 'incompatible',
+              runtimeVersion: upgraded ? '1.5.18' : '1.5.3',
+              runtimeSource: 'external',
+              requiresAuth: false,
+            },
+          ]
+        }
+        if (key === 'onHarnessCliInstallEvent') {
+          return (cb: (event: { harnessId: 'acp-antigravity'; phase: 'start' | 'output' | 'done' | 'error'; data?: string; exitCode?: number }) => void) => {
+            listeners.add(cb)
+            return () => listeners.delete(cb)
+          }
+        }
+        if (key === 'installHarnessCli') {
+          return async () => {
+            for (const cb of listeners) cb({ harnessId: 'acp-antigravity', phase: 'start' })
+            for (const cb of listeners) cb({ harnessId: 'acp-antigravity', phase: 'output', data: 'Downloading Antigravity CLI 1.5.18...\n' })
+            await new Promise((r) => setTimeout(r, 400))
+            for (const cb of listeners) cb({ harnessId: 'acp-antigravity', phase: 'output', data: 'Installed agy 1.5.18 to ~/.local/bin/agy\n' })
+            await new Promise((r) => setTimeout(r, 200))
+            upgraded = true
+            for (const cb of listeners) cb({ harnessId: 'acp-antigravity', phase: 'done', exitCode: 0 })
+            return { ok: true, harnessId: 'acp-antigravity', exitCode: 0 }
+          }
+        }
+        return Reflect.get(target, key)
+      },
+    })
+    setReady(true)
+    return () => {
+      window.app = originalApp
+      useChatStore.setState(previous)
+      useAppStore.setState({ harnessCatalog: oldCatalog })
+    }
+  }, [])
+  return (
+    <div style={{ width: narrow ? 340 : 680, maxWidth: '100%' }}>
+      {ready && <TooltipProvider><ChatComposerShell showTodoPopup={false} /><Toaster /></TooltipProvider>}
+    </div>
+  )
+}
+
+export const HarnessIncompatibleUpgrade: Story = {
+  render: () => <HarnessUpgradePreview />,
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement)
+    await canvas.findByTestId('harness-upgrade-composer')
+    expect(canvasElement.querySelector('.ProseMirror')).toBeNull()
+  },
+}
+export const HarnessIncompatibleUpgradeDark: Story = {
+  ...HarnessIncompatibleUpgrade,
+  globals: { theme: 'dark' },
+}
+export const HarnessIncompatibleUpgradeChinese: Story = {
+  ...HarnessIncompatibleUpgrade,
+  globals: { locale: 'zh' },
+}

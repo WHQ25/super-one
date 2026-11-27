@@ -2,6 +2,7 @@ import { homedir } from 'node:os'
 import { basename, isAbsolute, join } from 'node:path'
 import type { HarnessInstallationStatus } from '@superone/shared/environment'
 import { resolveExternalCommand, sanitizeHarnessArgs } from './enable'
+import { evaluateExternalCliCompatibility } from './external-cli-version'
 import type { HarnessManager } from './manager'
 import type { HarnessCatalogReader } from './types'
 
@@ -196,13 +197,14 @@ export function enableAcpAntigravity(
       }),
     })
   }
+  const compat = evaluateExternalCliCompatibility('acp-antigravity', resolved)
   return manager.update('acp-antigravity', {
     enabled: true,
-    state: 'ready',
+    state: compat.compatible ? 'ready' : 'incompatible',
     command: resolved,
-    runtimeVersion: null,
-    diagnosticCode: null,
-    diagnosticFields: null,
+    runtimeVersion: compat.version ?? null,
+    diagnosticCode: compat.compatible ? null : 'incompatible',
+    diagnosticFields: compat.compatible ? null : (compat.diagnosticFields ?? null),
     lastProbedAt: Date.now(),
     configJson: JSON.stringify({
       command: resolved,

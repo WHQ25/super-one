@@ -1,13 +1,13 @@
 # Antigravity (ACP) integration
 
-Pin: `agy-acp-server` `1.3.0` (`@agentclientprotocol/sdk` `^1.4.0`) · Ledger version: 1.3.0 ·
-Last updated: 2026-11-03
+Minimum external CLI version: `agy >= 1.5.16` (`@agentclientprotocol/sdk` `^1.4.0`) ·
+Last updated: 2026-11-27
 
 ## Upstream
 
 - Protocol: [Agent Client Protocol](https://agentclientprotocol.com) through
   `@agentclientprotocol/sdk`.
-- Runtime: Google Antigravity ACP server (`agy_acp_server.par` / `agy_acp_server.exe` + sibling `localharness_external` / `localharness_external.exe`), managed download from `https://dl.google.com/agy-extensions/releases/agy-acp-server/v1.3.0/v1.3.0-<platform>-<arch>.zip`.
+- Runtime: External Antigravity CLI (`agy acp`), minimum version enforced via `EXTERNAL_CLI_MIN_VERSIONS['acp-antigravity'] = '1.5.16'`.
 
 ## Integration shape
 
@@ -23,7 +23,7 @@ Last updated: 2026-11-03
 
 | Location | What |
 |---|---|
-| `packages/runtime/src/harness/antigravity-release.ts` | `ANTIGRAVITY_RELEASE_VERSION = '1.3.0'` and platform SHA-256 manifest |
+| `packages/shared/src/environment/external-cli-install.ts` | `EXTERNAL_CLI_MIN_VERSIONS['acp-antigravity'] = '1.5.16'` |
 | `packages/acp/package.json` | `@agentclientprotocol/sdk` |
 | `apps/desktop/package.json` | `@agentclientprotocol/sdk` |
 
@@ -36,3 +36,4 @@ Last updated: 2026-11-03
 | Version | Date | Status | Upgrade doc | Commit |
 |---|---|---|---|---|
 | 1.3.0 | 2026-11-03 | executed | — | Initial Antigravity ACP harness integration |
+| >= 1.5.16 | 2026-11-27 | executed | — | Enforced external CLI minimum version gate and retired legacy `< 1.5.15` transcript-wakeup workaround |

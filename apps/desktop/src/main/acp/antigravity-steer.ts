@@ -1,18 +1,11 @@
 import type { AgentEvent } from '@superone/shared/agent-types'
 import type { XaiCorrelationState } from './acp-xai-session-notify'
 import {
-  closeAntigravityThinkingStep,
   extractAntigravityPromptResponseUsage,
-  syncAntigravityTurnFromDb,
   type AntigravityTurnThinkingScope,
   type AntigravityWireTurnUsage,
 } from './antigravity-runtime-bridge'
-import {
-  hasPendingAntigravitySubagentWakeup,
-  markAntigravityForegroundTurnEnded,
-  resumeAntigravityTurnOnSteer,
-  waitForAntigravitySubagentWakeup,
-} from './antigravity-subagent'
+import { markAntigravityForegroundTurnEnded } from './antigravity-subagent'
 
 export interface AntigravityPromptWireResponse {
   stopReason?: unknown
@@ -90,40 +83,11 @@ export function createAntigravitySteerablePrompt(opts: {
         leg.wireSettled = true
         leg.resolveWire()
         if (id !== activeLegId || finalSettled) return
-        let effectiveStopReason = String(value.stopReason ?? 'end_turn')
+        const effectiveStopReason = String(value.stopReason ?? 'end_turn')
         await new Promise((r) => setTimeout(r, 0))
         if (id !== activeLegId || finalSettled) return
         if (effectiveStopReason === 'end_turn' && !opts.turn.superseded) {
           markAntigravityForegroundTurnEnded(opts.sessionId)
-        }
-        if (
-          effectiveStopReason === 'end_turn' &&
-          !opts.turn.superseded &&
-          hasPendingAntigravitySubagentWakeup(opts.sessionId)
-        ) {
-          const targetId = opts.turn.lastMessageId ?? opts.turn.primaryMessageId
-          if (opts.turn.currentStepHasThinking && !opts.turn.currentStepThinkingClosed) {
-            closeAntigravityThinkingStep(opts.turn, targetId, opts.turn.onEvent)
-          }
-          opts.turn.stepIndex += 1
-          opts.turn.currentStepHasThinking = false
-          opts.turn.currentStepHasThoughtText = false
-          opts.turn.currentStepThinkingClosed = false
-          opts.turn.stepStartedAt = Date.now()
-          syncAntigravityTurnFromDb(
-            opts.sessionId,
-            targetId,
-            opts.turn,
-            opts.xaiCorrelation,
-            opts.turn.onEvent,
-            false,
-            usage,
-          )
-          const wakeupOutcome = await waitForAntigravitySubagentWakeup(opts.sessionId)
-          if (id !== activeLegId || finalSettled) return
-          if (wakeupOutcome === 'cancelled' || opts.turn.superseded) {
-            effectiveStopReason = 'cancelled'
-          }
         }
         if (id !== activeLegId || finalSettled) return
         finalSettled = true
@@ -149,7 +113,6 @@ export function createAntigravitySteerablePrompt(opts: {
     async steer(sendNextLeg) {
       if (finalSettled) throw new Error('Antigravity turn already settled')
       const prevLeg = currentLeg
-      const wasWaitingOnWakeup = prevLeg.wireSettled
       const nextId = activeLegId + 1
       activeLegId = nextId
       let nextPromise: Promise<AntigravityPromptWireResponse>
@@ -160,28 +123,14 @@ export function createAntigravitySteerablePrompt(opts: {
         throw err
       }
       const nextLeg = attachLeg(nextId, false, nextPromise)
-      if (!wasWaitingOnWakeup) {
-        await Promise.race([prevLeg.wirePromise, nextLeg.wirePromise])
-        if (nextLeg.hasWireError) {
-          activeLegId = prevLeg.id
-          throw nextLeg.wireError
-        }
-        nextLeg.admitted = true
-        currentLeg = nextLeg
-        return prevLeg.wireUsage
-      }
-      await Promise.race([
-        nextLeg.wirePromise,
-        new Promise<void>((resolve) => setTimeout(resolve, 0)),
-      ])
+      await Promise.race([prevLeg.wirePromise, nextLeg.wirePromise])
       if (nextLeg.hasWireError) {
         activeLegId = prevLeg.id
         throw nextLeg.wireError
       }
       nextLeg.admitted = true
       currentLeg = nextLeg
-      resumeAntigravityTurnOnSteer(opts.sessionId)
-      return null
+      return prevLeg.wireUsage
     },
     dispose() {
       finalSettled = true

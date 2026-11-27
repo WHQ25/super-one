@@ -8,7 +8,6 @@ import {
 } from './antigravity-background-task-transcript'
 
 export * from './antigravity-background-task-transcript'
-export * from './antigravity-wakeup-transcript'
 
 const STEP_TIMESTAMP_HEADER_RE = /^(?:Created At:\s*[^\r\n]+\r?\n(?:Completed At:\s*[^\r\n]+\r?\n)?|Completed At:\s*[^\r\n]+\r?\n)/
 const GENERATED_IMAGE_SAVED_RE = /Generated image is saved at\s+([^\r\n]+?)\.?\s*$/i

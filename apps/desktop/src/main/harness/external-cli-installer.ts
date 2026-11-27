@@ -1,5 +1,13 @@
 import { spawn, type ChildProcess } from 'node:child_process'
+import { existsSync, realpathSync } from 'node:fs'
 import { homedir } from 'node:os'
+import { basename, dirname, join } from 'node:path'
+import {
+  clearExternalCliVersionCache,
+  isLegacyAntigravityServerCommand,
+  resolveAntigravityCommand,
+  resolveExternalCommand,
+} from '@superone/runtime/harness'
 import {
   getExternalCliInstallSpec,
   isExternalCliHarnessId,
@@ -21,6 +29,7 @@ export interface ExternalCliInstallerDeps {
   cwd: string
   ensurePath: () => Promise<void>
   refreshPath: () => Promise<void>
+  resolveExistingBinary: (harnessId: ExternalCliHarnessId) => string | null
   spawnProcess: (
     command: string,
     args: string[],
@@ -29,6 +38,13 @@ export interface ExternalCliInstallerDeps {
   enableHarness: (harnessId: ExternalCliHarnessId) => Promise<HarnessInstallationStatus>
   refreshAcpAgents: () => Promise<void>
   emit: ExternalCliInstallListener
+}
+
+interface SpawnInvocation {
+  command: string
+  args: string[]
+  extraEnv?: Record<string, string | undefined>
+  mode: 'install' | 'upgrade'
 }
 
 let installListener: ExternalCliInstallListener | null = null
@@ -43,6 +59,149 @@ export function setExternalCliInstallListener(
 export function resetExternalCliInstallerForTests(): void {
   installListener = null
   inflightInstalls.clear()
+}
+
+function normalizePathSlashes(filePath: string): string {
+  return filePath.replaceAll('\\', '/').toLowerCase()
+}
+
+function safeRealpath(filePath: string): string {
+  try {
+    return realpathSync(filePath)
+  } catch {
+    return filePath
+  }
+}
+
+function resolveGrokScriptHome(binaryPath: string): string | null {
+  const realPath = safeRealpath(binaryPath)
+  const fileName = basename(realPath).toLowerCase()
+  const parentDir = dirname(realPath)
+  const parentName = basename(parentDir).toLowerCase()
+  const candidateHome = dirname(parentDir)
+  if (parentName === 'downloads' && fileName.startsWith('grok-')) {
+    return candidateHome
+  }
+  if (
+    parentName === 'bin' &&
+    (/^grok-\d/.test(fileName) ||
+      ((fileName === 'grok' || fileName === 'grok.exe') &&
+        existsSync(join(candidateHome, 'downloads'))))
+  ) {
+    return candidateHome
+  }
+  return null
+}
+
+function resolveOpenCodeCurlHome(binaryPath: string): string | null {
+  const check = (candidate: string): string | null => {
+    const slashed = candidate.replaceAll('\\', '/')
+    const match = /\/\.opencode\/bin\/opencode(?:\.exe)?$/i.exec(slashed)
+    if (!match) return null
+    return match.index === 0 ? '/' : slashed.slice(0, match.index)
+  }
+  return check(safeRealpath(binaryPath)) ?? check(binaryPath)
+}
+
+function defaultResolveExistingBinary(harnessId: ExternalCliHarnessId): string | null {
+  let storedCommand: string | undefined
+  try {
+    storedCommand = getHarnessManager().get(harnessId).command?.trim()
+  } catch {
+    storedCommand = undefined
+  }
+  if (harnessId === 'acp-antigravity') {
+    const explicit =
+      storedCommand && !isLegacyAntigravityServerCommand(storedCommand)
+        ? storedCommand
+        : undefined
+    return resolveAntigravityCommand(explicit) ?? resolveAntigravityCommand()
+  }
+  if (harnessId === 'acp-grok') {
+    const searchNames =
+      process.platform === 'win32' ? ['grok.exe', 'grok.cmd', 'grok'] : ['grok']
+    if (storedCommand) {
+      const explicit = resolveExternalCommand(storedCommand, [], { preserveSymlinks: true })
+      if (explicit) return explicit
+    }
+    const fromPath = resolveExternalCommand(undefined, searchNames, { preserveSymlinks: true })
+    if (fromPath) return fromPath
+    const home = homedir()
+    for (const dir of [join(home, '.grok', 'bin'), join(home, '.local', 'bin')]) {
+      for (const name of searchNames) {
+        const hit = resolveExternalCommand(join(dir, name), [], { preserveSymlinks: true })
+        if (hit) return hit
+      }
+    }
+    return null
+  }
+  const searchNames =
+    process.platform === 'win32'
+      ? ['opencode.exe', 'opencode.cmd', 'opencode']
+      : ['opencode']
+  if (storedCommand) {
+    const explicit = resolveExternalCommand(storedCommand, [])
+    if (explicit) return explicit
+  }
+  const fromPath = resolveExternalCommand(undefined, searchNames)
+  if (fromPath) return fromPath
+  const home = homedir()
+  for (const dir of [join(home, '.opencode', 'bin'), join(home, '.local', 'bin')]) {
+    for (const name of searchNames) {
+      const hit = resolveExternalCommand(join(dir, name), [])
+      if (hit) return hit
+    }
+  }
+  return null
+}
+
+function buildSpawnInvocation(
+  harnessId: ExternalCliHarnessId,
+  platform: NodeJS.Platform,
+  existingBinary: string | null,
+): SpawnInvocation {
+  if (existingBinary) {
+    if (harnessId === 'acp-antigravity') {
+      return {
+        command: existingBinary,
+        args: ['update'],
+        mode: 'upgrade',
+      }
+    }
+    if (harnessId === 'acp-grok') {
+      const grokHome = resolveGrokScriptHome(existingBinary)
+      return {
+        command: existingBinary,
+        args: ['update'],
+        extraEnv: {
+          ...(grokHome ? { GROK_HOME: grokHome } : {}),
+          npm_config_allow_scripts: '@xai-official/grok',
+          npm_config_user_agent: undefined,
+        },
+        mode: 'upgrade',
+      }
+    }
+    const normalized = normalizePathSlashes(existingBinary)
+    const curlHome = resolveOpenCodeCurlHome(existingBinary)
+    const isCurlInstall =
+      Boolean(curlHome) ||
+      normalized.endsWith('/.opencode/bin/opencode') ||
+      normalized.endsWith('/.opencode/bin/opencode.exe')
+    return {
+      command: existingBinary,
+      args: isCurlInstall ? ['upgrade', '--method', 'curl'] : ['upgrade'],
+      ...(curlHome ? { extraEnv: { HOME: curlHome } } : {}),
+      mode: 'upgrade',
+    }
+  }
+
+  const spec = getExternalCliInstallSpec(harnessId, platform)
+  const isWin = platform === 'win32'
+  return {
+    command: isWin ? 'powershell' : 'bash',
+    args: isWin ? ['-NoProfile', '-Command', spec.command] : ['-c', spec.command],
+    mode: 'install',
+  }
 }
 
 async function defaultEnableAfterInstall(
@@ -73,6 +232,7 @@ function defaultDeps(): ExternalCliInstallerDeps {
     cwd: homedir(),
     ensurePath: ensureShellPath,
     refreshPath: refreshShellPath,
+    resolveExistingBinary: defaultResolveExistingBinary,
     spawnProcess: (command, args, options) => spawn(command, args, options),
     enableHarness: defaultEnableAfterInstall,
     refreshAcpAgents: defaultRefreshAcpAgents,
@@ -106,14 +266,16 @@ async function runExternalCliInstallOnce(
   deps: ExternalCliInstallerDeps,
 ): Promise<ExternalCliInstallResult> {
   await deps.ensurePath()
-  const spec = getExternalCliInstallSpec(harnessId, deps.platform)
-  const isWin = deps.platform === 'win32'
-  const shellBin = isWin ? 'powershell' : 'bash'
-  const shellArgs = isWin
-    ? ['-NoProfile', '-Command', spec.command]
-    : ['-c', spec.command]
+  const existingBinary = deps.resolveExistingBinary(harnessId)
+  const invocation = buildSpawnInvocation(harnessId, deps.platform, existingBinary)
 
-  log.info('[harness-cli-install] starting %s (%s)', harnessId, spec.binaryName)
+  log.info(
+    '[harness-cli-install] starting %s (%s: %s %s)',
+    harnessId,
+    invocation.mode,
+    invocation.command,
+    invocation.args.join(' '),
+  )
   deps.emit({ harnessId, phase: 'start' })
 
   const env = buildSafeEnv({
@@ -121,13 +283,19 @@ async function runExternalCliInstallOnce(
     FORCE_COLOR: '1',
     CLICOLOR_FORCE: '1',
   })
+  if (invocation.extraEnv) {
+    for (const [key, value] of Object.entries(invocation.extraEnv)) {
+      if (value === undefined) delete env[key]
+      else env[key] = value
+    }
+  }
 
   return new Promise<ExternalCliInstallResult>((resolve) => {
     let settled = false
     let child: ChildProcess
 
     try {
-      child = deps.spawnProcess(shellBin, shellArgs, {
+      child = deps.spawnProcess(invocation.command, invocation.args, {
         cwd: deps.cwd,
         env,
         argv0: ProcessTitle.Installer,
@@ -171,9 +339,10 @@ async function runExternalCliInstallOnce(
             resolve({ ok: false, harnessId, exitCode })
             return
           }
+          clearExternalCliVersionCache()
           const status = await deps.enableHarness(harnessId)
           await deps.refreshAcpAgents()
-          if (status.state === 'missing') {
+          if (status.state === 'missing' || status.state === 'incompatible') {
             const message = status.diagnostic?.message
             deps.emit({ harnessId, phase: 'error', exitCode: 0, message })
             resolve({ ok: false, harnessId, exitCode: 0, message, status })

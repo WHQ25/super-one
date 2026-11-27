@@ -6,7 +6,8 @@
  * through `HarnessRuntimeResolver` / `HarnessAuthProbe` (see `types.ts`).
  */
 
-import type { NodeHarnessId } from '@superone/shared/environment'
+import { isExternalCliHarnessId, type ExternalCliHarnessId, type NodeHarnessId } from '@superone/shared/environment'
+import { evaluateExternalCliCompatibility } from './external-cli-version'
 import type { HarnessManager } from './manager'
 import type { HarnessAuthProbe, HarnessRuntimeResolver } from './types'
 import { resolveCursorApiKeyPlain } from './cursor-availability'
@@ -87,21 +88,34 @@ export function assertSessionHarnessRuntimeReady(
   }
 
   if (sessionHarnessId === 'acp') {
-    if (
-      resolver.resolveBinary('acp-grok', harnesses) ||
-      resolver.isRunnableWithoutCatalog('acp-grok') ||
-      resolver.resolveBinary('acp-antigravity', harnesses) ||
-      resolver.isRunnableWithoutCatalog('acp-antigravity')
-    ) {
-      return { ok: true, reason: spec.okReason }
+    const candidates: ExternalCliHarnessId[] = ['acp-grok', 'acp-antigravity']
+    let incompatibleReason: string | null = null
+    for (const candidate of candidates) {
+      const bin = resolver.resolveBinary(candidate, harnesses)
+      if (bin) {
+        const compat = evaluateExternalCliCompatibility(candidate, bin)
+        if (compat.compatible) return { ok: true, reason: spec.okReason }
+        incompatibleReason ??= compat.upgradeMessage ?? spec.failReason
+        continue
+      }
+      if (resolver.isRunnableWithoutCatalog(candidate)) {
+        return { ok: true, reason: spec.okReason }
+      }
     }
-    return { ok: false, reason: spec.failReason }
+    return { ok: false, reason: incompatibleReason ?? spec.failReason }
   }
 
-  if (
-    resolver.resolveBinary(spec.catalogId, harnesses) ||
-    resolver.isRunnableWithoutCatalog(spec.catalogId)
-  ) {
+  const resolvedBin = resolver.resolveBinary(spec.catalogId, harnesses)
+  if (resolvedBin) {
+    if (isExternalCliHarnessId(spec.catalogId)) {
+      const compat = evaluateExternalCliCompatibility(spec.catalogId, resolvedBin)
+      if (!compat.compatible) {
+        return { ok: false, reason: compat.upgradeMessage ?? spec.failReason }
+      }
+    }
+    return { ok: true, reason: spec.okReason }
+  }
+  if (resolver.isRunnableWithoutCatalog(spec.catalogId)) {
     return { ok: true, reason: spec.okReason }
   }
   return { ok: false, reason: spec.failReason }
@@ -138,7 +152,61 @@ export function probeHarnessReadiness(
   const status = harnesses.get(id)
   const previousState = status.state
   const issues: string[] = []
-  const sessionWire = id === 'acp-grok' ? 'acp' : id
+  const sessionWire = id === 'acp-grok' ? 'acp-grok' : id
+
+  if (isExternalCliHarnessId(id)) {
+    const isRemoteOpencode =
+      id === 'opencode' && Boolean(harnesses.getExternalLaunchConfig('opencode').serverUrl?.trim())
+    if (!isRemoteOpencode) {
+      const bin = deps.resolver.resolveBinary(id, harnesses)
+      if (bin) {
+        const compat = evaluateExternalCliCompatibility(id, bin)
+        if (!compat.compatible) {
+          issues.push(compat.upgradeMessage ?? 'incompatible')
+          if (status.enabled) {
+            harnesses.update(id, {
+              state: 'incompatible',
+              runtimeVersion: compat.version ?? null,
+              diagnosticCode: 'incompatible',
+              diagnosticFields: compat.diagnosticFields ?? null,
+              lastProbedAt: Date.now(),
+            })
+          }
+          const next = harnesses.get(id)
+          return {
+            id,
+            previousState,
+            state: next.state,
+            transitioned: next.state !== previousState,
+            ok: false,
+            issues,
+            reason: compat.upgradeMessage ?? 'runtime version is incompatible',
+          }
+        }
+        if (status.enabled && status.state === 'incompatible') {
+          harnesses.update(id, {
+            state: 'ready',
+            runtimeVersion: compat.version ?? null,
+            diagnosticCode: null,
+            diagnosticFields: null,
+            lastProbedAt: Date.now(),
+          })
+          return {
+            id,
+            previousState,
+            state: 'ready',
+            transitioned: true,
+            ok: true,
+            issues: [],
+            reason: 'promoted incompatible → ready',
+          }
+        }
+        if (status.enabled && status.state === 'ready' && compat.version && status.runtimeVersion !== compat.version) {
+          harnesses.update(id, { runtimeVersion: compat.version, lastProbedAt: Date.now() })
+        }
+      }
+    }
+  }
 
   const runtime = assertSessionHarnessRuntimeReady(sessionWire, harnesses, deps.resolver)
   if (!runtime.ok) {

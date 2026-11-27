@@ -9,7 +9,7 @@
 
 import { execFileSync } from 'node:child_process'
 import { resolveExternalCommand } from '@superone/runtime/harness'
-import type { NodeHarnessId } from '@superone/shared/environment'
+import { normalizeExternalCliVersion, type NodeHarnessId } from '@superone/shared/environment'
 
 export type HarnessCliScanHit = {
   harnessId: NodeHarnessId
@@ -61,10 +61,7 @@ function withWinSuffixes(names: string[]): string[] {
  *  "grok 1.0.0 (3cd0d0cbcebe)" → "1.0.0"
  */
 export function normalizeCliVersion(raw: string): string | undefined {
-  const line = raw.split(/\r?\n/).map((s) => s.trim()).find(Boolean)
-  if (!line) return undefined
-  const m = line.match(/\d+\.\d+(?:\.\d+)?(?:[-+][0-9A-Za-z.-]+)?/)
-  return m?.[0]
+  return normalizeExternalCliVersion(raw)
 }
 
 function tryVersion(bin: string): string | undefined {

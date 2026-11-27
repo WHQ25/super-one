@@ -431,6 +431,95 @@ describe('first-party harness settings entries', () => {
     expect(installHarnessCli).toHaveBeenCalledTimes(2)
   })
 
+  it('renders an upgrade prompt and minimum version badge for incompatible external CLIs and clears after upgrade', async () => {
+    let cliEventListener: ((event: ExternalCliInstallEvent) => void) | null = null
+    let currentState: 'incompatible' | 'ready' = 'incompatible'
+    let currentVersion = '1.5.3'
+
+    const listHarnesses = vi.fn().mockImplementation(async () =>
+      NODE_HARNESS_IDS.map((id) =>
+        id === 'acp-antigravity'
+          ? {
+              id,
+              enabled: true,
+              state: currentState,
+              runtimeSource: 'external',
+              runtimeVersion: currentVersion,
+              requiresAuth: false,
+              command: '/Users/test/.local/bin/agy',
+              ...(currentState === 'incompatible'
+                ? {
+                    diagnostic: {
+                      code: 'incompatible',
+                      message: 'Antigravity CLI 1.5.3 is outdated (requires >= 1.5.16)',
+                      expectedVersion: '1.5.16',
+                      actualVersion: '1.5.3',
+                    },
+                  }
+                : {}),
+            }
+          : {
+              id,
+              enabled: false,
+              state: 'disabled',
+              runtimeSource: 'managed',
+              requiresAuth: true,
+            },
+      ),
+    )
+
+    let resolveUpgrade!: (value: { ok: boolean; harnessId: 'acp-antigravity'; exitCode: number }) => void
+    const installHarnessCli = vi.fn().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveUpgrade = resolve
+        }),
+    )
+
+    Object.assign(window.app, {
+      listHarnesses,
+      installHarnessCli,
+      onHarnessCliInstallEvent: vi.fn((cb: (event: ExternalCliInstallEvent) => void) => {
+        cliEventListener = cb
+        return () => {
+          cliEventListener = null
+        }
+      }),
+    })
+
+    const user = userEvent.setup()
+    const { container } = render(<HarnessesSettingsPage />)
+
+    await screen.findByText('Enabled')
+    await user.click(screen.getByRole('button', { name: HARNESS_LABELS['acp-antigravity'] }))
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-chat-codeblock] code')?.textContent).toBe(
+        'agy update',
+      )
+    })
+    expect(screen.getByText(/requires ≥ 1\.5\.16/i)).toBeInTheDocument()
+    expect(screen.getByText(/agy CLI 1\.5\.3 is below the minimum supported version 1\.5\.16/i)).toBeInTheDocument()
+    expect(
+      screen.queryByText('Antigravity CLI 1.5.3 is outdated (requires >= 1.5.16)'),
+    ).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: 'Run Shell' }))
+    expect(installHarnessCli).toHaveBeenCalledWith('acp-antigravity')
+
+    currentState = 'ready'
+    currentVersion = '1.5.18'
+    await act(async () => {
+      cliEventListener?.({ harnessId: 'acp-antigravity', phase: 'done', exitCode: 0 })
+      resolveUpgrade({ ok: true, harnessId: 'acp-antigravity', exitCode: 0 })
+    })
+
+    await waitFor(() => {
+      expect(container.querySelector('[data-chat-codeblock]')).toBeNull()
+    })
+    expect(screen.queryByText(/requires ≥ 1\.5\.16/i)).not.toBeInTheDocument()
+  })
+
   it('marks only dsh as experimental in catalog metadata', () => {
     const experimentalIds = NODE_HARNESS_IDS.filter(
       (id) => CATALOG_HARNESS_META[id].experimental,

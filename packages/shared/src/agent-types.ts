@@ -5032,6 +5032,8 @@ export const AgentIpcChannels = {
   BROWSER_HISTORY_DELETE: 'app:browser-history-delete',
   BROWSER_CERT_ERROR: 'app:browser-cert-error',
   BROWSER_CERT_PROCEED: 'app:browser-cert-proceed',
+  BROWSER_PROFILE_CLEAR_DATA: 'app:browser-profile-clear-data',
+  BROWSER_PROFILE_ENSURE_SESSION: 'app:browser-profile-ensure-session',
   /** Main -> renderer: a browser tab started or stopped producing sound. */
   BROWSER_AUDIO_STATE: 'app:browser-audio-state',
   BROWSER_DOWNLOAD_STATE: 'app:browser-download-state',
@@ -6033,6 +6035,21 @@ export interface SessionSchedule {
  */
 export type SchedulingProvider = 'native' | 'superone'
 
+export const DEFAULT_BROWSER_PROFILE_ID = 'default'
+export const BROWSER_DEFAULT_PARTITION = 'persist:browser'
+
+export interface BrowserProfile {
+  id: string
+  name: string
+  shareWithAgent: boolean
+}
+
+export function browserPartitionForProfile(profileId?: string | null): string {
+  return !profileId || profileId === DEFAULT_BROWSER_PROFILE_ID
+    ? BROWSER_DEFAULT_PARTITION
+    : `persist:browser-${profileId}`
+}
+
 export interface AppSettings {
   analyticsEnabled: boolean
   /** Global sleep policy. The highest level requires explicit user consent. */
@@ -6140,6 +6157,10 @@ export interface AppSettings {
    * A `browser_download` call may still override it per download.
    */
   browserDownloadDir: string | null
+  browserMultiProfileEnabled: boolean
+  browserProfiles: BrowserProfile[]
+  browserUserDefaultProfileId: string
+  browserAgentDefaultProfileId: string | null
   chromeBridgeDisabledBrowsers: string[]
   /** Opt-in Computer Use (desktop GUI automation). Default off. */
   computerUseEnabled: boolean
@@ -6380,6 +6401,10 @@ export interface AppSettingsPatch {
   schedulingProvider?: SchedulingProvider
   /** Empty string or null resets to the OS Downloads folder. */
   browserDownloadDir?: string | null
+  browserMultiProfileEnabled?: boolean
+  browserProfiles?: BrowserProfile[]
+  browserUserDefaultProfileId?: string
+  browserAgentDefaultProfileId?: string | null
   chromeBridgeDisabledBrowsers?: string[]
   computerUseEnabled?: boolean
   computerUsePictureInPicture?: boolean

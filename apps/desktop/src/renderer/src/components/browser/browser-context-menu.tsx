@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { Copy, MessageSquarePlus, Download, Link, ExternalLink, SquarePlus, Code, SquareDashedMousePointer, Camera } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { browserPartitionForProfile } from '@superone/shared/agent-types'
 import { useChatStore } from '@/stores/chat'
 import { useAppStore } from '@/stores/app'
 import { showNativeContextMenu } from '@/lib/native-context-menu'
@@ -27,6 +28,8 @@ function joinSections(sections: ContextMenuAction[][]): ContextMenuEntry[] {
 function buildEntries(t: TranslateFn, wv: Electron.WebviewTag, e: Electron.ContextMenuEvent, browserId: string): ContextMenuEntry[] {
   const p = e.params
   const sections: ContextMenuAction[][] = []
+  const tabProfileId = useBrowserStore.getState().tabs[browserId]?.profileId
+  const tabPartition = browserPartitionForProfile(tabProfileId)
 
   sections.push([
     { id: 'annotate', label: t('chat.browser.quickAnnotate'), icon: SquareDashedMousePointer, onSelect: () => useBrowserStore.getState().startAnnotate(browserId, 'plain') },
@@ -37,7 +40,7 @@ function buildEntries(t: TranslateFn, wv: Electron.WebviewTag, e: Electron.Conte
     const link = p.linkURL
     sections.push([
       { id: 'copyLink', label: t('chat.browser.copyLink'), icon: Link, onSelect: () => void window.app.clipboardWrite(link) },
-      { id: 'openLinkNewTab', label: t('chat.browser.openLinkNewTab'), icon: SquarePlus, onSelect: () => openBrowserTab(link) },
+      { id: 'openLinkNewTab', label: t('chat.browser.openLinkNewTab'), icon: SquarePlus, onSelect: () => openBrowserTab(link, undefined, undefined, { profileId: tabProfileId }) },
       { id: 'openLinkExternal', label: t('chat.browser.openLinkExternal'), icon: ExternalLink, onSelect: () => void window.app.openExternalLink(link) },
     ])
   }
@@ -45,11 +48,11 @@ function buildEntries(t: TranslateFn, wv: Electron.WebviewTag, e: Electron.Conte
   if (p.mediaType === 'image' && p.hasImageContents && p.srcURL) {
     const srcURL = p.srcURL
     sections.push([
-      { id: 'addImage', label: t('chat.browser.addImageToChat'), icon: MessageSquarePlus, onSelect: () => void addBrowserImageToChat(srcURL) },
+      { id: 'addImage', label: t('chat.browser.addImageToChat'), icon: MessageSquarePlus, onSelect: () => void addBrowserImageToChat(srcURL, undefined, tabPartition) },
       { id: 'copyImage', label: t('chat.browser.copyImage'), icon: Copy, onSelect: () => void window.app.copyBrowserImageAt(wv.getWebContentsId(), p.x, p.y) },
       { id: 'copyImageAddress', label: t('chat.browser.copyImageAddress'), icon: Link, onSelect: () => void window.app.clipboardWrite(srcURL) },
       { id: 'saveImage', label: t('chat.browser.saveImage'), icon: Download, onSelect: () => {
-        void saveBrowserImage(srcURL).then((res) => {
+        void saveBrowserImage(srcURL, tabPartition).then((res) => {
           if (res.ok) toast.success(t('chat.browser.imageSaved'))
           else if (!res.canceled) toast.error(t('chat.browser.imageSaveFailed'))
         })

@@ -138,7 +138,7 @@ describe('browser settings — own browser', () => {
     })
     saveAppSettings.mockResolvedValue(settings({ chromeBridgeDisabledBrowsers: ['chrome'] }))
     await renderPage()
-    expect(await screen.findByText('Your Browser')).toBeTruthy()
+    expect(await screen.findByText('External Browsers')).toBeTruthy()
     expect(screen.getByText('Install Extension')).toBeTruthy()
     expect(screen.getByText('Chrome')).toBeTruthy()
     expect(screen.getByText('Connected')).toBeTruthy()

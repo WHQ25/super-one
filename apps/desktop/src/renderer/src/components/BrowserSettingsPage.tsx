@@ -16,6 +16,7 @@ import { SettingsPage, SettingsRow, SettingsSection, SettingsSubheader, settings
 import { SettingsFootnote } from '@/components/settings/SettingsFootnote'
 import { SettingsSegmentedControl } from '@/components/settings/SettingsSegmentedControl'
 import { ExtensionBrowserIcon } from '@/components/settings/ExtensionBrowserIcon'
+import { BrowserProfilesSettingsSection } from '@/components/settings/BrowserProfilesSettingsSection'
 
 function ExperimentalRow({
   label,
@@ -288,6 +289,48 @@ export function BrowserSettingsPage() {
 
   return (
     <SettingsPage title={t('settings.browser.title')}>
+      <SettingsSection title={t('settings.browser.preferences.title', 'Preferences')}>
+        <SettingsRow
+          label={t('settings.browser.downloadDir.label')}
+          description={(
+            <>
+              {t('settings.browser.downloadDir.description')}
+              <span className="mt-1.5 block truncate font-mono text-foreground" title={downloadDir ?? systemDownloadDir}>
+                {downloadDir ?? systemDownloadDir}
+              </span>
+              {!downloadDir && (
+                <span className="mt-0.5 block">{t('settings.browser.downloadDir.usingSystemDefault')}</span>
+              )}
+            </>
+          )}
+        >
+          {downloadDir && (
+            <IconButton
+              size="sm"
+              variant="ghost"
+              tooltip={t('settings.browser.downloadDir.reset')}
+              onClick={() => void resetDownloadDir()}
+              disabled={loading}
+            >
+              <RotateCcw className="size-3.5" />
+            </IconButton>
+          )}
+          <Button variant="outline" size="sm" className="h-7" onClick={() => void pickDownloadDir()} disabled={loading}>
+            {t('settings.browser.downloadDir.change')}
+          </Button>
+        </SettingsRow>
+        <SettingsRow
+          label={t('settings.browser.cdp.label')}
+          description={t('settings.browser.cdp.description')}
+        >
+          <Switch
+            checked={cdpEnabled}
+            onCheckedChange={handleCdpToggle}
+            disabled={loading}
+          />
+        </SettingsRow>
+      </SettingsSection>
+      <BrowserProfilesSettingsSection />
       {chromeConnected && (
         <SettingsSection title={t('settings.browser.ownBrowser.title')}>
           {connectedBrowsers.length > 0 ? (
@@ -344,51 +387,6 @@ export function BrowserSettingsPage() {
             </Button>
           </SettingsRow>
         )}
-      </SettingsSection>
-
-      <SettingsSection>
-        <SettingsRow
-          label={t('settings.browser.downloadDir.label')}
-          description={(
-            <>
-              {t('settings.browser.downloadDir.description')}
-              <span className="mt-1.5 block truncate font-mono text-foreground" title={downloadDir ?? systemDownloadDir}>
-                {downloadDir ?? systemDownloadDir}
-              </span>
-              {!downloadDir && (
-                <span className="mt-0.5 block">{t('settings.browser.downloadDir.usingSystemDefault')}</span>
-              )}
-            </>
-          )}
-        >
-          {downloadDir && (
-            <IconButton
-              size="sm"
-              variant="ghost"
-              tooltip={t('settings.browser.downloadDir.reset')}
-              onClick={() => void resetDownloadDir()}
-              disabled={loading}
-            >
-              <RotateCcw className="size-3.5" />
-            </IconButton>
-          )}
-          <Button variant="outline" size="sm" className="h-7" onClick={() => void pickDownloadDir()} disabled={loading}>
-            {t('settings.browser.downloadDir.change')}
-          </Button>
-        </SettingsRow>
-      </SettingsSection>
-
-      <SettingsSection>
-        <SettingsRow
-          label={t('settings.browser.cdp.label')}
-          description={t('settings.browser.cdp.description')}
-        >
-          <Switch
-            checked={cdpEnabled}
-            onCheckedChange={handleCdpToggle}
-            disabled={loading}
-          />
-        </SettingsRow>
       </SettingsSection>
 
       <SettingsSection>

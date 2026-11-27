@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react'
-import { MoreHorizontal, Star, Code, Minus, Plus, RotateCcw, ExternalLink } from 'lucide-react'
+import { MoreHorizontal, Star, Code, Minus, Plus, RotateCcw, ExternalLink, Camera } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { cn } from '@superone/ui/lib/utils'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
@@ -17,7 +17,7 @@ const zoomInShortcut = isMac ? '⌘+' : 'Ctrl++'
 const zoomOutShortcut = isMac ? '⌘−' : 'Ctrl+-'
 const zoomResetShortcut = isMac ? '⌘0' : 'Ctrl+0'
 
-export function BrowserMoreMenu({ browserId, isHome }: { browserId: string; isHome: boolean }) {
+export function BrowserMoreMenu({ browserId, isHome, onScreenshot }: { browserId: string; isHome: boolean; onScreenshot?: () => void }) {
   const { t } = useTranslation()
   const tab = useBrowserStore((s) => s.tabs[browserId])
   const bookmarks = useBrowserBookmarksStore((s) => s.bookmarks)
@@ -74,6 +74,12 @@ export function BrowserMoreMenu({ browserId, isHome }: { browserId: string; isHo
             <ExternalLink className="size-3.5" />
             {t('chat.browser.openExternal')}
           </DropdownMenuItem>
+          {onScreenshot && (
+            <DropdownMenuItem disabled={isHome} onSelect={onScreenshot}>
+              <Camera className="size-3.5" />
+              {t('chat.browser.screenshot', 'Screenshot')}
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem onSelect={() => browserOpenDevTools(browserId)}>
             <Code className="size-3.5" />
             Open DevTools

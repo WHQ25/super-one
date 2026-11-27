@@ -1,5 +1,7 @@
 import { useEffect } from 'react'
+import { DEFAULT_BROWSER_PROFILE_ID } from '@superone/shared/agent-types'
 import { useBrowserStore } from '@/stores/browser'
+import { useBrowserProfilesStore } from '@/stores/browser-profiles'
 import {
   browserExecJs,
   browserNavigate,
@@ -64,9 +66,18 @@ interface BaseInput extends PageScriptInput {
   recordingId?: string
 }
 
+function isTabAccessibleToAgent(profileId?: string): boolean {
+  const { enabled, profiles } = useBrowserProfilesStore.getState()
+  if (!enabled) return true
+  const id = profileId ?? DEFAULT_BROWSER_PROFILE_ID
+  return profiles.some((p) => p.id === id && p.shareWithAgent)
+}
+
 function ownedTabIds(sessionId: string): string[] {
   const state = useBrowserStore.getState()
-  return Object.keys(state.tabs).filter((id) => state.tabs[id].owner === sessionId)
+  return Object.keys(state.tabs).filter(
+    (id) => state.tabs[id].owner === sessionId && isTabAccessibleToAgent(state.tabs[id].profileId),
+  )
 }
 
 function closeOwnedTab(sessionId: string, id: string): void {
@@ -158,9 +169,19 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
   if (op === 'open') {
     const url = input.url ?? 'about:blank'
     assertNotMiniAppTarget(input.tab)
+    if (input.tab) {
+      const existingTab = useBrowserStore.getState().tabs[input.tab]
+      if (!existingTab || existingTab.owner !== sessionId) {
+        throw new Error(`Browser tab not found in this session: ${input.tab}`)
+      }
+      if (!isTabAccessibleToAgent(existingTab.profileId)) {
+        throw new Error(`Browser tab "${input.tab}" uses a private profile that is not shared with the agent.`)
+      }
+    }
     const targetId = input.tab ?? `browser-${crypto.randomUUID()}`
+    const requestedProfileId = (rawInput as { profileId?: string } | null)?.profileId
     if (!input.tab) recordDockOpener(sessionId, targetId, 'agent')
-    openBrowserTab(url, targetId, sessionId, { reveal: false })
+    openBrowserTab(url, targetId, sessionId, { reveal: false, profileId: requestedProfileId })
     useAgentViewfinderStore.getState().activate(sessionId, 'browser', targetId)
     const store = useBrowserStore.getState()
     store.patch(targetId, { loading: true })
@@ -171,7 +192,14 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
       store.markAutomationPreviewReady(targetId)
       const tab = useBrowserStore.getState().tabs[targetId]
       const { openedTabPresentation } = await import('@/lib/layout-control')
-      return { ok: true, tab: targetId, url: tab?.url ?? url, title: tab?.title ?? '', presentation: openedTabPresentation(sessionId, true) }
+      return {
+        ok: true,
+        tab: targetId,
+        url: tab?.url ?? url,
+        title: tab?.title ?? '',
+        profileId: tab?.profileId ?? requestedProfileId,
+        presentation: openedTabPresentation(sessionId, true),
+      }
     } finally {
       store.endAutomation(targetId)
     }
@@ -227,6 +255,7 @@ export async function runBrowserOp(sessionId: string, op: string, rawInput: unkn
         url: state.tabs[id].url,
         title: state.tabs[id].title,
         loading: state.tabs[id].loading,
+        profileId: state.tabs[id].profileId,
       })),
       ...listMiniAppTargets(sessionId),
     ]

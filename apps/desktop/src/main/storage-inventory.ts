@@ -422,7 +422,16 @@ function newestOfHighestSchema(entries: BackupEntry[]): BackupEntry | null {
 }
 
 export function browserStorageBytes(userData: string): { http: number; code: number; site: number } {
-  return browserBytes(join(userData, 'Partitions', 'browser'))
+  const partitionsDir = join(userData, 'Partitions')
+  const totals = { http: 0, code: 0, site: 0 }
+  for (const name of namedChildren(partitionsDir)) {
+    if (name !== 'browser' && !name.startsWith('browser-')) continue
+    const b = browserBytes(join(partitionsDir, name))
+    totals.http += b.http
+    totals.code += b.code
+    totals.site += b.site
+  }
+  return totals
 }
 
 function browserBytes(root: string): { http: number; code: number; site: number } {

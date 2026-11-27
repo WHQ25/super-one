@@ -33,6 +33,7 @@ export const BROWSER_PRIMITIVE_TOOL_NAMES = [
   'browser_close',
   'browser_evaluate',
   'browser_tabs',
+  'browser_profiles',
   'browser_resize',
   'browser_network_start',
   'browser_network_stop',

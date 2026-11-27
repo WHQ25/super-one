@@ -317,7 +317,7 @@ export const HOST_ACTION_BROWSER_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
   },
   {
     "name": "browser_tabs",
-    "description": "Discover and change browser tabs for this session. action=list (default) returns a TOON table of tab id / url / title / loading. action=open creates or reuses a tab (optional url). host=chrome opens it in a browser that loaded the SuperOne extension; set browser when more than one is connected. The returned id is chrome:<browser>:<tabId>. action=navigate|back|forward|reload changes that tab's page — pass url, or port (+ optional path) for localhost. action=close discards tabs you opened and are done with — pass one id or an array; it is not undoable, so never close a tab the user is reading. Use the returned tab id as `tab` on other browser tools. Not for clicking or typing (browser_act).",
+    "description": "Discover and change browser tabs for this session. action=list (default) returns tab id / url / title / loading / profile. action=profiles lists shared built-in browser profiles and the agent default. action=open creates or reuses a tab (optional url, profile for host=embedded). host=chrome uses the SuperOne extension; set browser if multiple are connected (id: chrome:<browser>:<tabId>). action=navigate|back|forward|reload changes that tab — pass url, or port (+ path) for localhost. action=close discards tabs you opened (one id or array); never close a tab the user is reading. Pass the returned tab id as `tab` to other tools. Not for clicking/typing (browser_act).",
     "inputSchema": {
       "type": "object",
       "properties": {
@@ -332,6 +332,7 @@ export const HOST_ACTION_BROWSER_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
           "type": "string",
           "enum": [
             "list",
+            "profiles",
             "open",
             "navigate",
             "back",
@@ -405,6 +406,10 @@ export const HOST_ACTION_BROWSER_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
             "brave",
             "arc"
           ]
+        },
+        "profile": {
+          "description": "action=open only: built-in browser profile id or name (host=embedded). Omit to use the agent default profile.",
+          "type": "string"
         }
       },
       "additionalProperties": false,
@@ -681,6 +686,10 @@ export const HOST_ACTION_BROWSER_DESCRIPTORS: HostActionSuperoneToolDescriptor[]
         },
         "dir": {
           "description": "download only: absolute directory to save into. Defaults to the configured download directory, or the session directory on a remote node.",
+          "type": "string"
+        },
+        "profile": {
+          "description": "download only: built-in browser profile id or name.",
           "type": "string"
         },
         "state": {

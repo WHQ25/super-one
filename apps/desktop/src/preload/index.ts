@@ -1826,8 +1826,8 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.CLIPBOARD_WRITE, text),
   clipboardWriteImage: (absPath: string) =>
     ipcRenderer.invoke(AgentIpcChannels.CLIPBOARD_WRITE_IMAGE, absPath),
-  fetchBrowserImage: (url: string) =>
-    ipcRenderer.invoke(AgentIpcChannels.BROWSER_FETCH_IMAGE, url),
+  fetchBrowserImage: (url: string, partition?: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.BROWSER_FETCH_IMAGE, url, partition),
   saveBrowserImage: (base64: string, mimeType: string, suggestedName: string, defaultDir?: string) =>
     ipcRenderer.invoke(AgentIpcChannels.BROWSER_SAVE_IMAGE, base64, mimeType, suggestedName, defaultDir),
   copyBrowserImageAt: (webContentsId: number, x: number, y: number) =>
@@ -2133,6 +2133,10 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.BROWSER_HISTORY_DELETE, url),
   browserCertProceed: (url: string) =>
     ipcRenderer.invoke(AgentIpcChannels.BROWSER_CERT_PROCEED, url),
+  clearBrowserProfileData: (profileId: string, removeDirectory?: boolean) =>
+    ipcRenderer.invoke(AgentIpcChannels.BROWSER_PROFILE_CLEAR_DATA, profileId, removeDirectory) as Promise<void>,
+  ensureBrowserProfileSession: (profileId: string) =>
+    ipcRenderer.invoke(AgentIpcChannels.BROWSER_PROFILE_ENSURE_SESSION, profileId) as Promise<void>,
   browserDownloadList: () =>
     ipcRenderer.invoke(AgentIpcChannels.BROWSER_DOWNLOAD_LIST) as Promise<BrowserDownloadItem[]>,
   browserDownloadCancel: (id: string) =>

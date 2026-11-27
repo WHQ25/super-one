@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { DEFAULT_BROWSER_PROFILE_ID } from '@superone/shared/agent-types'
 import { withoutKey } from '@/lib/record'
 import { roundedBounds } from '@/hooks/useSlotBounds'
 import { BROWSER_LIGHT_CANVAS } from '@/components/browser/browser-canvas'
@@ -22,6 +23,7 @@ export interface BrowserTabState {
   /** The guest is producing sound right now (Chromium's audibility, not just "media playing"). */
   audible: boolean
   muted: boolean
+  profileId: string
 }
 
 /**
@@ -72,8 +74,9 @@ interface BrowserStore {
   annotateQuick: AnnotateQuickMode | null
   insecureHosts: Record<string, string>
   markInsecure: (host: string, error: string) => void
-  ensure: (id: string, url: string, owner?: string | null) => void
+  ensure: (id: string, url: string, owner?: string | null, profileId?: string) => void
   patch: (id: string, partial: Partial<BrowserTabState>) => void
+  setProfile: (id: string, profileId: string) => void
   remove: (id: string) => void
   startAnnotate: (id: string, quick?: AnnotateQuickMode | null) => void
   stopAnnotate: () => void
@@ -108,6 +111,7 @@ const DEFAULT_TAB: BrowserTabState = {
   canvas: BROWSER_LIGHT_CANVAS,
   audible: false,
   muted: false,
+  profileId: DEFAULT_BROWSER_PROFILE_ID,
 }
 
 function incrementRef(refs: Record<string, number>, id: string): Record<string, number> {
@@ -142,10 +146,12 @@ export const useBrowserStore = create<BrowserStore>((set) => ({
     set((s) => (s.insecureHosts[host] === error ? s : { insecureHosts: { ...s.insecureHosts, [host]: error } })),
   startAnnotate: (id, quick = null) => set({ annotatingId: id, annotateQuick: quick }),
   stopAnnotate: () => set({ annotatingId: null, annotateQuick: null }),
-  ensure: (id, url, owner = null) =>
-    set((s) => (s.tabs[id] ? s : { tabs: { ...s.tabs, [id]: { ...DEFAULT_TAB, url, owner } } })),
+  ensure: (id, url, owner = null, profileId = DEFAULT_BROWSER_PROFILE_ID) =>
+    set((s) => (s.tabs[id] ? s : { tabs: { ...s.tabs, [id]: { ...DEFAULT_TAB, url, owner, profileId } } })),
   patch: (id, partial) =>
     set((s) => (s.tabs[id] ? { tabs: { ...s.tabs, [id]: { ...s.tabs[id], ...partial } } } : s)),
+  setProfile: (id, profileId) =>
+    set((s) => (s.tabs[id] ? { tabs: { ...s.tabs, [id]: { ...s.tabs[id], profileId } } } : s)),
   remove: (id) =>
     set((s) => ({
       tabs: withoutKey(s.tabs, id),

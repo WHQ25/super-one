@@ -1,9 +1,8 @@
 import { randomUUID } from 'crypto'
 import { join } from 'path'
-import { ipcMain, session, webContents, type WebContents } from 'electron'
+import { ipcMain, webContents, type WebContents } from 'electron'
 import { readAppSettings } from '../app-settings-service'
-
-const BROWSER_PARTITION = 'persist:browser'
+import { isBrowserSession, registerBrowserSessionHook } from './browser-profiles'
 const MAX_TOOLS = 64
 const MAX_NAME_CHARS = 128
 const MAX_TITLE_CHARS = 128
@@ -49,12 +48,8 @@ const listening = new Set<number>()
 const pending = new Map<string, PendingInvocation>()
 let initialized = false
 
-function browserSession(): Electron.Session {
-  return session.fromPartition(BROWSER_PARTITION)
-}
-
 function isBrowserSender(sender: WebContents): boolean {
-  return sender.session === browserSession()
+  return isBrowserSession(sender.session)
 }
 
 function byteLength(value: string): number {
@@ -150,10 +145,12 @@ export function isWebMcpEnabled(): boolean {
 export function initBrowserWebmcp(): void {
   if (initialized) return
   initialized = true
-  browserSession().registerPreloadScript({
-    id: 'webmcp',
-    type: 'frame',
-    filePath: join(__dirname, '../preload/webmcp-preload.js'),
+  registerBrowserSessionHook((ses) => {
+    ses.registerPreloadScript({
+      id: 'webmcp',
+      type: 'frame',
+      filePath: join(__dirname, '../preload/webmcp-preload.js'),
+    })
   })
 
   ipcMain.on('webmcp:sync', (event, payload: unknown) => {

@@ -1349,6 +1349,7 @@ export type Messages = {
       forget: string
       forgetConfirm: string
       rename: string
+      create: string
       /** Section for the environment running on this computer. */
       thisComputer: string
       retryNow: string
@@ -1450,6 +1451,31 @@ export type Messages = {
     }
     browser: {
       title: string
+      preferences: {
+        title: string
+      }
+      profiles: {
+        title: string
+        enable: string
+        description: string
+        create: string
+        createTitle: string
+        nameLabel: string
+        namePlaceholder: string
+        shareOnCreate: string
+        badgeUser: string
+        badgeAgent: string
+        sharedDesc: string
+        setUserDefault: string
+        setAgentDefault: string
+        clearData: string
+        cleared: string
+        renamed: string
+        deleted: string
+        deleteTitle: string
+        deleteConfirm: string
+        footnote: string
+      }
       ownBrowser: {
         title: string
         installTitle: string
@@ -3692,6 +3718,8 @@ export type Messages = {
         evaluating: string
         tabs: string
         listingTabs: string
+        profiles: string
+        listingProfiles: string
         resize: string
         resizing: string
         networkStart: string
@@ -4421,6 +4449,13 @@ export type Messages = {
       bookmarkDone: string
       bookmarks: string
       openExternal: string
+      screenshot: string
+      profileUserDefault: string
+      profileAgentDefault: string
+      profilePrivate: string
+      profileSwitch: string
+      profileLockedHint: string
+      profileManage: string
       zoom: string
       zoomIn: string
       zoomOut: string
@@ -6983,6 +7018,7 @@ export const en: Messages = {
       disconnect: 'Disconnect',
       forget: 'Remove',
       rename: 'Rename',
+      create: 'Create',
       thisComputer: 'This computer',
       retryNow: 'Retry',
       repairPairing: 'Repair pairing',
@@ -7103,8 +7139,33 @@ export const en: Messages = {
     },
     browser: {
       title: 'Browser',
+      preferences: {
+        title: 'Preferences',
+      },
+      profiles: {
+        title: 'Profiles',
+        enable: 'Enable Multiple Profiles',
+        description: 'Isolate cookies, logins, and site storage per profile.',
+        create: 'New Profile',
+        createTitle: 'New Profile',
+        nameLabel: 'Name',
+        namePlaceholder: 'e.g. Work, Testing',
+        shareOnCreate: 'Allow Agent to Use This Profile',
+        badgeUser: 'User Default',
+        badgeAgent: 'Agent Default',
+        sharedDesc: 'Available to Agent',
+        setUserDefault: 'Set User Default',
+        setAgentDefault: 'Set Agent Default',
+        clearData: 'Clear Profile Data',
+        cleared: 'Profile data cleared',
+        renamed: 'Profile renamed',
+        deleted: 'Profile deleted',
+        deleteTitle: 'Delete Profile',
+        deleteConfirm: 'Deleting "{{name}}" will close any open tabs using it and clear all its cookies and site storage.',
+        footnote: 'Bookmarks and download history are shared across profiles.',
+      },
       ownBrowser: {
-        title: 'Your Browser',
+        title: 'External Browsers',
         installTitle: 'Install Extension',
         installAnother: 'Install in Another Browser',
         connectedStatus: 'Connected',
@@ -9352,6 +9413,8 @@ export const en: Messages = {
         evaluating: 'Evaluating',
         tabs: 'Tabs',
         listingTabs: 'Listing Tabs',
+        profiles: 'Profiles Listed',
+        listingProfiles: 'Listing Profiles',
         resize: 'Resize',
         resizing: 'Resizing',
         networkStart: 'Record Network',
@@ -10081,6 +10144,13 @@ export const en: Messages = {
       bookmarkDone: 'Done',
       bookmarks: 'Bookmarks',
       openExternal: 'Open in External Browser',
+      screenshot: 'Screenshot',
+      profileUserDefault: 'User Default',
+      profileAgentDefault: 'Agent Default',
+      profilePrivate: 'Private',
+      profileSwitch: 'Switch Profile',
+      profileLockedHint: 'Profiles can only be switched on a new tab before loading a page.',
+      profileManage: 'Manage Profiles',
       zoom: 'Zoom',
       zoomIn: 'Zoom In',
       zoomOut: 'Zoom Out',

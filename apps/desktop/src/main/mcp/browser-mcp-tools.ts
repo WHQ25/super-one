@@ -1,6 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { CallToolRequestSchema } from '@modelcontextprotocol/sdk/types.js'
-import type { AgentEvent } from '@superone/shared/agent-types'
+import { BROWSER_DEFAULT_PARTITION, browserPartitionForProfile, type AgentEvent } from '@superone/shared/agent-types'
 import { z } from 'zod'
 import { browserAutomationCall, browserFocusGuard, noteTabDriver, requireTabDriver, resolveBrowserWebContentsId, resolvePointForSession, type BrowserAutomationOp } from '../browser/browser-automation-bridge'
 import { existsSync } from 'fs'
@@ -11,6 +11,7 @@ import { measurePerf, samplePerf, resolveAppTarget } from '../browser/browser-cd
 import { mapNestedToolInputs } from '../environment/host-action-sync'
 import { persistScreenshot } from '../agent/browser-screenshot-store'
 import { raceDownloadTask, startUrlDownloadTask } from '../browser/browser-download-tasks'
+import { isMultiProfileEnabled, listAgentBrowserProfiles, resolveProfileForAgent } from '../browser/browser-profile-policy'
 import { listDownloads } from '../browser/browser-downloads'
 import { adoptCapturedDownload } from '../agent/browser-download-store'
 import { persistTextArtifact } from '../agent/browser-artifact-store'
@@ -1156,44 +1157,54 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
         readiness: z.enum(['load', 'none']).default('load').describe("'load' waits for loading to stop (default); 'none' returns as soon as the tab exists."),
         host: z.enum(['embedded', 'chrome']).optional().describe('chrome opens the tab in a browser that loaded the SuperOne extension. Default embedded.'),
         browser: z.enum(['chrome', 'chrome-beta', 'chrome-canary', 'chromium', 'edge', 'brave', 'arc']).optional().describe('Which connected browser to open in when more than one extension is connected.'),
+        profile: z.string().optional().describe('Built-in browser profile id or name (only when host is embedded). Omit to use the agent default profile.'),
       },
     },
     async (args) => {
-      if (args.tab) await noteTabDriver(sessionId, args.tab)
-      // The tab is created blank first, so this session is recorded as its
-      // driver BEFORE the initial URL loads. Navigating straight to the URL
-      // would let a direct-download link (or a first-paint script) start a
-      // download while the tab still had no driver, and the file would land in
-      // the Downloads folder instead of the session zone (§6).
-      const { presentation, ...opened } = (await browserAutomationCall(sessionId, 'open', { ...args, url: undefined, readiness: 'none' })) as {
-        tab?: string
-        url?: string
-        title?: string
-        presentation?: OpenedTabPresentation
+      try {
+        if (args.tab && args.profile) {
+          return errorReply('profile cannot be combined with an existing tab.')
+        }
+        if (args.tab) await noteTabDriver(sessionId, args.tab)
+        if (args.host === 'chrome' && args.profile) {
+          return errorReply('profile is only supported for the built-in browser (host=embedded).')
+        }
+        let profileId: string | undefined
+        if (args.host !== 'chrome' && !args.tab) {
+          const resolvedProfile = resolveProfileForAgent(args.profile)
+          profileId = resolvedProfile.id
+        }
+        const { presentation, ...opened } = (await browserAutomationCall(sessionId, 'open', {
+          ...args,
+          ...(profileId ? { profileId } : {}),
+          url: undefined,
+          readiness: 'none',
+        })) as {
+          tab?: string
+          url?: string
+          title?: string
+          profileId?: string
+          presentation?: OpenedTabPresentation
+        }
+        const note = presentation && typeof opened.tab === 'string' ? openedTabNote(presentation, focusTabCall(opened.tab)) : null
+        if (!args.url || typeof opened.tab !== 'string') {
+          if (typeof opened.tab === 'string') await noteTabDriver(sessionId, opened.tab)
+          return textReply({ ...opened, ...note })
+        }
+        if (!(await requireTabDriver(sessionId, opened.tab))) {
+          return errorReply(
+            `Opened tab ${opened.tab} but could not attribute it to this session, so it was left on about:blank. Retry the navigation with browser_act, or close the tab.`,
+          )
+        }
+        const navigated = (await browserAutomationCall(sessionId, 'navigate', {
+          tab: opened.tab,
+          url: args.url,
+          readiness: args.readiness,
+        })) as { url?: string; title?: string }
+        return textReply({ ...opened, url: navigated.url ?? args.url, title: navigated.title ?? opened.title, ...note })
+      } catch (err) {
+        return errorReply(err)
       }
-      const note = presentation && typeof opened.tab === 'string' ? openedTabNote(presentation, focusTabCall(opened.tab)) : null
-      if (!args.url || typeof opened.tab !== 'string') {
-        if (typeof opened.tab === 'string') await noteTabDriver(sessionId, opened.tab)
-        return textReply({ ...opened, ...note })
-      }
-      // Attribution is a precondition for the initial navigation, not a
-      // best-effort side errand: a cold-started view is registered before its
-      // webContents exists, so the first resolve can fail and the next succeed.
-      // Navigating in between is exactly how a first-paint download ends up
-      // unattributed. Report the tab that WAS opened so the caller can retry or
-      // close it rather than leaking a blank view.
-      if (!(await requireTabDriver(sessionId, opened.tab))) {
-        return errorReply(
-          `Opened tab ${opened.tab} but could not attribute it to this session, so it was left on about:blank. Retry the navigation with browser_act, or close the tab.`,
-        )
-      }
-      // `readiness` keeps its meaning: it is the initial navigation it describes.
-      const navigated = (await browserAutomationCall(sessionId, 'navigate', {
-        tab: opened.tab,
-        url: args.url,
-        readiness: args.readiness,
-      })) as { url?: string; title?: string }
-      return textReply({ ...opened, url: navigated.url ?? args.url, title: navigated.title ?? opened.title, ...note })
     },
   )
 
@@ -1244,10 +1255,46 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
     'browser_tabs',
     {
       description:
-        'List the browser tabs available to this session, each with its tab id, url, title, and loading state (result in TOON: a `tabs[N]{...}:` table). Use the returned tab id as the "tab" argument to target a specific tab. Only tabs belonging to this session are listed.',
+        'List the browser tabs available to this session, each with its tab id, url, title, loading state, and profile (result in TOON: a `tabs[N]{...}:` table). Use the returned tab id as the "tab" argument to target a specific tab. Only tabs belonging to this session are listed.',
       inputSchema: { ...descriptionField },
     },
-    () => dataTool(sessionId, 'tabs', {}, toonReply),
+    async () => {
+      try {
+        const res = (await browserAutomationCall(sessionId, 'tabs', {})) as {
+          tabs?: Array<{ tab: string; url: string; title: string; loading: boolean; profileId?: string }>
+        }
+        const multiProfile = isMultiProfileEnabled()
+        const profiles = multiProfile
+          ? new Map((readAppSettings().browserProfiles ?? []).map((p) => [p.id, p.name]))
+          : null
+        const tabs = (res.tabs ?? []).map((t) => {
+          if (!multiProfile) {
+            const { profileId: _p, ...rest } = t
+            return rest
+          }
+          return {
+            ...t,
+            ...(t.profileId ? { profileName: profiles?.get(t.profileId) ?? t.profileId } : {}),
+          }
+        })
+        return toonReply({ tabs })
+      } catch (err) {
+        return errorReply(err)
+      }
+    },
+  )
+
+  server.registerTool(
+    'browser_profiles',
+    {
+      description:
+        'List built-in browser profiles shared with the agent, showing id, name, and whether each is the agent default.',
+      inputSchema: { ...descriptionField },
+    },
+    () => Promise.resolve(toonReply({
+      multiProfileEnabled: isMultiProfileEnabled(),
+      profiles: listAgentBrowserProfiles(),
+    })),
   )
 
   server.registerTool(
@@ -1449,6 +1496,10 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
           .string()
           .optional()
           .describe("Absolute directory to save into, created if missing. Defaults to the user's configured download directory, or the session directory on a remote node."),
+        profile: z
+          .string()
+          .optional()
+          .describe('Built-in browser profile id or name whose cookies/session to use. Omit to use the agent default profile.'),
         timeoutMs: z
           .number()
           .int()
@@ -1460,7 +1511,16 @@ function registerLegacyBrowserTools(server: McpServer, sessionId: string, webMcp
     },
     async (args) => {
       try {
-        const snap = startUrlDownloadTask(sessionId, args.url, args.filename, args.dir)
+        const snap = args.profile
+          ? startUrlDownloadTask(
+              sessionId,
+              args.url,
+              args.filename,
+              args.dir,
+              browserPartitionForProfile(resolveProfileForAgent(args.profile).id),
+              true,
+            )
+          : startUrlDownloadTask(sessionId, args.url, args.filename, args.dir)
         const raced = await raceDownloadTask(snap.taskId, args.timeoutMs)
         if (raced.mode === 'background') {
           return textReply({

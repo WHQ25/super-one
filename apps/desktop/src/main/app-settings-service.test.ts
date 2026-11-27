@@ -128,6 +128,10 @@ describe('app-settings-service', () => {
     jevFastLoopEnabled: false,
     schedulingProvider: 'native',
     browserDownloadDir: null,
+    browserMultiProfileEnabled: false,
+    browserProfiles: [{ id: 'default', name: 'Default', shareWithAgent: true }],
+    browserUserDefaultProfileId: 'default',
+    browserAgentDefaultProfileId: 'default',
     chromeBridgeDisabledBrowsers: [],
     agentPreference: {
       claude: defaultClaude,
@@ -291,6 +295,10 @@ describe('app-settings-service', () => {
         jevFastLoopEnabled: false,
         schedulingProvider: 'native',
         browserDownloadDir: null,
+    browserMultiProfileEnabled: false,
+    browserProfiles: [{ id: 'default', name: 'Default', shareWithAgent: true }],
+    browserUserDefaultProfileId: 'default',
+    browserAgentDefaultProfileId: 'default',
         chromeBridgeDisabledBrowsers: [],
         agentPreference: {
           claude: {
@@ -467,6 +475,10 @@ describe('app-settings-service', () => {
         jevFastLoopEnabled: false,
         schedulingProvider: 'native',
         browserDownloadDir: null,
+    browserMultiProfileEnabled: false,
+    browserProfiles: [{ id: 'default', name: 'Default', shareWithAgent: true }],
+    browserUserDefaultProfileId: 'default',
+    browserAgentDefaultProfileId: 'default',
         chromeBridgeDisabledBrowsers: [],
         agentPreference: {
           claude: defaultClaude,

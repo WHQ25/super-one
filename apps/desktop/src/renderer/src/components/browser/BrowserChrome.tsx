@@ -7,12 +7,14 @@ import { IconButton } from '@superone/ui/components/ui/icon-button'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@superone/ui/components/ui/tooltip'
 import { CommandShortcut } from '@superone/ui/components/ui/command'
 import { browserTabCanvas, useBrowserStore } from '@/stores/browser'
+import { useBrowserProfilesStore } from '@/stores/browser-profiles'
 import { browserCapture } from './browser-host-api'
 import { flattenBrowserCapture } from './browser-canvas'
 import { isBlankUrl } from './browser-url'
 import { BrowserOmnibox } from './BrowserOmnibox'
 import { BrowserDownloadsButton } from './BrowserDownloadsButton'
 import { BrowserMoreMenu } from './BrowserMoreMenu'
+import { BrowserProfileIndicator } from './BrowserProfileIndicator'
 
 const annotateShortcut = window.app.platform === 'darwin' ? '⌘.' : 'Ctrl+.'
 
@@ -28,11 +30,12 @@ export function BrowserChrome({ browserId, onNavigate, onBack, onForward, onRelo
   const { t } = useTranslation()
   const state = useBrowserStore((s) => s.tabs[browserId])
   const annotating = useBrowserStore((s) => s.annotatingId === browserId)
+  const multiProfileEnabled = useBrowserProfilesStore((s) => s.enabled)
   const startAnnotate = useBrowserStore((s) => s.startAnnotate)
   const stopAnnotate = useBrowserStore((s) => s.stopAnnotate)
   const url = state?.url ?? ''
   const loading = state?.loading ?? false
-  const isHome = isBlankUrl(url)
+  const isHome = isBlankUrl(url) && !state?.hasCustomBlankContent
 
   const screenshot = useCallback(async () => {
     try {
@@ -101,9 +104,11 @@ export function BrowserChrome({ browserId, onNavigate, onBack, onForward, onRelo
           </TooltipProvider>
         ) : (
           <>
-            <IconButton size="sm" variant="ghost" tooltip="Screenshot" disabled={isHome} onClick={screenshot}>
-              <Camera className="size-4" />
-            </IconButton>
+            {!multiProfileEnabled && (
+              <IconButton size="sm" variant="ghost" tooltip="Screenshot" disabled={isHome} onClick={screenshot}>
+                <Camera className="size-4" />
+              </IconButton>
+            )}
             <IconButton
               size="sm"
               variant="ghost"
@@ -115,8 +120,9 @@ export function BrowserChrome({ browserId, onNavigate, onBack, onForward, onRelo
             </IconButton>
           </>
         )}
+      {multiProfileEnabled && <BrowserProfileIndicator browserId={browserId} isHome={isHome} />}
       <BrowserDownloadsButton />
-      <BrowserMoreMenu browserId={browserId} isHome={isHome} />
+      <BrowserMoreMenu browserId={browserId} isHome={isHome} onScreenshot={multiProfileEnabled ? screenshot : undefined} />
     </div>
   )
 }

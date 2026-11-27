@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto'
 import { BrowserWindow, session } from 'electron'
-import { AgentIpcChannels, type BrowserDownloadItem } from '@superone/shared/agent-types'
+import { AgentIpcChannels, BROWSER_DEFAULT_PARTITION, browserPartitionForProfile, type BrowserDownloadItem } from '@superone/shared/agent-types'
 import { copyFileSync, createWriteStream, unlinkSync } from 'fs'
 import { stat, writeFile } from 'fs/promises'
 import { Readable } from 'stream'
@@ -13,8 +13,9 @@ import { filenameFor, registerDownload, reserveDownloadPath, wakeDownloadDeliver
 import { tabDriver, type TabDriver } from './browser-tab-drivers'
 import { chromePageDownloads } from './chrome-download-feed'
 import { downloadThroughUserChrome } from './chrome-url-download'
+import { registerBrowserSessionHook } from './browser-profiles'
+import { resolveProfileForAgent } from './browser-profile-policy'
 
-const BROWSER_PARTITION = 'persist:browser'
 const MAX_CAPTURED = 20
 const POLL_MS = 250
 const PROGRESS_BROADCAST_MS = 150
@@ -113,10 +114,11 @@ function nameFromDisposition(disposition: string | null): string {
 export async function fetchBrowserBytes(
   url: string,
   fallbackMime = 'application/octet-stream',
+  partition = BROWSER_DEFAULT_PARTITION,
 ): Promise<{ buf: Buffer; mimeType: string; disposition: string | null }> {
   if (!url) throw new Error('Invalid URL')
   if (url.startsWith('data:')) return { ...parseDataUrl(url, fallbackMime), disposition: null }
-  const resp = await session.fromPartition(BROWSER_PARTITION).fetch(url)
+  const resp = await session.fromPartition(partition).fetch(url)
   if (!resp.ok) throw new Error(`HTTP ${resp.status}${resp.statusText ? ` ${resp.statusText}` : ''}`)
   return {
     buf: Buffer.from(await resp.arrayBuffer()),
@@ -138,11 +140,14 @@ export interface DownloadUrlOptions {
    * (`docs/architecture/session-sync-zone.md` §6); a local session is unaffected.
    */
   sessionId?: string | null
+  partition?: string
+  resolvePartition?: () => string
+  skipChrome?: boolean
   onProgress?: (p: DownloadProgress) => void
 }
 
 export async function downloadUrl(url: string, opts: DownloadUrlOptions = {}): Promise<DownloadResult> {
-  const { filename: filenameOverride, dir, sessionId, onProgress } = opts
+  const { filename: filenameOverride, dir, sessionId, partition, resolvePartition, skipChrome = false, onProgress } = opts
   if (!url) throw new Error('Invalid URL')
   if (url.startsWith('data:')) {
     const { buf, mimeType } = parseDataUrl(url, 'application/octet-stream')
@@ -162,7 +167,7 @@ export async function downloadUrl(url: string, opts: DownloadUrlOptions = {}): P
     return { path, filename, bytes: buf.byteLength, mimeType }
   }
 
-  const viaChrome = await downloadThroughUserChrome({ sessionId, url, filename: filenameOverride })
+  const viaChrome = skipChrome ? null : await downloadThroughUserChrome({ sessionId, url, filename: filenameOverride })
   if (viaChrome) {
     const mimeType = viaChrome.mimeType || 'application/octet-stream'
     const filename = filenameFor(filenameOverride || viaChrome.filename, url, mimeType)
@@ -181,7 +186,8 @@ export async function downloadUrl(url: string, opts: DownloadUrlOptions = {}): P
     return { path, filename, bytes: size, mimeType }
   }
 
-  const resp = await session.fromPartition(BROWSER_PARTITION).fetch(url)
+  const targetPartition = partition ?? (sessionId ? browserPartitionForProfile(resolveProfileForAgent().id) : BROWSER_DEFAULT_PARTITION)
+  const resp = await session.fromPartition(targetPartition).fetch(url)
   if (!resp.ok) throw new Error(`HTTP ${resp.status}${resp.statusText ? ` ${resp.statusText}` : ''}`)
   const mimeType = resp.headers.get('content-type')?.split(';')[0]?.trim() || 'application/octet-stream'
   const disposition = resp.headers.get('content-disposition')
@@ -234,7 +240,8 @@ export async function downloadUrl(url: string, opts: DownloadUrlOptions = {}): P
  * a human. Registered once at boot.
  */
 export function registerBrowserDownloadCapture(): void {
-  session.fromPartition(BROWSER_PARTITION).on('will-download', (_event, item, webContents) => {
+  registerBrowserSessionHook((ses) => {
+    ses.on('will-download', (_event, item, webContents) => {
     const filename = filenameFor(item.getFilename(), item.getURL(), item.getMimeType() || '')
     // Ownership is renderer state behind an async call and this handler must
     // answer now; the session that last drove the tab is known synchronously
@@ -367,6 +374,7 @@ export function registerBrowserDownloadCapture(): void {
       notifyWaiters()
     })
     notifyWaiters()
+  })
   })
 }
 

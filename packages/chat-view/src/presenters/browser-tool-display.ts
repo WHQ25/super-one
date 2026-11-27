@@ -39,6 +39,7 @@ export type BrowserOp =
   | 'run'
   | 'tools_list'
   | 'tools_call'
+  | 'profiles'
 
 const BROWSER_OPS = new Set<BrowserOp>([
   'memory_read', 'memory_write', 'action_read', 'action_archive',
@@ -46,11 +47,11 @@ const BROWSER_OPS = new Set<BrowserOp>([
   'wait_for', 'press', 'scroll', 'drag', 'select', 'open', 'close', 'evaluate', 'tabs', 'resize',
   'network_start', 'network_stop', 'network_wait', 'network_body', 'cookies', 'upload_file',
   'download', 'list_downloads', 'emulate', 'mock', 'action_list', 'action_save', 'action_do',
-  'act', 'run', 'tools_list', 'tools_call',
+  'act', 'run', 'tools_list', 'tools_call', 'profiles',
 ])
 
 /** Read-only ops whose JSON result is worth expanding; the rest are lean actions. */
-const READ_OPS = new Set<BrowserOp>(['snapshot', 'query', 'inspect', 'tabs', 'evaluate', 'network_stop', 'network_wait', 'network_body', 'cookies', 'list_downloads', 'action_list', 'tools_list', 'run'])
+const READ_OPS = new Set<BrowserOp>(['snapshot', 'query', 'inspect', 'tabs', 'profiles', 'evaluate', 'network_stop', 'network_wait', 'network_body', 'cookies', 'list_downloads', 'action_list', 'tools_list', 'run'])
 
 /** Ops that report success/failure via an `ok` field (or an error). */
 const ACTION_OPS = new Set<BrowserOp>(['click', 'hover', 'type', 'press', 'scroll', 'drag', 'select', 'navigate', 'wait_for', 'open', 'close', 'resize', 'network_start', 'upload_file', 'download', 'emulate', 'mock', 'action_save', 'action_do', 'act', 'tools_call'])
@@ -77,6 +78,7 @@ const ACTION_CATALOG_OP: Record<string, BrowserOp> = {
 
 const TABS_ACTION_OP: Record<string, BrowserOp> = {
   list: 'tabs',
+  profiles: 'profiles',
   open: 'open',
   navigate: 'navigate',
   back: 'navigate',
@@ -147,6 +149,7 @@ const VERB_BASE: Record<BrowserOp, string> = {
   close: 'close',
   evaluate: 'evaluate',
   tabs: 'tabs',
+  profiles: 'profiles',
   resize: 'resize',
   network_start: 'networkStart',
   network_stop: 'networkStop',
@@ -189,6 +192,7 @@ const VERB_STREAMING: Record<BrowserOp, string> = {
   close: 'closing',
   evaluate: 'evaluating',
   tabs: 'listingTabs',
+  profiles: 'listingProfiles',
   resize: 'resizing',
   network_start: 'recordingNetwork',
   network_stop: 'collectingNetwork',
@@ -329,6 +333,7 @@ export function browserInputSummary(op: BrowserOp, p: Record<string, unknown>): 
     case 'evaluate':
       return truncate(s(p.expression), 60)
     case 'tabs':
+    case 'profiles':
       return ''
     case 'resize':
       if (p.reset) return 'reset'
@@ -426,7 +431,7 @@ function cleanError(result: string | undefined): string | undefined {
 
 /** Read/list tools return TOON (not JSON) to save tokens. */
 const TOON_RESULT_OPS = new Set<BrowserOp>([
-  'snapshot', 'query', 'tabs', 'cookies',
+  'snapshot', 'query', 'tabs', 'profiles', 'cookies',
   'network_start', 'network_stop', 'network_wait', 'network_body',
 ])
 

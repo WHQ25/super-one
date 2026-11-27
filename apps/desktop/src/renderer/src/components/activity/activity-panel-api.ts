@@ -1,6 +1,7 @@
 import type { DockviewApi, AddPanelPositionOptions, DockviewGroupPanel, IDockviewPanel, IDockviewGroupPanel, SerializedDockview } from 'dockview-core'
 import { useActivityPanelStore } from '@/stores/activity-panel'
 import { useBrowserStore } from '@/stores/browser'
+import { useBrowserProfilesStore } from '@/stores/browser-profiles'
 import { useDeviceInstanceStore } from '@/stores/device-instances'
 import { toolUiPreviewSlotKey } from '@/stores/miniapp-tool-preview'
 import { isBlankUrl, normalizeUrl } from '@/components/browser/browser-url'
@@ -719,13 +720,18 @@ export function closeMiniAppTab(instanceKey: string) {
   if (existing) existing.api.close()
 }
 
-export function openBrowserTab(url = 'about:blank', reuseId?: string, owner?: string | null, opts?: { background?: boolean; reveal?: boolean }) {
+export function openBrowserTab(
+  url = 'about:blank',
+  reuseId?: string,
+  owner?: string | null,
+  opts?: { background?: boolean; reveal?: boolean; profileId?: string },
+) {
   const resolvedOwner = owner !== undefined ? owner : (currentSessionIdGetter?.() ?? null)
+  const profileState = useBrowserProfilesStore.getState()
+  const profileId = opts?.profileId ?? (profileState.enabled ? profileState.userDefaultProfileId : 'default')
+  void window.app?.ensureBrowserProfileSession?.(profileId)
   const browserId = reuseId ?? `browser-${crypto.randomUUID()}`
-  // Register the tab (and its persistent webview, rendered per store tab by
-  // BrowserHostLayer) up front so background automation can drive it even before
-  // its dock panel exists.
-  useBrowserStore.getState().ensure(browserId, normalizeUrl(url), resolvedOwner)
+  useBrowserStore.getState().ensure(browserId, normalizeUrl(url), resolvedOwner, profileId)
 
   // A tab opened for a session the user isn't currently viewing must NOT land in
   // the live dock — the single dockview reflects the current session, so adding

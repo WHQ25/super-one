@@ -517,6 +517,7 @@ interface AppAPI extends WindowLayoutAPI {
   clipboardWriteImage(absPath: string): Promise<{ ok: true } | { ok: false; error: string }>
   fetchBrowserImage(
     url: string,
+    partition?: string,
   ): Promise<{ ok: true; base64: string; mimeType: string } | { ok: false; error: string }>
   saveBrowserImage(
     base64: string,
@@ -699,6 +700,8 @@ interface AppAPI extends WindowLayoutAPI {
   suggestBrowserHistory(query: string, limit?: number): Promise<BrowserHistoryEntry[]>
   deleteBrowserHistory(url: string | null): Promise<void>
   browserCertProceed(url: string): Promise<void>
+  clearBrowserProfileData(profileId: string, removeDirectory?: boolean): Promise<void>
+  ensureBrowserProfileSession(profileId: string): Promise<void>
   onBrowserCertError(callback: (payload: BrowserCertError) => void): () => void
   onBrowserAudioState(callback: (payload: BrowserAudioState) => void): () => void
   onBrowserOpenTab(callback: (payload: BrowserOpenTabRequest) => void): () => void

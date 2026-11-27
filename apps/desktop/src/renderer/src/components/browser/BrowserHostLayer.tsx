@@ -1,7 +1,9 @@
 import { useEffect, useRef } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useShallow } from 'zustand/react/shallow'
+import { browserPartitionForProfile, DEFAULT_BROWSER_PROFILE_ID } from '@superone/shared/agent-types'
 import { useBrowserStore } from '@/stores/browser'
+import { useBrowserProfilesStore } from '@/stores/browser-profiles'
 import { useBrowserDownloadsStore } from '@/stores/browser-downloads'
 import { useActivityDropStore } from '@/stores/activity-drop'
 import { useActivityPanelStore } from '@/stores/activity-panel'
@@ -44,12 +46,17 @@ export function BrowserHostLayer() {
   }, [])
 
   useEffect(() => {
+    void useBrowserProfilesStore.getState().load()
+  }, [])
+
+  useEffect(() => {
     return window.app.onBrowserOpenTab(({ webContentsId, url, background }) => {
       // Inherit the source tab's owner so a Cmd/Ctrl+click'd tab lands in the same
       // session's activity panel instead of leaking into the current one.
       const sourceId = browserIdByWebContentsId(webContentsId)
-      const owner = sourceId ? useBrowserStore.getState().tabs[sourceId]?.owner ?? null : null
-      openBrowserTab(url, undefined, owner, { background })
+      const sourceTab = sourceId ? useBrowserStore.getState().tabs[sourceId] : undefined
+      const owner = sourceTab?.owner ?? null
+      openBrowserTab(url, undefined, owner, { background, profileId: sourceTab?.profileId })
     })
   }, [])
 
@@ -122,6 +129,8 @@ function PersistentBrowser({ browserId, resizing, baseZIndex }: { browserId: str
   })
   const certErrored = useBrowserStore((s) => s.tabs[browserId]?.certError != null)
   const canvas = useBrowserStore((s) => s.tabs[browserId]?.canvas ?? BROWSER_LIGHT_CANVAS)
+  const profileId = useBrowserStore((s) => s.tabs[browserId]?.profileId ?? DEFAULT_BROWSER_PROFILE_ID)
+  const partition = browserPartitionForProfile(profileId)
   const webviewRef = useRef<Electron.WebviewTag>(null)
   const hostRef = useRef<HTMLDivElement>(null)
   const zoomLevelRef = useRef(0)
@@ -277,7 +286,7 @@ function PersistentBrowser({ browserId, resizing, baseZIndex }: { browserId: str
       wv.removeEventListener('did-navigate-in-page', onNavigate)
       wv.removeEventListener('did-fail-load', onFail)
     }
-  }, [browserId])
+  }, [browserId, partition])
 
   const pipVisible = !previewHidden && (automationPreview || previewPinned)
   const slot = activityShown
@@ -363,7 +372,7 @@ function PersistentBrowser({ browserId, resizing, baseZIndex }: { browserId: str
     }
     wv.addEventListener('focus', rejectFocus)
     return () => wv.removeEventListener('focus', rejectFocus)
-  }, [visible, browserId])
+  }, [visible, browserId, partition])
 
   return (
     <>
@@ -395,9 +404,10 @@ function PersistentBrowser({ browserId, resizing, baseZIndex }: { browserId: str
       }}
     >
       <webview
+        key={`${browserId}:${partition}`}
         ref={webviewRef}
         src={initialSrcRef.current}
-        partition="persist:browser"
+        partition={partition}
         {...({ allowpopups: 'true' } as Record<string, string>)}
         style={webviewStyle}
       />

@@ -76,6 +76,13 @@ import {
   registerBrowserDownloadCapture,
 } from './browser/browser-downloads'
 import { registerBrowserWebAuthn } from './browser/browser-webauthn'
+import {
+  clearBrowserProfileData,
+  ensureBrowserProfileSession,
+  initAllBrowserProfileSessions,
+  isBrowserPartition,
+  registerBrowserSessionHook,
+} from './browser/browser-profiles'
 import { setBrowserDownloadTaskHost } from './browser/browser-download-tasks'
 import { initSuperoneMcpServer, registerAppTools, unregisterAppTools, unregisterAppAcrossSessions, loadPreapprovedTools, updatePreapprovedTools, refreshAppDefinitions, registerAppTemplates, unregisterAppTemplates, submitToolIntercept, cancelToolIntercept, clearSessionPendingCalls as clearSessionPendingMiniAppCalls, disposeSuperoneMcpServer, setSessionHostProvider, setAppSettingsApplier, setTerminalToolDeps, isAppStillAuthorizedInProject, addToolsChangedListener, setAppToolExecutor, sessionsAuthorizingApp, setMiniAppCatalog } from './mcp/superone-mcp-server'
 import { MobileReceiveService, type MobileReceiveTarget } from './remote/mobile-receive-service'
@@ -4487,10 +4494,11 @@ function registerIpcHandlers(): void {
     return { ok: true }
   })
 
-  ipcMain.handle(AgentIpcChannels.BROWSER_FETCH_IMAGE, async (_event, url: string) => {
+  ipcMain.handle(AgentIpcChannels.BROWSER_FETCH_IMAGE, async (_event, url: string, partition?: string) => {
     try {
       if (typeof url !== 'string') return { ok: false, error: 'Invalid URL' }
-      const { buf, mimeType } = await fetchBrowserBytes(url, 'image/png')
+      const targetPartition = typeof partition === 'string' && isBrowserPartition(partition) ? partition : undefined
+      const { buf, mimeType } = await fetchBrowserBytes(url, 'image/png', targetPartition)
       return { ok: true, base64: buf.toString('base64'), mimeType }
     } catch (err) {
       return { ok: false, error: (err as Error).message }
@@ -6073,6 +6081,12 @@ app.whenReady().then(async () => {
   registerBrowserPopupRedirect()
   registerBrowserDownloadCapture()
   registerBrowserWebAuthn()
+  ipcMain.handle(AgentIpcChannels.BROWSER_PROFILE_CLEAR_DATA, (_e, profileId: string, removeDirectory?: boolean) =>
+    clearBrowserProfileData(profileId, removeDirectory),
+  )
+  ipcMain.handle(AgentIpcChannels.BROWSER_PROFILE_ENSURE_SESSION, (_e, profileId: string) => {
+    ensureBrowserProfileSession(profileId)
+  })
 
   if (process.platform === 'darwin') {
     if (is.dev) {
@@ -6124,10 +6138,10 @@ app.whenReady().then(async () => {
   registerMcpAppProtocol(protocol)
   registerRendererProtocol(join(__dirname, '../renderer'))
   registerPluginProtocol(protocol, dshPluginRoot)
-  // Built-in browser webviews use partition "persist:browser"; register the same
-  // local-file handler so HTML/CSS/asset previews work there (not only in the
-  // main renderer session used by in-app iframes).
-  registerMiniAppProtocolHandlers(session.fromPartition('persist:browser').protocol)
+  registerBrowserSessionHook((ses) => {
+    registerMiniAppProtocolHandlers(ses.protocol)
+  })
+  initAllBrowserProfileSessions()
 
   // Not awaited: the window must not wait on the login shell. Spawners await it.
   void ensureShellPath()

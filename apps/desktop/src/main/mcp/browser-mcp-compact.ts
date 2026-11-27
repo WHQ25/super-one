@@ -71,11 +71,12 @@ const EXTENSION_BROWSER_IDS = EXTENSION_BROWSERS.map((browser) => browser.id) as
 
 export const BROWSER_TABS_DESCRIPTION =
   'Discover and change browser tabs for this session. '
-  + 'action=list (default) returns a TOON table of tab id / url / title / loading. '
-  + 'action=open creates or reuses a tab (optional url). host=chrome opens it in a browser that loaded the SuperOne extension; set browser when more than one is connected. The returned id is chrome:<browser>:<tabId>. '
-  + 'action=navigate|back|forward|reload changes that tab\'s page — pass url, or port (+ optional path) for localhost. '
-  + 'action=close discards tabs you opened and are done with — pass one id or an array; it is not undoable, so never close a tab the user is reading. '
-  + 'Use the returned tab id as `tab` on other browser tools. Not for clicking or typing (browser_act).'
+  + 'action=list (default) returns tab id / url / title / loading / profile. '
+  + 'action=profiles lists shared built-in browser profiles and the agent default. '
+  + 'action=open creates or reuses a tab (optional url, profile for host=embedded). host=chrome uses the SuperOne extension; set browser if multiple are connected (id: chrome:<browser>:<tabId>). '
+  + 'action=navigate|back|forward|reload changes that tab — pass url, or port (+ path) for localhost. '
+  + 'action=close discards tabs you opened (one id or array); never close a tab the user is reading. '
+  + 'Pass the returned tab id as `tab` to other tools. Not for clicking/typing (browser_act).'
 
 export const BROWSER_SNAPSHOT_DESCRIPTION =
   'Inspect the current page. `include` picks sections: meta, elements (flat interactive + CSS selectors), tree (structure), text, console, screenshot. '
@@ -204,7 +205,7 @@ export function registerCompactBrowserTools(
       inputSchema: {
         ...descriptionField,
         action: z
-          .enum(['list', 'open', 'navigate', 'back', 'forward', 'reload', 'close'])
+          .enum(['list', 'profiles', 'open', 'navigate', 'back', 'forward', 'reload', 'close'])
           .optional()
           .describe('Default list.'),
         tab: z
@@ -218,11 +219,13 @@ export function registerCompactBrowserTools(
         readiness: z.enum(['load', 'none']).optional().describe("'load' waits for loading to stop (default); 'none' returns immediately."),
         host: z.enum(['embedded', 'chrome']).optional().describe('Where action=open creates a tab. chrome drives a browser that loaded the SuperOne extension. Default embedded.'),
         browser: z.enum(EXTENSION_BROWSER_IDS).optional().describe('Which connected browser action=open uses when more than one extension is connected. Omit when only one is connected.'),
+        profile: z.string().optional().describe('action=open only: built-in browser profile id or name (host=embedded). Omit to use the agent default profile.'),
       },
     },
     async (args) => {
       const action = args.action ?? 'list'
       if (action === 'list') return runPrimitive('browser_tabs', {})
+      if (action === 'profiles') return runPrimitive('browser_profiles', { description: args.description })
       if (action === 'close') {
         return runPrimitive('browser_close', {
           description: args.description,
@@ -242,6 +245,7 @@ export function registerCompactBrowserTools(
           readiness: args.readiness,
           host: args.host,
           browser: args.browser,
+          profile: args.profile,
         })
       }
       return runPrimitive('browser_navigate', {
@@ -504,6 +508,7 @@ export function registerCompactBrowserTools(
         timeoutMs: z.number().int().optional(),
         filename: z.string().optional(),
         dir: z.string().optional().describe('download only: absolute directory to save into. Defaults to the configured download directory, or the session directory on a remote node.'),
+        profile: z.string().optional().describe('download only: built-in browser profile id or name.'),
         state: z.enum(['all', 'progressing', 'completed', 'failed']).optional(),
         wait: z.boolean().optional().describe('downloads only: block until captures settle.'),
         urls: z.array(z.string()).optional().describe('cookies only.'),

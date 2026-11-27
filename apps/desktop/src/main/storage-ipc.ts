@@ -18,6 +18,7 @@ import { resolveHarnessHomeRoot } from './harness/home'
 import { busyHarnessInstallIds } from './harness/service'
 import log from './logger'
 import { compactDesktopNodeEventLog, readDesktopNodeEventStats } from './node-host/node-host-controller'
+import { readAppSettings } from './app-settings-service'
 import { applyStorageAction } from './storage-actions'
 import { measureStorageInventory, type StorageRoots } from './storage-inventory'
 import { listManagedWorktrees, removeUnusedWorktrees, type WorktreeStorageContext } from './storage-worktrees'
@@ -88,7 +89,15 @@ export async function getDesktopStorageInventory(): Promise<StorageInventory> {
 export async function runDesktopStorageAction(action: unknown, harnessId: unknown): Promise<StorageActionResult> {
   try {
     if (!isStorageApplyAction(action)) throw new Error('unknown storage action')
-    const browser = session.fromPartition('persist:browser')
+    const browserSessions = (() => {
+      try {
+        const profiles = readAppSettings().browserProfiles ?? []
+        if (profiles.length > 0) {
+          return profiles.map((p) => session.fromPartition(p.id === 'default' ? 'persist:browser' : `persist:browser-${p.id}`))
+        }
+      } catch { /* fallback */ }
+      return [session.fromPartition('persist:browser')]
+    })()
     const appSession = session.defaultSession
     return await applyStorageAction(action, {
       roots: storageRoots(),
@@ -98,11 +107,17 @@ export async function runDesktopStorageAction(action: unknown, harnessId: unknow
       onSyncDirCleared: abandonGivenUpDeliveriesUnder,
       reclaimSyncZone: async () => (await sweepSyncZone()).freedBytes,
       compactNodeEvents: (vacuum) => compactDesktopNodeEventLog(vacuum),
-      clearBrowserCache: () => browser.clearCache(),
-      clearBrowserCodeCache: () => browser.clearCodeCaches({}),
-      clearBrowserSiteData: () => browser.clearStorageData({
-        storages: ['cookies', 'filesystem', 'indexdb', 'localstorage', 'shadercache', 'serviceworkers', 'cachestorage'],
-      }),
+      clearBrowserCache: async () => {
+        await Promise.all(browserSessions.map((s) => s.clearCache()))
+      },
+      clearBrowserCodeCache: async () => {
+        await Promise.all(browserSessions.map((s) => s.clearCodeCaches({})))
+      },
+      clearBrowserSiteData: async () => {
+        await Promise.all(browserSessions.map((s) => s.clearStorageData({
+          storages: ['cookies', 'filesystem', 'indexdb', 'localstorage', 'shadercache', 'serviceworkers', 'cachestorage'],
+        })))
+      },
       clearAppCache: () => appSession.clearCache(),
       clearAppCodeCache: () => appSession.clearCodeCaches({}),
     })

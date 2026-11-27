@@ -1,10 +1,9 @@
-import { app, ipcMain, session } from 'electron'
+import { app, ipcMain } from 'electron'
 import { AgentIpcChannels } from '@superone/shared/agent-types'
-
-const BROWSER_PARTITION = 'persist:browser'
+import { ensureBrowserPartition, isBrowserPartition, isBrowserSession } from './browser/browser-profiles'
 
 function isBrowserWebview(wc: Electron.WebContents): boolean {
-  return wc.getType() === 'webview' && wc.session === session.fromPartition(BROWSER_PARTITION)
+  return wc.getType() === 'webview' && isBrowserSession(wc.session)
 }
 
 // Chromium's classic (space-taking) page scrollbar ignores the app theme — a light
@@ -52,6 +51,13 @@ export function registerBrowserPopupRedirect(): void {
   })
 
   app.on('web-contents-created', (_event, contents) => {
+    if (contents.getType() === 'window') {
+      contents.on('will-attach-webview', (_attachEvent, _webPreferences, params) => {
+        if (typeof params.partition === 'string' && isBrowserPartition(params.partition)) {
+          ensureBrowserPartition(params.partition)
+        }
+      })
+    }
     if (!isBrowserWebview(contents)) return
 
     // Inserted sheets die with their document, so re-check and re-apply per navigation.

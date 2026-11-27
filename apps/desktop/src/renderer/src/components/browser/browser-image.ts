@@ -14,14 +14,14 @@ function imageNameFromUrl(url: string, mimeType: string): string {
   return `image.${ext}`
 }
 
-async function fetchImage(url: string): Promise<{ base64: string; mimeType: string } | null> {
-  const res = await window.app.fetchBrowserImage(url)
+async function fetchImage(url: string, partition?: string): Promise<{ base64: string; mimeType: string } | null> {
+  const res = await (window.app.fetchBrowserImage as (u: string, p?: string) => Promise<{ ok: boolean; base64: string; mimeType: string }>)(url, partition)
   if (!res.ok || !res.mimeType.startsWith('image/')) return null
   return { base64: res.base64, mimeType: res.mimeType }
 }
 
-export async function addBrowserImageToChat(url: string, target?: SessionWriteTarget): Promise<boolean> {
-  const img = await fetchImage(url)
+export async function addBrowserImageToChat(url: string, target?: SessionWriteTarget, partition?: string): Promise<boolean> {
+  const img = await fetchImage(url, partition)
   if (!img) return false
   const image = await buildChatImageFromBase64(img.base64, img.mimeType, imageNameFromUrl(url, img.mimeType), target)
   if (!image) return false
@@ -31,8 +31,9 @@ export async function addBrowserImageToChat(url: string, target?: SessionWriteTa
 
 export async function saveBrowserImage(
   url: string,
+  partition?: string,
 ): Promise<{ ok: boolean; canceled?: boolean; savedPath?: string; error?: string }> {
-  const img = await fetchImage(url)
+  const img = await fetchImage(url, partition)
   if (!img) return { ok: false, error: 'fetch-failed' }
   const defaultDir = useAppStore.getState().currentFolder ?? undefined
   return window.app.saveBrowserImage(img.base64, img.mimeType, imageNameFromUrl(url, img.mimeType), defaultDir)

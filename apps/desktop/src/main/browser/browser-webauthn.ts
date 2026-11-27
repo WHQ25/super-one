@@ -1,8 +1,7 @@
-import { app, BrowserWindow, dialog, session, webContents } from 'electron'
+import { app, BrowserWindow, dialog, webContents } from 'electron'
 import log from '../logger'
 import { macKeychainAccessGroup } from '../variant'
-
-const BROWSER_PARTITION = 'persist:browser'
+import { registerBrowserSessionHook } from './browser-profiles'
 
 // Chromium only services WebAuthn platform-authenticator requests once the
 // Touch ID / Secure Enclave authenticator is configured. Credentials land in
@@ -44,25 +43,27 @@ export function registerBrowserWebAuthn(): void {
   // relying party and no listener, `navigator.credentials.get()` fails with
   // NotAllowedError. A native message box is the first-cut picker; `finally`
   // guarantees the callback fires, since an unanswered request pends forever.
-  session.fromPartition(BROWSER_PARTITION).on('select-webauthn-account', async (_event, details, callback) => {
-    let credentialId: string | undefined
-    try {
-      const labels = details.accounts.map(accountLabel)
-      const options: Electron.MessageBoxOptions = {
-        type: 'question',
-        title: 'Choose a passkey',
-        message: `Which account do you want to use for ${details.relyingPartyId}?`,
-        buttons: [...labels, 'Cancel'],
-        defaultId: 0,
-        cancelId: labels.length,
+  registerBrowserSessionHook((ses) => {
+    ses.on('select-webauthn-account', async (_event, details, callback) => {
+      let credentialId: string | undefined
+      try {
+        const labels = details.accounts.map(accountLabel)
+        const options: Electron.MessageBoxOptions = {
+          type: 'question',
+          title: 'Choose a passkey',
+          message: `Which account do you want to use for ${details.relyingPartyId}?`,
+          buttons: [...labels, 'Cancel'],
+          defaultId: 0,
+          cancelId: labels.length,
+        }
+        const win = ownerWindow(details.frame)
+        const { response } = win ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options)
+        credentialId = details.accounts[response]?.credentialId
+      } catch (err) {
+        log.error('[browser-webauthn] account picker failed: %s', err instanceof Error ? err.message : String(err))
+      } finally {
+        callback(credentialId)
       }
-      const win = ownerWindow(details.frame)
-      const { response } = win ? await dialog.showMessageBox(win, options) : await dialog.showMessageBox(options)
-      credentialId = details.accounts[response]?.credentialId
-    } catch (err) {
-      log.error('[browser-webauthn] account picker failed: %s', err instanceof Error ? err.message : String(err))
-    } finally {
-      callback(credentialId)
-    }
+    })
   })
 }

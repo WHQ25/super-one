@@ -6,6 +6,7 @@ import type {
   AppSettingsPatch,
   BrowserBookmark,
   BrowserBookmarkGroup,
+  BrowserProfile,
   CodexPermissionPreset,
   ComputerUseAlwaysAllowApp,
   DeviceControlGrant,
@@ -21,6 +22,9 @@ import type {
   WebmcpTrustedOrigin,
   DshSubagentModelSelection,
   SchedulingProvider,
+} from '@superone/shared/agent-types'
+import {
+  DEFAULT_BROWSER_PROFILE_ID,
 } from '@superone/shared/agent-types'
 import { DEFAULT_NOTIFICATION_SETTINGS, NOTIFICATION_KINDS, normalizeNotificationSettings } from '@superone/shared/notifications'
 import { DEFAULT_SESSION_CONTINUATION_HINT, readSessionContinuationHint } from '@superone/shared/session-continuation'
@@ -104,6 +108,12 @@ function readNodePort(value: unknown): number | null {
   return typeof value === 'number' && Number.isInteger(value) && value >= 1024 && value <= 65535 ? value : null
 }
 
+const DEFAULT_BROWSER_PROFILE: BrowserProfile = {
+  id: DEFAULT_BROWSER_PROFILE_ID,
+  name: 'Default',
+  shareWithAgent: true,
+}
+
 const defaults: AppSettings = {
   analyticsEnabled: true,
   notifications: DEFAULT_NOTIFICATION_SETTINGS,
@@ -146,6 +156,10 @@ const defaults: AppSettings = {
   jevFastLoopEnabled: false,
   schedulingProvider: 'native',
   browserDownloadDir: null,
+  browserMultiProfileEnabled: false,
+  browserProfiles: [DEFAULT_BROWSER_PROFILE],
+  browserUserDefaultProfileId: DEFAULT_BROWSER_PROFILE_ID,
+  browserAgentDefaultProfileId: DEFAULT_BROWSER_PROFILE_ID,
   chromeBridgeDisabledBrowsers: [],
   computerUseEnabled: false,
   computerUsePictureInPicture: true,
@@ -519,6 +533,74 @@ function readBookmarkGroups(value: unknown): BrowserBookmarkGroup[] {
   return out
 }
 
+const BROWSER_PROFILE_ID_RE = /^[a-zA-Z0-9_-]{1,64}$/
+
+function readBrowserProfiles(value: unknown): BrowserProfile[] {
+  const rawList = Array.isArray(value) ? value : []
+  const rawDefault = rawList.find(
+    (item): item is Record<string, unknown> =>
+      Boolean(item && typeof item === 'object' && (item as Record<string, unknown>).id === DEFAULT_BROWSER_PROFILE_ID),
+  )
+  const defaultName = typeof rawDefault?.name === 'string' && rawDefault.name.trim()
+    ? rawDefault.name.trim()
+    : DEFAULT_BROWSER_PROFILE.name
+  const defaultProfile: BrowserProfile = {
+    id: DEFAULT_BROWSER_PROFILE_ID,
+    name: defaultName,
+    shareWithAgent: typeof rawDefault?.shareWithAgent === 'boolean'
+      ? rawDefault.shareWithAgent
+      : DEFAULT_BROWSER_PROFILE.shareWithAgent,
+  }
+  const out: BrowserProfile[] = [defaultProfile]
+  const seenIds = new Set<string>([DEFAULT_BROWSER_PROFILE_ID])
+  const seenNames = new Set<string>([defaultName.toLowerCase()])
+  for (const item of rawList) {
+    if (!item || typeof item !== 'object') continue
+    const p = item as Record<string, unknown>
+    if (typeof p.id !== 'string' || typeof p.name !== 'string') continue
+    const id = p.id.trim()
+    const name = p.name.trim()
+    if (!id || !BROWSER_PROFILE_ID_RE.test(id) || !name || seenIds.has(id)) continue
+    const lower = name.toLowerCase()
+    if (seenNames.has(lower)) continue
+    seenIds.add(id)
+    seenNames.add(lower)
+    out.push({
+      id,
+      name,
+      shareWithAgent: typeof p.shareWithAgent === 'boolean' ? p.shareWithAgent : false,
+    })
+  }
+  return out
+}
+
+function normalizeBrowserProfileDefaults(
+  profiles: BrowserProfile[],
+  userDefaultRaw: unknown,
+  agentDefaultRaw: unknown,
+): {
+  browserProfiles: BrowserProfile[]
+  browserUserDefaultProfileId: string
+  browserAgentDefaultProfileId: string | null
+} {
+  const ids = new Set(profiles.map((p) => p.id))
+  const browserUserDefaultProfileId =
+    typeof userDefaultRaw === 'string' && ids.has(userDefaultRaw)
+      ? userDefaultRaw
+      : DEFAULT_BROWSER_PROFILE_ID
+  const shared = profiles.filter((p) => p.shareWithAgent)
+  const sharedIds = new Set(shared.map((p) => p.id))
+  const browserAgentDefaultProfileId =
+    typeof agentDefaultRaw === 'string' && sharedIds.has(agentDefaultRaw)
+      ? agentDefaultRaw
+      : (shared[0]?.id ?? null)
+  return {
+    browserProfiles: profiles,
+    browserUserDefaultProfileId,
+    browserAgentDefaultProfileId,
+  }
+}
+
 function isCodexReasoningEffort(value: unknown): value is CodexPref['defaultReasoningEffort'] {
   return value === '' || value === 'minimal' || value === 'low' || value === 'medium' || value === 'high' || value === 'xhigh' || value === 'max' || value === 'ultra'
 }
@@ -754,6 +836,14 @@ export function readAppSettings(): AppSettings {
       jevFastLoopEnabled: typeof data.jevFastLoopEnabled === 'boolean' ? data.jevFastLoopEnabled : defaults.jevFastLoopEnabled,
       schedulingProvider: readSchedulingProvider(data.schedulingProvider),
       browserDownloadDir: readBrowserDownloadDir(data.browserDownloadDir),
+      browserMultiProfileEnabled: typeof data.browserMultiProfileEnabled === 'boolean'
+        ? data.browserMultiProfileEnabled
+        : defaults.browserMultiProfileEnabled,
+      ...normalizeBrowserProfileDefaults(
+        readBrowserProfiles(data.browserProfiles),
+        data.browserUserDefaultProfileId,
+        data.browserAgentDefaultProfileId,
+      ),
       chromeBridgeDisabledBrowsers: readEnabledExperimentalAgents(data.chromeBridgeDisabledBrowsers),
       computerUseEnabled: typeof data.computerUseEnabled === 'boolean' ? data.computerUseEnabled : defaults.computerUseEnabled,
       computerUsePictureInPicture: typeof data.computerUsePictureInPicture === 'boolean'
@@ -850,6 +940,10 @@ export function readAppSettings(): AppSettings {
       jevFastLoopEnabled: defaults.jevFastLoopEnabled,
       schedulingProvider: defaults.schedulingProvider,
       browserDownloadDir: defaults.browserDownloadDir,
+      browserMultiProfileEnabled: defaults.browserMultiProfileEnabled,
+      browserProfiles: defaults.browserProfiles,
+      browserUserDefaultProfileId: defaults.browserUserDefaultProfileId,
+      browserAgentDefaultProfileId: defaults.browserAgentDefaultProfileId,
       chromeBridgeDisabledBrowsers: defaults.chromeBridgeDisabledBrowsers,
       computerUseEnabled: defaults.computerUseEnabled,
       computerUsePictureInPicture: defaults.computerUsePictureInPicture,
@@ -999,6 +1093,14 @@ export function saveAppSettings(patch: AppSettingsPatch): AppSettings {
     browserDownloadDir: patch.browserDownloadDir === undefined
       ? current.browserDownloadDir
       : readBrowserDownloadDir(patch.browserDownloadDir),
+    browserMultiProfileEnabled: patch.browserMultiProfileEnabled === undefined
+      ? current.browserMultiProfileEnabled
+      : patch.browserMultiProfileEnabled,
+    ...normalizeBrowserProfileDefaults(
+      patch.browserProfiles === undefined ? current.browserProfiles : readBrowserProfiles(patch.browserProfiles),
+      patch.browserUserDefaultProfileId === undefined ? current.browserUserDefaultProfileId : patch.browserUserDefaultProfileId,
+      patch.browserAgentDefaultProfileId === undefined ? current.browserAgentDefaultProfileId : patch.browserAgentDefaultProfileId,
+    ),
     chromeBridgeDisabledBrowsers: patch.chromeBridgeDisabledBrowsers === undefined
       ? current.chromeBridgeDisabledBrowsers
       : readEnabledExperimentalAgents(patch.chromeBridgeDisabledBrowsers),

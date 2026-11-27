@@ -214,6 +214,9 @@ export function startUrlDownloadTask(
   url: string,
   filename?: string,
   dir?: string,
+  partition?: string,
+  skipChrome?: boolean,
+  resolvePartition?: () => string,
 ): DownloadTaskSnapshot {
   // Read while the tool call's scope is still open: the download itself
   // finishes later, outside it.
@@ -234,7 +237,7 @@ export function startUrlDownloadTask(
       url,
     })
   }
-  void downloadUrl(url, { filename, dir, sessionId, onProgress })
+  void downloadUrl(url, { filename, dir, sessionId, partition, resolvePartition, skipChrome, onProgress })
     .then((result) => settle(task, { ok: true, result }))
     .catch((err) => settle(task, { ok: false, error: err instanceof Error ? err.message : String(err) }))
   return snapshotOf(task)

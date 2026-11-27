@@ -15,6 +15,46 @@ Every alpha release keeps its own notes on its GitHub Release.
 
 ### Added
 
+- Swarm: Swarm Board activity panel with worker lifecycle, overview filtering, member detail view, and graph hive.
+- Harness: Antigravity multi-account support, external CLI minimum version gating (`agy`, `grok`, `opencode`), update checks, and inline terminal upgrade composer.
+- Antigravity: `run_workflow` UI tracking and `update_steps` todo UI with failed and skipped states.
+- Memory: project-scoped browser, computer, and device interaction memories with entry-tool topic summaries.
+- Desktop: browser downloads popover and enlarged toolbar icons.
+
+### Fixed
+
+- ACP / Antigravity: apply default model and effort to new Antigravity sessions, and disable the private quota API and `/usage` command.
+- Codex: filter `mcpServerStatus/list` to the target server before enforcing payload size limits. (#221)
+- Chat: cache the mention catalog to avoid grey flashes, watch `git HEAD` across local/worktree/remote checkouts, render sent reply comments as comment chips, and isolate `VirtualTranscriptContext` in fullscreen dialogs. (#220)
+
+### Performance
+
+- Settings: remove deleted worktrees from local state without rescanning.
+
+## [0.86.0-alpha] - 2026-11-27
+
+### Added
+
+- Swarm: add Swarm Board activity panel, tool UIs, worker lifecycle, overview filtering, member full view, and graph hive.
+- Harness: add Antigravity multi-account support, external CLI minimum version gating (`agy` >= 1.5.16, `grok` >= 1.0.92, `opencode` >= 2.0.0), update checks, and inline xterm upgrade composer.
+- Antigravity: integrate `run_workflow` UI and tracking, and map `update_steps` to the todo UI with failed and skipped states.
+- Memory: scope browser, computer, and device interaction memories by project and inject entry-tool summaries.
+- Desktop: add browser downloads popover and enlarge toolbar icons.
+
+### Fixed
+
+- ACP / Antigravity: use default model and effort for new Antigravity sessions, and disable the private quota API and `/usage` command.
+- Codex: filter `mcpServerStatus/list` to the target server before enforcing the payload size limit. (#221)
+- Chat: cache the mention catalog with stale-while-revalidate refresh to avoid grey flashes, watch `git HEAD` across local/worktree/remote checkouts, render sent reply comments as comment chips instead of quotes, and isolate `VirtualTranscriptContext` in fullscreen dialogs. (#220)
+
+### Performance
+
+- Settings: remove deleted worktrees from local state without rescanning.
+
+## [0.85.0] - 2026-11-25
+
+### Added
+
 - Activity: Chrome-style tabbar with sticky active tabs, floating tear-off, and float/dock transitions.
 - Desktop: live LSP status pill with shortcut hints and restart control in File Preview and Review, with full `@/*` alias resolution.
 - Session: prefetch GitHub issue/PR details and mentioned session context at the outbound model boundary, and support mention-based session forking for harnesses without native fork.
@@ -37,37 +77,6 @@ Every alpha release keeps its own notes on its GitHub Release.
 ### Performance
 
 - Chat & Preview: parse large markdown documents off-thread with progressive hydration, linear block splitting, and virtualized rendering.
-
-## [0.85.0-alpha] - 2026-11-25
-
-### Added
-
-- Activity: polish the Chrome-style tabbar with sticky active tabs, floating tear-off, and smoother float/dock transitions.
-- Desktop: show a live LSP status pill with shortcut hints and restart control in File Preview and Review, and resolve desktop `@/*` aliases via per-target `tsconfig`s.
-- Session: prefetch bounded GitHub issue/PR details and mentioned session context at the outbound model boundary on desktop and remote nodes.
-- Session: support mention-based session forking with transcript cutoff for harnesses without native fork.
-- Collab: allow `session_collab_request` in `attach` mode to reuse an already checked-out worktree and display worktree paths consistently.
-- MCP: add `newerThan` and `olderThan` date filters to `session_search`.
-- DeepSeek (`dsh`): add isolated client UI plugin runtime (`@superone/ui-slots`, `@superone/plugin-sdk`, slot scoping, and plugin dock panels).
-
-### Changed
-
-- Review: switch auto diff layout to split view at 80 columns per side.
-
-### Fixed
-
-- Desktop: stabilize docked chat width during sidebar toggles and keep browser, mini-app, and device overlays aligned with panel bounds.
-- Desktop: unify the shell-level layout toggle overlay and align 36px panel headers with macOS traffic lights and light-mode sidebar contrast.
-- Desktop: preserve local harness order when switching harnesses on remote nodes.
-- Desktop: collapse composer mode chips to icons when the toolbar overflows.
-- Review: keep the diff line-number gutter opaque while scrolling horizontally.
-- Chat: hide redundant question-prefix headers on single-question cards and render collaboration request summaries as non-clickable scrollable text.
-- ACP: send SuperOne `clientInfo` and forward `additionalDirectories` on Antigravity session resume.
-- Usage: refresh stale Claude plan tiers from `/api/oauth/profile` on first read, manual refresh, and every 24 hours. (#219)
-
-### Performance
-
-- Chat & Preview: speed up large markdown files and chat previews with off-thread worker parsing, progressive chunk hydration, linear block splitting, and virtualized rendering.
 
 ## [0.84.1] - 2026-11-23
 

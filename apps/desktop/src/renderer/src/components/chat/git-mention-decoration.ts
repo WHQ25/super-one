@@ -11,6 +11,7 @@ import type { GitMentionPortal } from '@superone/shared/git-mention-query'
 import { ALL_GIT_MENTION_PORTALS } from '@superone/shared/git-mention-query'
 import {
   GIT_MENTION_KEYWORD,
+  gitMentionKeywordOfQuery,
   gitMentionPortalOfQuery,
   remainingGitArgumentHint,
 } from './git-mention-query'
@@ -31,7 +32,7 @@ declare module '@tiptap/core' {
 export const GitMentionDecoration = createMentionArgumentHintExtension<readonly GitMentionPortal[]>({
   name: 'gitMentionDecoration',
   keyword: GIT_MENTION_KEYWORD,
-  keywordOf: (afterAt, portals) => gitMentionPortalOfQuery(afterAt, portals ?? ALL_GIT_MENTION_PORTALS),
+  keywordOf: (afterAt, portals) => gitMentionKeywordOfQuery(afterAt, portals ?? ALL_GIT_MENTION_PORTALS),
   isQuery: (afterAt, portals) => gitMentionPortalOfQuery(afterAt, portals ?? ALL_GIT_MENTION_PORTALS) !== null,
   remainingHint: (afterAt, portals) => remainingGitArgumentHint(afterAt, portals ?? ALL_GIT_MENTION_PORTALS),
 })

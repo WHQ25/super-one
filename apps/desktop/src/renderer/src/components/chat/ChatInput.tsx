@@ -33,7 +33,9 @@ import { EnvironmentMentionDecoration } from './environment-mention-decoration'
 import { SessionMentionDecoration, syncPortalMentionDismissed } from './session-mention-decoration'
 import { GitMentionDecoration } from './git-mention-decoration'
 import { useMentionContext } from './use-mention-context'
-import { useEnabledGitMentionPortals } from './use-git-mention-capabilities'
+import { enabledGitMentionPortals } from '@superone/shared/git-mention-query'
+import { useGitMentionCapabilities } from './use-git-mention-capabilities'
+import { buildGitHubLinkPasteContent, resolvePastedGitHubChipTitles } from './github-link-paste'
 import { useMcpAppFileRoute } from '@/components/mcp-apps/file-apps'
 import { PromptKeywordDecoration, syncPromptKeywords } from './prompt-keyword-decoration'
 import { WebLinkDecoration } from './web-link-decoration'
@@ -148,10 +150,15 @@ export function ChatInput({
       [recentFolders, mentionProject],
     )
     // Which of `@git` / `@gh` this root can serve; a portal that is off types as plain text.
-    const gitPortals = useEnabledGitMentionPortals(fileRoot)
+    const { caps: gitCaps } = useGitMentionCapabilities(fileRoot)
+    const gitPortals = useMemo(() => enabledGitMentionPortals(gitCaps), [gitCaps])
     // Read from the editor's update handler, which is created once.
     const mentionProjectRef = useRef(mentionProject)
     mentionProjectRef.current = mentionProject
+    const fileRootRef = useRef(fileRoot)
+    fileRootRef.current = fileRoot
+    const gitCapsRef = useRef(gitCaps)
+    gitCapsRef.current = gitCaps
     const gitPortalsRef = useRef(gitPortals)
     // Names such as "Mac mini" need their space. Load before the first `@`.
     useEffect(() => { void loadEnvironmentMentionCandidates(mentionProject) }, [mentionProject])
@@ -1896,6 +1903,16 @@ export function ChatInput({
             event.preventDefault()
             editorRef.current?.chain().focus().insertContent({ type: 'pasteChip', attrs: { text: plainText } }).run()
             return true
+          }
+          if (plainText) {
+            const ghPaste = buildGitHubLinkPasteContent(plainText, gitCapsRef.current?.githubRepo)
+            if (ghPaste) {
+              for (const mention of ghPaste.mentions) addMentionRef.current(mention)
+              event.preventDefault()
+              editorRef.current?.chain().focus().insertContent(ghPaste.content).run()
+              resolvePastedGitHubChipTitles(ghPaste.items, fileRootRef.current, () => editorRef.current)
+              return true
+            }
           }
           return false
         },

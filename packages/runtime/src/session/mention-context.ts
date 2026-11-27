@@ -1,5 +1,5 @@
 import type { ChatMessage } from '@superone/shared/agent-types'
-import { parseGitMentionValue } from '@superone/shared/git-mention-query'
+import { parseGitMentionValue, parseGitHubIssueOrPrUrl } from '@superone/shared/git-mention-query'
 import { GIT_HOST_TAG_REGEX, gitTagValue } from '@superone/shared/git-mention-tags'
 import { SESSION_TAG_REGEX, wrapSessionMention } from '@superone/shared/miniapp-prompt-tags'
 import { formatTextBlocks, pageTextBlocks, sliceMessagesUpTo } from '@superone/shared/session-transcript-view'
@@ -408,7 +408,8 @@ async function resolveGitHubItem(
 ): Promise<string | null> {
   try {
     const fields = target.kind === 'pr' ? GH_PR_JSON_FIELDS : GH_ISSUE_JSON_FIELDS
-    const raw = await gh([target.kind, 'view', target.id, '--json', fields])
+    const viewTarget = parseGitHubIssueOrPrUrl(target.id)?.canonicalUrl ?? target.id
+    const raw = await gh([target.kind, 'view', viewTarget, '--json', fields])
     return target.kind === 'pr' ? formatGhPr(target, raw) : formatGhIssue(target, raw)
   } catch {
     return null

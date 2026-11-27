@@ -28,11 +28,13 @@ import type { GitMentionAvailability } from './use-git-mention'
 import { STACKED_BODY_CLASS, STACKED_DETAIL_CLASS, STACKED_ICON_CLASS, STACKED_ROW_CLASS, mentionRowClass } from './mention-row-layout'
 import type { BuiltinMentionMatchRank } from './mention-capability-match'
 
+export type GitPortalEntryId = GitMentionPortal | 'issue' | 'pr'
+
 export type GitFlatItem =
   | {
-      /** Built-in "Git" / "GitHub" portal — Tab/Enter navigates into `@git ` / `@gh `. */
+      /** Built-in "Git" / "GitHub" / "Issue" / "PR" portal — Tab/Enter navigates into it. */
       kind: 'git-portal'
-      id: GitMentionPortal
+      id: GitPortalEntryId
       displayName: string
       matchIndices: number[]
       keywordMatchIndices: number[]
@@ -107,15 +109,18 @@ const STATE_KEY: Record<NonNullable<GitMentionRef['state']>, string> = {
   merged: 'chat.mentionPopup.gitStateMerged',
   draft: 'chat.mentionPopup.gitStateDraft',
 }
-const PORTAL_LABEL_KEY: Record<GitMentionPortal, string> = {
+const PORTAL_LABEL_KEY: Record<GitPortalEntryId, string> = {
   git: 'chat.mentionPopup.capabilityGit',
   gh: 'chat.mentionPopup.capabilityGh',
+  issue: 'chat.mentionPopup.gitKindIssue',
+  pr: 'chat.mentionPopup.gitKindPr',
 }
 /** The kind an empty portal query is about, for copy that needs one. */
 
-/** The mark for a portal as a whole: the branch glyph for `@git`, GitHub's own for `@gh`. */
-function portalIcon(portal: GitMentionPortal, className: string) {
+/** The mark for a portal as a whole: branch for `@git`, GitHub for `@gh`, issue/PR for `@issue`/`@pr`. */
+function portalIcon(portal: GitPortalEntryId, className: string) {
   if (portal === 'git') return gitRefIcon('branch', className)
+  if (portal === 'issue' || portal === 'pr') return gitRefIcon(portal, className)
   const icon = staticMentionIcon('github') as ReactElement<{ className?: string }>
   return cloneElement(icon, { className })
 }
@@ -143,7 +148,7 @@ export function gitMentionGroupLabelKey(groupKey: string): string | null {
   return GROUP_LABEL_KEY[groupKey] ?? null
 }
 
-export function gitPortalLabelKey(portal: GitMentionPortal): string {
+export function gitPortalLabelKey(portal: GitPortalEntryId): string {
   return PORTAL_LABEL_KEY[portal]
 }
 

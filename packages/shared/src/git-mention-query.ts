@@ -27,6 +27,7 @@
  */
 
 import { fuzzyMatch } from './fuzzy-match'
+import { findWebLinks } from './web-links'
 
 export const GIT_MENTION_REF_KINDS = ['branch', 'commit', 'worktree', 'tag', 'issue', 'pr'] as const
 export type GitMentionRefKind = (typeof GIT_MENTION_REF_KINDS)[number]
@@ -75,6 +76,7 @@ export function isGitHubRefKind(kind: GitMentionRefKind): kind is GitHubRefKind 
 export interface GitMentionCapabilities {
   repo: 'ready' | 'not-repo' | 'unsupported'
   github: boolean
+  githubRepo?: string
 }
 
 export const GIT_MENTION_CAPABILITIES_UNKNOWN: GitMentionCapabilities = { repo: 'unsupported', github: false }
@@ -83,7 +85,8 @@ export function parseGitMentionCapabilities(raw: unknown): GitMentionCapabilitie
   const v = raw as Partial<GitMentionCapabilities> | null | undefined
   if (!v || typeof v !== 'object') return null
   if (v.repo !== 'ready' && v.repo !== 'not-repo' && v.repo !== 'unsupported') return null
-  return { repo: v.repo, github: v.github === true }
+  const githubRepo = typeof v.githubRepo === 'string' && v.githubRepo.trim() ? v.githubRepo.trim() : undefined
+  return { repo: v.repo, github: v.github === true, ...(githubRepo ? { githubRepo } : {}) }
 }
 
 /** Rows per kind the host returns; a query narrows within the same cap. */
@@ -160,6 +163,20 @@ export function enabledGitMentionPortals(caps: GitMentionCapabilities | null | u
   return caps.github ? ALL_GIT_MENTION_PORTALS : ['git']
 }
 
+export function gitMentionKeywordOfQuery(
+  query: string,
+  portals: readonly GitMentionPortal[] = ALL_GIT_MENTION_PORTALS,
+): string | null {
+  for (const portal of portals) {
+    if (new RegExp(`^${portal}(?:\\s|$)`, 'i').test(query)) return portal
+  }
+  if (portals.includes('gh')) {
+    const aliasMatch = /^(issue|pr)(?:\s|$)/i.exec(query)
+    if (aliasMatch) return aliasMatch[1]!.toLowerCase()
+  }
+  return null
+}
+
 /** The portal keyword a query opens with, if any. `@ git` is prose, not a mention. */
 export function gitMentionPortalOfQuery(
   query: string,
@@ -168,6 +185,7 @@ export function gitMentionPortalOfQuery(
   for (const portal of portals) {
     if (new RegExp(`^${portal}(?:\\s|$)`, 'i').test(query)) return portal
   }
+  if (portals.includes('gh') && /^(?:issue|pr)(?:\s|$)/i.test(query)) return 'gh'
   return null
 }
 
@@ -200,8 +218,22 @@ export function remainingGitArgumentHint(
 
 export function parseGitMentionQuery(
   query: string,
-  portals?: readonly GitMentionPortal[],
+  portals: readonly GitMentionPortal[] = ALL_GIT_MENTION_PORTALS,
 ): ParsedGitMentionQuery | null {
+  const aliasMatch = /^(issue|pr)(?:\s|$)/i.exec(query)
+  if (aliasMatch && portals.includes('gh')) {
+    const refKind = aliasMatch[1]!.toLowerCase() as GitHubRefKind
+    const afterAlias = query.slice(aliasMatch[1]!.length).trimStart()
+    return {
+      portal: 'gh',
+      phase: afterAlias ? 'search' : 'need-query',
+      refKind,
+      kindToken: refKind,
+      refQuery: afterAlias.trim(),
+      kindNavPrefix: `${refKind} `,
+    }
+  }
+
   const portal = gitMentionPortalOfQuery(query, portals)
   if (!portal) return null
 
@@ -397,4 +429,81 @@ export function gitMentionDisplayName(ref: Pick<GitMentionRef, 'kind' | 'id' | '
   if (ref.kind === 'commit') return ref.detail.trim() || shortSha(ref.id)
   if (isGitHubRefKind(ref.kind)) return ref.detail.trim() ? `#${ref.id} ${ref.detail.trim()}` : `#${ref.id}`
   return ref.label
+}
+
+export interface ParsedGitHubItemUrl {
+  kind: GitHubRefKind
+  owner: string
+  repo: string
+  ownerRepo: string
+  number: string
+  url: string
+  canonicalUrl: string
+}
+
+const GITHUB_ITEM_PATH_RE = /^\/([A-Za-z0-9_.-]+)\/([A-Za-z0-9_.-]+)\/(issues|pull)\/(\d+)\/?$/
+
+export function parseGitHubIssueOrPrUrl(rawUrl: string): ParsedGitHubItemUrl | null {
+  let parsed: URL
+  try {
+    parsed = new URL(rawUrl)
+  } catch {
+    return null
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return null
+  const host = parsed.hostname.toLowerCase()
+  if (host !== 'github.com' && host !== 'www.github.com') return null
+  const match = GITHUB_ITEM_PATH_RE.exec(parsed.pathname)
+  if (!match) return null
+  const [, owner, repo, segment, number] = match
+  const kind: GitHubRefKind = segment === 'pull' ? 'pr' : 'issue'
+  const ownerRepo = `${owner}/${repo}`
+  return {
+    kind,
+    owner,
+    repo,
+    ownerRepo,
+    number,
+    url: rawUrl,
+    canonicalUrl: `https://github.com/${ownerRepo}/${segment}/${number}`,
+  }
+}
+
+export function findGitHubIssueOrPrUrls(text: string): Array<ParsedGitHubItemUrl & { start: number; end: number }> {
+  const results: Array<ParsedGitHubItemUrl & { start: number; end: number }> = []
+  for (const link of findWebLinks(text)) {
+    const parsed = parseGitHubIssueOrPrUrl(link.href)
+    if (parsed) results.push({ ...parsed, start: link.start, end: link.end })
+  }
+  return results
+}
+
+export function gitHubUrlForMentionValue(value: string, githubRepo?: string | null): string | null {
+  const parsed = parseGitMentionValue(value)
+  if (!parsed || !isGitHubRefKind(parsed.kind)) return null
+  if (/^https?:\/\//i.test(parsed.id)) {
+    return parseGitHubIssueOrPrUrl(parsed.id) ? parsed.id : null
+  }
+  if (/^\d+$/.test(parsed.id) && githubRepo?.trim()) {
+    const segment = parsed.kind === 'pr' ? 'pull' : 'issues'
+    return `https://github.com/${githubRepo.trim()}/${segment}/${parsed.id}`
+  }
+  return null
+}
+
+export function gitHubMentionDisplayPrefix(parsed: ParsedGitHubItemUrl, currentGithubRepo?: string | null): string {
+  if (currentGithubRepo && parsed.ownerRepo.toLowerCase() === currentGithubRepo.trim().toLowerCase()) {
+    return `#${parsed.number}`
+  }
+  return `${parsed.ownerRepo}#${parsed.number}`
+}
+
+export function extractGitHubItemTitle(ogTitle: string | null | undefined, kind: GitHubRefKind): string | null {
+  const raw = ogTitle?.trim()
+  if (!raw) return null
+  const suffix = kind === 'pr'
+    ? /(?:\s+by\s+[^·]+)?\s+·\s+Pull Request #\d+\s+·\s+[^/\s]+\/[^/\s]+$/
+    : /\s+·\s+Issue #\d+\s+·\s+[^/\s]+\/[^/\s]+$/
+  if (!suffix.test(raw)) return null
+  return raw.replace(suffix, '').trim() || null
 }

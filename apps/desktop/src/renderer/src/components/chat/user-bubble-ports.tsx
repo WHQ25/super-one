@@ -3,8 +3,12 @@ import { X } from 'lucide-react'
 import type { ImageAttachment } from '@superone/shared/agent-types'
 import type { UserMentionKind } from '@superone/shared/user-mention-parser'
 import {
-  DefaultMentionIcon, UserBubblePortsProvider, type AttachmentViewerProps, type FileMentionProps, type UserBubblePorts,
+  DefaultMentionIcon, UserBubblePortsProvider, type AttachmentViewerProps, type FileMentionProps, type GitMentionProps, type UserBubblePorts,
 } from '@superone/chat-view/presenters/user-bubble-ports'
+import { gitHubUrlForMentionValue } from '@superone/shared/git-mention-query'
+import { openBrowserTab } from '@/components/activity/activity-panel-api'
+import { requestOpenExternalLink } from '@/lib/external-link'
+import { useGitMentionCapabilities } from './use-git-mention-capabilities'
 import { ChipHoverCard } from '@superone/ui/components/ui/ChipHoverCard'
 import { Dialog, DialogClose, DialogContent, DialogTitle } from '@superone/ui/components/ui/dialog'
 import { IconButton } from '@superone/ui/components/ui/icon-button'
@@ -23,7 +27,7 @@ import { McpMentionSentHover } from './McpMentionSent'
 import { useFileMentionActions } from './MentionChip'
 import { PdfPreview } from './PdfPreview'
 import { QuoteCodeBody } from './QuoteCodeBody'
-import { WebLink } from './link-preview/WebLink'
+import { WebLink, WebLinkHoverCard } from './link-preview/WebLink'
 
 function HostMentionAppIcon({ kind, value, label }: { kind: string; value: string; label: string }) {
   const { projectPath } = useMentionContext()
@@ -83,6 +87,29 @@ function FileMentionActions({ value, label, chip }: FileMentionProps) {
 
 function DesktopFileMention(props: FileMentionProps) {
   return props.kind === 'file' ? <FileMentionActions {...props} /> : props.chip({})
+}
+
+function DesktopGitMention({ value, chip }: GitMentionProps) {
+  const { fileRoot } = useMentionContext()
+  const { caps } = useGitMentionCapabilities(fileRoot)
+  const href = gitHubUrlForMentionValue(value, caps?.githubRepo)
+  if (!href) return chip({})
+  return (
+    <WebLinkHoverCard href={href}>
+      {chip({
+        chipProps: {
+          role: 'link',
+          onClick: (e) => {
+            if (hasTextSelection()) return
+            e.preventDefault()
+            const openInApp = window.app.platform === 'darwin' ? e.metaKey : e.ctrlKey
+            if (openInApp) openBrowserTab(href)
+            else requestOpenExternalLink(href)
+          },
+        },
+      })}
+    </WebLinkHoverCard>
+  )
 }
 
 /** Full-size preview dialog for a PDF attachment. */
@@ -147,6 +174,7 @@ const DESKTOP_USER_BUBBLE_PORTS: UserBubblePorts = {
   useMentionKind: useDesktopMentionKind,
   FileMention: DesktopFileMention,
   McpMention: McpMentionSentHover,
+  GitMention: DesktopGitMention,
   ChipCard: ChipHoverCard,
   WebLink,
   copyText: tryCopy,

@@ -18,6 +18,7 @@ export {
   GIT_MENTION_REF_KINDS,
   GIT_MENTION_PORTALS,
   isGitMentionQuery,
+  gitMentionKeywordOfQuery,
   gitMentionPortalOfQuery,
   parseGitMentionQuery,
   listGitRefKindChoices,
@@ -39,9 +40,9 @@ export {
 } from '@superone/shared/git-mention-query'
 
 export function loadGitMentionCapabilities(folderPath: string, refresh = false): Promise<GitMentionCapabilities> {
-  return refresh
-    ? window.app.getGitMentionCapabilities(folderPath, true)
-    : window.app.getGitMentionCapabilities(folderPath)
+  const fn = window.app?.getGitMentionCapabilities
+  if (!fn) return Promise.resolve({ repo: 'unsupported', github: false })
+  return refresh ? fn(folderPath, true) : fn(folderPath)
 }
 
 export function loadGitMentionRefs(

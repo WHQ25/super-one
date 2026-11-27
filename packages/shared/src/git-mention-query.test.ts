@@ -2,6 +2,10 @@ import { describe, expect, it } from 'vitest'
 import {
   enabledGitMentionPortals,
   encodeGitMentionValue,
+  extractGitHubItemTitle,
+  findGitHubIssueOrPrUrls,
+  gitHubMentionDisplayPrefix,
+  gitHubUrlForMentionValue,
   gitMentionSearchKinds,
   gitRefMatchIndices,
   gitRefMatches,
@@ -9,6 +13,8 @@ import {
   isGitMentionQuery,
   listGitRefKindChoices,
   loadGitMentionRefsForKinds,
+  parseGitHubIssueOrPrUrl,
+  parseGitMentionCapabilities,
   parseGitMentionQuery,
   parseGitMentionValue,
   remainingGitArgumentHint,
@@ -31,6 +37,12 @@ describe('isGitMentionQuery', () => {
     expect(isGitMentionQuery('gh')).toBe(true)
     expect(isGitMentionQuery('gh issue 23')).toBe(true)
     expect(isGitMentionQuery('ghost')).toBe(false)
+    expect(isGitMentionQuery('issue')).toBe(true)
+    expect(isGitMentionQuery('issue 23')).toBe(true)
+    expect(isGitMentionQuery('pr')).toBe(true)
+    expect(isGitMentionQuery('pr fix')).toBe(true)
+    expect(isGitMentionQuery('issues')).toBe(false)
+    expect(isGitMentionQuery('prefix')).toBe(false)
   })
 
   it('is plain text for a portal the host cannot serve', () => {
@@ -40,8 +52,11 @@ describe('isGitMentionQuery', () => {
     expect(enabledGitMentionPortals({ repo: 'not-repo', github: false })).toEqual([])
     const gitOnly = enabledGitMentionPortals({ repo: 'ready', github: false })
     expect(isGitMentionQuery('gh issue 23', gitOnly)).toBe(false)
+    expect(isGitMentionQuery('issue 23', gitOnly)).toBe(false)
+    expect(isGitMentionQuery('pr 45', gitOnly)).toBe(false)
     expect(isGitMentionQuery('git branch', gitOnly)).toBe(true)
     expect(parseGitMentionQuery('gh issue 23', gitOnly)).toBeNull()
+    expect(parseGitMentionQuery('issue 23', gitOnly)).toBeNull()
     expect(remainingGitArgumentHint('gh', gitOnly)).toBeNull()
     expect(mentionQueryAllowsSpaces('gh issue 23', { gitPortals: gitOnly })).toBe(false)
     expect(mentionQueryAllowsSpaces('git branch x', { gitPortals: [] })).toBe(false)
@@ -93,6 +108,13 @@ describe('parseGitMentionQuery phases', () => {
       portal: 'gh', phase: 'search', refKind: 'issue', refQuery: '23', kindNavPrefix: 'gh issue ',
     })
     expect(parseGitMentionQuery('gh pr ')).toMatchObject({ portal: 'gh', phase: 'need-query', refKind: 'pr' })
+    expect(parseGitMentionQuery('issue')).toMatchObject({ portal: 'gh', phase: 'need-query', refKind: 'issue', refQuery: '' })
+    expect(parseGitMentionQuery('issue 23')).toMatchObject({ portal: 'gh', phase: 'search', refKind: 'issue', refQuery: '23' })
+    expect(parseGitMentionQuery('pr')).toMatchObject({ portal: 'gh', phase: 'need-query', refKind: 'pr', refQuery: '' })
+    expect(parseGitMentionQuery('pr fix auth')).toMatchObject({ portal: 'gh', phase: 'search', refKind: 'pr', refQuery: 'fix auth' })
+    expect(remainingGitArgumentHint('issue')).toBe('<number | query>')
+    expect(remainingGitArgumentHint('pr ')).toBe('<number | query>')
+    expect(remainingGitArgumentHint('pr 45')).toBeNull()
     // A kind the other portal owns is a query, not a kind to complete.
     expect(parseGitMentionQuery('gh branch main')).toMatchObject({
       portal: 'gh', phase: 'search', refKind: null, refQuery: 'branch main', kindToken: '',
@@ -208,5 +230,70 @@ describe('value encoding', () => {
     expect(gitMentionDisplayName({ kind: 'branch', id: 'main', label: 'main', detail: 'feat: x' })).toBe('main')
     expect(gitMentionDisplayName({ kind: 'pr', id: '45', label: '#45', detail: 'feat: chips' })).toBe('#45 feat: chips')
     expect(gitMentionDisplayName({ kind: 'issue', id: '7', label: '#7', detail: '' })).toBe('#7')
+  })
+
+  it('preserves githubRepo in parseGitMentionCapabilities', () => {
+    expect(parseGitMentionCapabilities({ repo: 'ready', github: true })).toEqual({ repo: 'ready', github: true })
+    expect(parseGitMentionCapabilities({ repo: 'ready', github: true, githubRepo: 'org/repo' })).toEqual({ repo: 'ready', github: true, githubRepo: 'org/repo' })
+  })
+})
+
+describe('GitHub issue/PR URL helpers', () => {
+  it('parses standard issue and PR URLs including comment fragments', () => {
+    expect(parseGitHubIssueOrPrUrl('https://github.com/org/repo/issues/123')).toEqual({
+      kind: 'issue',
+      owner: 'org',
+      repo: 'repo',
+      ownerRepo: 'org/repo',
+      number: '123',
+      url: 'https://github.com/org/repo/issues/123',
+      canonicalUrl: 'https://github.com/org/repo/issues/123',
+    })
+    expect(parseGitHubIssueOrPrUrl('https://github.com/org/repo/pull/45#issuecomment-999')).toEqual({
+      kind: 'pr',
+      owner: 'org',
+      repo: 'repo',
+      ownerRepo: 'org/repo',
+      number: '45',
+      url: 'https://github.com/org/repo/pull/45#issuecomment-999',
+      canonicalUrl: 'https://github.com/org/repo/pull/45',
+    })
+  })
+
+  it('rejects sub-paths, new issue, and non-GitHub URLs', () => {
+    expect(parseGitHubIssueOrPrUrl('https://github.com/org/repo/pull/45/files')).toBeNull()
+    expect(parseGitHubIssueOrPrUrl('https://github.com/org/repo/pull/45/commits')).toBeNull()
+    expect(parseGitHubIssueOrPrUrl('https://github.com/org/repo/issues/new')).toBeNull()
+    expect(parseGitHubIssueOrPrUrl('https://gitlab.com/org/repo/issues/12')).toBeNull()
+  })
+
+  it('finds GitHub issue/PR URLs inside prose', () => {
+    const found = findGitHubIssueOrPrUrls('See https://github.com/a/b/issues/1, and https://github.com/c/d/pull/2.')
+    expect(found.map((f) => [f.kind, f.ownerRepo, f.number, f.url])).toEqual([
+      ['issue', 'a/b', '1', 'https://github.com/a/b/issues/1'],
+      ['pr', 'c/d', '2', 'https://github.com/c/d/pull/2'],
+    ])
+  })
+
+  it('resolves mention URLs for numeric IDs and full URLs', () => {
+    expect(gitHubUrlForMentionValue('issue:github:12', 'org/repo')).toBe('https://github.com/org/repo/issues/12')
+    expect(gitHubUrlForMentionValue('pr:github:34', 'org/repo')).toBe('https://github.com/org/repo/pull/34')
+    expect(gitHubUrlForMentionValue('issue:github:12', null)).toBeNull()
+    expect(gitHubUrlForMentionValue('pr:github:https://github.com/other/repo/pull/9', null)).toBe('https://github.com/other/repo/pull/9')
+    expect(gitHubUrlForMentionValue('branch:main', 'org/repo')).toBeNull()
+  })
+
+  it('formats display prefixes for same-repo vs cross-repo URLs', () => {
+    const parsed = parseGitHubIssueOrPrUrl('https://github.com/Org/Repo/issues/7')!
+    expect(gitHubMentionDisplayPrefix(parsed, 'org/repo')).toBe('#7')
+    expect(gitHubMentionDisplayPrefix(parsed, 'other/repo')).toBe('Org/Repo#7')
+    expect(gitHubMentionDisplayPrefix(parsed, null)).toBe('Org/Repo#7')
+  })
+
+  it('extracts issue and PR titles from GitHub og:title', () => {
+    expect(extractGitHubItemTitle('Crash on startup · Issue #123 · org/repo', 'issue')).toBe('Crash on startup')
+    expect(extractGitHubItemTitle('Fix bug by alice · Pull Request #45 · org/repo', 'pr')).toBe('Fix bug')
+    expect(extractGitHubItemTitle('Fix bug · Pull Request #45 · org/repo', 'pr')).toBe('Fix bug')
+    expect(extractGitHubItemTitle('GitHub - org/repo', 'issue')).toBeNull()
   })
 })

@@ -72,7 +72,7 @@ export async function resolveGitMentionRefs(
  * recheck drops it. `git init` invalidates that cache and the repo half is
  * read again.
  */
-const githubProbeByFolder = new Map<string, Promise<boolean>>()
+const githubProbeByFolder = new Map<string, Promise<{ github: boolean; githubRepo?: string }>>()
 
 /** Forget a remembered `gh repo view`. Omit the folder to drop every one (tests). */
 export function clearGitHubMentionProbe(folderPath?: string): void {
@@ -117,12 +117,15 @@ async function probeLocalGitMentionCapabilities(folderPath: string): Promise<Git
     if (repo !== 'ready') return { repo, github: false }
     let github = githubProbeByFolder.get(folderPath)
     if (!github) {
-      github = probeGitMentionCapabilities(runners).then((caps) => caps.github)
+      github = probeGitMentionCapabilities(runners).then((caps) => ({
+        github: caps.github,
+        ...(caps.githubRepo ? { githubRepo: caps.githubRepo } : {}),
+      }))
       githubProbeByFolder.set(folderPath, github)
       // A probe that threw (not a gh "no") must not be remembered as "no".
       github.catch(() => githubProbeByFolder.delete(folderPath))
     }
-    return { repo, github: await github }
+    return { repo, ...(await github) }
   } catch {
     return GIT_MENTION_CAPABILITIES_UNKNOWN
   }

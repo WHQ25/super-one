@@ -3,9 +3,12 @@ import { EditorContent, useEditor } from '@tiptap/react'
 import StarterKit from '@tiptap/starter-kit'
 import { expect, fn as mockFn, screen, userEvent, waitFor, within } from 'storybook/test'
 import type { LinkPreview } from '@superone/shared/web-links'
+import { encodeGitMentionValue } from '@superone/shared/git-mention-query'
+import { wrapGitMention } from '@superone/shared/git-mention-tags'
 import { UserTextPresenter } from '@superone/chat-view/presenters/UserText'
 import { mockIpc } from '../../../../../../.storybook/mock-ipc'
 import { DesktopUserBubblePorts } from '../user-bubble-ports'
+import { MentionNode } from '../mention-node'
 import { WebLinkDecoration } from '../web-link-decoration'
 import { ComposerLinkPreview } from './ComposerLinkPreview'
 import { WebLink } from './WebLink'
@@ -13,6 +16,8 @@ import { WebLink } from './WebLink'
 const CARD_IMAGE = 'data:image/svg+xml,' + encodeURIComponent('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630"><defs><linearGradient id="g" x2="1" y2="1"><stop offset="0" stop-color="#60a5fa"/><stop offset="1" stop-color="#a78bfa"/></linearGradient></defs><rect width="1200" height="630" fill="url(#g)"/></svg>')
 const PREVIEWS: Record<string, LinkPreview | null> = {
   'https://github.com/openai/codex/releases': { title: 'Releases · openai/codex', description: 'Lightweight coding agent that runs in your terminal.', siteName: 'GitHub', image: CARD_IMAGE },
+  'https://github.com/WHQ25/super-one/issues/123': { title: 'Hover preview for issue chips · Issue #123 · WHQ25/super-one', description: 'Issue chips show link preview cards on hover.', siteName: 'GitHub', image: CARD_IMAGE },
+  'https://github.com/WHQ25/super-one/pull/456': { title: 'Unify GitHub link and chip UX by alice · Pull Request #456 · WHQ25/super-one', description: 'Convert pasted links to chips and hover to preview.', siteName: 'GitHub', image: CARD_IMAGE },
   'https://example.com/plain': null,
 }
 const LINKED_TEXT = 'Compare https://github.com/openai/codex/releases with https://example.com/plain, then reply.'
@@ -243,5 +248,45 @@ export const ComposerDraft: Story = {
     const [link] = canvasElement.querySelectorAll('.web-link')
     await hoverLink(link!)
     await waitFor(() => expect(screen.getByText('Releases · openai/codex')).toBeVisible(), { timeout: 2000 })
+  },
+}
+
+function GitHubChipComposer() {
+  const editor = useEditor({
+    extensions: [StarterKit.configure({ link: false, underline: false }), MentionNode, WebLinkDecoration],
+    content: {
+      type: 'doc',
+      content: [{
+        type: 'paragraph',
+        content: [
+          { type: 'text', text: 'Check ' },
+          { type: 'mention', attrs: { kind: 'git', value: encodeGitMentionValue('issue', 'https://github.com/WHQ25/super-one/issues/123', 'github'), displayName: '#123 Hover preview for issue chips' } },
+          { type: 'text', text: ' and ' },
+          { type: 'mention', attrs: { kind: 'git', value: encodeGitMentionValue('pr', 'https://github.com/WHQ25/super-one/pull/456', 'github'), displayName: '#456 Unify GitHub link and chip UX' } },
+        ],
+      }],
+    },
+  })
+  return (
+    <DesktopUserBubblePorts>
+      <div className="space-y-3">
+        <div className="rounded-xl border px-3 py-2">
+          <EditorContent editor={editor} className="[&_.tiptap]:outline-none" />
+          <ComposerLinkPreview editor={editor} />
+        </div>
+        <div className="rounded-2xl bg-muted px-3 py-2">
+          <UserTextPresenter text={`Sent ${wrapGitMention('issue:github:https://github.com/WHQ25/super-one/issues/123', '#123 Hover preview for issue chips')} and ${wrapGitMention('pr:github:https://github.com/WHQ25/super-one/pull/456', '#456 Unify GitHub link and chip UX')}`} />
+        </div>
+      </div>
+    </DesktopUserBubblePorts>
+  )
+}
+
+export const GitHubMentionChips: Story = {
+  render: () => <GitHubChipComposer />,
+  play: async ({ canvasElement }) => {
+    const chip = canvasElement.querySelector('[data-mention-kind="git"]')!
+    await hoverLink(chip)
+    await waitFor(() => expect(screen.getByText('Hover preview for issue chips · Issue #123 · WHQ25/super-one')).toBeVisible(), { timeout: 2000 })
   },
 }

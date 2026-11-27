@@ -64,6 +64,7 @@ import {
   gitPortalLabelKey,
   isGitFlatItem,
   type GitFlatItem,
+  type GitPortalEntryId,
 } from './GitMentionRows'
 import { SESSION_META_CLASS, STACKED_BODY_CLASS, STACKED_DETAIL_CLASS, STACKED_ICON_CLASS, STACKED_ROW_CLASS, mentionRowClass } from './mention-row-layout'
 import { encodeMcpMentionValue, mcpMentionGroupKey, mcpMentionHasStatus } from '@superone/shared/mcp-app-mentions'
@@ -702,7 +703,11 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
       }
       // Built-in Git / GitHub portals — disabled (still listed) outside a
       // repository, on an old node, or without a usable `gh`.
-      const portals: Array<{ id: typeof GIT_MENTION_KEYWORD | typeof GH_MENTION_KEYWORD; aliases: string[]; disabledReason?: 'not-repo' | 'unsupported' | 'gh-unavailable' }> = [
+      const ghDisabledReason =
+        git.availability === 'not-repo' || git.availability === 'unsupported'
+          ? git.availability
+          : git.availability === 'ready' && !git.githubAvailable ? ('gh-unavailable' as const) : undefined
+      const portals: Array<{ id: GitPortalEntryId; aliases: string[]; disabledReason?: 'not-repo' | 'unsupported' | 'gh-unavailable' }> = [
         {
           id: GIT_MENTION_KEYWORD,
           aliases: ['Git'],
@@ -712,10 +717,18 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         },
         {
           id: GH_MENTION_KEYWORD,
-          aliases: ['GitHub', 'issue', 'pr'],
-          ...(git.availability === 'not-repo' || git.availability === 'unsupported'
-            ? { disabledReason: git.availability }
-            : git.availability === 'ready' && !git.githubAvailable ? { disabledReason: 'gh-unavailable' as const } : {}),
+          aliases: ['GitHub'],
+          ...(ghDisabledReason ? { disabledReason: ghDisabledReason } : {}),
+        },
+        {
+          id: 'issue',
+          aliases: ['Issue', 'Issues'],
+          ...(ghDisabledReason ? { disabledReason: ghDisabledReason } : {}),
+        },
+        {
+          id: 'pr',
+          aliases: ['PR', 'Pull Request', 'Pull Requests'],
+          ...(ghDisabledReason ? { disabledReason: ghDisabledReason } : {}),
         },
       ]
       for (const portal of portals) {
@@ -1007,7 +1020,7 @@ export const MentionPopup = forwardRef<MentionPopupHandle, MentionPopupProps>(
         }
         if (item.kind === 'git-portal') {
           if (item.disabledReason === undefined) {
-            onSelect(item.id === GH_MENTION_KEYWORD ? GH_MENTION_NAV_PREFIX : GIT_MENTION_NAV_PREFIX, 'navigate')
+            onSelect(`${item.id} `, 'navigate')
           }
           return
         }

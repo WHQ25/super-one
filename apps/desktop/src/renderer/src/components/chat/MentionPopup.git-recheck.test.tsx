@@ -34,10 +34,10 @@ describe('disabled @gh recheck', () => {
     const view = render(
       <MentionPopup query="g" selectedIndex={0} onSelect={() => {}} onSetSelectedIndex={() => {}} onClose={() => {}} />,
     )
-    const recheck = await view.findByRole('button', { name: 'chat.mentionPopup.recheckCapabilities' })
+    const [recheck] = await view.findAllByRole('button', { name: 'chat.mentionPopup.recheckCapabilities' })
     expect(getGitMentionCapabilities).toHaveBeenCalledWith(root)
-    await userEvent.setup().click(recheck)
-    await waitFor(() => expect(view.queryByRole('button', { name: 'chat.mentionPopup.recheckCapabilities' })).toBeNull())
+    await userEvent.setup().click(recheck!)
+    await waitFor(() => expect(view.queryAllByRole('button', { name: 'chat.mentionPopup.recheckCapabilities' })).toEqual([]))
     expect(getGitMentionCapabilities).toHaveBeenCalledWith(root, true)
     expect(view.getByRole('button', { name: /capabilityGh/ })).toBeEnabled()
   })

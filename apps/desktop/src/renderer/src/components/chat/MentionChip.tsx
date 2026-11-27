@@ -10,6 +10,9 @@ import { useFileDragProps } from './DraggableFileIcon'
 import { hasTextSelection } from '@/lib/file-link'
 import { useMentionContext } from './use-mention-context'
 import { remoteActiveFileRoot } from '@superone/shared/remote-resource-key'
+import { gitHubUrlForMentionValue } from '@superone/shared/git-mention-query'
+import { useGitMentionCapabilities } from './use-git-mention-capabilities'
+import { WebLinkHoverCard } from './link-preview/WebLink'
 
 /**
  * A file mention, in the composer or a sent bubble, acts like FileChip: click
@@ -45,9 +48,28 @@ function FileMentionNodeView({ value, label }: { value: string; label: string })
   )
 }
 
+function GitMentionNodeView({ value, label }: { value: string; label: string }) {
+  const { fileRoot } = useMentionContext()
+  const { caps } = useGitMentionCapabilities(fileRoot)
+  const href = gitHubUrlForMentionValue(value, caps?.githubRepo)
+  const nodeView = (
+    <NodeViewWrapper
+      as="span"
+      contentEditable={false}
+      data-mention=""
+      data-mention-kind="git"
+      className="mention-chip mention-chip--blended select-none"
+    >
+      <MentionChipBody icon={<MentionChipIcon kind="git" value={value} label={label} />} label={label} />
+    </NodeViewWrapper>
+  )
+  return href ? <WebLinkHoverCard href={href}>{nodeView}</WebLinkHoverCard> : nodeView
+}
+
 export function MentionChip({ node }: NodeViewProps) {
   const { kind, value, displayName } = node.attrs as MentionNodeAttrs
   if (kind === 'file') return <FileMentionNodeView value={value} label={displayName} />
+  if (kind === 'git') return <GitMentionNodeView value={value} label={displayName} />
   const label = kind === 'agent' && displayName.includes(':') ? displayName.split(':').pop()! : displayName
 
   return (

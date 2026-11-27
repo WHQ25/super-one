@@ -2005,6 +2005,28 @@ describe('ChatInput paste', () => {
 
     expect(editorState.insertContentCalls).toEqual([])
   })
+
+  it('converts pasted GitHub issue/PR URLs into git mention chips', () => {
+    render(<ChatInput />)
+    const { handled, preventDefault } = paste('See https://github.com/org/repo/issues/42 please')
+    expect(handled).toBe(true)
+    expect(preventDefault).toHaveBeenCalled()
+    expect(editorState.insertContentCalls).toEqual([
+      [
+        { type: 'text', text: 'See ' },
+        { type: 'mention', attrs: { kind: 'git', value: 'issue:github:https://github.com/org/repo/issues/42', displayName: 'org/repo#42' } },
+        { type: 'text', text: ' please' },
+      ],
+    ])
+  })
+
+  it('leaves GitHub PR sub-path URLs as plain text on paste', () => {
+    render(<ChatInput />)
+    const { handled, preventDefault } = paste('https://github.com/org/repo/pull/42/files')
+    expect(handled).toBe(false)
+    expect(preventDefault).not.toHaveBeenCalled()
+    expect(editorState.insertContentCalls).toEqual([])
+  })
 })
 
 afterEach(() => act(() => resetRealtimeCallForTests()))

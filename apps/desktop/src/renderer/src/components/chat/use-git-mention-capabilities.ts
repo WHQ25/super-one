@@ -59,7 +59,7 @@ function snapshotFor(fileRoot: string | null): GitMentionCapabilitySnapshot {
 
 function storeGitMentionCapabilities(fileRoot: string, caps: GitMentionCapabilities): void {
   const prev = capabilitiesByRoot.get(fileRoot)
-  if (prev && prev.repo === caps.repo && prev.github === caps.github) return
+  if (prev && prev.repo === caps.repo && prev.github === caps.github && prev.githubRepo === caps.githubRepo) return
   capabilitiesByRoot.set(fileRoot, caps)
   publishGitMentionCapabilities()
 }

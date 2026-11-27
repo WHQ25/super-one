@@ -25,7 +25,7 @@ export function mentionCopyProps(mention: UserMention) {
 
 /** A mention in a sent bubble: the composer's chip, with the host's actions for files and MCP resources. */
 function UserMentionChip({ kind, value, displayName }: { kind: UserMentionKind; value: string; displayName?: string }) {
-  const { useMentionKind, FileMention, McpMention } = useUserBubblePorts()
+  const { useMentionKind, FileMention, McpMention, GitMention } = useUserBubblePorts()
   const resolved = useMentionKind(kind, value)
   const label = mentionLabel(resolved, value, displayName)
   const chip = ({ chipProps, iconProps }: ChipActions = {}) => (
@@ -42,6 +42,7 @@ function UserMentionChip({ kind, value, displayName }: { kind: UserMentionKind; 
   )
   if (resolved === 'file' || resolved === 'directory') return <FileMention kind={resolved} value={value} label={label} chip={chip} />
   if (resolved === 'mcp-resource') return <McpMention value={value}>{chip()}</McpMention>
+  if (resolved === 'git' && GitMention) return <GitMention value={value} chip={chip} />
   return chip()
 }
 

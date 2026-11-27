@@ -235,7 +235,7 @@ describe('GitHub kinds through gh', () => {
 
   it('probes repo and github capabilities as one answer', async () => {
     expect(await probeGitMentionCapabilities({ git: runIn(repo) })).toEqual({ repo: 'ready', github: false })
-    expect(await probeGitMentionCapabilities({ git: runIn(repo), gh: fakeGh([]).run })).toEqual({ repo: 'ready', github: true })
+    expect(await probeGitMentionCapabilities({ git: runIn(repo), gh: fakeGh([]).run })).toEqual({ repo: 'ready', github: true, githubRepo: 'o/r' })
     const noRemote = async () => { throw new Error('none of the git remotes configured for this repository point to a known GitHub host') }
     expect(await probeGitMentionCapabilities({ git: runIn(repo), gh: noRemote })).toEqual({ repo: 'ready', github: false })
     const plain = mkdtempSync(join(tmpdir(), 'mention-refs-plain-'))

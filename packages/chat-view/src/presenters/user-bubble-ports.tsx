@@ -28,6 +28,11 @@ export interface FileMentionProps {
   chip: (actions: ChipActions) => ReactElement
 }
 
+export interface GitMentionProps {
+  value: string
+  chip: (actions: ChipActions) => ReactElement
+}
+
 export interface AttachmentViewerProps {
   attachment: ImageAttachment
   /** A PDF or other document rather than a picture. */
@@ -56,6 +61,8 @@ export interface UserBubblePorts {
   FileMention: ComponentType<FileMentionProps>
   /** A sent MCP mention: opens the copy the message carried. */
   McpMention: ComponentType<{ value: string; children: ReactNode }>
+  /** A git/GitHub mention: optional hover preview and click actions around `chip`. */
+  GitMention?: ComponentType<GitMentionProps>
   /** A chip's preview card where the host has hover; a touch host passes `children` through. */
   ChipCard: ComponentType<ChipCardProps>
   /** A web link in the bubble's text, opened (and, with hover, previewed) as the host's chat links are. */

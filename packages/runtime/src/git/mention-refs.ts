@@ -150,8 +150,17 @@ export async function probeGitMentionCapabilities(runners: GitMentionRunners): P
   }
   if (repo !== 'ready' || !runners.gh) return { repo, github: false }
   try {
-    await runners.gh(['repo', 'view', '--json', 'nameWithOwner'])
-    return { repo, github: true }
+    const raw = await runners.gh(['repo', 'view', '--json', 'nameWithOwner'])
+    let githubRepo: string | undefined
+    try {
+      const parsed = JSON.parse(raw) as { nameWithOwner?: unknown }
+      if (typeof parsed?.nameWithOwner === 'string' && parsed.nameWithOwner.trim()) {
+        githubRepo = parsed.nameWithOwner.trim()
+      }
+    } catch {
+      // Tests or older stubs may return non-JSON stdout.
+    }
+    return { repo, github: true, ...(githubRepo ? { githubRepo } : {}) }
   } catch {
     return { repo, github: false }
   }

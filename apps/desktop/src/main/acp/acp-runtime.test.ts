@@ -1317,14 +1317,6 @@ describe('createAcpRuntime (in-process agent)', () => {
   })
 
   it('keeps Antigravity on auto when set_mode accept-edits echoes current_mode_update', async () => {
-    const authMod = await import('./antigravity-profile')
-    const authSatisfiedSpy = vi.spyOn(authMod, 'isAntigravityAuthSatisfied').mockReturnValue(true)
-    const authConfigSpy = vi.spyOn(authMod, 'readAntigravityAuthConfig').mockReturnValue({
-      authMethod: 'google-login',
-      apiKey: '',
-      vertexProject: '',
-      vertexLocation: '',
-    })
     const sessionEvents: AgentEvent[] = []
     const setModeCalls: string[] = []
     const hostPermissionCalls: string[] = []
@@ -1354,8 +1346,7 @@ describe('createAcpRuntime (in-process agent)', () => {
     const clientToAgent = new TransformStream<Uint8Array>()
     const agentToClient = new TransformStream<Uint8Array>()
     agentApp.connect(ndJsonStream(agentToClient.writable, clientToAgent.readable))
-    try {
-      const runtime = await createAcpRuntime({
+    const runtime = await createAcpRuntime({
         launch: { agentId: 'antigravity', command: 'unused', defaultCwd: '/tmp/proj' },
         permissionMode: 'default',
         permission: {
@@ -1400,10 +1391,6 @@ describe('createAcpRuntime (in-process agent)', () => {
       expect(hostPermissionCalls).toEqual(['exec-ask'])
       expect(setModeCalls.slice(-2)).toEqual(['accept-edits', 'accept-edits'])
       await runtime.close()
-    } finally {
-      authSatisfiedSpy.mockRestore()
-      authConfigSpy.mockRestore()
-    }
   })
 
   it('streams text then completes', async () => {

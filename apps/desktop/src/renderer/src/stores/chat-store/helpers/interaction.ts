@@ -1,4 +1,5 @@
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
+import { assertAntigravityAccountSwitchAllowed } from '@superone/shared/antigravity-auth'
 import { isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import { toast } from 'sonner'
 import type {
@@ -393,19 +394,22 @@ export async function setSessionApiProviderIdImpl(
   if (!sessionId) return
   const provider = sess.sessionProvider ?? sess.preferredProvider ?? 'claude'
   const isCodex = provider === 'codex'
+  const isAntigravity = provider === 'acp-antigravity'
   const isDsh = new Set<HarnessId>(['dsh']).has(provider)
   try {
     if (isCodex) assertCodexAccountSwitchAllowed(sess.apiProviderId, apiProviderId, sess.messages.length > 0)
+    if (isAntigravity) assertAntigravityAccountSwitchAllowed(sess.apiProviderId, apiProviderId, sess.messages.length > 0)
     await patchSessionSettings(activeProject, sessionId, sess, { apiProviderId })
     set((s) => commitPerSession(s, target, () => ({ apiProviderId, slashCommandOutput: null })))
   } catch (err) {
     toast.error(err instanceof Error ? err.message : String(err))
     return
   }
-  // Remote: always re-list from the node provider store. Local Codex also re-lists.
   const isRemote = connectionIdForProjectKey(activeProject) !== 'local'
   if (isCodex) {
     void get().refreshCodexModels(false)
+  } else if (isAntigravity) {
+    void window.app.refreshAcpModels?.('antigravity').catch(() => {})
   } else if (isDsh) {
     void window.app.connectDeepseek(true, apiProviderId).then((resources) => {
       set((s) => ({ harnessResources: { ...s.harnessResources, dsh: resources } }))

@@ -9,6 +9,7 @@ import { acpEffortOptionsForModel, acpModeCatalog, clampAcpEffortForModel } from
 import { acpSelectorModels, projectAntigravityModels } from '@/harness-ui/acp/model-options'
 import { GroupedModelEffortSelector, type SelectorEffortOption } from './GroupedModelEffortSelector'
 import { acpContextWindowParam } from './AcpContextWindowSelect'
+import { useSelectorProviders } from './useSelectorProviders'
 
 const EMPTY_ACP_AGENTS: AcpAgentDescriptor[] = []
 
@@ -58,6 +59,7 @@ export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: 
   const currentLabel = modelLabel ?? agentLabel ?? t('chat.suggestions.acpLabel')
 
   const isAntigravity = isAntigravityAcpAgent(acpAgentId)
+  const antigravityProviders = useSelectorProviders(isAntigravity ? 'acp-antigravity' : 'acp-grok')
   const antigravityView = useMemo(
     () => (isAntigravity ? projectAntigravityModels(acpModels, selectedModel) : null),
     [isAntigravity, acpModels, selectedModel],
@@ -146,6 +148,10 @@ export function AcpModelSelector({ onCloseAutoFocus }: { onCloseAutoFocus?: (e: 
         setSelectedAcpMode(nextEffort)
       }}
       optionParams={contextParam ? [contextParam] : undefined}
+      providers={isAntigravity ? antigravityProviders.providers : undefined}
+      selectedProviderId={isAntigravity ? antigravityProviders.selectedProviderId : undefined}
+      onSelectProvider={isAntigravity ? antigravityProviders.onSelectProvider : undefined}
+      onManageProviders={isAntigravity ? antigravityProviders.onManageProviders : undefined}
       onOptionParamChange={contextParam ? (id, value) => {
         if (id !== 'context' || value === contextParam.selected) return
         const next = Number(value)

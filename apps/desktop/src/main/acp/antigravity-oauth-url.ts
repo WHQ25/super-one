@@ -1,49 +1,107 @@
-import * as http from 'node:http'
-
-export const ANTIGRAVITY_AUTH_STDOUT_PREFIX = 'Open the following link to authenticate the ACP server: '
+export const ANTIGRAVITY_AUTH_STDOUT_PREFIX =
+  'Open the following link to authenticate the ACP server: '
 export const ANTIGRAVITY_AUTH_STDERR_PREFIX = 'Please visit the following URL to authorize: '
 export const ANTIGRAVITY_AUTH_BROWSER_MARKER = '__SUPERONE_ANTIGRAVITY_AUTH_URL__'
 
-const LOOPBACK_REDIRECT_URI_PATTERN = /^http:\/\/(?:127\.0\.0\.1|localhost):([1-9][0-9]{0,4})\/(?:auth\/callback)?$/
+const ANTIGRAVITY_CODE_REDIRECT_URI = 'https://antigravity.google/oauth-callback'
+const MAX_AUTH_URL_LENGTH = 16_384
 
-export function validateAntigravityOAuthUrl(rawUrl: string): {
+export interface ValidatedAntigravityOAuthUrl {
   authUrl: string
   redirectUri: string
   state: string
-} {
+  mode: 'code' | 'loopback'
+}
+
+export function validateAntigravityOAuthUrl(
+  rawUrl: string,
+  expectedMode?: 'code' | 'loopback',
+): ValidatedAntigravityOAuthUrl {
+  const trimmed = rawUrl.trim()
+  if (!trimmed || trimmed.length > MAX_AUTH_URL_LENGTH || /\s/.test(trimmed)) {
+    throw new Error('Antigravity returned an invalid Google sign-in URL.')
+  }
   let parsed: URL
   try {
-    parsed = new URL(rawUrl.trim())
+    parsed = new URL(trimmed)
   } catch {
-    throw new Error('Antigravity returned an invalid Google OAuth URL')
+    throw new Error('Antigravity returned an invalid Google sign-in URL.')
   }
   if (
-    parsed.protocol !== 'https:' ||
-    parsed.hostname !== 'accounts.google.com' ||
-    parsed.pathname !== '/o/oauth2/v2/auth' ||
-    parsed.searchParams.get('response_type') !== 'code'
+    parsed.origin !== 'https://accounts.google.com' ||
+    parsed.username !== '' ||
+    parsed.password !== '' ||
+    parsed.hash !== ''
   ) {
-    throw new Error('Antigravity returned an unexpected Google OAuth endpoint')
+    throw new Error('Antigravity returned an invalid Google sign-in URL.')
   }
-  const state = parsed.searchParams.get('state')?.trim() ?? ''
-  if (!state) {
-    throw new Error('Antigravity Google OAuth URL is missing state')
+  const state = parsed.searchParams.get('state')
+  const redirectUri = parsed.searchParams.get('redirect_uri')
+  const responseType = parsed.searchParams.get('response_type')
+  if (
+    !state ||
+    state.length > 512 ||
+    /\s/.test(state) ||
+    !redirectUri ||
+    responseType !== 'code' ||
+    parsed.searchParams.getAll('state').length !== 1 ||
+    parsed.searchParams.getAll('redirect_uri').length !== 1 ||
+    parsed.searchParams.getAll('response_type').length !== 1
+  ) {
+    throw new Error('Antigravity returned an invalid Google sign-in URL.')
   }
-  const redirectUri = parsed.searchParams.get('redirect_uri')?.trim() ?? ''
-  const match = LOOPBACK_REDIRECT_URI_PATTERN.exec(redirectUri)
-  const port = match?.[1] ? Number(match[1]) : NaN
-  if (!Number.isInteger(port) || port < 1024 || port > 65535) {
-    throw new Error('Antigravity Google OAuth URL has an invalid loopback redirect URI')
+
+  const isCodeFlow =
+    parsed.pathname === '/o/oauth2/auth' && redirectUri === ANTIGRAVITY_CODE_REDIRECT_URI
+  if (isCodeFlow && expectedMode !== 'loopback') {
+    return {
+      authUrl: trimmed,
+      redirectUri,
+      state,
+      mode: 'code',
+    }
   }
-  return { authUrl: parsed.toString(), redirectUri, state }
+
+  const isLoopbackPath =
+    parsed.pathname === '/o/oauth2/v2/auth' || parsed.pathname === '/o/oauth2/auth'
+  if (!isLoopbackPath || expectedMode === 'code') {
+    throw new Error('Antigravity returned an invalid Google sign-in URL.')
+  }
+  let redirect: URL
+  try {
+    redirect = new URL(redirectUri)
+  } catch {
+    throw new Error('Antigravity returned an invalid Google sign-in URL.')
+  }
+  const isLocalHost = redirect.hostname === '127.0.0.1' || redirect.hostname === 'localhost'
+  const port = Number(redirect.port)
+  if (
+    redirect.protocol !== 'http:' ||
+    !isLocalHost ||
+    !Number.isInteger(port) ||
+    port < 1_024 ||
+    port > 65_535
+  ) {
+    throw new Error('Antigravity returned an invalid Google sign-in URL.')
+  }
+  return {
+    authUrl: trimmed,
+    redirectUri,
+    state,
+    mode: 'loopback',
+  }
 }
 
 export function extractAntigravityAuthUrlFromStdoutLine(line: string): string | null {
-  const trimmed = line.replace(/\r$/, '')
+  const trimmed = line.trim()
+  if (!trimmed) return null
+  if (trimmed.startsWith('https://accounts.google.com/')) {
+    return trimmed
+  }
   for (const prefix of [ANTIGRAVITY_AUTH_STDOUT_PREFIX, ANTIGRAVITY_AUTH_STDERR_PREFIX]) {
     if (trimmed.startsWith(prefix)) {
-      const raw = trimmed.slice(prefix.length).trim()
-      return raw || null
+      const candidate = trimmed.slice(prefix.length).trim()
+      if (candidate) return candidate
     }
   }
   return null
@@ -51,25 +109,57 @@ export function extractAntigravityAuthUrlFromStdoutLine(line: string): string | 
 
 export function extractAntigravityAuthUrlsFromStderrChunk(chunk: string): string[] {
   const urls: string[] = []
+  const seen = new Set<string>()
   const pushUnique = (raw: string) => {
-    const trimmed = raw.trim()
-    if (trimmed && !urls.includes(trimmed)) urls.push(trimmed)
+    const candidate = raw.trim()
+    if (!candidate || seen.has(candidate)) return
+    seen.add(candidate)
+    urls.push(candidate)
   }
-  for (const line of chunk.split(/\r?\n/)) {
+  for (const rawLine of chunk.split(/\r?\n/)) {
+    const line = rawLine.trim()
+    if (!line) continue
     const markerIdx = line.indexOf(ANTIGRAVITY_AUTH_BROWSER_MARKER)
     if (markerIdx >= 0) {
       pushUnique(line.slice(markerIdx + ANTIGRAVITY_AUTH_BROWSER_MARKER.length))
       continue
     }
     for (const prefix of [ANTIGRAVITY_AUTH_STDERR_PREFIX, ANTIGRAVITY_AUTH_STDOUT_PREFIX]) {
-      const prefixIdx = line.indexOf(prefix)
-      if (prefixIdx >= 0) {
-        pushUnique(line.slice(prefixIdx + prefix.length))
-        break
+      const idx = line.indexOf(prefix)
+      if (idx >= 0) {
+        pushUnique(line.slice(idx + prefix.length))
       }
     }
   }
   return urls
+}
+
+export function validateAntigravityLoginCodeResponse(
+  pending: { redirectUri: string; state: string },
+  response: string,
+): string | null {
+  const value = response.trim()
+  if (!value) return null
+  if (/^[\w./~-]{1,2048}$/.test(value)) return value
+  if (value.length > MAX_AUTH_URL_LENGTH || /\s/.test(value)) return null
+  let parsed: URL
+  try {
+    parsed = new URL(value)
+  } catch {
+    return null
+  }
+  if (
+    `${parsed.origin}${parsed.pathname}` !== pending.redirectUri ||
+    parsed.username !== '' ||
+    parsed.password !== '' ||
+    parsed.searchParams.getAll('state').length !== 1 ||
+    parsed.searchParams.get('state') !== pending.state ||
+    parsed.searchParams.getAll('code').length !== 1 ||
+    !parsed.searchParams.get('code')
+  ) {
+    return null
+  }
+  return value
 }
 
 export async function forwardAntigravityCallbackUrl(
@@ -77,64 +167,35 @@ export async function forwardAntigravityCallbackUrl(
   pending: { redirectUri: string; state: string },
 ): Promise<void> {
   const trimmed = rawCallbackUrl.trim()
-  if (!trimmed || trimmed.length > 4096) {
-    throw new Error('Paste the complete localhost callback URL from the browser address bar')
+  if (!trimmed || trimmed.length > MAX_AUTH_URL_LENGTH || /\s/.test(trimmed)) {
+    throw new Error('Paste the full callback URL from your browser.')
   }
-  let callbackUrl: URL
-  let expectedRedirect: URL
+  let callback: URL
+  let expected: URL
   try {
-    callbackUrl = new URL(trimmed)
-    expectedRedirect = new URL(pending.redirectUri)
+    callback = new URL(trimmed)
+    expected = new URL(pending.redirectUri)
   } catch {
-    throw new Error('Invalid localhost callback URL')
+    throw new Error('Invalid callback URL.')
   }
+  const sameHost =
+    callback.hostname === expected.hostname ||
+    ((callback.hostname === 'localhost' || callback.hostname === '127.0.0.1') &&
+      (expected.hostname === 'localhost' || expected.hostname === '127.0.0.1'))
   if (
-    callbackUrl.origin !== expectedRedirect.origin ||
-    callbackUrl.pathname !== expectedRedirect.pathname ||
-    callbackUrl.username !== '' ||
-    callbackUrl.password !== ''
+    callback.protocol !== 'http:' ||
+    !sameHost ||
+    callback.port !== expected.port ||
+    callback.pathname !== expected.pathname ||
+    callback.searchParams.get('state') !== pending.state ||
+    !callback.searchParams.get('code')
   ) {
-    throw new Error(
-      'Callback URL does not match the active Antigravity login attempt. Use the URL from the current browser tab.',
-    )
+    throw new Error('Callback URL does not match the active sign-in session.')
   }
-  const state = callbackUrl.searchParams.get('state') ?? ''
-  const code = callbackUrl.searchParams.get('code')?.trim() ?? ''
-  const oauthError = callbackUrl.searchParams.get('error')?.trim() ?? ''
-  if (state !== pending.state || (!code && !oauthError)) {
-    throw new Error('Callback URL is missing the expected state or authorization code')
+  const target = new URL(expected.toString())
+  target.search = callback.search
+  const response = await fetch(target.toString(), { redirect: 'manual' })
+  if (!response.ok && response.status >= 400) {
+    throw new Error(`Callback handoff failed (HTTP ${response.status}).`)
   }
-
-  await new Promise<void>((resolve, reject) => {
-    const req = http.request(
-      {
-        protocol: callbackUrl.protocol,
-        hostname: callbackUrl.hostname,
-        port: callbackUrl.port,
-        path: `${callbackUrl.pathname}${callbackUrl.search}`,
-        method: 'GET',
-        agent: false,
-        headers: { Connection: 'close' },
-      },
-      (res) => {
-        res.resume()
-        res.once('end', () => {
-          if (res.statusCode && res.statusCode >= 200 && res.statusCode < 400) {
-            resolve()
-          } else {
-            reject(
-              new Error(`Antigravity rejected the OAuth callback (HTTP ${res.statusCode ?? 0})`),
-            )
-          }
-        })
-      },
-    )
-    req.setTimeout(5000, () => {
-      req.destroy(new Error('Timed out delivering the OAuth callback to Antigravity'))
-    })
-    req.once('error', (err) => {
-      reject(new Error(`Failed to deliver OAuth callback to Antigravity: ${err.message}`))
-    })
-    req.end()
-  })
 }

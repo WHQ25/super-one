@@ -520,6 +520,104 @@ describe('first-party harness settings entries', () => {
     expect(screen.queryByText(/requires ≥ 1\.5\.16/i)).not.toBeInTheDocument()
   })
 
+  it('shows current CLI version, detects newer release, and streams upgrade output in inline terminal', async () => {
+    let cliEventListener: ((event: ExternalCliInstallEvent) => void) | null = null
+    let currentVersion = '1.5.18'
+    let resolveUpgrade!: (value: { ok: boolean; harnessId: 'acp-antigravity'; exitCode: number }) => void
+
+    const listHarnesses = vi.fn().mockImplementation(async () =>
+      NODE_HARNESS_IDS.map((id) =>
+        id === 'acp-antigravity'
+          ? {
+              id,
+              enabled: true,
+              state: 'ready',
+              runtimeSource: 'external',
+              runtimeVersion: currentVersion,
+              requiresAuth: false,
+              command: '/Users/test/.local/bin/agy',
+            }
+          : {
+              id,
+              enabled: false,
+              state: 'disabled',
+              runtimeSource: 'managed',
+              requiresAuth: true,
+            },
+      ),
+    )
+
+    const checkHarnessCliUpdates = vi.fn().mockImplementation(async () => ({
+      'acp-antigravity': {
+        harnessId: 'acp-antigravity' as const,
+        currentVersion,
+        latestVersion: '1.5.20',
+        updateAvailable: currentVersion !== '1.5.20',
+        belowMinimum: false,
+        minVersion: '1.5.16',
+        checkedAt: Date.now(),
+      },
+    }))
+
+    const installHarnessCli = vi.fn().mockImplementation(
+      () =>
+        new Promise((resolve) => {
+          resolveUpgrade = resolve
+        }),
+    )
+
+    Object.assign(window.app, {
+      listHarnesses,
+      checkHarnessCliUpdates,
+      installHarnessCli,
+      onHarnessCliInstallEvent: vi.fn((cb: (event: ExternalCliInstallEvent) => void) => {
+        cliEventListener = cb
+        return () => {
+          cliEventListener = null
+        }
+      }),
+    })
+
+    const user = userEvent.setup()
+    render(<HarnessesSettingsPage />)
+
+    await screen.findByText('Enabled')
+    await user.click(screen.getByRole('button', { name: HARNESS_LABELS['acp-antigravity'] }))
+
+    const updateBtn = await screen.findByRole('button', { name: /Update to 1\.5\.20/i })
+    expect(screen.getByText('1.5.18')).toBeInTheDocument()
+
+    await user.click(updateBtn)
+    expect(installHarnessCli).toHaveBeenCalledWith('acp-antigravity')
+    expect(screen.queryByRole('progressbar')).toBeNull()
+
+    act(() => {
+      cliEventListener?.({ harnessId: 'acp-antigravity', phase: 'start' })
+      cliEventListener?.({
+        harnessId: 'acp-antigravity',
+        phase: 'output',
+        data: '\x1b[36mDownloading agy 1.5.20...\x1b[0m\n',
+      })
+    })
+
+    expect(await screen.findByTestId('settings-cli-upgrade-output')).toHaveTextContent(
+      'Downloading agy 1.5.20...',
+    )
+
+    currentVersion = '1.5.20'
+    await act(async () => {
+      cliEventListener?.({ harnessId: 'acp-antigravity', phase: 'done', exitCode: 0 })
+      resolveUpgrade({ ok: true, harnessId: 'acp-antigravity', exitCode: 0 })
+    })
+
+    await waitFor(() => {
+      expect(screen.getByText('1.5.20')).toBeInTheDocument()
+      expect(screen.getByRole('button', { name: /Check for updates/i })).toBeInTheDocument()
+    })
+    expect(screen.queryByRole('button', { name: /Update to 1\.5\.20/i })).toBeNull()
+    expect(screen.queryByText(/Up to date/i)).toBeNull()
+  })
+
   it('marks only dsh as experimental in catalog metadata', () => {
     const experimentalIds = NODE_HARNESS_IDS.filter(
       (id) => CATALOG_HARNESS_META[id].experimental,

@@ -23,12 +23,11 @@ import type {
 } from './acp-runtime'
 import type { ResolvedAcpLaunch } from './agent-catalog'
 import {
+  antigravityAccountStore,
   extractAntigravityAuthUrlFromStdoutLine,
   extractAntigravityAuthUrlsFromStderrChunk,
-  isAntigravityAuthSatisfied,
+  isAccountAuthSatisfied,
   prepareAntigravitySpawnContext,
-  readAntigravityAuthConfig,
-  writeAntigravityAuthConfig,
 } from './antigravity-profile'
 import {
   antigravityPermissionDisposition,
@@ -136,15 +135,22 @@ export async function prepareAntigravityProcessLaunch(
   }
   assertExternalCliCompatible('acp-antigravity', resolved.command)
   const spawnCtx = prepareAntigravitySpawnContext({
+    accountId: rawLaunch.accountId,
     extraEnv: launch.env,
   })
   launch.command = resolved.command
-  launch.args = applyAntigravityPermissionLaunchArgs(resolved.args, permissionMode)
+  launch.args = applyAntigravityPermissionLaunchArgs(
+    [...resolved.args, ...spawnCtx.extraArgs],
+    permissionMode,
+  )
   launch.env = spawnCtx.extraEnv
   let globalSuperoneMcpReady = false
   if (superoneSessionId) {
     const stdioConfig = getSuperoneMcpStdioConfig(superoneSessionId)
-    if (stdioConfig && ensureAntigravityGlobalSuperoneMcpConfig(stdioConfig)) {
+    if (
+      stdioConfig &&
+      ensureAntigravityGlobalSuperoneMcpConfig(stdioConfig, undefined, undefined, spawnCtx.geminiDir)
+    ) {
       launch.env = { ...launch.env, ...extractSuperoneSessionEnv(stdioConfig) }
       globalSuperoneMcpReady = true
     }
@@ -209,16 +215,18 @@ export async function handleAntigravityElicitationCreate(
 
 export async function authenticateAntigravityRuntime(
   connection: ClientConnection,
+  accountId?: string | null,
   customHome?: string,
 ): Promise<void> {
-  const cfg = readAntigravityAuthConfig(customHome)
+  const store = antigravityAccountStore(customHome)
+  const account = store.get(accountId)
   if (
-    (cfg.authMethod === 'gemini-api-key' || cfg.authMethod === 'agent-platform') &&
-    !isAntigravityAuthSatisfied(customHome)
+    (account.authMethod === 'gemini-api-key' || account.authMethod === 'agent-platform') &&
+    !isAccountAuthSatisfied(account, customHome)
   ) {
     throw new Error(ANTIGRAVITY_AUTH_REQUIRED)
   }
-  if (cfg.authMethod === 'oauth-business' && (!cfg.gcpProject || !cfg.gcpLocation)) {
+  if (account.authMethod === 'oauth-business' && (!account.gcpProject || !account.gcpLocation)) {
     throw new Error(ANTIGRAVITY_AUTH_REQUIRED)
   }
 
@@ -231,33 +239,43 @@ export async function authenticateAntigravityRuntime(
   try {
     await Promise.race([
       connection.agent.request(methods.agent.authenticate, {
-        methodId: cfg.authMethod,
+        methodId: account.authMethod,
       }),
       promptAbort,
     ])
     if (
-      (cfg.authMethod === 'oauth-personal' || cfg.authMethod === 'oauth-business') &&
-      !cfg.oauthSignedIn
+      (account.authMethod === 'oauth-personal' || account.authMethod === 'oauth-business') &&
+      !account.oauthSignedIn
     ) {
       try {
-        writeAntigravityAuthConfig({ authMethod: cfg.authMethod, oauthSignedIn: true }, customHome)
+        store.configure({
+          accountId: account.id,
+          authMethod: account.authMethod,
+          oauthSignedIn: true,
+        })
       } catch {
         void 0
       }
     }
   } catch (err) {
     if (
-      (cfg.authMethod === 'oauth-personal' || cfg.authMethod === 'oauth-business') &&
-      cfg.oauthSignedIn
+      (account.authMethod === 'oauth-personal' || account.authMethod === 'oauth-business') &&
+      account.oauthSignedIn
     ) {
       try {
-        writeAntigravityAuthConfig({ authMethod: cfg.authMethod, oauthSignedIn: false }, customHome)
+        store.configure({
+          accountId: account.id,
+          authMethod: account.authMethod,
+          oauthSignedIn: false,
+        })
       } catch {
         void 0
       }
     }
     const msg = err instanceof Error ? err.message : String(err)
-    throw new Error(msg.startsWith(ANTIGRAVITY_AUTH_REQUIRED) ? msg : `${ANTIGRAVITY_AUTH_REQUIRED}: ${msg}`)
+    throw new Error(
+      msg.startsWith(ANTIGRAVITY_AUTH_REQUIRED) ? msg : `${ANTIGRAVITY_AUTH_REQUIRED}: ${msg}`,
+    )
   } finally {
     if (abortPrompt) interactiveAuthPromptListeners.delete(abortPrompt)
   }

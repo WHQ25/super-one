@@ -1,4 +1,5 @@
 import { isCodexAccountProvider } from '@superone/shared/codex-accounts'
+import { isAntigravityAccountProvider } from '@superone/shared/antigravity-auth'
 import { codexSpeedTriggerLabel } from '@superone/shared/codex-fast-mode'
 import { useCallback, useEffect, useId, useMemo, useRef, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -600,7 +601,7 @@ export function GroupedModelEffortSelector({
       <SelectorScrollArea>
         {providers.map((provider) => {
           const selected = provider.id === selectedProviderId
-          const account = isCodexAccountProvider(provider.id)
+          const account = isCodexAccountProvider(provider.id) || isAntigravityAccountProvider(provider.id)
           return (
             <DropdownMenuItem
               key={provider.id ?? '__default__'}

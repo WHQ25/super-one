@@ -21,15 +21,6 @@ vi.mock('../mcp-config-service', () => ({
   listMcpConfigs: vi.fn(() => []),
 }))
 
-vi.mock('./antigravity-profile', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('./antigravity-profile')>()
-  return {
-    ...actual,
-    isAntigravityAuthSatisfied: () => true,
-    readAntigravityAuthConfig: () => ({ authMethod: 'oauth-personal' }),
-  }
-})
-
 /**
  * Agent that mirrors Grok's reaction to a second in-flight `session/prompt`:
  * the first turn is ended with `stopReason: 'cancelled'` only once the second

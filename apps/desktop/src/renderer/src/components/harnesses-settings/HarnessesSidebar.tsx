@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react'
+import type { CSSProperties, ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { GripVertical, Loader2, RefreshCw } from 'lucide-react'
 import {
@@ -14,14 +14,48 @@ import {
   verticalListSortingStrategy,
 } from '@dnd-kit/sortable'
 import { CSS } from '@dnd-kit/utilities'
+import {
+  isExternalCliHarnessId,
+  type ExternalCliHarnessId,
+  type ExternalCliUpdateInfo,
+} from '@superone/shared/environment/external-cli-install'
 import { Button } from '@superone/ui/components/ui/button'
 import { cn } from '@superone/ui/lib/utils'
 import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
 import { SettingsNavGroup, SettingsNavItem } from '../settings/SettingsNav'
-import type { ListItem } from './HarnessesSettingsParts'
+import type { CatalogRow, ListItem } from './HarnessesSettingsParts'
+
+function buildRowTrailing(
+  item: ListItem,
+  catalog: CatalogRow | undefined,
+  cliUpdate: ExternalCliUpdateInfo | undefined,
+  t: (key: string, opts?: Record<string, unknown>) => string,
+): ReactNode {
+  if (item.experimental) {
+    return t('settings.harnesses.experimentalBadge')
+  }
+  const hasIncompatible = catalog?.enabled && catalog.state === 'incompatible'
+  const hasUpdate = catalog?.enabled && Boolean(cliUpdate?.updateAvailable && cliUpdate.latestVersion)
+  if (!hasIncompatible && !hasUpdate) return undefined
+  return hasIncompatible ? (
+    <span
+      className="size-1.5 shrink-0 rounded-full bg-warning"
+      title={t('settings.harnesses.cliInstall.upgradeAction')}
+    />
+  ) : cliUpdate?.latestVersion ? (
+    <span
+      className="size-1.5 shrink-0 rounded-full bg-primary"
+      title={t('settings.harnesses.cliInstall.updateAvailable', {
+        latest: cliUpdate.latestVersion,
+      })}
+    />
+  ) : undefined
+}
 
 export function HarnessListRow({
   item,
+  catalog,
+  cliUpdate,
   selected,
   onSelect,
   dragHandle,
@@ -32,6 +66,8 @@ export function HarnessListRow({
   listeners,
 }: {
   item: ListItem
+  catalog?: CatalogRow
+  cliUpdate?: ExternalCliUpdateInfo
   selected: boolean
   onSelect: () => void
   dragHandle?: boolean
@@ -60,7 +96,7 @@ export function HarnessListRow({
         ) : (
           <span className="size-[30px] shrink-0 rounded bg-muted" />
         )}
-        trailing={item.experimental ? t('settings.harnesses.experimentalBadge') : undefined}
+        trailing={buildRowTrailing(item, catalog, cliUpdate, t)}
       >
         {item.label}
       </SettingsNavItem>
@@ -81,11 +117,15 @@ export function HarnessListRow({
 
 export function SortableHarnessRow({
   item,
+  catalog,
+  cliUpdate,
   selected,
   disabled,
   onSelect,
 }: {
   item: ListItem
+  catalog?: CatalogRow
+  cliUpdate?: ExternalCliUpdateInfo
   selected: boolean
   disabled: boolean
   onSelect: () => void
@@ -101,6 +141,8 @@ export function SortableHarnessRow({
   return (
     <HarnessListRow
       item={item}
+      catalog={catalog}
+      cliUpdate={cliUpdate}
       selected={selected}
       onSelect={onSelect}
       dragHandle
@@ -122,6 +164,8 @@ export function HarnessesSidebar({
   enabledItems,
   disabledItems,
   enabledOrderIds,
+  catalogById,
+  cliUpdates,
   sensors,
   onRefresh,
   onSelectItem,
@@ -135,12 +179,17 @@ export function HarnessesSidebar({
   enabledItems: ListItem[]
   disabledItems: ListItem[]
   enabledOrderIds: string[]
+  catalogById?: Map<string, CatalogRow>
+  cliUpdates?: Partial<Record<ExternalCliHarnessId, ExternalCliUpdateInfo>>
   sensors: SensorDescriptor<SensorOptions>[]
   onRefresh: () => void
   onSelectItem: (item: ListItem) => void
   onDragEnd: (event: DragEndEvent) => void
 }) {
   const { t } = useTranslation()
+  const updateForItem = (item: ListItem): ExternalCliUpdateInfo | undefined =>
+    isExternalCliHarnessId(item.catalogId) ? cliUpdates?.[item.catalogId] : undefined
+
   return (
     <div className="flex w-72 shrink-0 flex-col overflow-y-auto border-r border-border px-2.5 py-3">
       <div className="flex min-h-7 items-center justify-between gap-2 pl-2">
@@ -177,6 +226,8 @@ export function HarnessesSidebar({
                 <SortableHarnessRow
                   key={item.key}
                   item={item}
+                  catalog={catalogById?.get(item.catalogId)}
+                  cliUpdate={updateForItem(item)}
                   selected={selectedKey === item.key}
                   disabled={savingOrder || busyKey !== null}
                   onSelect={() => onSelectItem(item)}
@@ -193,6 +244,8 @@ export function HarnessesSidebar({
             <HarnessListRow
               key={item.key}
               item={item}
+              catalog={catalogById?.get(item.catalogId)}
+              cliUpdate={updateForItem(item)}
               selected={selectedKey === item.key}
               onSelect={() => onSelectItem(item)}
             />

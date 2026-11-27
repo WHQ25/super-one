@@ -13,7 +13,10 @@ import {
   type AntigravityPlannerResponse,
   type AntigravityStepMetadata,
 } from './antigravity-db-proto'
-import { resolveAntigravityProfileDir } from './antigravity-profile'
+import {
+  listManagedAntigravityProfileDirs,
+  resolveAntigravityProfileDir,
+} from './antigravity-profile'
 
 export {
   parseAntigravityPlannerResponse,
@@ -297,15 +300,20 @@ function readNormalizedPlannerStepsForCurrentTurn(db: Database.Database): Curren
 
 function resolveAntigravityConversationDirs(customHome?: string): string[] {
   const profileDir = resolveAntigravityProfileDir(customHome)
+  const managedDirs = listManagedAntigravityProfileDirs(customHome).flatMap((dir) => [
+    join(dir, 'antigravity-acp', 'conversations'),
+    join(dir, 'conversations'),
+  ])
   const legacyDirs = [
     join(profileDir, 'conversations'),
     join(profileDir, 'antigravity-acp', 'conversations'),
   ]
   if (customHome) {
-    return legacyDirs
+    return [...managedDirs, ...legacyDirs]
   }
   const home = homedir()
   return [
+    ...managedDirs,
     join(home, '.gemini', 'antigravity-cli', 'conversations'),
     join(home, '.gemini', 'antigravity', 'conversations'),
     ...legacyDirs,

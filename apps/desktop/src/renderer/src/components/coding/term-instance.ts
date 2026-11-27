@@ -1,4 +1,4 @@
-import { Terminal as XTerm } from '@xterm/xterm'
+import { Terminal as XTerm, type ITerminalOptions } from '@xterm/xterm'
 import { FitAddon } from '@xterm/addon-fit'
 import { WebLinksAddon } from '@xterm/addon-web-links'
 import { Unicode11Addon } from '@xterm/addon-unicode11'
@@ -17,7 +17,9 @@ export const SEARCH_DECORATIONS = {
   activeMatchColorOverviewRuler: '#d18616',
 } as const
 
-export function createBaseXterm(): { xterm: XTerm; fit: FitAddon; search: SearchAddon } {
+export function createBaseXterm(
+  overrides?: ITerminalOptions,
+): { xterm: XTerm; fit: FitAddon; search: SearchAddon } {
   const xterm = new XTerm({
     fontSize: getTerminalFontSize(),
     fontFamily: getTerminalFontFamily(),
@@ -25,6 +27,7 @@ export function createBaseXterm(): { xterm: XTerm; fit: FitAddon; search: Search
     allowProposedApi: true,
     allowTransparency: true,
     theme: getTerminalTheme(),
+    ...overrides,
   })
   const fit = new FitAddon()
   xterm.loadAddon(fit)

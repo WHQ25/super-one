@@ -104,6 +104,7 @@ import { acceptedElicitationContent } from '@superone/shared/schema-form'
 
 export interface AcpBackendConfig {
   agentId?: string
+  accountId?: string
   command?: string
   args?: string[]
   env?: Record<string, string>
@@ -326,7 +327,7 @@ export class AcpBackend implements SessionBackend {
   private resumeForceAttempted = new Set<string>()
 
   private agentKey(cfg: AcpBackendConfig = this.config): string {
-    return `${cfg.agentId ?? ''}\0${cfg.command ?? ''}`
+    return `${cfg.agentId ?? ''}\0${cfg.command ?? ''}\0${cfg.accountId ?? ''}`
   }
 
   private isLaunchChanged(next: AcpBackendConfig): boolean {
@@ -774,6 +775,7 @@ export class AcpBackend implements SessionBackend {
     // Prefer startOpts.cwd (session/worktree) over provider config cwd overrides.
     const launch = {
       agentId: this.config.agentId,
+      accountId: this.config.accountId,
       command: this.config.command,
       args: this.config.args,
       env: this.config.env,

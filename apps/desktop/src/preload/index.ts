@@ -14,7 +14,7 @@ import type { TerminalCommandRule } from '@superone/shared/terminal-command-rule
 import type { AttachmentOriginalStatus, ControllerPairingEvent, NodePairingEvent, DshPluginInstallSource, StageAttachmentOriginalRequest, FileEntryKind, PinnedSessionEntry, ScheduledSend, SettledSessionPage, WindowFoldStep, WindowMiniMode } from '@superone/shared/agent-types'
 import type { GitMentionCapabilities, GitMentionRefKind, GitMentionRefsResult } from '@superone/shared/git-mention-query'
 import type { ConsumerBinding, ConsumerId, Credential, EndpointOverride, Platform, ServiceEndpoint } from '@superone/shared/platform-registry'
-import type { DraftListEntry, DraftUpsertRequest, EnvironmentUsageReport, ExternalCliHarnessId, ExternalCliInstallEvent, ExternalCliInstallResult, PairRemoteInput, ProjectSnapshot, RepairPairingInput } from '@superone/shared/environment'
+import type { DraftListEntry, DraftUpsertRequest, EnvironmentUsageReport, ExternalCliHarnessId, ExternalCliInstallEvent, ExternalCliInstallResult, ExternalCliUpdateCheckOptions, ExternalCliUpdateInfo, PairRemoteInput, ProjectSnapshot, RepairPairingInput } from '@superone/shared/environment'
 import type { IosSimulatorChrome, IosSimulatorCreateRequest, IosSimulatorDevice, IosSimulatorRuntimeOption, IosSimulatorStatus } from '@superone/shared/ios-simulator'
 import type { DeviceCapture, DeviceDescriptor, DeviceFrame, DeviceInput, DeviceInputResult, DeviceState, DeviceStreamOptions, DeviceViewfinderClaim } from '@superone/shared/device'
 import type { DeviceSetupKind, DeviceSetupOption } from '@superone/shared/device-setup'
@@ -1190,6 +1190,10 @@ const appAPI = {
     ipcRenderer.invoke(AgentIpcChannels.HARNESS_ENSURE, harnessId),
   installHarnessCli: (harnessId: ExternalCliHarnessId) =>
     ipcRenderer.invoke(AgentIpcChannels.HARNESS_INSTALL_CLI, harnessId) as Promise<ExternalCliInstallResult>,
+  checkHarnessCliUpdates: (opts?: ExternalCliUpdateCheckOptions) =>
+    ipcRenderer.invoke(AgentIpcChannels.HARNESS_CHECK_CLI_UPDATES, opts) as Promise<
+      Partial<Record<ExternalCliHarnessId, ExternalCliUpdateInfo>>
+    >,
   onHarnessCliInstallEvent: (callback: (event: ExternalCliInstallEvent) => void) => {
     const handler = (_e: Electron.IpcRendererEvent, event: ExternalCliInstallEvent): void => {
       callback(event)
@@ -1697,7 +1701,7 @@ const appAPI = {
   grokAuth: (request: import('@superone/shared/grok-auth').GrokAuthRequest) =>
     ipcRenderer.invoke('acp:grok-auth', request) as Promise<import('@superone/shared/grok-auth').GrokAuthState>,
   antigravityAuth: (request: import('@superone/shared/antigravity-auth').AntigravityAuthRequest) =>
-    ipcRenderer.invoke('acp:antigravity-auth', request) as Promise<import('@superone/shared/antigravity-auth').AntigravityAuthState>,
+    ipcRenderer.invoke('acp:antigravity-auth', request) as Promise<import('@superone/shared/antigravity-auth').AntigravityAccountsSnapshot>,
   listAcpAgents: () =>
     ipcRenderer.invoke(AgentIpcChannels.ACP_LIST_AGENTS) as Promise<import('@superone/shared/agent-types').AcpResources>,
   refreshAcpModels: (agentId?: string) =>

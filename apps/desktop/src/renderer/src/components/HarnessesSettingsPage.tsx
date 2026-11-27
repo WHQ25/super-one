@@ -24,7 +24,11 @@ import { arrayMove } from '@dnd-kit/sortable'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@superone/ui/components/ui/tabs'
 import { acpAgentIdForHarness, isAcpProtocolHarness, isAntigravityAcpAgent, isGrokAcpAgent, resolveLegacyHarnessId } from '@superone/shared/acp-brand'
 import type { AcpAgentDescriptor } from '@superone/shared/agent-types'
-import type { ExternalCliHarnessId } from '@superone/shared/environment/external-cli-install'
+import {
+  isExternalCliHarnessId,
+  type ExternalCliHarnessId,
+  type ExternalCliUpdateInfo,
+} from '@superone/shared/environment/external-cli-install'
 import { suggestionHarnessKey } from '@superone/shared/suggestion-harness-order'
 import { refreshAcpResourcesAfterToggle } from '@/harness-ui/acp/refresh-after-toggle'
 import { useChatStore } from '@/stores/chat'
@@ -37,9 +41,9 @@ import { HooksPage } from './HooksPage'
 import { PluginsPage } from './PluginsPage'
 import { DshPluginsPage } from './DshPluginsPage'
 import { PreferencesPage } from './PreferencesPage'
-import { AntigravityAuthSettings } from './AntigravityAuthSettings'
 import { CursorAuthSettings, type CursorSettingsSection } from './CursorAuthSettings'
 import { GrokAuthSettings } from './GrokAuthSettings'
+import { AntigravityAuthSettings } from './AntigravityAuthSettings'
 import { HarnessPreferencesPage } from './preferences/SessionDefaultsSection'
 import type { CliInstallUiState } from './harnesses-settings/ExternalCliInstallBlock'
 import {
@@ -140,11 +144,14 @@ export function HarnessesSettingsPage() {
     setError,
     progress,
     cliInstalls,
+    cliUpdates,
+    checkingCliUpdates,
     authRefreshSeq,
     harnessOrder,
     setHarnessOrder,
     savingOrder,
     refreshCatalog,
+    checkCliUpdates,
     isItemEnabled,
     installExternalCli,
     persistEnabledOrder,
@@ -280,8 +287,13 @@ export function HarnessesSettingsPage() {
         enabledItems={enabledItems}
         disabledItems={disabledItems}
         enabledOrderIds={enabledOrderIds}
+        catalogById={catalogById}
+        cliUpdates={cliUpdates}
         sensors={sensors}
-        onRefresh={() => void refreshCatalog()}
+        onRefresh={() => {
+          void refreshCatalog()
+          void checkCliUpdates({ force: true })
+        }}
         onSelectItem={selectItem}
         onDragEnd={handleEnabledDragEnd}
       />
@@ -306,10 +318,19 @@ export function HarnessesSettingsPage() {
                 cliInstall={
                   selected.kind === 'catalog' ? cliInstalls[selected.catalogId] : undefined
                 }
+                cliUpdate={
+                  selected.kind === 'catalog' && isExternalCliHarnessId(selected.catalogId)
+                    ? cliUpdates[selected.catalogId]
+                    : undefined
+                }
+                checkingCliUpdates={checkingCliUpdates}
                 authRefreshSeq={authRefreshSeq}
                 configSection={harnessConfigSection}
                 onEnabledChange={(v) => void setEnabled(selected, v)}
                 onInstallCli={(harnessId) => installExternalCli(selected, harnessId)}
+                onCheckCliUpdates={(harnessId) =>
+                  checkCliUpdates({ harnessIds: [harnessId], force: true })
+                }
                 onConfigSectionChange={(section) => {
                   if (selected.configProvider) setSettingsProvider(selected.configProvider)
                   setHarnessConfigSection(section)
@@ -335,10 +356,13 @@ function HarnessDetail({
   busy,
   progress,
   cliInstall,
+  cliUpdate,
+  checkingCliUpdates,
   authRefreshSeq,
   configSection,
   onEnabledChange,
   onInstallCli,
+  onCheckCliUpdates,
   onConfigSectionChange,
   onRefresh,
 }: {
@@ -348,10 +372,13 @@ function HarnessDetail({
   busy: boolean
   progress?: ProgressState
   cliInstall?: CliInstallUiState
+  cliUpdate?: ExternalCliUpdateInfo
+  checkingCliUpdates?: boolean
   authRefreshSeq: number
   configSection: HarnessConfigSection | null
   onEnabledChange: (enabled: boolean) => void
   onInstallCli: (harnessId: ExternalCliHarnessId) => Promise<void>
+  onCheckCliUpdates: (harnessId: ExternalCliHarnessId) => Promise<void>
   onConfigSectionChange: (section: HarnessConfigSection) => void
   onRefresh?: () => void
 }) {
@@ -376,6 +403,8 @@ function HarnessDetail({
         busy={busy}
         progress={progress}
         cliInstall={cliInstall}
+        cliUpdate={cliUpdate}
+        checkingCliUpdates={checkingCliUpdates}
         showCommand={showCommand}
         brandTitle={(
           <HarnessBrandTitle
@@ -387,6 +416,7 @@ function HarnessDetail({
         )}
         onEnabledChange={onEnabledChange}
         onInstallCli={onInstallCli}
+        onCheckCliUpdates={onCheckCliUpdates}
       />
 
       {configTabs ? (

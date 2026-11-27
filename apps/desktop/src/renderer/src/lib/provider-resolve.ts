@@ -1,5 +1,6 @@
 import { isClaudeAccountProvider } from '@superone/shared/agent-types'
 import { isCodexAccountProvider } from '@superone/shared/codex-accounts'
+import { isAntigravityAccountProvider } from '@superone/shared/antigravity-auth'
 import type { HarnessId, ProviderModelEnv } from '@superone/shared/agent-types'
 import {
   CONSUMER_IDS,
@@ -73,7 +74,7 @@ export function resolveEffective(
   sessionCredentialId?: string | null,
   options?: ProviderResolveOptions,
 ): EffectiveService | null {
-  if (isCodexAccountProvider(sessionCredentialId) || isClaudeAccountProvider(sessionCredentialId)) return null
+  if (isCodexAccountProvider(sessionCredentialId) || isClaudeAccountProvider(sessionCredentialId) || isAntigravityAccountProvider(sessionCredentialId)) return null
   const binding = bindings.find((b) => b.consumer === consumer)
   const pick = (id: string | null | undefined): Credential | undefined =>
     id ? credentials.find((c) => c.id === id) : undefined

@@ -272,6 +272,7 @@ export const ExternalCliOutdatedUpgrade: Story = withScenario(
     select: 'acp-antigravity',
     section: 'account',
     focusKey: 'acp-antigravity',
+    cliLatestVersions: { 'acp-antigravity': '1.5.20' },
     catalog: baseCatalog({
       'acp-antigravity': {
         enabled: true,
@@ -283,6 +284,33 @@ export const ExternalCliOutdatedUpgrade: Story = withScenario(
           code: 'incompatible',
           message: 'runtime version or platform is incompatible (expected 1.5.16, actual 1.5.3)',
         },
+      },
+    }),
+  },
+)
+
+export const ExternalCliUpdateAvailable: Story = withScenario(
+  'External CLI — newer version available',
+  {
+    select: 'acp-antigravity',
+    section: 'account',
+    focusKey: 'acp-antigravity',
+    cliLatestVersions: { 'acp-antigravity': '1.5.20', 'acp-grok': '1.0.95' },
+    catalog: baseCatalog({
+      'acp-antigravity': {
+        enabled: true,
+        state: 'ready',
+        runtimeSource: 'external',
+        runtimeVersion: '1.5.18',
+        command: '/Users/demo/.local/bin/agy',
+      },
+      'acp-grok': {
+        enabled: true,
+        state: 'ready',
+        runtimeSource: 'external',
+        runtimeVersion: '1.0.92',
+        command: '/Users/demo/.grok/bin/grok',
+        requiresAuth: true,
       },
     }),
   },

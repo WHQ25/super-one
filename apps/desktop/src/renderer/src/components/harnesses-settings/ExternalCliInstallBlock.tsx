@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useMemo, useRef } from 'react'
-import { Loader2, Terminal } from 'lucide-react'
+import { useCallback, useMemo } from 'react'
+import { Terminal } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import {
   getExternalCliInstallSpec,
@@ -10,29 +10,30 @@ import {
   HighlightedCodeBlockPresenter,
   type HighlightedCodeBlockPresenterPorts,
 } from '@/components/chat/presenters/CodeBlock'
+import { ReadOnlyTerminal } from '@/components/coding/ReadOnlyTerminal'
 import { useIsDark } from '@/hooks/use-is-dark'
 import type { CliInstallUiState } from '@/hooks/use-external-cli-install'
-import { parseAnsiToTailwind } from '@/lib/ansi'
 import { tryCopy } from '@/lib/clipboard'
 
 export type { CliInstallUiState }
 
-export function AnsiTerminalLines({ text }: { text: string }) {
-  const lines = useMemo(() => text.split('\n'), [text])
+export function ExternalCliTerminalOutput({
+  title,
+  output,
+  testId = 'harness-cli-install-output',
+}: {
+  title: string
+  output: string
+  testId?: string
+}) {
   return (
-    <>
-      {lines.map((line, i) => (
-        <div key={i}>
-          {line ? (
-            parseAnsiToTailwind(line).map((span, j) => (
-              <span key={j} className={span.className}>{span.text}</span>
-            ))
-          ) : (
-            '\u00A0'
-          )}
-        </div>
-      ))}
-    </>
+    <div className="overflow-hidden rounded-md border border-border bg-background">
+      <div className="flex items-center gap-1.5 border-b border-border bg-muted/40 px-3 py-1.5 text-[11px] text-muted-foreground">
+        <Terminal className="size-3 shrink-0" />
+        <span className="truncate">{title}</span>
+      </div>
+      <ReadOnlyTerminal output={output} testId={testId} className="h-44" />
+    </div>
   )
 }
 
@@ -53,7 +54,6 @@ export function ExternalCliInstallBlock({
 }) {
   const { t } = useTranslation()
   const isDark = useIsDark()
-  const outputRef = useRef<HTMLDivElement>(null)
   const effectivePlatform =
     platform ?? (typeof window !== 'undefined' ? window.app?.platform : undefined) ?? 'darwin'
   const spec = useMemo(
@@ -62,12 +62,6 @@ export function ExternalCliInstallBlock({
   )
   const isRunning = installState?.phase === 'running'
   const hasOutput = Boolean(installState?.output)
-
-  useEffect(() => {
-    if (outputRef.current) {
-      outputRef.current.scrollTop = outputRef.current.scrollHeight
-    }
-  }, [installState?.output])
 
   const ports = useMemo<HighlightedCodeBlockPresenterPorts>(
     () => ({
@@ -126,37 +120,21 @@ export function ExternalCliInstallBlock({
         ports={ports}
       />
 
-      {(isRunning || hasOutput) && (
-        <div className="overflow-hidden rounded-md border border-zinc-800 bg-zinc-950">
-          <div className="flex items-center gap-1.5 border-b border-zinc-800 bg-zinc-900/90 px-3 py-1.5 text-[11px] text-zinc-400">
-            {isRunning ? (
-              <Loader2 className="size-3 shrink-0 animate-spin text-primary" />
-            ) : (
-              <Terminal className="size-3 shrink-0" />
-            )}
-            <span className="truncate">
-              {isRunning
-                ? t(
-                    isUpgrade
-                      ? 'settings.harnesses.cliInstall.upgrading'
-                      : 'settings.harnesses.cliInstall.running',
-                    { binary: spec.binaryName },
-                  )
-                : t('common.terminal')}
-            </span>
-          </div>
-          <div
-            ref={outputRef}
-            data-testid="harness-cli-install-output"
-            className="max-h-44 overflow-auto px-3 py-2 font-mono text-xs leading-relaxed text-zinc-200"
-          >
-            {hasOutput ? <AnsiTerminalLines text={installState?.output ?? ''} /> : null}
-            {isRunning && (
-              <span className="inline-block h-3.5 w-1.5 animate-pulse bg-zinc-400 align-middle" />
-            )}
-          </div>
-        </div>
-      )}
+      {(isRunning || hasOutput) ? (
+        <ExternalCliTerminalOutput
+          title={
+            isRunning
+              ? t(
+                  isUpgrade
+                    ? 'settings.harnesses.cliInstall.upgrading'
+                    : 'settings.harnesses.cliInstall.running',
+                  { binary: spec.binaryName },
+                )
+              : t('common.terminal')
+          }
+          output={installState?.output ?? ''}
+        />
+      ) : null}
 
       {errorText ? (
         <p role="alert" className="text-xs break-words text-error">

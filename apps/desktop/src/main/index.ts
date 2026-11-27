@@ -10,7 +10,9 @@ import { registerAttachmentOriginalsIpc } from './attachment-originals'
 import { registerMcpAppsProviderIpc } from './mcp-apps/provider-ipc'
 import { initializeMcpAppExecutor, observeRemoteMcpAppEvent, releaseMcpAppRequester } from './mcp-apps/executor'
 import { codexAccountStore } from './codex/codex-account-store'
+import { antigravityAccountId } from '@superone/shared/antigravity-auth'
 import { registerAntigravityAuthIpc } from './acp/antigravity-auth-ipc'
+import { antigravityAccountStore } from './acp/antigravity-profile'
 import { registerGrokAuthIpc } from './acp/grok-auth-ipc'
 import { registerCodexAccountIpc } from './codex/codex-account-ipc'
 import { registerCodexUsageIpc } from './codex/codex-usage-ipc'
@@ -441,7 +443,15 @@ function resolveBaseProviderConfig(provider: SessionProvider, apiProviderId: str
       ? provider.config as Record<string, unknown>
       : {}
     const configured = typeof base.agentId === 'string' ? base.agentId : ''
-    return { ...base, agentId: configured || acpAgentIdForHarness(provider.harnessId) }
+    const accountId =
+      provider.harnessId === 'acp-antigravity'
+        ? (antigravityAccountId(apiProviderId) ?? undefined)
+        : undefined
+    return {
+      ...base,
+      agentId: configured || acpAgentIdForHarness(provider.harnessId),
+      ...(accountId ? { accountId } : {}),
+    }
   }
   if (provider.harnessId === 'claude') {
     const account = claudeAccountConfig(apiProviderId)
@@ -593,6 +603,7 @@ const sessionManager = new SessionManagerImpl({
     }), harnessId)
   },
   getActiveDefaultApiProviderId: (harnessId) => {
+    if (harnessId === 'acp-antigravity') return antigravityAccountStore().defaultProviderId()
     if (isAcpProtocolHarness(harnessId) || harnessId === 'opencode' || harnessId === 'cursor') return null
     if (harnessId === 'dsh') return getBinding('chat:dsh')?.credentialId ?? null
     return getBinding(harnessId === 'codex' ? 'chat:codex' : 'chat:claude')?.credentialId

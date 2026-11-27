@@ -1,15 +1,15 @@
 import { useCallback, useMemo } from 'react'
-import { ArrowUpCircle, Loader2, RotateCcw } from 'lucide-react'
+import { ArrowUpCircle, RotateCcw } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import type { HarnessId } from '@superone/shared/agent-types'
 import {
   extractCliFailureReason,
-  extractLatestCliProgressLine,
   getExternalCliInstallSpec,
   type ExternalCliHarnessId,
 } from '@superone/shared/environment/external-cli-install'
 import { Button } from '@superone/ui/components/ui/button'
 import { resolveSessionIcon, resolveSessionIconFromBrandKey } from '@/components/harness/resolve-session-icon'
+import { ExternalCliTerminalOutput } from '@/components/harnesses-settings/ExternalCliInstallBlock'
 import { useExternalCliInstall } from '@/hooks/use-external-cli-install'
 
 export interface HarnessUpgradeComposerProps {
@@ -49,14 +49,10 @@ export function HarnessUpgradeComposer({
   const installState = cliInstalls[harnessId]
   const isRunning = installState?.phase === 'running'
   const isError = installState?.phase === 'error'
+  const hasOutput = Boolean(installState?.output)
 
   const HarnessIcon =
     resolveSessionIconFromBrandKey(harnessId) ?? resolveSessionIcon(provider, acpAgentId)
-
-  const progressLine = useMemo(
-    () => extractLatestCliProgressLine(installState?.output ?? ''),
-    [installState?.output],
-  )
 
   const handleUpgrade = useCallback(() => {
     void runInstall(harnessId, {
@@ -154,10 +150,7 @@ export function HarnessUpgradeComposer({
             className="shrink-0 gap-1.5"
           >
             {isRunning ? (
-              <>
-                <Loader2 className="size-3.5 animate-spin" />
-                {t('settings.harnesses.cliInstall.upgrading', { binary: spec.binaryName })}
-              </>
+              t('settings.harnesses.cliInstall.upgrading', { binary: spec.binaryName })
             ) : isError ? (
               <>
                 <RotateCcw className="size-3.5" />
@@ -172,24 +165,12 @@ export function HarnessUpgradeComposer({
           </Button>
         </div>
 
-        {isRunning ? (
-          <div className="space-y-1.5">
-            <div
-              role="progressbar"
-              aria-label={t('settings.harnesses.cliInstall.upgrading', { binary: spec.binaryName })}
-              className="h-1 w-full overflow-hidden rounded-full bg-muted"
-            >
-              <div className="h-full w-2/5 animate-pulse rounded-full bg-primary" />
-            </div>
-            <p
-              aria-live="polite"
-              data-testid="composer-cli-upgrade-progress"
-              className="truncate text-xs text-muted-foreground"
-            >
-              {progressLine ??
-                t('settings.harnesses.cliInstall.upgrading', { binary: spec.binaryName })}
-            </p>
-          </div>
+        {(isRunning || hasOutput) ? (
+          <ExternalCliTerminalOutput
+            title={spec.upgradeCommand}
+            output={installState?.output ?? ''}
+            testId="composer-cli-upgrade-output"
+          />
         ) : null}
 
         {errorText ? (

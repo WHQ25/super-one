@@ -14,6 +14,7 @@ import type { MentionedSessionData } from '@superone/runtime/session/mention-con
 import { hostEntrypointAppsForSession } from '../mcp-apps/host-files'
 import { admitTurnAttachments } from '@superone/shared/attachment-turn'
 import { assertCodexAccountSwitchAllowed } from '@superone/shared/codex-accounts'
+import { assertAntigravityAccountSwitchAllowed } from '@superone/shared/antigravity-auth'
 import { insertCodexTimelineRow, stampCodexTimelineOrder } from '@superone/shared/codex-timeline-rows'
 import { buildCompactBoundaryMessage, compactBoundaryInsertIndex, isCompactSlashSend, withoutManualCompactTurn } from '@superone/shared/compact-boundary'
 import { buildRecapMessage, withRecapRow } from '@superone/shared/recap-row'
@@ -766,6 +767,7 @@ export class Session implements SessionContract {
     this.assertNotDisposed()
     if (this._apiProviderId === apiProviderId) return
     if (this.harnessId === 'codex') assertCodexAccountSwitchAllowed(this._apiProviderId, apiProviderId, this._messages.length > 0 || this.isStreaming())
+    if (this.harnessId === 'acp-antigravity') assertAntigravityAccountSwitchAllowed(this._apiProviderId, apiProviderId, this._messages.length > 0 || this.isStreaming())
     const nextConfig = this.resolveProviderConfigForApiProvider?.(apiProviderId)
     this._apiProviderId = apiProviderId
     if (this.resolveProviderConfigForApiProvider) {

@@ -41,6 +41,21 @@ export interface ExternalCliInstallResult {
   status?: HarnessInstallationStatus
 }
 
+export interface ExternalCliUpdateInfo {
+  harnessId: ExternalCliHarnessId
+  currentVersion?: string
+  latestVersion: string | null
+  updateAvailable: boolean
+  belowMinimum: boolean
+  minVersion: string
+  checkedAt: number
+}
+
+export interface ExternalCliUpdateCheckOptions {
+  harnessIds?: ExternalCliHarnessId[]
+  force?: boolean
+}
+
 interface PlatformInstallCommands {
   binaryName: string
   minVersion: string
@@ -135,6 +150,17 @@ export function checkExternalCliVersion(
     return { ok: false, actualVersion: normalized, minVersion }
   }
   return { ok: true, actualVersion: normalized, minVersion }
+}
+
+export function isExternalCliUpdateAvailable(
+  currentVersion: string | null | undefined,
+  latestVersion: string | null | undefined,
+): boolean {
+  const current = normalizeExternalCliVersion(currentVersion)
+  const latest = normalizeExternalCliVersion(latestVersion)
+  if (!current || !latest) return false
+  const cmp = compareExternalCliVersions(current, latest)
+  return cmp !== null && cmp < 0
 }
 
 export function formatExternalCliUpgradeMessage(

@@ -14,6 +14,11 @@ export type HarnessCliInstallMessages = {
   composerUpgradeTitle: string
   composerUpgradeHint: string
   composerRemoteIncompatible: string
+  updateAvailable: string
+  updateToVersion: string
+  upToDate: string
+  checkingUpdates: string
+  checkUpdates: string
 }
 
 export const harnessCliInstallEn: HarnessCliInstallMessages = {
@@ -32,6 +37,11 @@ export const harnessCliInstallEn: HarnessCliInstallMessages = {
   composerUpgradeTitle: '{{label}} requires an update',
   composerUpgradeHint: 'Current {{binary}} CLI ({{actual}}) is below the minimum supported version {{min}}.',
   composerRemoteIncompatible: '{{label}} on this remote host must be upgraded to ≥ {{min}} before continuing.',
+  updateAvailable: 'Update {{latest}}',
+  updateToVersion: 'Update to {{latest}}',
+  upToDate: 'Up to date',
+  checkingUpdates: 'Checking updates…',
+  checkUpdates: 'Check for updates',
 }
 
 export const harnessCliInstallZh: HarnessCliInstallMessages = {
@@ -50,4 +60,9 @@ export const harnessCliInstallZh: HarnessCliInstallMessages = {
   composerUpgradeTitle: '{{label}} 需要升级',
   composerUpgradeHint: '当前 {{binary}} CLI 版本（{{actual}}）低于最低要求 {{min}}。',
   composerRemoteIncompatible: '远程主机上的 {{label}} 需要升级至 ≥ {{min}} 后才能继续对话。',
+  updateAvailable: '有新版本 {{latest}}',
+  updateToVersion: '升级到 {{latest}}',
+  upToDate: '已是最新',
+  checkingUpdates: '检查更新中…',
+  checkUpdates: '检查更新',
 }

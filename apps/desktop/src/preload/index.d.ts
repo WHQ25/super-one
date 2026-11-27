@@ -30,6 +30,8 @@ import type {
   ExternalCliHarnessId,
   ExternalCliInstallEvent,
   ExternalCliInstallResult,
+  ExternalCliUpdateCheckOptions,
+  ExternalCliUpdateInfo,
   ProjectSnapshot,
   SessionLoadResult,
   SupervisorSnapshot,
@@ -192,6 +194,9 @@ interface AppAPI extends WindowLayoutAPI {
   probeHarness(harnessId: string): Promise<unknown>
   ensureHarness(harnessId: 'claude' | 'codex'): Promise<unknown>
   installHarnessCli(harnessId: ExternalCliHarnessId): Promise<ExternalCliInstallResult>
+  checkHarnessCliUpdates(opts?: ExternalCliUpdateCheckOptions): Promise<
+    Partial<Record<ExternalCliHarnessId, ExternalCliUpdateInfo>>
+  >
   onHarnessCliInstallEvent(callback: (event: ExternalCliInstallEvent) => void): () => void
   /** Onboarding: scan PATH for first-party harness CLIs. */
   scanHarnessClis(): Promise<{
@@ -454,7 +459,7 @@ interface AppAPI extends WindowLayoutAPI {
   discoverProviderModels(data: { apiKey: string; credentialId?: string; baseUrl: string }): Promise<DiscoverModelsResult>
   listAcpAgents(): Promise<import('@superone/shared/agent-types').AcpResources>
   grokAuth(request: import('@superone/shared/grok-auth').GrokAuthRequest): Promise<import('@superone/shared/grok-auth').GrokAuthState>
-  antigravityAuth(request: import('@superone/shared/antigravity-auth').AntigravityAuthRequest): Promise<import('@superone/shared/antigravity-auth').AntigravityAuthState>
+  antigravityAuth(request: import('@superone/shared/antigravity-auth').AntigravityAuthRequest): Promise<import('@superone/shared/antigravity-auth').AntigravityAccountsSnapshot>
   refreshAcpModels(agentId?: string): Promise<import('@superone/shared/agent-types').AcpResources>
 
   // File operations

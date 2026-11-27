@@ -1,116 +1,44 @@
 import { randomUUID } from 'node:crypto'
-import { homedir } from 'node:os'
-import { client, methods, PROTOCOL_VERSION } from '@agentclientprotocol/sdk'
 import { shell } from 'electron'
 import type {
-  AntigravityAuthConfig,
+  AntigravityAccountsSnapshot,
+  AntigravityActiveLogin,
+  AntigravityAuthMethod,
   AntigravityAuthRequest,
-  AntigravityAuthState,
 } from '@superone/shared/antigravity-auth'
 import { resolveDesktopAntigravityLaunch } from '../harness/antigravity-launch'
 import { probeDesktopHarness } from '../harness/service'
-import { ensureShellPath } from '../shell-path'
-import { resolveAcpClientVersion } from './acp-client-info'
-import { spawnAcpProcess } from './acp-process'
 import {
-  clearAntigravityOAuthToken,
-  extractAntigravityAuthUrlFromStdoutLine,
-  extractAntigravityAuthUrlsFromStderrChunk,
+  openAntigravityAuthConnection,
+  startAntigravityCodeLoginProcess,
+  type AntigravityAuthConnection,
+  type AntigravityCodeLoginHandle,
+  type OpenAntigravityAuthConnectionOptions,
+  type StartAntigravityCodeLoginOptions,
+} from './antigravity-auth-transport'
+import {
+  antigravityAccountStore,
   forwardAntigravityCallbackUrl,
-  isAntigravityAuthSatisfied,
-  prepareAntigravitySpawnContext,
-  readAntigravityAuthConfig,
+  isAccountAuthSatisfied,
+  validateAntigravityLoginCodeResponse,
   validateAntigravityOAuthUrl,
-  writeAntigravityAuthConfig,
 } from './antigravity-profile'
 
-export interface AntigravityAuthConnection {
-  initialize(): Promise<{ authMethods?: Array<{ id?: string }> }>
-  authenticate(methodId: string): Promise<unknown>
-  close(): Promise<void>
+export type {
+  AntigravityAuthConnection,
+  AntigravityCodeLoginHandle,
+  OpenAntigravityAuthConnectionOptions,
+  StartAntigravityCodeLoginOptions,
 }
-
-export interface OpenAntigravityAuthConnectionOptions {
-  onAuthUrl: (rawUrl: string) => void
-  customHome?: string
-}
-
-export async function openAntigravityAuthConnection(
-  opts: OpenAntigravityAuthConnectionOptions,
-): Promise<AntigravityAuthConnection | null> {
-  await ensureShellPath()
-  const launch = resolveDesktopAntigravityLaunch()
-  if (!launch) return null
-  const spawnCtx = prepareAntigravitySpawnContext({
-    customHome: opts.customHome,
-  })
-  const proc = spawnAcpProcess(
-    {
-      agentId: 'antigravity',
-      command: launch.command,
-      args: launch.args,
-      cwd: homedir(),
-      env: spawnCtx.extraEnv,
-    },
-    {
-      baseEnv: spawnCtx.baseEnv,
-      onStdoutLine: (line) => {
-        const url = extractAntigravityAuthUrlFromStdoutLine(line)
-        if (url) {
-          opts.onAuthUrl(url)
-          return true
-        }
-        return false
-      },
-      onStderrData: (chunk) => {
-        for (const url of extractAntigravityAuthUrlsFromStderrChunk(chunk)) {
-          opts.onAuthUrl(url)
-        }
-      },
-      onExit: spawnCtx.cleanup,
-    },
-  )
-  const connection = client({ name: 'superone' }).connect(proc.stream)
-  return {
-    initialize: () =>
-      connection.agent.request(methods.agent.initialize, {
-        protocolVersion: PROTOCOL_VERSION,
-        clientInfo: { name: 'superone', version: resolveAcpClientVersion() },
-        clientCapabilities: {
-          fs: { readTextFile: false, writeTextFile: false },
-          terminal: false,
-        },
-      }),
-    authenticate: (methodId) =>
-      connection.agent.request(methods.agent.authenticate, { methodId }),
-    close: async () => {
-      try {
-        connection.close()
-      } finally {
-        await proc.kill()
-        spawnCtx.cleanup()
-      }
-    },
-  }
-}
-
-const isActiveStatus = (status: AntigravityAuthState['status']): boolean =>
-  status === 'starting' || status === 'waiting' || status === 'verifying'
-
-function publicAuthConfig(customHome?: string): AntigravityAuthConfig {
-  const stored = readAntigravityAuthConfig(customHome)
-  return {
-    authMethod: stored.authMethod,
-    ...(stored.gcpProject ? { gcpProject: stored.gcpProject } : {}),
-    ...(stored.gcpLocation ? { gcpLocation: stored.gcpLocation } : {}),
-    hasApiKey: stored.hasApiKey,
-  }
-}
+export { openAntigravityAuthConnection, startAntigravityCodeLoginProcess }
 
 export interface AntigravityAuthServiceDeps {
   openConnection?: (
     opts: OpenAntigravityAuthConnectionOptions,
   ) => Promise<AntigravityAuthConnection | null>
+  startCodeLogin?: (
+    opts: StartAntigravityCodeLoginOptions,
+  ) => Promise<AntigravityCodeLoginHandle | null>
   hasRuntime?: () => boolean
   openExternal?: (url: string) => Promise<void>
   forwardCallback?: typeof forwardAntigravityCallbackUrl
@@ -119,14 +47,19 @@ export interface AntigravityAuthServiceDeps {
 }
 
 export class AntigravityAuthService {
-  private state: AntigravityAuthState
+  private activeLogin: AntigravityActiveLogin | null = null
+  private lastError: string | undefined
   private connection: AntigravityAuthConnection | null = null
-  private pendingCallback: { redirectUri: string; state: string } | null = null
+  private codeHandle: AntigravityCodeLoginHandle | null = null
+  private pendingOAuth: { redirectUri: string; state: string; mode: 'code' | 'loopback' } | null = null
   private generation = 0
   private timer: ReturnType<typeof setTimeout> | undefined
   private readonly openConnection: (
     opts: OpenAntigravityAuthConnectionOptions,
   ) => Promise<AntigravityAuthConnection | null>
+  private readonly startCodeLogin: (
+    opts: StartAntigravityCodeLoginOptions,
+  ) => Promise<AntigravityCodeLoginHandle | null>
   private readonly hasRuntime: () => boolean
   private readonly openExternal: (url: string) => Promise<void>
   private readonly forwardCallback: typeof forwardAntigravityCallbackUrl
@@ -136,6 +69,7 @@ export class AntigravityAuthService {
   constructor(deps: AntigravityAuthServiceDeps = {}) {
     this.customHome = deps.customHome
     this.openConnection = deps.openConnection ?? openAntigravityAuthConnection
+    this.startCodeLogin = deps.startCodeLogin ?? startAntigravityCodeLoginProcess
     this.hasRuntime = deps.hasRuntime ?? (() => Boolean(resolveDesktopAntigravityLaunch()))
     this.openExternal = deps.openExternal ?? ((url) => shell.openExternal(url))
     this.forwardCallback = deps.forwardCallback ?? forwardAntigravityCallbackUrl
@@ -148,161 +82,262 @@ export class AntigravityAuthService {
           void 0
         }
       })
-    this.state = this.computeIdleState()
   }
 
-  private computeIdleState(): AntigravityAuthState {
-    const stored = readAntigravityAuthConfig(this.customHome)
-    const config = publicAuthConfig(this.customHome)
-    if (!this.hasRuntime()) {
-      return { status: 'unavailable', ...config, config }
-    }
-    const satisfied = isAntigravityAuthSatisfied(this.customHome)
+  private snapshot(): AntigravityAccountsSnapshot {
+    const store = antigravityAccountStore(this.customHome)
     return {
-      status: satisfied ? 'signed_in' : 'signed_out',
-      ...config,
-      config,
-      ...(satisfied && stored.email ? { email: stored.email } : {}),
+      runtimeAvailable: this.hasRuntime(),
+      defaultAccountId: store.defaultAccountId(),
+      accounts: store.list(),
+      activeLogin: this.activeLogin,
+      ...(this.lastError ? { error: this.lastError } : {}),
     }
   }
 
-  async handle(request: AntigravityAuthRequest): Promise<AntigravityAuthState> {
-    if (request.action === 'status') {
-      if (!isActiveStatus(this.state.status)) {
-        this.state = {
-          ...this.computeIdleState(),
-          ...(this.state.status === 'error' && this.state.error
-            ? { status: 'error', error: this.state.error }
-            : {}),
-        }
-      }
-      return this.state
-    }
+  async handle(request: AntigravityAuthRequest): Promise<AntigravityAccountsSnapshot> {
+    const store = antigravityAccountStore(this.customHome)
 
+    if (request.action === 'list') return this.snapshot()
     if (request.action === 'refresh') {
-      if (isActiveStatus(this.state.status)) return this.state
-      this.state = this.computeIdleState()
+      this.lastError = undefined
       this.onAuthChanged()
-      return this.state
+      return this.snapshot()
     }
-
+    if (request.action === 'create') {
+      this.lastError = undefined
+      store.create({
+        label: request.label,
+        authMethod: request.authMethod,
+        apiKey: request.apiKey,
+        gcpProject: request.gcpProject,
+        gcpLocation: request.gcpLocation,
+      })
+      this.onAuthChanged()
+      return this.snapshot()
+    }
     if (request.action === 'configure') {
-      if (isActiveStatus(this.state.status)) {
-        await this.stop()
-      }
-      writeAntigravityAuthConfig(
-        {
-          authMethod: request.authMethod,
-          apiKey: request.apiKey,
-          clearApiKey: request.clearApiKey,
-          gcpProject: request.gcpProject,
-          gcpLocation: request.gcpLocation,
-        },
-        this.customHome,
-      )
-      this.state = this.computeIdleState()
+      this.lastError = undefined
+      if (this.activeLogin?.accountId === request.accountId) await this.stopLogin()
+      store.configure({
+        accountId: request.accountId,
+        label: request.label,
+        authMethod: request.authMethod,
+        apiKey: request.apiKey,
+        clearApiKey: request.clearApiKey,
+        gcpProject: request.gcpProject,
+        gcpLocation: request.gcpLocation,
+      })
       this.onAuthChanged()
-      return this.state
+      return this.snapshot()
     }
-
+    if (request.action === 'setDefault') {
+      this.lastError = undefined
+      store.setDefault(request.accountId)
+      this.onAuthChanged()
+      return this.snapshot()
+    }
     if (request.action === 'logout') {
-      await this.stop()
-      clearAntigravityOAuthToken(this.customHome)
-      this.state = this.computeIdleState()
+      this.lastError = undefined
+      if (this.activeLogin?.accountId === request.accountId) await this.stopLogin()
+      await this.tryNativeLogout(request.accountId)
+      store.clearOAuthCredentials(request.accountId)
       this.onAuthChanged()
-      return this.state
+      return this.snapshot()
     }
-
-    if (request.action === 'start') {
-      if (isActiveStatus(this.state.status)) return this.state
-      if (request.authMethod) {
-        writeAntigravityAuthConfig({ authMethod: request.authMethod }, this.customHome)
+    if (request.action === 'remove') {
+      this.lastError = undefined
+      if (this.activeLogin?.accountId === request.accountId) await this.stopLogin()
+      store.remove(request.accountId)
+      this.onAuthChanged()
+      return this.snapshot()
+    }
+    if (request.action === 'startLogin') {
+      return this.handleStartLogin(request.accountId, request.authMethod)
+    }
+    if (!this.activeLogin || request.loginId !== this.activeLogin.loginId) {
+      return this.snapshot()
+    }
+    if (request.action === 'cancelLogin') {
+      await this.stopLogin()
+      return this.snapshot()
+    }
+    if (this.activeLogin.status !== 'waiting' || !this.pendingOAuth) {
+      throw new Error('Antigravity login is not waiting for a response')
+    }
+    if (this.pendingOAuth.mode === 'code') {
+      const validated = validateAntigravityLoginCodeResponse(this.pendingOAuth, request.response)
+      if (!validated) {
+        throw new Error('Paste the authorization code or callback URL from the Google sign-in page.')
       }
-      const config = publicAuthConfig(this.customHome)
-      if (!this.hasRuntime()) {
-        this.state = { status: 'unavailable', ...config, config }
-        return this.state
-      }
-      if (config.authMethod === 'gemini-api-key' || config.authMethod === 'agent-platform') {
-        if (!isAntigravityAuthSatisfied(this.customHome)) {
-          this.state = {
-            status: 'error',
-            ...config,
-            config,
-            error:
-              config.authMethod === 'gemini-api-key'
-                ? 'Enter a Gemini API key before continuing.'
-                : 'Enter a Vertex AI API key or both Google Cloud project and location.',
-          }
-          return this.state
-        }
-        this.state = { status: 'signed_in', ...config, config }
-        this.onAuthChanged()
-        return this.state
-      }
-      if (config.authMethod === 'oauth-business' && (!config.gcpProject || !config.gcpLocation)) {
-        this.state = {
-          status: 'error',
-          ...config,
-          config,
-          error:
-            'Enter both Google Cloud project ID and location before signing in with Gemini Enterprise.',
-        }
-        return this.state
-      }
-
-      const generation = ++this.generation
-      const loginId = randomUUID()
-      this.pendingCallback = null
-      this.state = { status: 'starting', loginId, ...config, config }
-      this.timer = setTimeout(() => {
-        if (generation !== this.generation) return
-        const nextCfg = publicAuthConfig(this.customHome)
-        void this.stop({
-          status: 'error',
-          ...nextCfg,
-          config: nextCfg,
-          error: 'Google OAuth login timed out. Please try again.',
-        })
-      }, 180_000)
-      void this.runOAuthLogin(generation, loginId, config.authMethod)
-      return this.state
+      this.activeLogin = { ...this.activeLogin, status: 'verifying' }
+      this.codeHandle?.submit(validated)
+      return this.snapshot()
     }
-
-    if (!isActiveStatus(this.state.status) || request.loginId !== this.state.loginId) {
-      return this.state
-    }
-
-    if (request.action === 'cancel') {
-      await this.stop()
-      return this.state
-    }
-
-    if (this.state.status !== 'waiting' || !this.pendingCallback) {
-      throw new Error('Antigravity login is not waiting for a callback URL')
-    }
-    const prevAuthUrl = this.state.authUrl
-    this.state = {
-      ...this.state,
-      status: 'verifying',
-    }
+    const prevLogin = this.activeLogin
+    this.activeLogin = { ...prevLogin, status: 'verifying' }
     try {
-      await this.forwardCallback(request.callbackUrl, this.pendingCallback)
+      await this.forwardCallback(request.response, this.pendingOAuth)
     } catch (err) {
-      this.state = {
-        ...this.state,
-        status: 'waiting',
-        authUrl: prevAuthUrl,
-        error: err instanceof Error ? err.message : String(err),
-      }
+      this.activeLogin = prevLogin
       throw err
     }
-    return this.state
+    return this.snapshot()
   }
 
-  private async runOAuthLogin(
+  private async handleStartLogin(
+    accountId: string,
+    overrideMethod?: AntigravityAuthMethod,
+  ): Promise<AntigravityAccountsSnapshot> {
+    if (this.activeLogin) return this.snapshot()
+    const store = antigravityAccountStore(this.customHome)
+    this.lastError = undefined
+    if (!store.has(accountId)) throw new Error(`Unknown Antigravity account: ${accountId}`)
+    if (overrideMethod) store.configure({ accountId, authMethod: overrideMethod })
+    const account = store.get(accountId)
+    if (!this.hasRuntime()) {
+      this.lastError = 'Antigravity CLI (agy) is not installed.'
+      return this.snapshot()
+    }
+    if (account.authMethod === 'gemini-api-key' || account.authMethod === 'agent-platform') {
+      if (!isAccountAuthSatisfied(account, this.customHome)) {
+        this.lastError =
+          account.authMethod === 'gemini-api-key'
+            ? 'Enter a Gemini API key before continuing.'
+            : 'Enter a Vertex AI API key or both Google Cloud project and location.'
+        return this.snapshot()
+      }
+      this.onAuthChanged()
+      return this.snapshot()
+    }
+    if (account.authMethod === 'oauth-business' && (!account.gcpProject || !account.gcpLocation)) {
+      this.lastError =
+        'Enter both Google Cloud project ID and location before signing in with Gemini Enterprise.'
+      return this.snapshot()
+    }
+
+    const generation = ++this.generation
+    const loginId = randomUUID()
+    const useCodeLogin = account.profileDir !== null && account.authMethod === 'oauth-personal'
+    this.pendingOAuth = null
+    this.activeLogin = {
+      accountId: account.id,
+      loginId,
+      status: 'starting',
+      authMethod: account.authMethod,
+      mode: useCodeLogin ? 'code' : 'loopback',
+    }
+    this.timer = setTimeout(() => {
+      if (generation !== this.generation) return
+      void this.stopLogin('Google OAuth login timed out. Please try again.')
+    }, 300_000)
+
+    if (useCodeLogin) void this.runCodeLogin(generation, loginId, account.id)
+    else void this.runLoopbackLogin(generation, loginId, account.id, account.authMethod)
+    return this.snapshot()
+  }
+
+  private async tryNativeLogout(accountId: string): Promise<void> {
+    if (!this.hasRuntime()) return
+    let conn: AntigravityAuthConnection | null = null
+    try {
+      conn = await this.openConnection({
+        accountId,
+        onAuthUrl: () => {},
+        customHome: this.customHome,
+      })
+      if (!conn) return
+      const init = await Promise.race([
+        conn.initialize(),
+        new Promise<null>((resolve) => setTimeout(() => resolve(null), 5_000)),
+      ])
+      if (init?.agentCapabilities?.auth?.logout && conn.logout) {
+        await Promise.race([
+          conn.logout(),
+          new Promise<void>((resolve) => setTimeout(resolve, 5_000)),
+        ])
+      }
+    } catch {
+      void 0
+    } finally {
+      await conn?.close().catch(() => undefined)
+    }
+  }
+
+  private async runCodeLogin(
     generation: number,
     loginId: string,
+    accountId: string,
+  ): Promise<void> {
+    let handle: AntigravityCodeLoginHandle | null = null
+    let seenUrl = false
+    const handleAuthUrl = (rawUrl: string) => {
+      if (generation !== this.generation || seenUrl) return
+      try {
+        const validated = validateAntigravityOAuthUrl(rawUrl, 'code')
+        seenUrl = true
+        this.pendingOAuth = {
+          redirectUri: validated.redirectUri,
+          state: validated.state,
+          mode: 'code',
+        }
+        this.activeLogin = {
+          accountId,
+          loginId,
+          status: 'waiting',
+          authMethod: 'oauth-personal',
+          mode: 'code',
+          authUrl: validated.authUrl,
+        }
+        void this.openExternal(validated.authUrl).catch(() => undefined)
+      } catch (err) {
+        if (generation === this.generation) {
+          void this.stopLogin(err instanceof Error ? err.message : String(err))
+        }
+      }
+    }
+
+    try {
+      handle = await this.startCodeLogin({
+        accountId,
+        onAuthUrl: handleAuthUrl,
+        customHome: this.customHome,
+      })
+      if (generation !== this.generation) return
+      if (!handle) {
+        this.lastError = 'Antigravity CLI (agy) is not installed.'
+        return
+      }
+      this.codeHandle = handle
+      await handle.completed
+      if (generation !== this.generation) return
+      antigravityAccountStore(this.customHome).configure({
+        accountId,
+        authMethod: 'oauth-personal',
+        oauthSignedIn: true,
+      })
+      this.lastError = undefined
+      this.onAuthChanged()
+    } catch (err) {
+      if (generation === this.generation) {
+        this.lastError = err instanceof Error ? err.message : String(err)
+      }
+    } finally {
+      if (generation === this.generation) {
+        clearTimeout(this.timer)
+        this.timer = undefined
+        this.pendingOAuth = null
+        this.codeHandle = null
+        this.activeLogin = null
+      }
+      await handle?.close().catch(() => undefined)
+    }
+  }
+
+  private async runLoopbackLogin(
+    generation: number,
+    loginId: string,
+    accountId: string,
     methodId: 'oauth-personal' | 'oauth-business',
   ): Promise<void> {
     let connection: AntigravityAuthConnection | null = null
@@ -310,43 +345,38 @@ export class AntigravityAuthService {
     const handleAuthUrl = (rawUrl: string) => {
       if (generation !== this.generation || seenUrl) return
       try {
-        const validated = validateAntigravityOAuthUrl(rawUrl)
+        const validated = validateAntigravityOAuthUrl(rawUrl, 'loopback')
         seenUrl = true
-        this.pendingCallback = {
+        this.pendingOAuth = {
           redirectUri: validated.redirectUri,
           state: validated.state,
+          mode: 'loopback',
         }
-        const cfg = publicAuthConfig(this.customHome)
-        this.state = {
-          status: 'waiting',
+        this.activeLogin = {
+          accountId,
           loginId,
+          status: 'waiting',
+          authMethod: methodId,
+          mode: 'loopback',
           authUrl: validated.authUrl,
-          ...cfg,
-          config: cfg,
         }
         void this.openExternal(validated.authUrl).catch(() => undefined)
       } catch (err) {
         if (generation === this.generation) {
-          const cfg = publicAuthConfig(this.customHome)
-          void this.stop({
-            status: 'error',
-            ...cfg,
-            config: cfg,
-            error: err instanceof Error ? err.message : String(err),
-          })
+          void this.stopLogin(err instanceof Error ? err.message : String(err))
         }
       }
     }
 
     try {
       connection = await this.openConnection({
+        accountId,
         onAuthUrl: handleAuthUrl,
         customHome: this.customHome,
       })
       if (generation !== this.generation) return
       if (!connection) {
-        const cfg = publicAuthConfig(this.customHome)
-        this.state = { status: 'unavailable', ...cfg, config: cfg }
+        this.lastError = 'Antigravity CLI (agy) is not installed.'
         return
       }
       this.connection = connection
@@ -354,41 +384,43 @@ export class AntigravityAuthService {
       if (generation !== this.generation) return
       await connection.authenticate(methodId)
       if (generation !== this.generation) return
-      writeAntigravityAuthConfig({ authMethod: methodId, oauthSignedIn: true }, this.customHome)
-      const cfg = publicAuthConfig(this.customHome)
-      this.state = {
-        status: 'signed_in',
-        ...cfg,
-        config: cfg,
-      }
+      antigravityAccountStore(this.customHome).configure({
+        accountId,
+        authMethod: methodId,
+        oauthSignedIn: true,
+      })
+      this.lastError = undefined
       this.onAuthChanged()
     } catch (err) {
       if (generation === this.generation) {
-        const cfg = publicAuthConfig(this.customHome)
-        this.state = {
-          status: 'error',
-          ...cfg,
-          config: cfg,
-          error: err instanceof Error ? err.message : String(err),
-        }
+        this.lastError = err instanceof Error ? err.message : String(err)
       }
     } finally {
       if (generation === this.generation) {
         clearTimeout(this.timer)
-        this.pendingCallback = null
+        this.timer = undefined
+        this.pendingOAuth = null
         this.connection = null
+        this.activeLogin = null
       }
       await connection?.close().catch(() => undefined)
     }
   }
 
-  async stop(nextState?: AntigravityAuthState): Promise<void> {
+  async stopLogin(error?: string): Promise<void> {
     ++this.generation
     clearTimeout(this.timer)
-    this.pendingCallback = null
+    this.timer = undefined
+    this.pendingOAuth = null
+    this.activeLogin = null
+    if (error !== undefined) this.lastError = error
     const conn = this.connection
     this.connection = null
-    this.state = nextState ?? this.computeIdleState()
-    await conn?.close().catch(() => undefined)
+    const handle = this.codeHandle
+    this.codeHandle = null
+    await Promise.all([
+      conn?.close().catch(() => undefined),
+      handle?.close().catch(() => undefined),
+    ])
   }
 }

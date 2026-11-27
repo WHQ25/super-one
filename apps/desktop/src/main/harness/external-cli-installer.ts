@@ -20,6 +20,7 @@ import log from '../logger'
 import { ProcessTitle } from '../process-titles'
 import { ensureShellPath, refreshShellPath } from '../shell-path'
 import { buildSafeEnv } from '../spawn-env'
+import { clearExternalCliLatestVersionCache } from './external-cli-updates'
 import { enableDesktopHarness, getHarnessManager } from './service'
 
 export type ExternalCliInstallListener = (event: ExternalCliInstallEvent) => void
@@ -340,6 +341,7 @@ async function runExternalCliInstallOnce(
             return
           }
           clearExternalCliVersionCache()
+          clearExternalCliLatestVersionCache(harnessId)
           const status = await deps.enableHarness(harnessId)
           await deps.refreshAcpAgents()
           if (status.state === 'missing' || status.state === 'incompatible') {

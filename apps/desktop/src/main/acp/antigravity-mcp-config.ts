@@ -27,7 +27,11 @@ export function antigravityGlobalSuperoneServerName(variant: VariantId = variant
   return variant === 'stable' ? 'superone' : `superone-${variant}`
 }
 
-export function resolveAntigravityGlobalMcpConfigPath(homeDir = homedir()): string {
+export function resolveAntigravityGlobalMcpConfigPath(
+  homeDir = homedir(),
+  geminiDir?: string | null,
+): string {
+  if (geminiDir) return join(geminiDir, 'config', 'mcp_config.json')
   return join(homeDir, '.gemini', 'config', 'mcp_config.json')
 }
 
@@ -79,8 +83,9 @@ export function ensureAntigravityGlobalSuperoneMcpConfig(
   stdioConfig: SuperoneMcpStdioConfig,
   homeDir = homedir(),
   variant: VariantId = variantId(),
+  geminiDir?: string | null,
 ): boolean {
-  const configPath = resolveAntigravityGlobalMcpConfigPath(homeDir)
+  const configPath = resolveAntigravityGlobalMcpConfigPath(homeDir, geminiDir)
   let root: Record<string, unknown> = {}
   if (existsSync(configPath)) {
     try {

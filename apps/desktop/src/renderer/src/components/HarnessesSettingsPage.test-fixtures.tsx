@@ -1,7 +1,11 @@
 import { useEffect, useLayoutEffect, useRef, type ReactNode } from 'react'
-import type {
-  ExternalCliHarnessId,
-  ExternalCliInstallEvent,
+import {
+  checkExternalCliVersion,
+  getExternalCliMinVersion,
+  isExternalCliUpdateAvailable,
+  type ExternalCliHarnessId,
+  type ExternalCliInstallEvent,
+  type ExternalCliUpdateInfo,
 } from '@superone/shared/environment/external-cli-install'
 import { mockIpc } from '../../../../.storybook/mock-ipc'
 import { useAppStore } from '@/stores/app'
@@ -95,6 +99,7 @@ export type Scenario = {
   seedCliInstallEvents?: ExternalCliInstallEvent[]
   seedCliInstallStepMs?: number
   failCliInstallCode?: number
+  cliLatestVersions?: Partial<Record<ExternalCliHarnessId, string>>
   select?: 'claude' | 'codex' | 'cursor' | 'dsh' | 'opencode' | 'acp-grok' | 'acp-antigravity'
   focusKey?: string
   catalogPending?: boolean
@@ -168,6 +173,25 @@ export function installHarnessMocks(scenario: Scenario): void {
     }
   })
 
+  mockIpc('app', 'checkHarnessCliUpdates', async () => {
+    const out: Partial<Record<ExternalCliHarnessId, ExternalCliUpdateInfo>> = {}
+    for (const id of ['acp-antigravity', 'acp-grok', 'opencode'] as const) {
+      const row = catalogState.find((r) => r.id === id)
+      const latestVersion = scenario.cliLatestVersions?.[id] ?? row?.runtimeVersion ?? null
+      const minCheck = checkExternalCliVersion(id, row?.runtimeVersion)
+      out[id] = {
+        harnessId: id,
+        ...(row?.runtimeVersion ? { currentVersion: row.runtimeVersion } : {}),
+        latestVersion,
+        updateAvailable: isExternalCliUpdateAvailable(row?.runtimeVersion, latestVersion),
+        belowMinimum: !minCheck.ok,
+        minVersion: getExternalCliMinVersion(id),
+        checkedAt: Date.now(),
+      }
+    }
+    return out
+  })
+
   mockIpc('app', 'installHarnessCli', async (rawId: unknown) => {
     const harnessId = rawId as ExternalCliHarnessId
     emitCliInstall({ harnessId, phase: 'start' })
@@ -198,10 +222,13 @@ export function installHarnessMocks(scenario: Scenario): void {
             return
           }
           const command = externalBinaryPath(harnessId)
+          const upgradedVersion =
+            scenario.cliLatestVersions?.[harnessId] ?? getExternalCliMinVersion(harnessId)
           setCatalogRow(harnessId, {
             enabled: true,
             state: 'ready',
             runtimeSource: 'external',
+            runtimeVersion: upgradedVersion,
             command,
             diagnostic: undefined,
           })
@@ -343,9 +370,19 @@ export function installHarnessMocks(scenario: Scenario): void {
   mockIpc('app', 'antigravityAuth', async () => {
     const row = catalogState.find((r) => r.id === 'acp-antigravity')
     return {
-      status: row?.state === 'ready' ? 'signed_out' : 'unavailable',
-      method: 'oauth-personal',
-      config: { authMethod: 'oauth-personal' },
+      runtimeAvailable: row?.state === 'ready',
+      defaultAccountId: 'cli',
+      accounts: [
+        {
+          id: 'cli',
+          authMethod: 'oauth-personal',
+          signedIn: row?.state === 'ready',
+          isDefault: true,
+          isCliDefault: true,
+          hasApiKey: false,
+        },
+      ],
+      activeLogin: null,
     }
   })
 

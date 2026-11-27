@@ -205,6 +205,7 @@ const MAX_CONSECUTIVE_PUMP_ERRORS = 5
 
 export interface AcpRuntimeLaunchConfig {
   agentId?: string
+  accountId?: string
   command?: string
   args?: string[]
   env?: Record<string, string>
@@ -899,7 +900,7 @@ export async function createAcpRuntime(opts: AcpRuntimeOptions): Promise<AcpRunt
         : null
     const methodId = pickNonInteractiveAcpAuthMethod(authMethods, defaultAuthId)
     if (launch.agentId === 'antigravity') {
-      await authenticateAntigravityRuntime(connection)
+      await authenticateAntigravityRuntime(connection, opts.launch.accountId)
       log.info('[acp-runtime] authenticated agent=antigravity')
     } else if (methodId) {
       try {

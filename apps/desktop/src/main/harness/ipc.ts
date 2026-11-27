@@ -5,11 +5,18 @@
 
 import { BrowserWindow, ipcMain } from 'electron'
 import { AgentIpcChannels } from '@superone/shared/agent-types'
-import { isNodeHarnessId, type ExternalCliInstallEvent } from '@superone/shared/environment'
+import {
+  isExternalCliHarnessId,
+  isNodeHarnessId,
+  type ExternalCliHarnessId,
+  type ExternalCliInstallEvent,
+  type ExternalCliUpdateCheckOptions,
+} from '@superone/shared/environment'
 import {
   installExternalHarnessCli,
   setExternalCliInstallListener,
 } from './external-cli-installer'
+import { checkExternalCliUpdates } from './external-cli-updates'
 import {
   alignEnabledManagedHarnesses,
   disableDesktopHarness,
@@ -145,6 +152,20 @@ export function registerHarnessIpcHandlers(): void {
     log.info('[harness-ipc] installCli %s', harnessId)
     return installExternalHarnessCli(harnessId)
   })
+
+  ipcMain.handle(
+    AgentIpcChannels.HARNESS_CHECK_CLI_UPDATES,
+    async (_e, opts?: ExternalCliUpdateCheckOptions) => {
+      await ensureShellPath()
+      const harnessIds = Array.isArray(opts?.harnessIds)
+        ? opts.harnessIds.filter((id): id is ExternalCliHarnessId => isExternalCliHarnessId(id))
+        : undefined
+      return checkExternalCliUpdates({
+        ...(harnessIds && harnessIds.length > 0 ? { harnessIds } : {}),
+        force: opts?.force === true,
+      })
+    },
+  )
 
   ipcMain.handle(AgentIpcChannels.HARNESS_SCAN_CLI, async () => {
     await ensureShellPath()

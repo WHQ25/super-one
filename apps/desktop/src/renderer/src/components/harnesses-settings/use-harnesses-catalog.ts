@@ -1,6 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { toast } from 'sonner'
-import type { ExternalCliHarnessId } from '@superone/shared/environment/external-cli-install'
+import type {
+  ExternalCliHarnessId,
+  ExternalCliUpdateCheckOptions,
+  ExternalCliUpdateInfo,
+} from '@superone/shared/environment/external-cli-install'
 import { useExternalCliInstall } from '@/hooks/use-external-cli-install'
 import { useAppStore } from '@/stores/app'
 import {
@@ -33,6 +37,10 @@ export function useHarnessesCatalogState(getOrderKey: (item: ListItem) => string
   const [busyKey, setBusyKey] = useState<string | null>(null)
   const [error, setError] = useState('')
   const [progress, setProgress] = useState<Record<string, ProgressState>>({})
+  const [cliUpdates, setCliUpdates] = useState<
+    Partial<Record<ExternalCliHarnessId, ExternalCliUpdateInfo>>
+  >({})
+  const [checkingCliUpdates, setCheckingCliUpdates] = useState(false)
   const [authRefreshSeq, setAuthRefreshSeq] = useState(0)
   const [enabledExperimentalAgents, setEnabledExperimentalAgents] = useState<string[]>([])
   const [harnessOrder, setHarnessOrder] = useState<string[]>([])
@@ -57,6 +65,24 @@ export function useHarnessesCatalogState(getOrderKey: (item: ListItem) => string
     }
   }, [])
 
+  const checkCliUpdates = useCallback(
+    async (opts?: ExternalCliUpdateCheckOptions): Promise<void> => {
+      if (typeof window.app.checkHarnessCliUpdates !== 'function') return
+      setCheckingCliUpdates(true)
+      try {
+        const next = await window.app.checkHarnessCliUpdates(opts)
+        if (next && typeof next === 'object') {
+          setCliUpdates((prev) => ({ ...prev, ...next }))
+        }
+      } catch {
+        void 0
+      } finally {
+        setCheckingCliUpdates(false)
+      }
+    },
+    [],
+  )
+
   const refreshCatalog = useCallback(async () => {
     setLoading(true)
     setError('')
@@ -74,7 +100,8 @@ export function useHarnessesCatalogState(getOrderKey: (item: ListItem) => string
 
   useEffect(() => {
     void refreshCatalog()
-  }, [refreshCatalog])
+    void checkCliUpdates()
+  }, [checkCliUpdates, refreshCatalog])
 
   useEffect(() => {
     const unsub = window.app.onHarnessInstallProgress?.((event) => {
@@ -124,17 +151,22 @@ export function useHarnessesCatalogState(getOrderKey: (item: ListItem) => string
 
   const installExternalCli = useCallback(
     async (item: ListItem, harnessId: ExternalCliHarnessId): Promise<void> => {
-      const wasIncompatible = catalogById.get(harnessId)?.state === 'incompatible'
-      await runInstall(harnessId, {
+      const isUpgrade =
+        catalogById.get(harnessId)?.state === 'incompatible' ||
+        Boolean(cliUpdates[harnessId]?.updateAvailable)
+      const ok = await runInstall(harnessId, {
         label: item.label,
         provider: item.provider,
         acpAgentId: item.acpAgentId,
-        wasIncompatible,
+        wasIncompatible: isUpgrade,
         onRefreshCatalog: refreshCatalog,
         onSucceeded: () => setAuthRefreshSeq((n) => n + 1),
       })
+      if (ok) {
+        void checkCliUpdates({ harnessIds: [harnessId], force: true })
+      }
     },
-    [catalogById, refreshCatalog, runInstall],
+    [catalogById, checkCliUpdates, cliUpdates, refreshCatalog, runInstall],
   )
 
   const persistEnabledOrder = useCallback(
@@ -175,11 +207,14 @@ export function useHarnessesCatalogState(getOrderKey: (item: ListItem) => string
     setError,
     progress,
     cliInstalls,
+    cliUpdates,
+    checkingCliUpdates,
     authRefreshSeq,
     harnessOrder,
     setHarnessOrder,
     savingOrder,
     refreshCatalog,
+    checkCliUpdates,
     isItemEnabled,
     setExperimentalAgentEnabled,
     installExternalCli,

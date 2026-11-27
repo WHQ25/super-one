@@ -289,7 +289,7 @@ export class SessionManagerImpl implements SessionManagerContract {
       }
     }
     if (!restoringExistingSession) assertAgentProfileLaunchEnabled(provider.config)
-    if ((provider.harnessId === 'codex' || provider.harnessId === 'claude' || provider.harnessId === 'dsh') && apiProviderId === null && !restoredAccountSession && !resumedProviderSessionId) {
+    if ((provider.harnessId === 'codex' || provider.harnessId === 'claude' || provider.harnessId === 'dsh' || provider.harnessId === 'acp-antigravity') && apiProviderId === null && !restoredAccountSession && !resumedProviderSessionId) {
       apiProviderId = this.persistence.getActiveDefaultApiProviderId?.(provider.harnessId) ?? null
     }
     const providerConfig = resolveProviderConfig

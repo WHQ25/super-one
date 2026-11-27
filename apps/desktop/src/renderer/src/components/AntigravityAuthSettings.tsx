@@ -1,37 +1,37 @@
-import { useCallback, useEffect, useId, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Check, ChevronDown, ExternalLink, Loader2, LogOut, RefreshCw } from 'lucide-react'
+import { LogIn, LogOut, Plus, RefreshCw, Settings2, Star, Trash2 } from 'lucide-react'
 import { toast } from 'sonner'
-import { Button } from '@superone/ui/components/ui/button'
-import { Input } from '@superone/ui/components/ui/input'
-import { Label } from '@superone/ui/components/ui/label'
 import { Alert, AlertDescription, AlertTitle } from '@superone/ui/components/ui/alert'
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@superone/ui/components/ui/select'
+import { Button } from '@superone/ui/components/ui/button'
+import { IconButton } from '@superone/ui/components/ui/icon-button'
+import { Skeleton } from '@superone/ui/components/ui/skeleton'
 import type {
+  AntigravityAccountsSnapshot,
+  AntigravityAccountSummary,
   AntigravityAuthMethod,
   AntigravityAuthRequest,
-  AntigravityAuthState,
 } from '@superone/shared/antigravity-auth'
-import { cn } from '@superone/ui/lib/utils'
 import { requestOpenExternalLink } from '@/lib/external-link'
-import { SettingsCard, SettingsRow, settingsRowClassName } from '@/components/settings/SettingsSection'
+import { AntigravityAccountForm, type AntigravityAccountFormValues } from './AntigravityAccountForm'
+import { AntigravityLoginPanel } from './AntigravityLoginPanel'
+import { ProviderAccountCard, ProviderAccountHeader } from './ProviderAccountHeader'
 
-export type AntigravityAuthApi = (request: AntigravityAuthRequest) => Promise<AntigravityAuthState>
+export type AntigravityAuthApi = (
+  request: AntigravityAuthRequest,
+) => Promise<AntigravityAccountsSnapshot>
+
 const defaultApi: AntigravityAuthApi = (request) => window.app.antigravityAuth(request)
-const pending = (state: AntigravityAuthState | null) =>
-  !!state && ['starting', 'waiting', 'verifying'].includes(state.status)
 
-const AUTH_METHOD_LABEL_KEYS: Record<AntigravityAuthMethod, string> = {
+const METHOD_LABEL_KEYS: Record<AntigravityAuthMethod, string> = {
   'oauth-personal': 'antigravityAuth.methods.oauthPersonal',
   'oauth-business': 'antigravityAuth.methods.oauthBusiness',
   'gemini-api-key': 'antigravityAuth.methods.geminiApiKey',
   'agent-platform': 'antigravityAuth.methods.agentPlatform',
+}
+
+function isOAuthMethod(method: AntigravityAuthMethod): boolean {
+  return method === 'oauth-personal' || method === 'oauth-business'
 }
 
 export function AntigravityAuthSettings({
@@ -42,58 +42,55 @@ export function AntigravityAuthSettings({
   onAuthChanged?: () => void
 }) {
   const { t } = useTranslation()
-  const callbackId = useId()
-  const apiKeyId = useId()
-  const gcpProjectId = useId()
-  const gcpLocationId = useId()
-  const [state, setState] = useState<AntigravityAuthState | null>(null)
+  const [snapshot, setSnapshot] = useState<AntigravityAccountsSnapshot | null>(null)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
-  const [callbackUrl, setCallbackUrl] = useState('')
-  const [showCallback, setShowCallback] = useState(false)
-  const [apiKeyInput, setApiKeyInput] = useState('')
-  const [gcpProjectInput, setGcpProjectInput] = useState('')
-  const [gcpLocationInput, setGcpLocationInput] = useState('us-central1')
+  const [adding, setAdding] = useState(false)
+  const [editingId, setEditingId] = useState<string | null>(null)
+
   const mounted = useRef(false)
-  const stateRef = useRef(state)
+  const snapshotRef = useRef(snapshot)
   const revision = useRef(0)
   const changed = useRef(onAuthChanged)
   changed.current = onAuthChanged
 
-  const apply = useCallback((next: AntigravityAuthState, notifyChange = false) => {
-    if (!mounted.current) return
-    const prev = stateRef.current
-    if (
-      notifyChange ||
-      (next.status === 'signed_in' && pending(prev)) ||
-      (prev && prev.status !== next.status)
-    ) {
-      changed.current?.()
-    }
-    stateRef.current = next
-    setState(next)
-    setGcpProjectInput(next.config?.gcpProject ?? '')
-    setGcpLocationInput(next.config?.gcpLocation || 'us-central1')
+  const notifyChanged = useCallback(() => {
+    window.dispatchEvent(new Event('antigravity-accounts-changed'))
+    changed.current?.()
   }, [])
 
+  const apply = useCallback(
+    (next: AntigravityAccountsSnapshot, forceNotify = false) => {
+      if (!mounted.current) return
+      const prev = snapshotRef.current
+      const loginFinished = Boolean(prev?.activeLogin && !next.activeLogin && !next.error)
+      snapshotRef.current = next
+      setSnapshot(next)
+      if (forceNotify || loginFinished) notifyChanged()
+    },
+    [notifyChanged],
+  )
+
   const request = useCallback(
-    async (action: AntigravityAuthRequest, notifyChange = false) => {
+    async (action: AntigravityAuthRequest, notifyOnSuccess = false) => {
       const current = ++revision.current
       setBusy(true)
       setError('')
       try {
         const next = await api(action)
         if (!mounted.current) {
-          if (action.action === 'start' && next.loginId) {
-            void api({ action: 'cancel', loginId: next.loginId }).catch(() => {})
+          if (action.action === 'startLogin' && next.activeLogin?.loginId) {
+            void api({ action: 'cancelLogin', loginId: next.activeLogin.loginId }).catch(() => {})
           }
-          return
+          return next
         }
-        if (current === revision.current) apply(next, notifyChange)
+        if (current === revision.current) apply(next, notifyOnSuccess)
+        return next
       } catch (cause) {
         if (mounted.current && current === revision.current) {
           setError(cause instanceof Error ? cause.message : t('antigravityAuth.unknownError'))
         }
+        return null
       } finally {
         if (mounted.current && current === revision.current) setBusy(false)
       }
@@ -107,21 +104,22 @@ export function AntigravityAuthSettings({
     return () => {
       mounted.current = false
       ++revision.current
-      const current = stateRef.current
-      if (pending(current) && current?.loginId) {
-        void api({ action: 'cancel', loginId: current.loginId }).catch(() => {})
+      const activeId = snapshotRef.current?.activeLogin?.loginId
+      if (activeId) {
+        void api({ action: 'cancelLogin', loginId: activeId }).catch(() => {})
       }
     }
   }, [api, request])
 
+  const activeLogin = snapshot?.activeLogin ?? null
   useEffect(() => {
-    if (!pending(state)) return
+    if (!activeLogin) return
     let stopped = false
     let timer: ReturnType<typeof setTimeout>
     const poll = async () => {
       const current = revision.current
       try {
-        const next = await api({ action: 'status' })
+        const next = await api({ action: 'list' })
         if (!stopped && current === revision.current) apply(next)
       } catch (cause) {
         if (!stopped) {
@@ -135,317 +133,281 @@ export function AntigravityAuthSettings({
       stopped = true
       clearTimeout(timer)
     }
-  }, [api, apply, state?.status, t])
+  }, [api, apply, activeLogin?.loginId, activeLogin?.status, t])
 
-  const active = pending(state)
-  const connected = state?.status === 'signed_in'
-  const method: AntigravityAuthMethod = state?.config?.authMethod ?? 'oauth-personal'
-  const isOAuthMethod = method === 'oauth-personal' || method === 'oauth-business'
-  const needsApiKey = method === 'gemini-api-key' || method === 'agent-platform'
-  const needsGcpConfig = method === 'oauth-business' || method === 'agent-platform'
-
-  const openBrowser = async () => {
-    if (!state?.authUrl) return
+  const openBrowser = async (url: string) => {
     try {
-      await requestOpenExternalLink(state.authUrl)
+      await requestOpenExternalLink(url)
     } catch {
       setError(t('antigravityAuth.browserError'))
     }
   }
 
-  const statusText = !state
-    ? t('antigravityAuth.checking')
-    : active
-      ? t(
-          state.status === 'starting'
-            ? 'antigravityAuth.starting'
-            : state.status === 'verifying'
-              ? 'antigravityAuth.verifying'
-              : 'antigravityAuth.waiting',
-        )
-      : connected
-        ? t('antigravityAuth.signedIn')
-        : state.status === 'unavailable'
-          ? t('antigravityAuth.unavailable')
-          : t('antigravityAuth.signedOut')
-
-  const hint = connected
-    ? (state.email || t(AUTH_METHOD_LABEL_KEYS[method]))
-    : state?.status === 'signed_out'
-      ? `${t('settings.harnesses.needsAuth')} ${t('antigravityAuth.signedOutHint')}`
-      : state?.status === 'unavailable'
-        ? t('antigravityAuth.installHint')
-        : undefined
-
-  const handleMethodChange = (nextMethod: string) => {
-    void request(
+  const handleCreate = async (values: AntigravityAccountFormValues) => {
+    const next = await request(
       {
-        action: 'configure',
-        authMethod: nextMethod as AntigravityAuthMethod,
-      },
-      true,
-    )
-  }
-
-  const handleSaveConfig = async (event: React.FormEvent) => {
-    event.preventDefault()
-    await request(
-      {
-        action: 'configure',
-        authMethod: method,
-        ...(apiKeyInput.trim() ? { apiKey: apiKeyInput.trim() } : {}),
-        ...(needsGcpConfig
-          ? {
-              gcpProject: gcpProjectInput.trim(),
-              gcpLocation: gcpLocationInput.trim() || 'us-central1',
-            }
+        action: 'create',
+        ...(values.label ? { label: values.label } : {}),
+        authMethod: values.authMethod,
+        ...(values.apiKey ? { apiKey: values.apiKey } : {}),
+        ...(values.authMethod === 'oauth-business' || values.authMethod === 'agent-platform'
+          ? { gcpProject: values.gcpProject, gcpLocation: values.gcpLocation }
           : {}),
       },
       true,
     )
-    setApiKeyInput('')
+    if (!next) return
+    setAdding(false)
+    const created = next.accounts[next.accounts.length - 1]
+    if (
+      created &&
+      next.runtimeAvailable &&
+      (created.authMethod === 'oauth-personal' ||
+        (created.authMethod === 'oauth-business' && created.gcpProject && created.gcpLocation))
+    ) {
+      await request({ action: 'startLogin', accountId: created.id, authMethod: created.authMethod })
+      return
+    }
     toast.success(t('antigravityAuth.configSaved'))
   }
 
-  const handleClearApiKey = async () => {
-    setApiKeyInput('')
-    await request({ action: 'configure', authMethod: method, clearApiKey: true }, true)
+  const handleConfigure = async (accountId: string, values: AntigravityAccountFormValues) => {
+    const next = await request(
+      {
+        action: 'configure',
+        accountId,
+        label: values.label,
+        authMethod: values.authMethod,
+        ...(values.apiKey ? { apiKey: values.apiKey } : {}),
+        ...(values.authMethod === 'oauth-business' || values.authMethod === 'agent-platform'
+          ? { gcpProject: values.gcpProject, gcpLocation: values.gcpLocation }
+          : {}),
+      },
+      true,
+    )
+    if (!next) return
+    setEditingId(null)
+    toast.success(t('antigravityAuth.configSaved'))
   }
+
+  const accountTitle = (account: AntigravityAccountSummary): string => {
+    if (account.label) return account.label
+    if (account.isCliDefault) return account.email || t('antigravityAuth.cliAccountLabel')
+    return account.email || account.id.slice(0, 8)
+  }
+
+  const accountPlanLabel = (account: AntigravityAccountSummary): string => {
+    const methodLabel = t(METHOD_LABEL_KEYS[account.authMethod])
+    if (account.label && account.email) return `${account.email} · ${methodLabel}`
+    if (account.isCliDefault && !account.label && account.email) {
+      return `${t('antigravityAuth.cliAccountLabel')} · ${methodLabel}`
+    }
+    return methodLabel
+  }
+
+  const blocked = busy || Boolean(activeLogin)
+  const accounts = snapshot?.accounts ?? []
+  const displayError = error || snapshot?.error
 
   return (
     <section className="flex w-full flex-col gap-3" aria-label={t('antigravityAuth.title')}>
-      <SettingsCard>
-        <SettingsRow
-          label={
-            <span role="status" className="flex items-center gap-2">
-              {active && <Loader2 className="size-3.5 shrink-0 animate-spin text-muted-foreground" />}
-              {connected && <Check className="size-3.5 shrink-0 text-success" />}
-              <span>{statusText}</span>
-            </span>
-          }
-          description={hint ? <span className={cn(connected && 'block truncate')}>{hint}</span> : undefined}
+      <header className="flex items-start justify-between gap-3">
+        <p className="text-xs text-muted-foreground">{t('antigravityAuth.multiDescription')}</p>
+        <IconButton
+          tooltip={t('antigravityAuth.refresh')}
+          disabled={blocked}
+          onClick={() => void request({ action: 'refresh' })}
         >
-          {!active && (
-            <div className="flex flex-wrap items-center gap-2">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7"
-                disabled={busy}
-                onClick={() => void request({ action: 'refresh' })}
-              >
-                {busy ? <Loader2 className="size-3.5 animate-spin" /> : <RefreshCw className="size-3.5" />}
-                {t('antigravityAuth.refresh')}
-              </Button>
-              {isOAuthMethod && !connected && state?.status !== 'unavailable' && (
-                <Button
-                  size="sm"
-                  className="h-7"
-                  disabled={busy || !state}
-                  onClick={() => {
-                    setCallbackUrl('')
-                    setShowCallback(false)
-                    void request({ action: 'start', authMethod: method })
-                  }}
-                >
-                  {state?.status === 'error' ? t('antigravityAuth.retry') : t('antigravityAuth.signIn')}
-                </Button>
-              )}
-              {connected && (
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-7"
-                  disabled={busy}
-                  onClick={() => void request({ action: 'logout' }, true)}
-                >
-                  <LogOut className="size-3.5" />
-                  {t('antigravityAuth.signOut')}
-                </Button>
-              )}
-            </div>
-          )}
-        </SettingsRow>
+          <RefreshCw className={busy ? 'animate-spin' : undefined} />
+        </IconButton>
+      </header>
 
-        <SettingsRow label={t('antigravityAuth.methodLabel')}>
-          <Select value={method} onValueChange={handleMethodChange} disabled={busy || active}>
-            <SelectTrigger size="sm" className="w-60">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="oauth-personal">{t('antigravityAuth.methods.oauthPersonal')}</SelectItem>
-              <SelectItem value="oauth-business">{t('antigravityAuth.methods.oauthBusiness')}</SelectItem>
-              <SelectItem value="gemini-api-key">{t('antigravityAuth.methods.geminiApiKey')}</SelectItem>
-              <SelectItem value="agent-platform">{t('antigravityAuth.methods.agentPlatform')}</SelectItem>
-            </SelectContent>
-          </Select>
-        </SettingsRow>
-
-        {(needsApiKey || needsGcpConfig) && (
-          <form onSubmit={(e) => void handleSaveConfig(e)} className={cn(settingsRowClassName, 'flex flex-col gap-3')}>
-            {needsApiKey && (
-              <div className="flex flex-col gap-1.5">
-                <div className="flex items-center justify-between gap-2">
-                  <Label htmlFor={apiKeyId} className="text-xs">
-                    {t('antigravityAuth.apiKeyLabel')}
-                  </Label>
-                  {state?.config?.hasApiKey && (
-                    <span className="text-xs text-success">{t('antigravityAuth.apiKeySaved')}</span>
-                  )}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Input
-                    id={apiKeyId}
-                    type="password"
-                    className="h-8 min-w-0 flex-1 basis-48 bg-background"
-                    value={apiKeyInput}
-                    onChange={(event) => setApiKeyInput(event.target.value)}
-                    placeholder={t('antigravityAuth.apiKeyPlaceholder')}
-                    autoComplete="off"
-                    spellCheck={false}
-                    disabled={busy || active}
-                  />
-                  {state?.config?.hasApiKey && (
-                    <Button
-                      type="button"
-                      variant="ghost"
-                      size="sm"
-                      className="h-8"
-                      disabled={busy || active}
-                      onClick={() => void handleClearApiKey()}
-                    >
-                      {t('antigravityAuth.clearApiKey')}
-                    </Button>
-                  )}
-                </div>
-              </div>
-            )}
-
-            {needsGcpConfig && (
-              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor={gcpProjectId} className="text-xs">
-                    {t('antigravityAuth.gcpProjectLabel')}
-                  </Label>
-                  <Input
-                    id={gcpProjectId}
-                    className="h-8 bg-background"
-                    value={gcpProjectInput}
-                    onChange={(event) => setGcpProjectInput(event.target.value)}
-                    placeholder={t('antigravityAuth.gcpProjectPlaceholder')}
-                    spellCheck={false}
-                    disabled={busy || active}
-                  />
-                </div>
-                <div className="flex flex-col gap-1.5">
-                  <Label htmlFor={gcpLocationId} className="text-xs">
-                    {t('antigravityAuth.gcpLocationLabel')}
-                  </Label>
-                  <Input
-                    id={gcpLocationId}
-                    className="h-8 bg-background"
-                    value={gcpLocationInput}
-                    onChange={(event) => setGcpLocationInput(event.target.value)}
-                    placeholder={t('antigravityAuth.gcpLocationPlaceholder')}
-                    spellCheck={false}
-                    disabled={busy || active}
-                  />
-                </div>
-              </div>
-            )}
-
-            <div className="flex justify-end">
-              <Button type="submit" size="sm" className="h-7" disabled={busy || active}>
-                {t('antigravityAuth.saveConfig')}
-              </Button>
-            </div>
-          </form>
-        )}
-
-        {active && (
-          <div className={cn(settingsRowClassName, 'flex flex-col gap-3')}>
-            <div className="flex flex-wrap gap-2">
-              {state?.authUrl && (
-                <Button size="sm" className="h-7" onClick={() => void openBrowser()}>
-                  <ExternalLink className="size-3.5" />
-                  {t('antigravityAuth.openBrowser')}
-                </Button>
-              )}
-              <Button
-                size="sm"
-                variant="ghost"
-                className="h-7"
-                disabled={busy}
-                onClick={() => state?.loginId && void request({ action: 'cancel', loginId: state.loginId })}
-              >
-                {t('antigravityAuth.cancel')}
-              </Button>
-            </div>
-            {state?.status === 'waiting' && (
-              <>
-                <Button
-                  size="sm"
-                  variant="ghost"
-                  className="group h-7 self-start"
-                  aria-controls={`${callbackId}-form`}
-                  aria-expanded={showCallback}
-                  onClick={() => setShowCallback(!showCallback)}
-                >
-                  <ChevronDown className="size-3.5 transition-transform group-aria-expanded:rotate-180" />
-                  {t('antigravityAuth.haveCallback')}
-                </Button>
-                {showCallback && (
-                  <form
-                    id={`${callbackId}-form`}
-                    className="flex flex-col gap-2"
-                    onSubmit={(event) => {
-                      event.preventDefault()
-                      if (state.loginId && callbackUrl.trim()) {
-                        void request({
-                          action: 'submitCallback',
-                          loginId: state.loginId,
-                          callbackUrl: callbackUrl.trim(),
-                        })
-                      }
-                    }}
-                  >
-                    <Label htmlFor={callbackId} className="text-xs">
-                      {t('antigravityAuth.callbackLabel')}
-                    </Label>
-                    <div className="flex flex-wrap gap-2">
-                      <Input
-                        id={callbackId}
-                        className="h-7 min-w-0 flex-1 basis-40 bg-background"
-                        value={callbackUrl}
-                        onChange={(event) => setCallbackUrl(event.target.value)}
-                        placeholder={t('antigravityAuth.callbackPlaceholder')}
-                        autoComplete="off"
-                        maxLength={4096}
-                        spellCheck={false}
-                        disabled={busy}
-                      />
-                      <Button
-                        type="submit"
-                        variant="outline"
-                        size="sm"
-                        className="h-7"
-                        disabled={!callbackUrl.trim() || busy}
-                      >
-                        {t('antigravityAuth.submitCallback')}
-                      </Button>
-                    </div>
-                  </form>
-                )}
-              </>
-            )}
-          </div>
-        )}
-      </SettingsCard>
-      {(error || state?.status === 'error') && (
+      {displayError && (
         <Alert variant="destructive">
           <AlertTitle>{t('antigravityAuth.failed')}</AlertTitle>
-          <AlertDescription className="break-words">{error || state?.error}</AlertDescription>
+          <AlertDescription className="break-words">{displayError}</AlertDescription>
         </Alert>
+      )}
+
+      {!snapshot ? (
+        <Skeleton className="h-20 w-full rounded-lg" />
+      ) : (
+        <ul className="flex flex-col gap-2">
+          {accounts.map((account) => {
+            const isSigningIn = activeLogin?.accountId === account.id
+            const isEditing = editingId === account.id
+            const oauth = isOAuthMethod(account.authMethod)
+            const stateLabel = isSigningIn
+              ? t(
+                  activeLogin.status === 'starting'
+                    ? 'antigravityAuth.starting'
+                    : activeLogin.status === 'verifying'
+                      ? 'antigravityAuth.verifying'
+                      : 'antigravityAuth.waiting',
+                )
+              : !account.signedIn
+                ? t('antigravityAuth.signedOut')
+                : null
+
+            return (
+              <ProviderAccountCard key={account.id}>
+                <ProviderAccountHeader
+                  email={accountTitle(account)}
+                  isDefault={account.isDefault}
+                  defaultLabel={t('antigravityAuth.defaultAccount')}
+                  plan={accountPlanLabel(account)}
+                  state={stateLabel}
+                />
+
+                {isSigningIn && activeLogin && (
+                  <AntigravityLoginPanel
+                    key={activeLogin.loginId}
+                    activeLogin={activeLogin}
+                    busy={busy}
+                    onOpenBrowser={(url) => void openBrowser(url)}
+                    onCancel={() =>
+                      void request({ action: 'cancelLogin', loginId: activeLogin.loginId })
+                    }
+                    onSubmitResponse={(response) =>
+                      void request({
+                        action: 'submitLoginResponse',
+                        loginId: activeLogin.loginId,
+                        response,
+                      })
+                    }
+                  />
+                )}
+
+                {isEditing && !isSigningIn && (
+                  <AntigravityAccountForm
+                    initialLabel={account.label ?? ''}
+                    initialAuthMethod={account.authMethod}
+                    initialGcpProject={account.gcpProject ?? ''}
+                    initialGcpLocation={account.gcpLocation ?? 'us-central1'}
+                    hasApiKey={account.hasApiKey}
+                    disabled={blocked}
+                    submitLabel={t('antigravityAuth.saveConfig')}
+                    onClearApiKey={() =>
+                      void request(
+                        {
+                          action: 'configure',
+                          accountId: account.id,
+                          authMethod: account.authMethod,
+                          clearApiKey: true,
+                        },
+                        true,
+                      )
+                    }
+                    onSubmit={(values) => handleConfigure(account.id, values)}
+                    onCancel={() => setEditingId(null)}
+                  />
+                )}
+
+                {!isSigningIn && !isEditing && (
+                  <div className="flex flex-wrap items-center gap-2">
+                    {oauth && !account.signedIn && snapshot.runtimeAvailable && (
+                      <Button
+                        size="sm"
+                        className="h-7"
+                        disabled={blocked}
+                        onClick={() =>
+                          void request({
+                            action: 'startLogin',
+                            accountId: account.id,
+                            authMethod: account.authMethod,
+                          })
+                        }
+                      >
+                        <LogIn data-icon="inline-start" />
+                        {t('antigravityAuth.signIn')}
+                      </Button>
+                    )}
+                    {oauth && account.signedIn && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7"
+                        disabled={blocked}
+                        onClick={() =>
+                          void request({ action: 'logout', accountId: account.id }, true)
+                        }
+                      >
+                        <LogOut data-icon="inline-start" />
+                        {t('antigravityAuth.signOut')}
+                      </Button>
+                    )}
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="h-7"
+                      disabled={blocked}
+                      onClick={() => {
+                        setAdding(false)
+                        setEditingId(account.id)
+                      }}
+                    >
+                      <Settings2 data-icon="inline-start" />
+                      {t('antigravityAuth.configureAccount')}
+                    </Button>
+                    {!account.isDefault && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7"
+                        disabled={blocked}
+                        onClick={() =>
+                          void request({ action: 'setDefault', accountId: account.id }, true)
+                        }
+                      >
+                        <Star data-icon="inline-start" />
+                        {t('antigravityAuth.setDefault')}
+                      </Button>
+                    )}
+                    {!account.isCliDefault && (
+                      <Button
+                        variant="ghost"
+                        size="sm"
+                        className="h-7"
+                        disabled={blocked}
+                        onClick={() =>
+                          void request({ action: 'remove', accountId: account.id }, true)
+                        }
+                      >
+                        <Trash2 data-icon="inline-start" />
+                        {t('antigravityAuth.removeAccount')}
+                      </Button>
+                    )}
+                  </div>
+                )}
+              </ProviderAccountCard>
+            )
+          })}
+        </ul>
+      )}
+
+      {adding && !activeLogin && (
+        <AntigravityAccountForm
+          disabled={blocked}
+          submitLabel={t('antigravityAuth.createAccount')}
+          onSubmit={handleCreate}
+          onCancel={() => setAdding(false)}
+        />
+      )}
+
+      {!adding && !activeLogin && snapshot && (
+        <Button
+          variant="ghost"
+          size="sm"
+          className="h-7 self-start"
+          disabled={blocked}
+          onClick={() => {
+            setEditingId(null)
+            setAdding(true)
+          }}
+        >
+          <Plus data-icon="inline-start" />
+          {t('antigravityAuth.addAccount')}
+        </Button>
       )}
     </section>
   )

@@ -1,16 +1,20 @@
 import { formatBytes } from '@superone/shared/format-bytes'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Loader2 } from 'lucide-react'
+import { ArrowUpCircle, Loader2, RefreshCw } from 'lucide-react'
 import { Badge } from '@superone/ui/components/ui/badge'
+import { Button } from '@superone/ui/components/ui/button'
 import { Switch } from '@superone/ui/components/ui/switch'
 import { cn } from '@superone/ui/lib/utils'
 import { acpAgentIdForHarness, isAcpProtocolHarness, isAntigravityAcpAgent, isGrokAcpAgent } from '@superone/shared/acp-brand'
 import type { AcpAgentDescriptor, SettingsProvider } from '@superone/shared/agent-types'
 import {
+  extractCliFailureReason,
+  getExternalCliInstallSpec,
   getExternalCliMinVersion,
   isExternalCliHarnessId,
   type ExternalCliHarnessId,
+  type ExternalCliUpdateInfo,
 } from '@superone/shared/environment/external-cli-install'
 import {
   NODE_HARNESS_IDS,
@@ -19,7 +23,11 @@ import {
 import type { HarnessId } from '@superone/shared/session-types'
 import { resolveSessionIcon } from '@/components/harness/resolve-session-icon'
 import { SettingsCard, SettingsRow, settingsRowClassName } from '../settings/SettingsSection'
-import { ExternalCliInstallBlock, type CliInstallUiState } from './ExternalCliInstallBlock'
+import {
+  ExternalCliInstallBlock,
+  ExternalCliTerminalOutput,
+  type CliInstallUiState,
+} from './ExternalCliInstallBlock'
 
 export { HarnessListRow, HarnessesSidebar, SortableHarnessRow } from './HarnessesSidebar'
 
@@ -150,10 +158,13 @@ export function HarnessDetailHeaderAndStatus({
   busy,
   progress,
   cliInstall,
+  cliUpdate,
+  checkingCliUpdates,
   showCommand,
   brandTitle,
   onEnabledChange,
   onInstallCli,
+  onCheckCliUpdates,
 }: {
   item: ListItem
   catalog?: CatalogRow
@@ -161,10 +172,13 @@ export function HarnessDetailHeaderAndStatus({
   busy: boolean
   progress?: ProgressState
   cliInstall?: CliInstallUiState
+  cliUpdate?: ExternalCliUpdateInfo
+  checkingCliUpdates?: boolean
   showCommand: boolean
   brandTitle: ReactNode
   onEnabledChange: (enabled: boolean) => void
   onInstallCli?: (harnessId: ExternalCliHarnessId) => Promise<void>
+  onCheckCliUpdates?: (harnessId: ExternalCliHarnessId) => Promise<void>
 }) {
   const { t } = useTranslation()
   const acpAgentId = item.kind === 'catalog' ? item.acpAgentId : item.acpAgentId
@@ -178,20 +192,36 @@ export function HarnessDetailHeaderAndStatus({
       && enabled
       && (catalog?.state === 'incompatible' || catalog?.diagnostic?.code === 'incompatible'),
   )
+  const isExternalCliMissing = Boolean(
+    externalCliId
+      && enabled
+      && (catalog?.state === 'missing' || catalog?.diagnostic?.code === 'not_found'),
+  )
+  const hasOptionalCliUpdate = Boolean(
+    externalCliId
+      && enabled
+      && !isExternalCliIncompatible
+      && !isExternalCliMissing
+      && cliUpdate?.updateAvailable
+      && cliUpdate.latestVersion,
+  )
   const showExternalCliInstall = Boolean(
     externalCliId
       && onInstallCli
       && enabled
       && (
-        catalog?.state === 'missing'
-        || catalog?.diagnostic?.code === 'not_found'
+        isExternalCliMissing
         || isExternalCliIncompatible
-        || cliInstalling
         || (cliInstall?.phase === 'error' && catalog?.state !== 'ready')
       ),
   )
-  const installing =
-    catalog?.state === 'installing' || progress?.phase === 'download' || cliInstalling
+  const showOptionalCliUpdateTerminal = Boolean(
+    externalCliId
+      && !showExternalCliInstall
+      && (cliInstalling || Boolean(cliInstall?.output) || cliInstall?.phase === 'error'),
+  )
+  const managedInstalling = catalog?.state === 'installing' || progress?.phase === 'download'
+  const installing = managedInstalling || cliInstalling
   const pct =
     progress && progress.total > 0
       ? Math.min(100, Math.round((progress.received / progress.total) * 100))
@@ -204,17 +234,17 @@ export function HarnessDetailHeaderAndStatus({
     (!suppressExternalCliDiagnostic ? catalog?.diagnostic?.message : null) ||
     null
   const needsAuth = !!catalog?.requiresAuth && catalog.state === 'needs_auth'
-  const showProgress = catalog?.state === 'installing' || progress?.phase === 'download'
+  const showProgress = managedInstalling
   const Icon = resolveSessionIcon(item.provider, acpAgentId)
 
   const statusRows: ReactNode[] = []
   if (item.kind === 'catalog' && catalog?.runtimeVersion) {
     statusRows.push(
       <SettingsRow key="version" label={t('settings.harnesses.fields.version')}>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center justify-end gap-2">
           <span
             className={cn(
-              'text-sm tabular-nums',
+              'font-mono text-sm tabular-nums',
               isExternalCliIncompatible ? 'text-warning' : 'text-muted-foreground',
             )}
           >
@@ -226,6 +256,41 @@ export function HarnessDetailHeaderAndStatus({
                 min: getExternalCliMinVersion(externalCliId),
               })}
             </Badge>
+          ) : externalCliId && enabled ? (
+            cliInstalling ? (
+              <Loader2
+                aria-label={t('settings.harnesses.cliInstall.upgrading', {
+                  binary: getExternalCliInstallSpec(externalCliId).binaryName,
+                })}
+                className="size-3.5 animate-spin text-muted-foreground"
+              />
+            ) : hasOptionalCliUpdate && cliUpdate?.latestVersion && onInstallCli ? (
+              <Button
+                type="button"
+                size="xs"
+                variant="outline"
+                onClick={() => void onInstallCli(externalCliId)}
+                className="h-6 gap-1 px-2 text-xs"
+              >
+                <ArrowUpCircle className="size-3 text-primary" />
+                {t('settings.harnesses.cliInstall.updateToVersion', {
+                  latest: cliUpdate.latestVersion,
+                })}
+              </Button>
+            ) : onCheckCliUpdates ? (
+              <Button
+                type="button"
+                size="sm"
+                variant="ghost"
+                className="size-6 p-0 text-muted-foreground"
+                aria-label={t('settings.harnesses.cliInstall.checkUpdates')}
+                title={t('settings.harnesses.cliInstall.checkUpdates')}
+                disabled={checkingCliUpdates}
+                onClick={() => void onCheckCliUpdates(externalCliId)}
+              >
+                <RefreshCw className={cn('size-3', checkingCliUpdates && 'animate-spin')} />
+              </Button>
+            ) : null
           ) : null}
         </div>
       </SettingsRow>,
@@ -233,15 +298,43 @@ export function HarnessDetailHeaderAndStatus({
   }
   if (item.kind === 'catalog' && showCommand && catalog?.command) {
     statusRows.push(
-      <SettingsRow
-        key="command"
-        label={t('settings.harnesses.fields.command')}
-        footer={(
-          <code className="block font-mono text-xs break-all text-muted-foreground" title={catalog.command}>
-            {catalog.command}
-          </code>
-        )}
-      />,
+      <SettingsRow key="command" label={t('settings.harnesses.fields.command')}>
+        <code
+          className="block max-w-full truncate font-mono text-sm text-muted-foreground"
+          title={catalog.command}
+        >
+          {catalog.command}
+        </code>
+      </SettingsRow>,
+    )
+  }
+  if (showOptionalCliUpdateTerminal && externalCliId) {
+    const spec = getExternalCliInstallSpec(externalCliId)
+    const failureReason =
+      cliInstall?.phase === 'error'
+        ? extractCliFailureReason(cliInstall.output ?? '') ?? cliInstall.message
+        : null
+    statusRows.push(
+      <div key="cli-update-terminal" className={cn(settingsRowClassName, 'space-y-2')}>
+        {(cliInstalling || Boolean(cliInstall?.output)) ? (
+          <ExternalCliTerminalOutput
+            title={
+              cliInstalling
+                ? t('settings.harnesses.cliInstall.upgrading', { binary: spec.binaryName })
+                : t('common.terminal')
+            }
+            output={cliInstall?.output ?? ''}
+            testId="settings-cli-upgrade-output"
+          />
+        ) : null}
+        {cliInstall?.phase === 'error' ? (
+          <p role="alert" className="text-xs break-words text-error">
+            {failureReason
+              ? `${t('settings.harnesses.cliInstall.failed', { code: cliInstall.exitCode ?? 1 })} ${failureReason}`
+              : t('settings.harnesses.cliInstall.failed', { code: cliInstall.exitCode ?? 1 })}
+          </p>
+        ) : null}
+      </div>,
     )
   }
   if (item.kind === 'catalog' && needsAuth) {
@@ -308,7 +401,7 @@ export function HarnessDetailHeaderAndStatus({
           <p className="mt-0.5 text-sm text-muted-foreground">{item.description}</p>
         </div>
         <div className="flex min-h-8 shrink-0 items-center gap-2">
-          {(busy || installing) && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
+          {(busy || managedInstalling) && <Loader2 className="size-3.5 animate-spin text-muted-foreground" />}
           <Switch
             checked={enabled}
             onCheckedChange={onEnabledChange}

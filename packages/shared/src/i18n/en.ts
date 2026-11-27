@@ -44,6 +44,16 @@ export type Messages = {
   }
   antigravityAuth: {
     title: string
+    multiDescription: string
+    cliAccountLabel: string
+    defaultAccount: string
+    setDefault: string
+    addAccount: string
+    createAccount: string
+    configureAccount: string
+    removeAccount: string
+    accountLabel: string
+    accountLabelPlaceholder: string
     methodLabel: string
     methods: {
       oauthPersonal: string
@@ -53,24 +63,21 @@ export type Messages = {
     }
     signedOut: string
     signedIn: string
-    signedOutHint: string
     signIn: string
     signOut: string
     refresh: string
-    checking: string
     starting: string
     waiting: string
     openBrowser: string
     cancel: string
+    codeLabel: string
+    codePlaceholder: string
     haveCallback: string
     callbackLabel: string
     callbackPlaceholder: string
     submitCallback: string
     verifying: string
     failed: string
-    retry: string
-    unavailable: string
-    installHint: string
     apiKeyLabel: string
     apiKeyPlaceholder: string
     apiKeySaved: string
@@ -5604,7 +5611,17 @@ export const en: Messages = {
     unknownError: "Unable to reach Grok Build. Please try again.",
   },
   antigravityAuth: {
-    title: "Antigravity Account",
+    title: "Antigravity Accounts",
+    multiDescription: "Manage multiple isolated Antigravity accounts and choose which one to use per chat.",
+    cliAccountLabel: "Local CLI Account",
+    defaultAccount: "Default",
+    setDefault: "Set as Default",
+    addAccount: "Add Account",
+    createAccount: "Create Account",
+    configureAccount: "Configure",
+    removeAccount: "Remove",
+    accountLabel: "Account Name",
+    accountLabelPlaceholder: "e.g. Work Google, Personal, Vertex Prod",
     methodLabel: "Authentication Method",
     methods: {
       oauthPersonal: "Google Account (OAuth)",
@@ -5614,24 +5631,21 @@ export const en: Messages = {
     },
     signedOut: "Not Signed In",
     signedIn: "Signed In",
-    signedOutHint: "Sign in with Google or configure an API key / GCP project.",
-    signIn: "Sign In with Google",
+    signIn: "Sign In",
     signOut: "Sign Out",
     refresh: "Refresh",
-    checking: "Checking…",
     starting: "Preparing Sign-in…",
     waiting: "Waiting for Google Sign-in…",
     openBrowser: "Open Browser",
     cancel: "Cancel",
+    codeLabel: "Paste the authorization code or callback URL from Google",
+    codePlaceholder: "4/0A... or https://antigravity.google/oauth-callback?...",
     haveCallback: "Remote session? Paste callback URL",
     callbackLabel: "Redirect Callback URL",
     callbackPlaceholder: "http://localhost:.../auth/callback?code=...&state=...",
     submitCallback: "Complete Sign-in",
     verifying: "Verifying Your Account…",
-    failed: "Could Not Sign In",
-    retry: "Try Again",
-    unavailable: "Antigravity CLI Is Not Installed",
-    installHint: "Install Antigravity CLI (agy), then refresh.",
+    failed: "Antigravity Account Error",
     apiKeyLabel: "API Key",
     apiKeyPlaceholder: "Enter Gemini or Vertex AI API key…",
     apiKeySaved: "API key saved",
@@ -5640,8 +5654,8 @@ export const en: Messages = {
     gcpProjectPlaceholder: "my-gcp-project",
     gcpLocationLabel: "GCP Location",
     gcpLocationPlaceholder: "us-central1",
-    saveConfig: "Save Configuration",
-    configSaved: "Antigravity configuration saved",
+    saveConfig: "Save",
+    configSaved: "Antigravity account saved",
     browserError: "Could not open the browser. Please try again.",
     unknownError: "Unable to reach Antigravity runtime. Please try again.",
   },

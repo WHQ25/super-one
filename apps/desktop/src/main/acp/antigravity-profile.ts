@@ -1,10 +1,25 @@
 import { randomUUID } from 'node:crypto'
-import { chmodSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs'
+import {
+  chmodSync,
+  copyFileSync,
+  existsSync,
+  lstatSync,
+  mkdirSync,
+  readdirSync,
+  readlinkSync,
+  rmSync,
+  statSync,
+  symlinkSync,
+  unlinkSync,
+  writeFileSync,
+} from 'node:fs'
 import { homedir } from 'node:os'
-import { join } from 'node:path'
-import { ANTIGRAVITY_AUTH_METHODS, type AntigravityAuthConfig, type AntigravityAuthMethod } from '@superone/shared/antigravity-auth'
-import { decryptSecret, encryptSecretIfAvailable } from '../crypto/secret-store'
-import { superoneHome } from '../superone-home'
+import { dirname, join, resolve } from 'node:path'
+import {
+  antigravityAccountStore,
+  resolveAntigravityRoot,
+  type ResolvedAntigravityAccount,
+} from './antigravity-account-store'
 import {
   ANTIGRAVITY_AUTH_BROWSER_MARKER,
   ANTIGRAVITY_AUTH_STDERR_PREFIX,
@@ -12,9 +27,11 @@ import {
   extractAntigravityAuthUrlFromStdoutLine,
   extractAntigravityAuthUrlsFromStderrChunk,
   forwardAntigravityCallbackUrl,
+  validateAntigravityLoginCodeResponse,
   validateAntigravityOAuthUrl,
 } from './antigravity-oauth-url'
 
+export * from './antigravity-account-store'
 export {
   ANTIGRAVITY_AUTH_BROWSER_MARKER,
   ANTIGRAVITY_AUTH_STDERR_PREFIX,
@@ -22,228 +39,55 @@ export {
   extractAntigravityAuthUrlFromStdoutLine,
   extractAntigravityAuthUrlsFromStderrChunk,
   forwardAntigravityCallbackUrl,
+  validateAntigravityLoginCodeResponse,
   validateAntigravityOAuthUrl,
 }
 
 const STRIPPED_ENV_KEYS = new Set([
-  'GEMINI_API_KEY', 'GOOGLE_API_KEY', 'GOOGLE_APPLICATION_CREDENTIALS', 'GOOGLE_CLOUD_PROJECT',
-  'GOOGLE_CLOUD_LOCATION', 'GOOGLE_CLOUD_QUOTA_PROJECT', 'GOOGLE_GENAI_USE_VERTEXAI', 'GCLOUD_PROJECT',
-  'CLOUDSDK_CORE_PROJECT', 'AGY_ACP_CCPA_PROJECT', 'AGY_ACP_ENABLE_OAUTH', 'GEMINI_HOME',
-  'AGY_ACP_FORCE_FILE_STORAGE', 'ANTIGRAVITY_HARNESS_PATH', 'BROWSER', 'PYTHONUNBUFFERED',
-  'ELECTRON_RUN_AS_NODE', '__PYVENV_LAUNCHER__',
+  'GEMINI_API_KEY',
+  'GOOGLE_API_KEY',
+  'GOOGLE_APPLICATION_CREDENTIALS',
+  'GOOGLE_CLOUD_PROJECT',
+  'GOOGLE_CLOUD_LOCATION',
+  'GOOGLE_CLOUD_QUOTA_PROJECT',
+  'GOOGLE_GENAI_USE_VERTEXAI',
+  'GCLOUD_PROJECT',
+  'CLOUDSDK_CORE_PROJECT',
+  'AGY_ACP_CCPA_PROJECT',
+  'AGY_ACP_ENABLE_OAUTH',
+  'GEMINI_HOME',
+  'AGY_ACP_FORCE_FILE_STORAGE',
+  'AGY_CLI_DISABLE_AUTO_UPDATE',
+  'ANTIGRAVITY_HARNESS_PATH',
+  'BROWSER',
+  'PYTHONUNBUFFERED',
+  'ELECTRON_RUN_AS_NODE',
+  'CHROME_CRASHPAD_PIPE_NAME',
+  '__PYVENV_LAUNCHER__',
 ])
 
 const LINUX_SYSTEM_CA_BUNDLE_PATHS = [
-  '/etc/ssl/certs/ca-certificates.crt', '/etc/pki/tls/certs/ca-bundle.crt',
-  '/etc/ssl/ca-bundle.pem', '/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem', '/etc/ssl/cert.pem',
+  '/etc/ssl/certs/ca-certificates.crt',
+  '/etc/pki/tls/certs/ca-bundle.crt',
+  '/etc/ssl/ca-bundle.pem',
+  '/etc/pki/ca-trust/extracted/pem/tls-ca-bundle.pem',
+  '/etc/ssl/cert.pem',
 ]
 
-const GCP_PROJECT_PATTERN = /^[a-z][a-z0-9.:-]{4,61}[a-z0-9]$/i
-const GCP_LOCATION_PATTERN = /^[a-z0-9][a-z0-9-]{1,62}$/i
-
+const STALE_TEMP_DIR_MAX_AGE_MS = 6 * 60 * 60 * 1000
 let prunedTempDirsThisProcess = false
 
-export interface StoredAntigravityAuthConfig extends AntigravityAuthConfig {
-  apiKey?: string
-  email?: string
-  oauthSignedIn?: boolean
+export interface AntigravitySpawnContext {
+  account: ResolvedAntigravityAccount
+  extraArgs: string[]
+  geminiDir: string | null
+  baseEnv: Record<string, string>
+  extraEnv: Record<string, string>
+  cleanup: () => void
 }
 
-export function resolveAntigravityRoot(customHome?: string): string { return join(customHome ?? superoneHome(), 'antigravity') }
-export function resolveAntigravityProfileDir(customHome?: string): string { return join(resolveAntigravityRoot(customHome), 'profile') }
-export function resolveAntigravityBrainRoots(customHome?: string, home = homedir()): string[] {
-  const profileDir = resolveAntigravityProfileDir(customHome)
-  const userGeminiDir = join(home, '.gemini')
-  if (customHome) {
-    return [
-      join(profileDir, 'antigravity-acp', 'brain'),
-      join(profileDir, 'brain'),
-      join(userGeminiDir, 'antigravity-cli', 'brain'),
-      join(userGeminiDir, 'antigravity', 'brain'),
-    ]
-  }
-  return [
-    join(userGeminiDir, 'antigravity-cli', 'brain'),
-    join(userGeminiDir, 'antigravity', 'brain'),
-    join(profileDir, 'antigravity-acp', 'brain'),
-    join(profileDir, 'brain'),
-  ]
-}
-export function resolveAntigravityTempParentDir(customHome?: string): string { return join(resolveAntigravityRoot(customHome), 'tmp') }
-export function resolveAntigravityAuthConfigPath(customHome?: string): string { return join(resolveAntigravityRoot(customHome), 'auth-config.json') }
-export function resolveAntigravityTokenPath(customHome?: string): string { return join(resolveAntigravityProfileDir(customHome), 'oauth_creds.json') }
-export function resolveLegacyAntigravityTokenPath(customHome?: string): string { return join(resolveAntigravityProfileDir(customHome), 'antigravity-acp', 'acp_token.json') }
-export { resolveAntigravityTokenPath as antigravityTokenFilePath }
-
-function isValidAuthMethod(value: unknown): value is AntigravityAuthMethod {
-  return typeof value === 'string' && (ANTIGRAVITY_AUTH_METHODS as readonly string[]).includes(value)
-}
-
-function trimNonEmpty(value: unknown): string | undefined {
-  return typeof value === 'string' && value.trim() ? value.trim() : undefined
-}
-
-export function readAntigravityAuthConfig(customHome?: string): StoredAntigravityAuthConfig {
-  const path = resolveAntigravityAuthConfigPath(customHome)
-  if (!existsSync(path)) {
-    const envKey = trimNonEmpty(process.env.SUPERONE_ANTIGRAVITY_API_KEY)
-    return {
-      authMethod: 'oauth-personal',
-      hasApiKey: Boolean(envKey),
-      ...(envKey ? { apiKey: envKey } : {}),
-    }
-  }
-  try {
-    const raw = JSON.parse(readFileSync(path, 'utf8')) as Record<string, unknown>
-    const authMethod = isValidAuthMethod(raw.authMethod) ? raw.authMethod : 'oauth-personal'
-    const gcpProject = trimNonEmpty(raw.gcpProject)
-    const gcpLocation = trimNonEmpty(raw.gcpLocation)
-    const email = trimNonEmpty(raw.email)
-    const oauthSignedIn = typeof raw.oauthSignedIn === 'boolean' ? raw.oauthSignedIn : undefined
-    const decrypted =
-      typeof raw.encryptedApiKey === 'string' && raw.encryptedApiKey
-        ? decryptSecret(raw.encryptedApiKey).trim()
-        : ''
-    const apiKey = decrypted || trimNonEmpty(process.env.SUPERONE_ANTIGRAVITY_API_KEY)
-    return {
-      authMethod,
-      ...(gcpProject ? { gcpProject } : {}),
-      ...(gcpLocation ? { gcpLocation } : {}),
-      ...(email ? { email } : {}),
-      ...(oauthSignedIn !== undefined ? { oauthSignedIn } : {}),
-      hasApiKey: Boolean(apiKey),
-      ...(apiKey ? { apiKey } : {}),
-    }
-  } catch {
-    return { authMethod: 'oauth-personal', hasApiKey: false }
-  }
-}
-
-export function writeAntigravityAuthConfig(
-  input: {
-    authMethod: AntigravityAuthMethod
-    apiKey?: string
-    clearApiKey?: boolean
-    gcpProject?: string
-    gcpLocation?: string
-    email?: string
-    clearEmail?: boolean
-    oauthSignedIn?: boolean
-  },
-  customHome?: string,
-): StoredAntigravityAuthConfig {
-  if (!isValidAuthMethod(input.authMethod)) {
-    throw new Error(`Unsupported Antigravity authentication method: ${String(input.authMethod)}`)
-  }
-  const prev = readAntigravityAuthConfig(customHome)
-  const gcpProject = input.gcpProject !== undefined ? trimNonEmpty(input.gcpProject) : prev.gcpProject
-  const gcpLocation = input.gcpLocation !== undefined ? trimNonEmpty(input.gcpLocation) : prev.gcpLocation
-
-  if (gcpProject && !GCP_PROJECT_PATTERN.test(gcpProject)) {
-    throw new Error('Enter a valid Google Cloud project ID')
-  }
-  if (gcpLocation && !GCP_LOCATION_PATTERN.test(gcpLocation)) {
-    throw new Error('Enter a valid Google Cloud location (for example us-central1 or global)')
-  }
-
-  const nextApiKey = input.clearApiKey ? undefined : (trimNonEmpty(input.apiKey) ?? prev.apiKey)
-  const nextEmail = input.clearEmail ? undefined : (trimNonEmpty(input.email) ?? prev.email)
-  const nextOauthSignedIn = input.oauthSignedIn !== undefined ? input.oauthSignedIn : prev.oauthSignedIn
-
-  const root = resolveAntigravityRoot(customHome)
-  mkdirSync(root, { recursive: true, mode: 0o700 })
-  const configPath = resolveAntigravityAuthConfigPath(customHome)
-  const payload = {
-    authMethod: input.authMethod,
-    ...(gcpProject ? { gcpProject } : {}),
-    ...(gcpLocation ? { gcpLocation } : {}),
-    ...(nextEmail ? { email: nextEmail } : {}),
-    ...(nextOauthSignedIn !== undefined ? { oauthSignedIn: nextOauthSignedIn } : {}),
-    ...(nextApiKey ? { encryptedApiKey: encryptSecretIfAvailable(nextApiKey) } : {}),
-  }
-  writeFileSync(configPath, `${JSON.stringify(payload, null, 2)}\n`, { mode: 0o600 })
-  if (process.platform !== 'win32') chmodSync(configPath, 0o600)
-  return readAntigravityAuthConfig(customHome)
-}
-
-export function writeAntigravityAuthEmail(email: string, customHome?: string): void {
-  const trimmed = email.trim()
-  if (!trimmed) return
-  const prev = readAntigravityAuthConfig(customHome)
-  if (prev.email === trimmed) return
-  try {
-    writeAntigravityAuthConfig({ authMethod: prev.authMethod, email: trimmed }, customHome)
-  } catch {
-    void 0
-  }
-}
-
-function hasValidTokenFile(tokenPath: string): boolean {
-  if (!existsSync(tokenPath)) return false
-  try {
-    const parsed = JSON.parse(readFileSync(tokenPath, 'utf8')) as {
-      refresh_token?: unknown
-      access_token?: unknown
-    }
-    return (
-      (typeof parsed.refresh_token === 'string' && parsed.refresh_token.trim().length > 0) ||
-      (typeof parsed.access_token === 'string' && parsed.access_token.trim().length > 0)
-    )
-  } catch {
-    return false
-  }
-}
-
-export function hasStoredAntigravityOAuthToken(customHome?: string): boolean {
-  if (readAntigravityAuthConfig(customHome).oauthSignedIn === true) return true
-  if (
-    hasValidTokenFile(resolveAntigravityTokenPath(customHome)) ||
-    hasValidTokenFile(resolveLegacyAntigravityTokenPath(customHome))
-  ) {
-    return true
-  }
-  if (!customHome) {
-    return hasValidTokenFile(join(homedir(), '.gemini', 'oauth_creds.json'))
-  }
-  return false
-}
-
-export function clearAntigravityOAuthToken(customHome?: string): void {
-  for (const tokenPath of [
-    resolveAntigravityTokenPath(customHome),
-    resolveLegacyAntigravityTokenPath(customHome),
-  ]) {
-    try {
-      rmSync(tokenPath, { force: true })
-    } catch {
-      void 0
-    }
-  }
-  try {
-    const prev = readAntigravityAuthConfig(customHome)
-    if (prev.email || prev.oauthSignedIn) {
-      writeAntigravityAuthConfig(
-        { authMethod: prev.authMethod, clearEmail: true, oauthSignedIn: false },
-        customHome,
-      )
-    }
-  } catch {
-    void 0
-  }
-}
-
-export function isAntigravityAuthSatisfied(customHome?: string): boolean {
-  const cfg = readAntigravityAuthConfig(customHome)
-  switch (cfg.authMethod) {
-    case 'gemini-api-key':
-      return Boolean(cfg.apiKey)
-    case 'agent-platform':
-      return Boolean(cfg.apiKey || (cfg.gcpProject && cfg.gcpLocation))
-    case 'oauth-business':
-      return Boolean(cfg.gcpProject && cfg.gcpLocation && hasStoredAntigravityOAuthToken(customHome))
-    case 'oauth-personal':
-      return hasStoredAntigravityOAuthToken(customHome)
-  }
+export function resolveAntigravityTempParentDir(customHome?: string): string {
+  return join(resolveAntigravityRoot(customHome), 'tmp')
 }
 
 function ensureBrowserHelperScript(rootDir: string): string {
@@ -255,13 +99,9 @@ function ensureBrowserHelperScript(rootDir: string): string {
     `process.stderr.write(${JSON.stringify(ANTIGRAVITY_AUTH_BROWSER_MARKER)} + url + '\\n');`,
   ].join('\n')
   writeFileSync(helperPath, `${script}\n`, { mode: 0o700 })
-  if (process.platform !== 'win32') {
-    chmodSync(helperPath, 0o700)
-  }
+  if (process.platform !== 'win32') chmodSync(helperPath, 0o700)
   return helperPath
 }
-
-const STALE_TEMP_DIR_MAX_AGE_MS = 6 * 60 * 60 * 1000
 
 function createIsolatedProcessTempDir(customHome?: string): string {
   const parent = resolveAntigravityTempParentDir(customHome)
@@ -302,25 +142,79 @@ function resolveLinuxCaBundle(): string | undefined {
   return undefined
 }
 
-export interface AntigravitySpawnContext {
-  authConfig: StoredAntigravityAuthConfig
-  baseEnv: Record<string, string>
-  extraEnv: Record<string, string>
-  cleanup: () => void
+function linkUserGeminiConfigIntoProfile(profileDir: string, home = homedir()): void {
+  const userGemini = join(home, '.gemini')
+  if (!existsSync(userGemini)) return
+  const dirPairs: Array<[string, string]> = [
+    [join(profileDir, 'skills'), join(userGemini, 'skills')],
+    [join(profileDir, 'antigravity', 'skills'), join(userGemini, 'antigravity', 'skills')],
+  ]
+  const dirType = process.platform === 'win32' ? 'junction' : 'dir'
+  for (const [linkPath, targetPath] of dirPairs) {
+    try {
+      if (!existsSync(targetPath) || existsSync(linkPath)) continue
+      mkdirSync(dirname(linkPath), { recursive: true, mode: 0o700 })
+      symlinkSync(targetPath, linkPath, dirType)
+    } catch {
+      void 0
+    }
+  }
+  const fileSegments: Array<string[]> = [['AGENTS.md'], ['GEMINI.md'], ['config', 'skills.json']]
+  for (const segs of fileSegments) {
+    const src = join(userGemini, ...segs)
+    const dst = join(profileDir, ...segs)
+    try {
+      if (!existsSync(src)) continue
+      mkdirSync(dirname(dst), { recursive: true, mode: 0o700 })
+      if (process.platform === 'win32') {
+        copyFileSync(src, dst)
+      } else {
+        try {
+          const st = lstatSync(dst)
+          if (st.isSymbolicLink() && resolve(dirname(dst), readlinkSync(dst)) === src) continue
+          if (st.isSymbolicLink()) unlinkSync(dst)
+          else continue
+        } catch {
+          void 0
+        }
+        symlinkSync(src, dst, 'file')
+      }
+    } catch {
+      void 0
+    }
+  }
+}
+
+function writeProfileSettingsFile(profileDir: string, account: ResolvedAntigravityAccount): void {
+  const acpDir = join(profileDir, 'antigravity-acp')
+  mkdirSync(acpDir, { recursive: true, mode: 0o700 })
+  if (process.platform !== 'win32') chmodSync(acpDir, 0o700)
+  const gcp = {
+    ...(account.gcpProject ? { project: account.gcpProject } : {}),
+    ...(account.gcpLocation ? { location: account.gcpLocation } : {}),
+  }
+  const payload = {
+    auth: { type: account.authMethod },
+    ...(Object.keys(gcp).length > 0 ? { gcp } : {}),
+  }
+  writeFileSync(join(acpDir, 'settings.json'), `${JSON.stringify(payload, null, 2)}\n`, {
+    mode: 0o600,
+  })
 }
 
 export function prepareAntigravitySpawnContext(opts: {
-  harnessPath?: string
+  accountId?: string | null
   customHome?: string
   extraEnv?: Record<string, string>
 } = {}): AntigravitySpawnContext {
-  const authConfig = readAntigravityAuthConfig(opts.customHome)
+  const store = antigravityAccountStore(opts.customHome)
+  const account = store.get(opts.accountId)
   const rootDir = resolveAntigravityRoot(opts.customHome)
   mkdirSync(rootDir, { recursive: true, mode: 0o700 })
   const helperPath = ensureBrowserHelperScript(rootDir)
   const runTempDir = createIsolatedProcessTempDir(opts.customHome)
 
-  const preserveAdc = authConfig.authMethod === 'agent-platform' && !authConfig.apiKey
+  const preserveAdc = account.authMethod === 'agent-platform' && !account.apiKey
   const baseEnv: Record<string, string> = {}
   for (const [key, value] of Object.entries(process.env)) {
     if (value === undefined) continue
@@ -342,6 +236,7 @@ export function prepareAntigravitySpawnContext(opts: {
     ...(opts.extraEnv ?? {}),
     BROWSER: `${quoteArg(process.execPath)} ${quoteArg(helperPath)}`,
     ELECTRON_RUN_AS_NODE: '1',
+    AGY_CLI_DISABLE_AUTO_UPDATE: '1',
     TMPDIR: runTempDir,
     TEMP: runTempDir,
     TMP: runTempDir,
@@ -352,23 +247,40 @@ export function prepareAntigravitySpawnContext(opts: {
     if (caBundle) extraEnv.SSL_CERT_FILE = caBundle
   }
 
-  if (authConfig.authMethod === 'gemini-api-key' && authConfig.apiKey) {
-    extraEnv.GEMINI_API_KEY = authConfig.apiKey
-  } else if (authConfig.authMethod === 'agent-platform') {
-    extraEnv.GOOGLE_GENAI_USE_VERTEXAI = 'true'
-    if (authConfig.apiKey) {
-      extraEnv.GOOGLE_API_KEY = authConfig.apiKey
+  const extraArgs: string[] = []
+  let geminiDir: string | null = null
+
+  if (account.profileDir) {
+    mkdirSync(account.profileDir, { recursive: true, mode: 0o700 })
+    if (process.platform !== 'win32') chmodSync(account.profileDir, 0o700)
+    writeProfileSettingsFile(account.profileDir, account)
+    linkUserGeminiConfigIntoProfile(account.profileDir)
+    geminiDir = account.profileDir
+    extraArgs.push('--gemini-dir', account.profileDir, '--app-data-dir', 'antigravity-acp')
+    extraEnv.GEMINI_HOME = account.profileDir
+    extraEnv.AGY_ACP_FORCE_FILE_STORAGE = '1'
+    if (account.authMethod === 'oauth-personal') {
+      extraEnv.SSH_CONNECTION = baseEnv.SSH_CONNECTION || '127.0.0.1 0 127.0.0.1 0'
     }
-    if (authConfig.gcpProject) extraEnv.GOOGLE_CLOUD_PROJECT = authConfig.gcpProject
-    if (authConfig.gcpLocation) extraEnv.GOOGLE_CLOUD_LOCATION = authConfig.gcpLocation
-  } else if (authConfig.authMethod === 'oauth-business') {
-    if (authConfig.gcpProject) extraEnv.GOOGLE_CLOUD_PROJECT = authConfig.gcpProject
-    if (authConfig.gcpLocation) extraEnv.GOOGLE_CLOUD_LOCATION = authConfig.gcpLocation
+  }
+
+  if (account.authMethod === 'gemini-api-key' && account.apiKey) {
+    extraEnv.GEMINI_API_KEY = account.apiKey
+  } else if (account.authMethod === 'agent-platform') {
+    extraEnv.GOOGLE_GENAI_USE_VERTEXAI = 'true'
+    if (account.apiKey) extraEnv.GOOGLE_API_KEY = account.apiKey
+    if (account.gcpProject) extraEnv.GOOGLE_CLOUD_PROJECT = account.gcpProject
+    if (account.gcpLocation) extraEnv.GOOGLE_CLOUD_LOCATION = account.gcpLocation
+  } else if (account.authMethod === 'oauth-business') {
+    if (account.gcpProject) extraEnv.GOOGLE_CLOUD_PROJECT = account.gcpProject
+    if (account.gcpLocation) extraEnv.GOOGLE_CLOUD_LOCATION = account.gcpLocation
   }
 
   let cleaned = false
   return {
-    authConfig,
+    account,
+    extraArgs,
+    geminiDir,
     baseEnv,
     extraEnv,
     cleanup: () => {

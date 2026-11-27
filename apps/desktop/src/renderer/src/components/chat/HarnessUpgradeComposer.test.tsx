@@ -156,7 +156,7 @@ describe('ChatComposerShell external CLI upgrade composer', () => {
     await user.click(upgradeButton)
 
     expect(installHarnessCli).toHaveBeenCalledWith('acp-antigravity')
-    expect(screen.getByRole('progressbar')).toBeInTheDocument()
+    expect(screen.queryByRole('progressbar')).toBeNull()
 
     act(() => {
       listener?.({ harnessId: 'acp-antigravity', phase: 'start' })
@@ -167,10 +167,9 @@ describe('ChatComposerShell external CLI upgrade composer', () => {
       })
     })
 
-    expect(await screen.findByTestId('composer-cli-upgrade-progress')).toHaveTextContent(
+    expect(await screen.findByTestId('composer-cli-upgrade-output')).toHaveTextContent(
       'Downloading agy 1.5.18...',
     )
-    expect(screen.queryByTestId('composer-cli-upgrade-output')).toBeNull()
 
     currentState = 'ready'
     currentVersion = '1.5.18'
@@ -230,7 +229,9 @@ describe('ChatComposerShell external CLI upgrade composer', () => {
     const alert = await screen.findByRole('alert')
     expect(alert).toHaveTextContent(/exit code 6/i)
     expect(alert).toHaveTextContent(/Could not resolve host/i)
-    expect(screen.queryByTestId('composer-cli-upgrade-output')).toBeNull()
+    expect(screen.getByTestId('composer-cli-upgrade-output')).toHaveTextContent(
+      'Could not resolve host',
+    )
     expect(screen.getByRole('button', { name: /retry upgrade/i })).toBeEnabled()
     expect(screen.queryByTestId('chat-input')).toBeNull()
   })

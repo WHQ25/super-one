@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest'
 import { createServer } from 'node:net'
-import { buildSshLocalForwardArgs, findFreePort, waitForLocalPort } from './ssh-forward'
+import {
+  buildOneShotMultiplexArgs,
+  buildSshLocalForwardArgs,
+  findFreePort,
+  userOwnsMultiplexing,
+  waitForLocalPort,
+} from './ssh-forward'
 
 describe('ssh-forward', () => {
   it('includes keepalive options on local-forward argv', () => {
@@ -19,6 +25,8 @@ describe('ssh-forward', () => {
       '-o',
       'BatchMode=yes',
       '-o',
+      'ConnectTimeout=30',
+      '-o',
       'ServerAliveInterval=15',
       '-o',
       'ServerAliveCountMax=3',
@@ -26,6 +34,28 @@ describe('ssh-forward', () => {
       '/tmp/key',
       'user@host',
     ])
+  })
+
+  it('never puts the forward on a shared multiplexing master', () => {
+    const args = buildSshLocalForwardArgs({ localPort: 1, remotePort: 2, destination: 'h' })
+    expect(args.join(' ')).not.toMatch(/Control/)
+  })
+
+  it('builds a persisted one-shot multiplexing master under the given dir', () => {
+    expect(buildOneShotMultiplexArgs('/home/u/.superone/ssh-mux')).toEqual([
+      '-o',
+      'ControlMaster=auto',
+      '-o',
+      'ControlPath=/home/u/.superone/ssh-mux/%C',
+      '-o',
+      'ControlPersist=60',
+    ])
+  })
+
+  it('leaves multiplexing to a user ControlPath and takes it otherwise', () => {
+    expect(userOwnsMultiplexing('user u\ncontrolmaster auto\ncontrolpath ~/.ssh/cm-%C\n')).toBe(true)
+    expect(userOwnsMultiplexing('user u\ncontrolmaster false\ncontrolpath none\n')).toBe(false)
+    expect(userOwnsMultiplexing('user u\ncontrolmaster false\n')).toBe(false)
   })
 
   it('allocates an ephemeral free local port', async () => {

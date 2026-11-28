@@ -1063,6 +1063,14 @@ mailbox tools of collaboration children whose parent is the controller. How file
 produce are shared between desktop and node is
 [session-sync-zone.md](session-sync-zone.md).
 
+A claim outlives the socket it was made on. The consumer sends the claim and
+the response with one idempotency key per action version and resends them
+after a transport loss or a local RPC deadline, so a lost reply replays the
+node's receipt instead of running the tool again. A resent claim is confirmed
+with a renewal before the tool runs, because the action may have ended while
+the connection was down. While the tool runs, the claim is renewed every third
+of its TTL, and a renewal the node refuses aborts the run.
+
 ### 12.4 Provider credentials
 
 Provider authentication belongs to the execution environment. A node uses its

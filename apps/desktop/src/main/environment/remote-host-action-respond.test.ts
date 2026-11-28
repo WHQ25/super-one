@@ -31,7 +31,8 @@ function nodeClient(respond: () => Promise<unknown>) {
     if (method === 'session.respondHostAction') return respond()
     throw new Error(`unexpected ${method}`)
   })
-  return { client: { connected: true, rpc } as unknown as NodeRpcClient, rpc }
+  const called = (method: string) => rpc.mock.calls.some(([name]) => name === method)
+  return { client: { connected: true, rpc } as unknown as NodeRpcClient, rpc, called }
 }
 
 function consume(client: NodeRpcClient, executor: HostActionExecutor) {
@@ -52,9 +53,9 @@ describe('RemoteHostActionConsumer response commit', () => {
 
   it('does not commit when the response did not reach the node', async () => {
     const onResponded = vi.fn()
-    const { client, rpc } = nodeClient(async () => { throw new Error('transport closed') })
+    const { client, called } = nodeClient(async () => { throw new Error('transport closed') })
     const consumer = consume(client, async () => ({ outcome: 'succeeded', result: {}, onResponded }))
-    await vi.waitFor(() => expect(rpc).toHaveBeenCalledWith('session.respondHostAction', expect.anything()))
+    await vi.waitFor(() => expect(called('session.respondHostAction')).toBe(true))
     consumer.stop()
     await consumer.waitUntilStopped()
     expect(onResponded).not.toHaveBeenCalled()
@@ -62,7 +63,7 @@ describe('RemoteHostActionConsumer response commit', () => {
 
   it('does not commit an action cancelled while it ran', async () => {
     const onResponded = vi.fn()
-    const { client, rpc } = nodeClient(async () => ({ actionId: 'a1', state: 'succeeded', version: 2, duplicate: false }))
+    const { client, called } = nodeClient(async () => ({ actionId: 'a1', state: 'succeeded', version: 2, duplicate: false }))
     let started!: () => void
     const running = new Promise<void>((resolve) => { started = resolve })
     const consumer = consume(client, (_claimed, signal) => new Promise((resolve) => {
@@ -73,7 +74,7 @@ describe('RemoteHostActionConsumer response commit', () => {
     consumer.stop('cancelled')
     await consumer.waitUntilStopped()
     await new Promise((resolve) => setTimeout(resolve, 0))
-    expect(rpc).not.toHaveBeenCalledWith('session.respondHostAction', expect.anything())
+    expect(called('session.respondHostAction')).toBe(false)
     expect(onResponded).not.toHaveBeenCalled()
   })
 })

@@ -1,7 +1,9 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { createReadStream } from 'node:fs'
-import { stat } from 'node:fs/promises'
+import { mkdir, stat } from 'node:fs/promises'
 import { createConnection, createServer } from 'node:net'
+import { homedir } from 'node:os'
+import { join } from 'node:path'
 import { ensureShellPath } from '../shell-path'
 
 export interface SshForwardOptions {
@@ -18,6 +20,29 @@ export interface SshForwardOptions {
   /** Maximum time to wait for the local forwarded listener to bind. */
   readyTimeoutMs?: number
 }
+
+/** TCP connect bound for every SuperOne ssh invocation (seconds). */
+const SSH_CONNECT_TIMEOUT_S = 30
+/**
+ * ssh binds the `-L` listener only after connect, key exchange, and auth, so
+ * this covers the whole handshake (jump hosts, ProxyCommand helpers included).
+ * A failing ssh exits on its own; this only bounds a hung one.
+ */
+const FORWARD_READY_TIMEOUT_MS = 60_000
+/** How long a one-shot multiplexing master outlives its last command (seconds). */
+const MUX_PERSIST_S = 60
+
+/** Options shared by the tunnel and one-shot commands. */
+const COMMON_SSH_OPTIONS = [
+  '-o',
+  'BatchMode=yes',
+  '-o',
+  `ConnectTimeout=${SSH_CONNECT_TIMEOUT_S}`,
+  '-o',
+  'ServerAliveInterval=15',
+  '-o',
+  'ServerAliveCountMax=3',
+]
 
 export interface SshForwardHandle {
   localPort: number
@@ -60,12 +85,7 @@ export function buildSshLocalForwardArgs(input: {
     `${input.localPort}:127.0.0.1:${input.remotePort}`,
     '-o',
     'ExitOnForwardFailure=yes',
-    '-o',
-    'BatchMode=yes',
-    '-o',
-    'ServerAliveInterval=15',
-    '-o',
-    'ServerAliveCountMax=3',
+    ...COMMON_SSH_OPTIONS,
     ...(input.extraArgs ?? []),
     input.destination,
   ]
@@ -122,7 +142,7 @@ export async function startSshLocalForward(opts: SshForwardOptions): Promise<Ssh
       }
       child.once('error', onError)
       child.once('exit', onExit)
-      void waitForLocalPort(localPort, opts.readyTimeoutMs ?? 15_000).then(
+      void waitForLocalPort(localPort, opts.readyTimeoutMs ?? FORWARD_READY_TIMEOUT_MS).then(
         () => finish(),
         (error) => finish(error instanceof Error ? error : new Error(String(error))),
       )
@@ -213,8 +233,8 @@ export async function sshUpload(input: {
   const sshPath = input.sshPath || 'ssh'
   const total = (await stat(input.localPath)).size
   const args = [
-    '-o',
-    'BatchMode=yes',
+    ...COMMON_SSH_OPTIONS,
+    ...(await oneShotMultiplexArgs(sshPath, input.destination, input.extraArgs)),
     ...(input.extraArgs ?? []),
     input.destination,
     input.remoteCommand ?? `cat > ${shellQuoteArg(input.remotePath)}`,
@@ -278,7 +298,13 @@ export async function sshCapture(input: {
 }): Promise<{ stdout: string; stderr: string; code: number | null }> {
   await ensureShellPath()
   const sshPath = input.sshPath || 'ssh'
-  const args = ['-o', 'BatchMode=yes', ...(input.extraArgs ?? []), input.destination, input.command]
+  const args = [
+    ...COMMON_SSH_OPTIONS,
+    ...(await oneShotMultiplexArgs(sshPath, input.destination, input.extraArgs)),
+    ...(input.extraArgs ?? []),
+    input.destination,
+    input.command,
+  ]
   return new Promise((resolve, reject) => {
     const child = spawn(sshPath, args, { stdio: ['ignore', 'pipe', 'pipe'], env: process.env })
     let stdout = ''
@@ -300,6 +326,88 @@ export async function sshCapture(input: {
     child.on('close', (code) => {
       clearTimeout(timer)
       resolve({ stdout, stderr, code })
+    })
+  })
+}
+
+/**
+ * Connection sharing for one-shot commands (probe, pair-create, install upload).
+ * Bootstrap and install run several of them back to back; without a master each
+ * pays a full SSH handshake. The `-L` tunnel never joins this master: forwards
+ * opened through a mux client stay with the master after the client is killed,
+ * which would break tunnel stop/exit tracking.
+ *
+ * A user ControlPath is left alone so an interactively authenticated master
+ * (2FA hosts) keeps working under BatchMode. Windows OpenSSH has no multiplexing.
+ */
+async function oneShotMultiplexArgs(
+  sshPath: string,
+  destination: string,
+  extraArgs: string[] | undefined,
+): Promise<string[]> {
+  if (process.platform === 'win32') return []
+  const effective = await sshEffectiveConfig(sshPath, destination, extraArgs)
+  if (effective === null || userOwnsMultiplexing(effective)) return []
+  // Unix socket paths cap near 104 bytes; %C is a 40-char hash, so stay under $HOME.
+  const dir = join(homedir(), '.superone', 'ssh-mux')
+  try {
+    await mkdir(dir, { recursive: true, mode: 0o700 })
+  } catch {
+    return []
+  }
+  return buildOneShotMultiplexArgs(dir)
+}
+
+export function buildOneShotMultiplexArgs(dir: string): string[] {
+  return [
+    '-o',
+    'ControlMaster=auto',
+    '-o',
+    `ControlPath=${join(dir, '%C')}`,
+    '-o',
+    `ControlPersist=${MUX_PERSIST_S}`,
+  ]
+}
+
+/** True when `ssh -G` output shows the user configured their own ControlPath. */
+export function userOwnsMultiplexing(effectiveConfig: string): boolean {
+  const line = effectiveConfig.split(/\r?\n/).find((l) => /^controlpath\s/i.test(l))
+  const value = line?.replace(/^controlpath\s+/i, '').trim()
+  return Boolean(value) && value?.toLowerCase() !== 'none'
+}
+
+/** `ssh -G` output (no network), or null when it cannot be read. */
+function sshEffectiveConfig(
+  sshPath: string,
+  destination: string,
+  extraArgs: string[] | undefined,
+): Promise<string | null> {
+  return new Promise((resolve) => {
+    let child: ChildProcess
+    try {
+      child = spawn(sshPath, ['-G', ...(extraArgs ?? []), destination], {
+        stdio: ['ignore', 'pipe', 'ignore'],
+        env: process.env,
+      })
+    } catch {
+      resolve(null)
+      return
+    }
+    let stdout = ''
+    const timer = setTimeout(() => {
+      child.kill('SIGTERM')
+      resolve(null)
+    }, 5_000)
+    child.stdout?.on('data', (c) => {
+      stdout += c.toString()
+    })
+    child.on('error', () => {
+      clearTimeout(timer)
+      resolve(null)
+    })
+    child.on('close', (code) => {
+      clearTimeout(timer)
+      resolve(code === 0 ? stdout : null)
     })
   })
 }

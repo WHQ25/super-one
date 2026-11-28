@@ -427,6 +427,50 @@ describe('NodeRpcClient half-open transport detection', () => {
     expect(client.connected).toBe(false)
   })
 
+  it('keeps a slow socket that is still receiving a large frame', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const onUnexpectedDisconnect = vi.fn()
+    const { client, ws } = await connectClient({
+      supervised: true,
+      onUnexpectedDisconnect,
+      heartbeatIntervalMs: 1_000,
+    })
+    // No whole frame (so no pong) arrives, but the TCP socket keeps reading.
+    const tcp = { bytesRead: 0 }
+    Object.assign(ws, { _socket: tcp })
+    for (let tick = 0; tick < 6; tick++) {
+      tcp.bytesRead += 4_096
+      await vi.advanceTimersByTimeAsync(1_000)
+    }
+    expect(onUnexpectedDisconnect).not.toHaveBeenCalled()
+    expect(client.connected).toBe(true)
+
+    // Once bytes stop too, the usual two misses declare it dead.
+    await vi.advanceTimersByTimeAsync(2_100)
+    expect(onUnexpectedDisconnect).toHaveBeenCalledTimes(1)
+    expect(client.connected).toBe(false)
+  })
+
+  it('keeps the socket when bytes arrive during the timeout probe', async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true })
+    const onUnexpectedDisconnect = vi.fn()
+    const { client, ws } = await connectClient({
+      supervised: true,
+      onUnexpectedDisconnect,
+      heartbeatIntervalMs: 0,
+    })
+    const tcp = { bytesRead: 100 }
+    Object.assign(ws, { _socket: tcp })
+    const pending = client.rpc('environment.health').catch((e: Error) => e)
+    await vi.advanceTimersByTimeAsync(16_000)
+    expect((await pending).message).toMatch(/rpc timeout/)
+    tcp.bytesRead += 8_192
+    await vi.advanceTimersByTimeAsync(5_000)
+    expect(onUnexpectedDisconnect).not.toHaveBeenCalled()
+    expect(client.connected).toBe(true)
+    client.close()
+  })
+
   it('stops heartbeats after close so a disposed client never fires disconnect', async () => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
     const onUnexpectedDisconnect = vi.fn()

@@ -17,7 +17,8 @@ export type ForwardStarter = (opts: {
   extraArgs?: string[]
 }) => Promise<SshForwardHandle>
 
-export type TunnelReadiness = (localBaseUrl: string) => Promise<void>
+/** `reused` marks a check of an existing tunnel, which may be left on a dead network. */
+export type TunnelReadiness = (localBaseUrl: string, context: { reused: boolean }) => Promise<void>
 
 export interface EnsureTunnelOptions {
   /**
@@ -78,7 +79,7 @@ export class SshTunnelManager {
     if (existing && sameSpec(existing.spec, spec) && isSshProcessAlive(existing.handle.process)) {
       if (!options?.readiness) return existing.handle.localBaseUrl
       try {
-        await options.readiness(existing.handle.localBaseUrl)
+        await options.readiness(existing.handle.localBaseUrl, { reused: true })
         return existing.handle.localBaseUrl
       } catch {
         // Stale half-open forward: rebuild.
@@ -118,7 +119,7 @@ export class SshTunnelManager {
 
     if (options?.readiness) {
       try {
-        await options.readiness(handle.localBaseUrl)
+        await options.readiness(handle.localBaseUrl, { reused: false })
       } catch (err) {
         try {
           handle.stop()

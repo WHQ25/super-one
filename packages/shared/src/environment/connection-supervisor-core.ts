@@ -84,7 +84,8 @@ export interface SupervisorCoreOptions {
   environmentId: string
   connectionId: string
   connect: () => Promise<void>
-  healthProbe?: () => Promise<boolean>
+  /** `reason` lets a lifecycle wake use a shorter deadline than the periodic check. */
+  healthProbe?: (reason: SupervisorWakeReason) => Promise<boolean>
   /**
    * Drop a half-open transport before an immediate re-dial (e.g. OPEN but dead WS).
    * Called from wake() when a health probe fails while connected.
@@ -281,7 +282,7 @@ export class ConnectionSupervisorCore {
       if (!this.opts.healthProbe) return
       let ok = false
       try {
-        ok = await this.opts.healthProbe()
+        ok = await this.opts.healthProbe(reason ?? 'health-probe')
       } catch (err) {
         ok = false
         this.lastError = (err as Error).message

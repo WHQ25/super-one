@@ -163,6 +163,7 @@ import { getBinding } from './providers/credential-store'
 import type { SessionProvider } from './session/types'
 import { expandProviderModelEnv, REMOTE_CHANNEL_SCHEME } from '@superone/shared/agent-types'
 import { randomBytes } from 'node:crypto'
+import { networkInterfaces } from 'node:os'
 import { claudeThirdPartyEnv, PROXY_TRANSFORMERS_ENV } from '@superone/shared/platform-registry'
 import { acpAgentIdForHarness, isAcpProtocolHarness } from '@superone/shared/acp-brand'
 import { detectBuiltinAgents } from './acp/acp-detect'
@@ -1935,8 +1936,9 @@ function attachEnvironmentStatusBridge(host: EnvironmentHost): void {
   // Auto-connect desired remotes + network-online edge wake.
   // (powerMonitor resume also wakes via registerAgentService.)
   void import('./environment/environment-connectivity-monitor')
-    .then(({ attachEnvironmentConnectivityMonitor, createOnlineEdgeWatcher }) => {
+    .then(({ attachEnvironmentConnectivityMonitor, createOnlineEdgeWatcher, createNetworkChangeWatcher, networkAddressSignature }) => {
       const online = createOnlineEdgeWatcher(() => net.isOnline())
+      const addresses = createNetworkChangeWatcher(() => networkAddressSignature(networkInterfaces()))
       const unsubOffline = online.onOfflineEdge?.(() => {
         void host.wakeDesiredConnections('network-offline')
       })
@@ -1945,6 +1947,10 @@ function attachEnvironmentStatusBridge(host: EnvironmentHost): void {
           /* resume wired in powerMonitor */
         },
         onOnlineEdge: online.onOnlineEdge,
+        // Offline is owned by the offline edge; only re-probe while online.
+        onNetworkChange: (handler) => addresses.onNetworkChange(() => {
+          if (net.isOnline()) handler()
+        }),
         startDesiredConnections: () => host.startDesiredConnections(),
         wakeDesiredConnections: (reason) => host.wakeDesiredConnections(reason),
         log: (message) => log.info(message),
@@ -1953,6 +1959,7 @@ function attachEnvironmentStatusBridge(host: EnvironmentHost): void {
         disposeMonitor()
         unsubOffline?.()
         online.stop()
+        addresses.stop()
       }
     })
     .catch((err) => {

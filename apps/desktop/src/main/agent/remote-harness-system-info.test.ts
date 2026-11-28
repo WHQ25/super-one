@@ -318,4 +318,138 @@ describe('remote harness system info', () => {
     expect(info.defaults?.effort).toBe('high')
     expect(info.models.find((m) => m.id === 'gemini-pro-orchestrator')?.supportsEffort).toBe(false)
   })
+
+  it('honors configured Antigravity defaultModel and defaultEffort over ACP session defaults', async () => {
+    const deps = dependencies({
+      'acp-antigravity': {
+        agents: [{ id: 'antigravity', name: 'Antigravity', installed: true, commandPreview: 'agy acp' }],
+        selectedAgentId: 'antigravity',
+        configByAgentId: {
+          antigravity: {
+            configOptions: [
+              {
+                id: 'model',
+                name: 'Model',
+                category: 'model',
+                type: 'select',
+                currentValue: 'gemini-4-carbon',
+                options: [
+                  { value: 'gemini-4-hydrogen', name: 'Gemini 4 Hydrogen' },
+                  { value: 'gemini-4-carbon', name: 'Gemini 4 Carbon' },
+                ],
+              },
+              {
+                id: 'thought_level',
+                name: 'Thinking Level',
+                category: 'thought_level',
+                type: 'select',
+                currentValue: 'low',
+                options: [
+                  { value: 'low', name: 'Low' },
+                  { value: 'medium', name: 'Medium' },
+                  { value: 'high', name: 'High' },
+                ],
+              },
+            ],
+            extraModels: [
+              model('gemini-4-hydrogen-low'),
+              model('gemini-4-hydrogen-medium'),
+              model('gemini-4-hydrogen-high'),
+              model('gemini-4-hydrogen-xhigh'),
+              model('gemini-4-carbon-low'),
+              model('gemini-4-carbon-medium'),
+              model('gemini-4-carbon-high'),
+            ],
+            updatedAt: '2026-11-16T00:00:00.000Z',
+          },
+        },
+      },
+    })
+    deps.settings.agentPreference['acp-antigravity'].defaultModel = 'gemini-4-hydrogen'
+    deps.settings.agentPreference['acp-antigravity'].defaultEffort = 'xhigh'
+
+    const info = await buildRemoteHarnessSystemInfo('/project', 'acp-antigravity', deps)
+    expect(info.defaults?.model).toBe('gemini-4-hydrogen')
+    expect(info.defaults?.effort).toBe('xhigh')
+  })
+
+  it('resolves suffixed Antigravity model variants from configured base model and effort', async () => {
+    const deps = dependencies({
+      'acp-antigravity': {
+        agents: [{ id: 'antigravity', name: 'Antigravity', installed: true, commandPreview: 'agy acp' }],
+        selectedAgentId: 'antigravity',
+        configByAgentId: {
+          antigravity: {
+            configOptions: [],
+            extraModels: [
+              model('gemini-4-hydrogen-low'),
+              model('gemini-4-hydrogen-high'),
+              model('gemini-4-carbon-medium'),
+            ],
+            selectedModelId: 'gemini-4-carbon-medium',
+            modelConfigId: null,
+            extraModes: [],
+            selectedModeId: null,
+            modeConfigId: null,
+            slashCommands: [],
+            updatedAt: '2026-11-16T00:00:00.000Z',
+          },
+        },
+      },
+    })
+    deps.settings.agentPreference['acp-antigravity'].defaultModel = 'gemini-4-hydrogen'
+    deps.settings.agentPreference['acp-antigravity'].defaultEffort = 'high'
+
+    const info = await buildRemoteHarnessSystemInfo('/project', 'acp-antigravity', deps)
+    expect(info.defaults?.model).toBe('gemini-4-hydrogen-high')
+  })
+
+  it('honors configured Grok defaultModel and defaultEffort', async () => {
+    const deps = dependencies({
+      'acp-grok': {
+        agents: [{ id: 'grok-build', name: 'Grok', installed: true, commandPreview: 'grok' }],
+        selectedAgentId: 'grok-build',
+        configByAgentId: {
+          'grok-build': {
+            configOptions: [],
+            extraModels: [model('grok-4'), model('grok-4.20')],
+            selectedModelId: 'grok-4',
+            modelConfigId: null,
+            extraModes: [model('low'), model('high')],
+            selectedModeId: 'low',
+            modeConfigId: 'reasoning_effort',
+            slashCommands: [],
+            updatedAt: '2026-11-16T00:00:00.000Z',
+          },
+        },
+      },
+    })
+    deps.settings.agentPreference['acp-grok'].defaultModel = 'grok-4.20'
+    deps.settings.agentPreference['acp-grok'].defaultEffort = 'high'
+
+    const info = await buildRemoteHarnessSystemInfo('/project', 'acp-grok', deps)
+    expect(info.defaults).toMatchObject({ model: 'grok-4.20', effort: 'high' })
+  })
+
+  it('matches desktop fallback efforts when Claude and Codex effort preferences are unset', async () => {
+    const claudeDeps = dependencies({
+      claude: {
+        models: [model('opus', { supportedEffortLevels: ['low', 'medium', 'high', 'max'] })],
+      },
+    })
+    const claudeInfo = await buildRemoteHarnessSystemInfo('/project', 'claude', claudeDeps)
+    expect(claudeInfo.defaults?.effort).toBe('high')
+
+    const codexDeps = dependencies({ codex: { models: [], prompts: [] } })
+    codexDeps.settings.agentPreference.codex.defaultReasoningEffort = ''
+    codexDeps.listCodexModels = vi.fn(async () => [model('codex-model', {
+      supportedReasoningEfforts: [
+        { value: 'low', description: '' },
+        { value: 'medium', description: '' },
+        { value: 'xhigh', description: '' },
+      ],
+    })])
+    const codexInfo = await buildRemoteHarnessSystemInfo('/project', 'codex', codexDeps)
+    expect(codexInfo.defaults?.effort).toBe('xhigh')
+  })
 })

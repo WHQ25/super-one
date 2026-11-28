@@ -1,6 +1,7 @@
 import type { ModelOption } from '@superone/shared/agent-types'
 import { isAntigravityAcpAgent } from '@superone/shared/acp-brand'
 import { formatEffortOptionLabel, sortEffortsAscending } from '@superone/shared/effort-labels'
+import { splitAntigravityModelEffort } from '@superone/shared/harness/acp-mode-catalog'
 import type {
   SelectorEffortOption,
   SelectorModelGroup,
@@ -9,13 +10,9 @@ import type {
 import { resolveSlashModelLabel } from '@/components/chat/ModelSelectorLists'
 import { toSelectorGroups, toSelectorModels } from '../selector-models'
 
-const ANTIGRAVITY_EFFORT_ID_RE = /^(.*)-(minimal|low|medium|high|xhigh|extra[-_]?high|max)$/i
-const ANTIGRAVITY_EFFORT_NAME_RE = /\s*\((minimal|low|medium|high|xhigh|extra[\s_-]*high|max)\)\s*$/i
+export { splitAntigravityModelEffort }
 
-function normalizeAntigravityEffort(raw: string): string {
-  const lower = raw.trim().toLowerCase()
-  return /^extra[\s_-]*high$/.test(lower) ? 'xhigh' : lower
-}
+const ANTIGRAVITY_EFFORT_ID_RE = /^(.*)-(minimal|low|medium|high|xhigh|extra[-_]?high|max)$/i
 
 export interface AntigravityModelEffortProjection {
   models: SelectorModelOption[]
@@ -26,37 +23,6 @@ export interface AntigravityModelEffortProjection {
   selectedEffortLabel: string | null
   resolveModelId: (baseOrRawId: string, preferredEffort?: string | null) => string
   resolveEffortModelId: (effort: string) => string | null
-}
-
-export function splitAntigravityModelEffort(
-  modelId: string,
-  modelName?: string | null,
-): { baseId: string; baseName: string; effort: string | null } {
-  const match = ANTIGRAVITY_EFFORT_ID_RE.exec(modelId)
-  if (match && match[1] && match[2]) {
-    const baseId = match[1]
-    const effort = normalizeAntigravityEffort(match[2])
-    const strippedName = (modelName || modelId).replace(ANTIGRAVITY_EFFORT_NAME_RE, '').trim()
-    return {
-      baseId,
-      baseName: strippedName || baseId,
-      effort,
-    }
-  }
-  const nameMatch = modelName ? ANTIGRAVITY_EFFORT_NAME_RE.exec(modelName) : null
-  if (nameMatch && nameMatch[1]) {
-    const strippedName = modelName!.replace(ANTIGRAVITY_EFFORT_NAME_RE, '').trim()
-    const baseId = strippedName
-      ? strippedName.toLowerCase().replace(/[^a-z0-9.]+/g, '-').replace(/^-|-$/g, '')
-      : modelId
-    return {
-      baseId,
-      baseName: strippedName || modelId,
-      effort: normalizeAntigravityEffort(nameMatch[1]),
-    }
-  }
-  const rawName = (modelName || modelId).trim()
-  return { baseId: modelId, baseName: rawName || modelId, effort: null }
 }
 
 export function projectAntigravityModels(

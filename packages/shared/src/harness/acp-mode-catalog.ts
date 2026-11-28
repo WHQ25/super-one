@@ -13,6 +13,45 @@ export interface AcpModeProjection {
   selectedModeId: string | null
 }
 
+const ANTIGRAVITY_EFFORT_ID_RE = /^(.*)-(minimal|low|medium|high|xhigh|extra[-_]?high|max)$/i
+const ANTIGRAVITY_EFFORT_NAME_RE = /\s*\((minimal|low|medium|high|xhigh|extra[\s_-]*high|max)\)\s*$/i
+
+function normalizeAntigravityEffort(raw: string): string {
+  const lower = raw.trim().toLowerCase()
+  return /^extra[\s_-]*high$/.test(lower) ? 'xhigh' : lower
+}
+
+export function splitAntigravityModelEffort(
+  modelId: string,
+  modelName?: string | null,
+): { baseId: string; baseName: string; effort: string | null } {
+  const match = ANTIGRAVITY_EFFORT_ID_RE.exec(modelId)
+  if (match && match[1] && match[2]) {
+    const baseId = match[1]
+    const effort = normalizeAntigravityEffort(match[2])
+    const strippedName = (modelName || modelId).replace(ANTIGRAVITY_EFFORT_NAME_RE, '').trim()
+    return {
+      baseId,
+      baseName: strippedName || baseId,
+      effort,
+    }
+  }
+  const nameMatch = modelName ? ANTIGRAVITY_EFFORT_NAME_RE.exec(modelName) : null
+  if (nameMatch && nameMatch[1]) {
+    const strippedName = modelName!.replace(ANTIGRAVITY_EFFORT_NAME_RE, '').trim()
+    const baseId = strippedName
+      ? strippedName.toLowerCase().replace(/[^a-z0-9.]+/g, '-').replace(/^-|-$/g, '')
+      : modelId
+    return {
+      baseId,
+      baseName: strippedName || modelId,
+      effort: normalizeAntigravityEffort(nameMatch[1]),
+    }
+  }
+  const rawName = (modelName || modelId).trim()
+  return { baseId: modelId, baseName: rawName || modelId, effort: null }
+}
+
 const ORDERED_ACP_EFFORT_LEVELS: readonly EffortLevel[] = ['low', 'medium', 'high', 'xhigh', 'max']
 const ACP_PERMISSION_MODE_VALUES = new Set([
   'default',

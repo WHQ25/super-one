@@ -15,7 +15,7 @@ import type {
 import { findCodexFastServiceTier } from '@superone/shared/codex-fast-mode'
 import { HARNESS_LAUNCH_OPTIONS } from '@superone/shared/launch-options'
 import { HARNESS_CAPABILITIES } from '@superone/shared/harness/harness-capabilities'
-import { sessionDefaultsForHarness } from '@superone/shared/harness/session-defaults'
+import { acpAgentDefaultsFor, sessionDefaultsForHarness } from '@superone/shared/harness/session-defaults'
 import {
   coerceSandboxModeForHarness,
   harnessSandboxModes,
@@ -23,7 +23,12 @@ import {
 import { lookupCatalogContextWindow } from '@superone/shared/platform-registry'
 import { acpAgentIdForHarness, isAntigravityAcpAgent } from '@superone/shared/acp-brand'
 import { formatEffortOptionLabel, sortEffortsAscending } from '@superone/shared/effort-labels'
-import { acpEffortOptionsForModel, acpModeCatalog, clampAcpEffortForModel } from '@superone/shared/harness/acp-mode-catalog'
+import {
+  acpEffortOptionsForModel,
+  acpModeCatalog,
+  clampAcpEffortForModel,
+  splitAntigravityModelEffort,
+} from '@superone/shared/harness/acp-mode-catalog'
 import { deriveSessionCatalog } from '../acp/acp-config'
 import { deepseekModeCatalog, openCodeAgentCatalog } from './remote-selector-catalog'
 
@@ -82,7 +87,11 @@ function preferredModel(models: ModelOption[], requested?: string | null): Model
     ?? models[0]
 }
 
-function preferredEffort(model: ModelOption | undefined, requested?: string | null): string | null {
+function preferredEffort(
+  model: ModelOption | undefined,
+  requested?: string | null,
+  fallback: 'medium' | 'high' | 'highest' = 'medium',
+): string | null {
   const values: string[] = model?.supportedReasoningEfforts?.map((option) => option.value)
     ?? model?.supportedEffortLevels
     ?? []
@@ -90,7 +99,44 @@ function preferredEffort(model: ModelOption | undefined, requested?: string | nu
   if (model?.defaultReasoningEffort && values.includes(model.defaultReasoningEffort)) {
     return model.defaultReasoningEffort
   }
+  if (fallback === 'high') {
+    if (values.includes('high')) return 'high'
+    if (values.includes('medium')) return 'medium'
+    return values[0] ?? null
+  }
+  if (fallback === 'highest') {
+    return values[values.length - 1] ?? null
+  }
   return values.includes('medium') ? 'medium' : values[0] ?? null
+}
+
+function resolveAntigravityDefaultSelection(
+  models: ModelOption[],
+  requestedModel: string | null,
+  configuredEffort: string | null,
+  sessionEffort: string | null,
+): { model: ModelOption | undefined; inferredEffort: string | null } {
+  if (!requestedModel) return { model: undefined, inferredEffort: null }
+  const parsed = splitAntigravityModelEffort(requestedModel)
+  const variants = models.filter(
+    (candidate) => splitAntigravityModelEffort(candidate.id, candidate.name).baseId === parsed.baseId,
+  )
+  const targetEffort = (configuredEffort ?? parsed.effort ?? sessionEffort)?.toLowerCase() ?? null
+  if (configuredEffort && variants.length > 1 && targetEffort) {
+    const effortMatch = variants.find(
+      (candidate) => splitAntigravityModelEffort(candidate.id, candidate.name).effort === targetEffort,
+    )
+    if (effortMatch) return { model: effortMatch, inferredEffort: parsed.effort }
+  }
+  const exact = models.find((candidate) => candidate.id === requestedModel)
+  if (exact) return { model: exact, inferredEffort: null }
+  const baseMatch = models.find((candidate) => candidate.id === parsed.baseId)
+  if (baseMatch) return { model: baseMatch, inferredEffort: parsed.effort }
+  if (variants.length === 0) return { model: undefined, inferredEffort: null }
+  const effortMatch = targetEffort
+    ? variants.find((candidate) => splitAntigravityModelEffort(candidate.id, candidate.name).effort === targetEffort)
+    : undefined
+  return { model: effortMatch ?? variants[0], inferredEffort: parsed.effort }
 }
 
 function defaultInfo(
@@ -168,8 +214,8 @@ async function harnessSystemInfo(
         activeProvider: deps.activeProvider('claude'),
         ...deps.providerCatalog?.('claude'),
         defaults: {
-          model: present(preferences.claude.defaultModel) ?? model?.id ?? null,
-          effort: preferredEffort(model, preferences.claude.defaultEffort),
+          model: model?.id ?? present(preferences.claude.defaultModel) ?? null,
+          effort: preferredEffort(model, preferences.claude.defaultEffort, 'high'),
           permissionMode: sessionDefaultsForHarness(preferences, 'claude').permissionMode,
           sandboxMode: deps.defaultSandboxMode?.() ?? null,
         },
@@ -182,7 +228,7 @@ async function harnessSystemInfo(
         : cached?.models ?? []
       const model = preferredModel(models, preferences.codex.defaultModel)
       const permissionPreset = present(preferences.codex.defaultPermissionPreset)
-      const effort = preferredEffort(model, preferences.codex.defaultReasoningEffort)
+      const effort = preferredEffort(model, preferences.codex.defaultReasoningEffort, 'highest')
       return {
         models,
         slashCommands: [
@@ -197,7 +243,7 @@ async function harnessSystemInfo(
         activeProvider: deps.activeProvider('codex'),
         ...deps.providerCatalog?.('codex'),
         defaults: {
-          model: present(preferences.codex.defaultModel) ?? model?.id ?? null,
+          model: model?.id ?? present(preferences.codex.defaultModel) ?? null,
           effort,
           permissionMode: sessionDefaultsForHarness(preferences, 'codex').permissionMode,
           // Same conjunction the desktop's own launch profiles use: the
@@ -215,8 +261,21 @@ async function harnessSystemInfo(
       const catalog = cached?.configByAgentId?.[acpAgentId]
       const sessionCatalog = catalog ? deriveSessionCatalog(catalog) : null
       const models = sessionCatalog?.models ?? []
-      const model = preferredModel(models, sessionCatalog?.selectedModelId)
       const isAntigravity = harnessId === 'acp-antigravity' || isAntigravityAcpAgent(acpAgentId)
+      const acpDefaults = acpAgentDefaultsFor(preferences, harnessId)
+      const configuredModel = present(acpDefaults.defaultModel)
+      const configuredEffort = present(acpDefaults.defaultEffort)
+      const antigravitySelection = isAntigravity
+        ? resolveAntigravityDefaultSelection(
+            models,
+            configuredModel ?? present(sessionCatalog?.selectedModelId),
+            configuredEffort,
+            present(sessionCatalog?.selectedModeId),
+          )
+        : { model: undefined, inferredEffort: null }
+      const model = antigravitySelection.model
+        ?? (configuredModel ? models.find((candidate) => candidate.id === configuredModel) : undefined)
+        ?? preferredModel(models, sessionCatalog?.selectedModelId)
       // Grok effort is extraModes or config id `reasoning_effort`. A real
       // session mode (`mode`) stays out of the effort slider, and Antigravity's
       // modes are already driven by permissionModes.
@@ -234,7 +293,7 @@ async function harnessSystemInfo(
         }
       }
       const efforts = sortEffortsAscending([...effortsByValue.values()])
-      const selectedEffort = present(sessionCatalog?.selectedModeId)
+      const selectedEffort = configuredEffort ?? antigravitySelection.inferredEffort ?? present(sessionCatalog?.selectedModeId)
       const defaultModelEfforts = acpEffortOptionsForModel(models, model?.id ?? null, efforts)
       const permissionModes = [...HARNESS_LAUNCH_OPTIONS[harnessId].permissionModes]
       const configuredPermissionMode = sessionDefaultsForHarness(preferences, harnessId, acpAgentId).permissionMode

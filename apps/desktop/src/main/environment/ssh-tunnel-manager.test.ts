@@ -82,14 +82,16 @@ describe('SshTunnelManager', () => {
     const manager = new SshTunnelManager(starter)
 
     expect(await manager.ensure('c1', baseSpec)).toBe('http://127.0.0.1:40011')
-    let readinessCalls = 0
+    const contexts: boolean[] = []
     const url = await manager.ensure('c1', baseSpec, {
-      readiness: async () => {
-        readinessCalls += 1
-        if (readinessCalls === 1) throw new Error('stale')
+      readiness: async (_url, { reused }) => {
+        contexts.push(reused)
+        if (contexts.length === 1) throw new Error('stale')
       },
     })
     expect(url).toBe('http://127.0.0.1:40012')
+    // The existing tunnel is checked as reused; its replacement as fresh.
+    expect(contexts).toEqual([true, false])
     expect(starter).toHaveBeenCalledTimes(2)
     expect(stop).toHaveBeenCalled()
   })

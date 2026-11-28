@@ -3832,12 +3832,19 @@ export class EnvironmentHost {
     if (spec) {
       return this.tunnels.ensure(known.connectionId, spec, {
         // Process-alive alone is not enough: require HTTP health + identity.
-        readiness: async (localBaseUrl) => {
-          const { assertNodeIdentity } = await import('./node-connection-manager')
-          await assertNodeIdentity(localBaseUrl, {
-            environmentId: known.environmentId,
-            nodePublicKeyFingerprint: known.nodePublicKeyFingerprint,
-          })
+        // A reused tunnel can be an ssh process still bound to the previous
+        // network; a short check rebuilds it instead of waiting out the full
+        // deadline. A fresh tunnel keeps the full deadline.
+        readiness: async (localBaseUrl, { reused }) => {
+          const { assertNodeIdentity, WAKE_HEALTH_PROBE_TIMEOUT_MS } = await import('./node-connection-manager')
+          await assertNodeIdentity(
+            localBaseUrl,
+            {
+              environmentId: known.environmentId,
+              nodePublicKeyFingerprint: known.nodePublicKeyFingerprint,
+            },
+            reused ? { timeoutMs: WAKE_HEALTH_PROBE_TIMEOUT_MS } : undefined,
+          )
         },
       })
     }

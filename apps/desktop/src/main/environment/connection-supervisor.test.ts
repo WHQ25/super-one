@@ -218,6 +218,26 @@ describe('ConnectionSupervisor', () => {
     supervisor.dispose()
   })
 
+  it('passes the wake reason to the health probe', async () => {
+    const reasons: string[] = []
+    const supervisor = new ConnectionSupervisor({
+      environmentId: 'env-1',
+      connectionId: 'c-1',
+      stableAfterMs: 0,
+      healthProbeIntervalMs: 0,
+      connect: async () => {},
+      healthProbe: async (reason) => {
+        reasons.push(reason)
+        return true
+      },
+    })
+    await supervisor.start()
+    await supervisor.wake('app-resume')
+    await supervisor.wake('network-online')
+    expect(reasons).toEqual(['app-resume', 'network-online'])
+    supervisor.dispose()
+  })
+
   it('wake on connected failed probe invalidates and re-dials immediately', async () => {
     let connectCalls = 0
     const invalidate = vi.fn()

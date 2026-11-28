@@ -796,14 +796,20 @@ export class NodeConnectionManager {
           }
         }
       },
-      healthProbe: async () => {
+      healthProbe: async (reason) => {
         const generation = supervisor.getSnapshot().generation
         const current = (): boolean =>
           supervisor.isCurrent(generation) && this.lives.get(credential.connectionId)?.client === client
         let ok = false
         try {
           if (credentialDirty) tryPersistCredential()
-          const h = await client.health()
+          // After sleep or a network change a live node answers within a round
+          // trip; a socket left on the old network does not, and waiting out
+          // the regular RPC deadline only delays the re-dial.
+          const h = await withDeadline(
+            client.health(),
+            reason === 'health-probe' ? undefined : WAKE_HEALTH_PROBE_TIMEOUT_MS,
+          )
           ok = h.ok === true
         } catch {
           return false
@@ -863,20 +869,34 @@ export class NodeConnectionManager {
   }
 }
 
+/** Health deadline for app-resume / network wakes (the periodic check keeps the RPC default). */
+export const WAKE_HEALTH_PROBE_TIMEOUT_MS = 5_000
+
+export function withDeadline<T>(work: Promise<T>, timeoutMs: number | undefined): Promise<T> {
+  if (timeoutMs === undefined) return work
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const deadline = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`health probe timed out after ${timeoutMs}ms`)), timeoutMs)
+  })
+  return Promise.race([work, deadline]).finally(() => clearTimeout(timer))
+}
+
 /** Unauthenticated /health identity probe used before pairing/RPC. */
 export async function assertNodeIdentity(
   baseUrl: string,
   expected: { environmentId: string; nodePublicKeyFingerprint: string },
+  options?: { timeoutMs?: number },
 ): Promise<{ environmentId: string; nodePublicKeyFingerprint: string }> {
   const url = `${baseUrl.replace(/\/$/, '')}/health`
+  const timeoutMs = options?.timeoutMs ?? NODE_REQUEST_TIMEOUT_MS
   let res: Response
   try {
-    res = await fetch(url, { signal: AbortSignal.timeout(NODE_REQUEST_TIMEOUT_MS) })
+    res = await fetch(url, { signal: AbortSignal.timeout(timeoutMs) })
   } catch (error) {
     const detail =
       error instanceof Error &&
       (error.name === 'TimeoutError' || error.name === 'AbortError')
-        ? `timed out after ${NODE_REQUEST_TIMEOUT_MS}ms`
+        ? `timed out after ${timeoutMs}ms`
         : error instanceof Error
           ? error.message
           : String(error)

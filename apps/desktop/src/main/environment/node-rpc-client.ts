@@ -104,7 +104,11 @@ const TRANSPORT_RETRY_ATTEMPTS = 2
  * after the tunnel died, so `close` alone is not a reliable liveness signal.
  */
 const HEARTBEAT_INTERVAL_MS = 15_000
-/** Consecutive unanswered pings before the socket is declared dead. */
+/**
+ * Consecutive unanswered pings before the socket is declared dead. A tick on
+ * which the socket read bytes is not a miss: on a slow link a pong can sit
+ * behind one large frame for longer than two intervals while the link is live.
+ */
 const HEARTBEAT_MAX_MISSED = 2
 /**
  * After one RPC deadline, ask the socket if it is still there. A slow node
@@ -192,6 +196,8 @@ export class NodeRpcClient extends EnvironmentRpcClient {
   private missedPongs = 0
   /** One short ping after an RPC deadline. A second timeout does not start another. */
   private livenessProbe: { requestId: string; timer: ReturnType<typeof setTimeout> } | null = null
+  /** Bytes the socket had read at the last heartbeat tick; null when it cannot say. */
+  private lastBytesRead: number | null = null
   private readonly heartbeatIntervalMs: number
   /** Established encrypted channel per socket; absent on plain sockets. */
   private readonly channels = new WeakMap<NodeSocket, ChannelState>()
@@ -583,6 +589,7 @@ export class NodeRpcClient extends EnvironmentRpcClient {
     if (this.heartbeatIntervalMs <= 0) return
     this.pendingPingId = null
     this.missedPongs = 0
+    this.lastBytesRead = this.ws ? socketBytesRead(this.ws) : null
     this.heartbeatTimer = setInterval(() => this.heartbeatTick(), this.heartbeatIntervalMs)
     // Never hold the event loop open for a keepalive.
     this.heartbeatTimer.unref?.()
@@ -617,9 +624,13 @@ export class NodeRpcClient extends EnvironmentRpcClient {
       return
     }
     const requestId = randomUUID()
+    const readAtProbe = socketBytesRead(ws)
     const timer = setTimeout(() => {
       if (this.livenessProbe?.requestId !== requestId) return
       this.livenessProbe = null
+      // Still reading: a slow link mid-frame, not a dead one. The heartbeat keeps watching.
+      const read = socketBytesRead(ws)
+      if (read !== null && readAtProbe !== null && read > readAtProbe) return
       this.reportTransportDead('liveness probe timed out after an rpc timeout', socketId)
     }, LIVENESS_PROBE_MS)
     timer.unref?.()
@@ -640,7 +651,12 @@ export class NodeRpcClient extends EnvironmentRpcClient {
     const socketId = this.wsSocketId
     if (!ws || ws.readyState !== WebSocket.OPEN) return
 
-    if (this.pendingPingId) {
+    const read = socketBytesRead(ws)
+    const reading = read !== null && this.lastBytesRead !== null && read > this.lastBytesRead
+    this.lastBytesRead = read
+    if (reading) {
+      this.missedPongs = 0
+    } else if (this.pendingPingId) {
       this.missedPongs += 1
       if (this.missedPongs >= HEARTBEAT_MAX_MISSED) {
         this.reportTransportDead(
@@ -909,6 +925,16 @@ export class NodeRpcClient extends EnvironmentRpcClient {
     if ((raw as { type?: unknown } | null)?.type === 'pong') return
     conn.receive(raw)
   }
+}
+
+/**
+ * Bytes the socket's TCP connection has read, counting a frame still arriving.
+ * A plain `ws` socket keeps its net.Socket on `_socket`; a relay slot has none,
+ * and gets the frame-only check.
+ */
+function socketBytesRead(ws: NodeSocket): number | null {
+  const read = (ws as { _socket?: { bytesRead?: unknown } })._socket?.bytesRead
+  return typeof read === 'number' ? read : null
 }
 
 /**

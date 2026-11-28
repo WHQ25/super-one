@@ -519,3 +519,54 @@ test('switching between ACP agents updates selectedAcpAgentIdRef synchronously a
   expect(result.current.selectedModel).toBe('grok-4.20')
 })
 
+test('applyDefaultOption adopts the desktop top-ranked harness until the user picks one', async () => {
+  const { result } = await mount()
+  expect(result.current.selectedProvider).toBe('claude')
+
+  await act(async () => {
+    expect(result.current.applyDefaultOption({
+      key: 'acp-antigravity',
+      provider: 'acp-antigravity',
+      acpAgentId: 'antigravity',
+      label: 'Antigravity',
+    })).toBe(true)
+    expect(result.current.selectedProviderRef.current).toBe('acp-antigravity')
+    expect(result.current.selectedAcpAgentIdRef.current).toBe('antigravity')
+  })
+  expect(result.current.selectedProvider).toBe('acp-antigravity')
+  expect(result.current.selectedAcpAgentId).toBe('antigravity')
+
+  await act(async () => {
+    expect(result.current.applyDefaultOption({
+      key: 'codex',
+      provider: 'codex',
+      acpAgentId: null,
+      label: 'Codex',
+    })).toBe(true)
+  })
+  expect(result.current.selectedProvider).toBe('codex')
+  expect(result.current.selectedAcpAgentId).toBeNull()
+
+  await act(async () => {
+    result.current.resetForProvider('claude', null, { userChosen: true })
+    expect(result.current.applyDefaultOption({
+      key: 'acp-antigravity',
+      provider: 'acp-antigravity',
+      acpAgentId: 'antigravity',
+      label: 'Antigravity',
+    })).toBe(false)
+  })
+  expect(result.current.selectedProvider).toBe('claude')
+
+  await act(async () => {
+    result.current.clearUserChosen()
+    expect(result.current.applyDefaultOption({
+      key: 'acp-antigravity',
+      provider: 'acp-antigravity',
+      acpAgentId: 'antigravity',
+      label: 'Antigravity',
+    })).toBe(true)
+  })
+  expect(result.current.selectedProvider).toBe('acp-antigravity')
+})
+

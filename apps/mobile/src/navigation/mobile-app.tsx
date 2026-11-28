@@ -253,6 +253,8 @@ export function MobileApp() {
   } = harnessSelection
   // Empty until the host answers; the switcher hides itself below two rows.
   const [harnessOptions, setHarnessOptions] = useState<RemoteHarnessOption[]>([])
+  const harnessOptionsRef = useRef<RemoteHarnessOption[]>([])
+  harnessOptionsRef.current = harnessOptions
   const [worktreeInfo, setWorktreeInfo] = useState<WorktreeInfo | null>(null)
   const [worktreeDirty, setWorktreeDirty] = useState<Record<string, GitDirtyStatus>>({})
   const [branches, setBranches] = useState<string[]>([])
@@ -1024,7 +1026,8 @@ export function MobileApp() {
     termRuntimeRef.current = null
     disconnectTransport()
     clearActiveSession()
-    setProjects([]); setSessions([]); setHarnessOptions([]); setProject(null)
+    setProjects([]); setSessions([]); setHarnessOptions([]); harnessOptionsRef.current = []; setProject(null)
+    harnessSelection.clearUserChosen()
     workspaceCacheRef.current.persistence?.dispose()
     activePairingIdRef.current = pairingId
     setActivePairingId(pairingId)
@@ -1043,7 +1046,14 @@ export function MobileApp() {
       if (validProjects[0]) { setProject(validProjects[0]); setScreen('chat') }
     }
     const cachedHarnesses = persisted.get<RemoteHarnessOption[]>('harness-options')
-    if (Array.isArray(cachedHarnesses)) setHarnessOptions(cachedHarnesses.filter(row => row && typeof row.provider === 'string'))
+    const validCachedHarnesses = Array.isArray(cachedHarnesses)
+      ? cachedHarnesses.filter(row => row && typeof row.provider === 'string')
+      : []
+    if (validCachedHarnesses.length > 0) {
+      harnessOptionsRef.current = validCachedHarnesses
+      setHarnessOptions(validCachedHarnesses)
+      if (!preparedConnection) harnessSelection.applyDefaultOption(validCachedHarnesses[0])
+    }
 
     networkLedger.checkpoint('cache-loaded')
     // Project rows follow the host: re-read on its signal and after a redial,
@@ -1225,6 +1235,7 @@ export function MobileApp() {
       persisted.set('projects', preparedWorkspace!.projects)
       persisted.set('harness-options', preparedWorkspace!.options)
       setProjects(preparedWorkspace!.projects)
+      harnessOptionsRef.current = preparedWorkspace!.options
       setHarnessOptions(preparedWorkspace!.options)
       connectionRef.current = { state: 'connected', epoch: client.buffer.epoch }
       setConnectionState('connected')
@@ -1258,17 +1269,21 @@ export function MobileApp() {
     persisted.set('harness-options', options)
     setProjects(projectRows)
     if (clientRef.current !== client) return false
+    harnessOptionsRef.current = options
     setHarnessOptions(options)
     if (shellDetailsRequestRef.current !== initialShellRequest || runtimeRef.current || sessionTransitionRef.current.isActive) return true
+    harnessSelection.applyDefaultOption(options[0])
+    const activeProvider = harnessSelection.selectedProviderRef.current
+    const activeAcpAgentId = harnessSelection.selectedAcpAgentIdRef.current
     const initialProject = projectRows.find(row => row.path === cachedProject?.path) ?? projectRows[0]
     if (initialProject) {
       // Warm only the selected harness; another provider may start a process
       // merely to list models and is loaded when the user chooses it.
       await openProject(initialProject, false)
       if (clientRef.current !== client || shellDetailsRequestRef.current !== initialShellRequest + 1 || runtimeRef.current || sessionTransitionRef.current.isActive) return true
-      const system = peekHarnessResource(client, 'get_system_info', initialProject.path, selectedProvider, selectedAcpAgentId)
-      if (system) applySystemInfo(selectedProvider, system)
-      const resources = peekHarnessResource(client, 'get_project_resources', initialProject.path, selectedProvider)
+      const system = peekHarnessResource(client, 'get_system_info', initialProject.path, activeProvider, activeAcpAgentId)
+      if (system) applySystemInfo(activeProvider, system)
+      const resources = peekHarnessResource(client, 'get_project_resources', initialProject.path, activeProvider)
       setWorkspaceDirs(resources?.workspaceDirs ?? [])
       if (!cachedProject) setScreen('chat')
     } else {
@@ -1429,8 +1444,13 @@ export function MobileApp() {
       })
       return
     }
+    const activeProvider = harnessSelection.selectedProviderRef.current
+    const activeAcpAgentId = harnessSelection.selectedAcpAgentIdRef.current
+    const preloadKey = activeAcpAgentId && isAcpProtocolHarness(activeProvider)
+      ? `acp:${activeAcpAgentId}`
+      : suggestionHarnessKey(activeProvider, activeAcpAgentId)
     const [, , page] = await Promise.all([
-      preloadHarnessResources(client, p.path, [suggestionHarnessKey(selectedProvider, selectedAcpAgentId)]),
+      preloadHarnessResources(client, p.path, [preloadKey]),
       loadMcpIcons(client, p.path),
       readProjectSessions(client, p.path),
       refreshGitInfo(p.path),
@@ -1894,6 +1914,18 @@ export function MobileApp() {
   const startNewSession = (targetProject = project, continuation?: {
     from: string; composer: SessionComposerSnapshot; worktree: NewSessionWorktreeSelection
   }) => runWorkspaceTransition(async (signal) => {
+    if (!continuation) {
+      harnessSelection.clearUserChosen()
+      const defaultOption = harnessOptionsRef.current[0]
+      if (defaultOption) {
+        harnessSelection.resetForProvider(defaultOption.provider, defaultOption.acpAgentId ?? null)
+      } else {
+        harnessSelection.resetForProvider(
+          harnessSelection.selectedProviderRef.current,
+          harnessSelection.selectedAcpAgentIdRef.current,
+        )
+      }
+    }
     if (targetProject && targetProject.path !== project?.path) {
       await openProject(targetProject, true, true)
       if (signal.aborted) return
@@ -1922,16 +1954,18 @@ export function MobileApp() {
     if (client && targetProject) {
       const request = ++systemInfoRequestRef.current
       const path = targetProject.path
-      const system = peekHarnessResource(client, 'get_system_info', path, selectedProvider, selectedAcpAgentId)
+      const activeProvider = harnessSelection.selectedProviderRef.current
+      const activeAcpAgentId = harnessSelection.selectedAcpAgentIdRef.current
+      const system = peekHarnessResource(client, 'get_system_info', path, activeProvider, activeAcpAgentId)
       const isCurrent = () => clientRef.current === client && request === systemInfoRequestRef.current
       const apply = (info: RemoteSystemInfo) => {
-        applySystemInfo(selectedProvider, info)
-        const resources = peekHarnessResource(client, 'get_project_resources', path, selectedProvider)
+        applySystemInfo(activeProvider, info)
+        const resources = peekHarnessResource(client, 'get_project_resources', path, activeProvider)
         setWorkspaceDirs(resources?.workspaceDirs ?? [])
       }
       if (system) apply(system)
       else {
-        refreshSessionCatalog(() => requestHarnessResource(client, 'get_system_info', path, selectedProvider, false, selectedAcpAgentId),
+        refreshSessionCatalog(() => requestHarnessResource(client, 'get_system_info', path, activeProvider, false, activeAcpAgentId),
           isCurrent, apply, () => setStatus(t('Agent settings are unavailable. Refresh the model list and try again.')))
       }
     }
@@ -2015,10 +2049,11 @@ export function MobileApp() {
   const selectHarness = (option: RemoteHarnessOption) => {
     const client = clientRef.current
     if (!client || !project) return
+    harnessSelection.markUserChosen()
     const request = ++systemInfoRequestRef.current
     const apply = (info: import('@superone/shared/agent-types').RemoteSystemInfo) => {
       if (request !== systemInfoRequestRef.current || clientRef.current !== client) return
-      harnessSelection.resetForProvider(option.provider, option.acpAgentId)
+      harnessSelection.resetForProvider(option.provider, option.acpAgentId, { userChosen: true })
       applySystemInfo(option.provider, info)
       setHarness(option.provider)
     }

@@ -6,6 +6,7 @@ import type {
   ModelOption,
   RemoteAgentOption,
   RemoteEffortOption,
+  RemoteHarnessOption,
   RemoteModeOption,
   RemoteProviderOption,
   RemoteSystemInfo,
@@ -51,9 +52,10 @@ function resolveClaimedServiceTier(
 }
 
 export function useHarnessSelection() {
-  const { setBrandHue } = useMobileTheme()
+  const { setBrandHue, setHarness } = useMobileTheme()
   const [selectedProvider, setSelectedProviderState] = useState<HarnessId>('claude')
   const selectedProviderRef = useRef<HarnessId>('claude')
+  const userChosenRef = useRef(false)
   const setSelectedProvider = (provider: HarnessId) => {
     selectedProviderRef.current = provider
     setSelectedProviderState(provider)
@@ -199,13 +201,19 @@ export function useHarnessSelection() {
   }
 
   /** `acpAgentId` names which ACP agent the switcher row stood for. */
-  const resetForProvider = (provider: HarnessId, acpAgentId: string | null = null) => {
+  const resetForProvider = (
+    provider: HarnessId,
+    acpAgentId: string | null = null,
+    options?: { userChosen?: boolean },
+  ) => {
+    if (options?.userChosen !== undefined) userChosenRef.current = options.userChosen
     nativeCatalog.current = null
     draftIdentity.current = false
     // A pick belonged to the harness it was made on; the next one starts on its
     // own host defaults.
     claimed.current = emptyClaimed()
     setSelectedProvider(provider)
+    setHarness(provider)
     setSystemInfo({})
     setCatalogReady(false)
     setModels([])
@@ -228,10 +236,33 @@ export function useHarnessSelection() {
     setSelectedAcpAgentId(nextAcpAgentId)
   }
 
+  const markUserChosen = () => {
+    userChosenRef.current = true
+  }
+
+  const clearUserChosen = () => {
+    userChosenRef.current = false
+  }
+
+  const applyDefaultOption = (option: RemoteHarnessOption | undefined): boolean => {
+    if (!option || userChosenRef.current) return false
+    const nextAcpAgentId = isAcpProtocolHarness(option.provider) ? (option.acpAgentId ?? null) : null
+    if (
+      selectedProviderRef.current === option.provider
+      && selectedAcpAgentIdRef.current === nextAcpAgentId
+    ) {
+      return false
+    }
+    resetForProvider(option.provider, nextAcpAgentId)
+    return true
+  }
+
   /** A saved draft is authoritative even when model discovery has changed. */
   const restoreDraft = (settings: DraftSessionSettings) => {
+    userChosenRef.current = true
     draftIdentity.current = true
     const provider = settings.harness ?? 'claude'
+    setHarness(provider)
     const model = (provider === 'codex' ? settings.codexModel ?? settings.model : settings.model) ?? ''
     const effort = (provider === 'codex' ? settings.codexReasoningEffort : settings.effort) ?? ''
     const permission = (provider === 'codex' ? settings.codexPermissionPreset : settings.permissionMode) ?? 'default'
@@ -410,6 +441,9 @@ export function useHarnessSelection() {
     catalogReady,
     applySystemInfo,
     resetForProvider,
+    markUserChosen,
+    clearUserChosen,
+    applyDefaultOption,
     restoreDraft,
     selectModel,
   }
